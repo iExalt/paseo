@@ -1465,6 +1465,7 @@ export const ja: TranslationResources = {
       },
       advancedSettings: "詳細設定",
       openAdvancedSettings: "高度なデーモン設定を開く",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "アプリとデーモンのバージョンが一致しません。最良の体験のために両方を同じバージョンに更新してください。",
       loadFailed: "デスクトップデーモンのステータスを読み込めません。",
@@ -1490,6 +1491,8 @@ export const ja: TranslationResources = {
         restartTitle: "再起動して {{version}} へのアップデートを完了しますか？",
         restartMessage: "Paseo は再起動し、新しいバージョンを使用します。",
         restartConfirm: "再起動",
+        agentsKeepRunning:
+          "実行中のエージェント（{{count}}）は動作を続けます。バックグラウンドサービスは完了後に更新されます。",
         lastAttemptFailed: "前回の試行は失敗しました: {{error}}",
         updateTooltip: "{{version}} にアップデート",
         restartTooltip: "再起動して {{version}} へのアップデートを完了",

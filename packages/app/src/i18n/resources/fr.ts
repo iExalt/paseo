@@ -1480,6 +1480,7 @@ export const fr: TranslationResources = {
       },
       advancedSettings: "Paramètres avancés",
       openAdvancedSettings: "Ouvrir les paramètres avancés du daemon",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "Les versions de l’application et du daemon ne correspondent pas. Mettez-les à jour vers la même version pour une meilleure expérience.",
       loadFailed: "Impossible de charger le statut du daemon de l’application de bureau.",
@@ -1505,6 +1506,8 @@ export const fr: TranslationResources = {
         restartTitle: "Redémarrer pour terminer la mise à jour vers {{version}} ?",
         restartMessage: "Paseo va redémarrer et utiliser la nouvelle version.",
         restartConfirm: "Redémarrer",
+        agentsKeepRunning:
+          "Les agents en cours ({{count}}) continuent de travailler ; le service d'arrière-plan se met à jour quand ils ont terminé.",
         lastAttemptFailed: "La dernière tentative a échoué : {{error}}",
         updateTooltip: "Mettre à jour vers {{version}}",
         restartTooltip: "Redémarrer pour terminer la mise à jour vers {{version}}",

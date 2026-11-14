@@ -52,6 +52,7 @@ function isNewer(
 }
 
 export function resolveNixUpdatePhase(facts: NixUpdateFacts): NixUpdatePhase {
+  const { result, latest } = facts;
   if (!result) return { kind: "unknown" };
   const { active, running } = result;
   const staged = result.staged ?? null;
@@ -80,6 +81,7 @@ export function getNixUpdatePhase(): NixUpdatePhase {
 export function useNixUpdatePhase(): NixUpdatePhase {
   const result = useNixUpdateStore((state) => state.result);
   const latest = useNixUpdateStore((state) => state.latest);
+  return resolveNixUpdatePhase({ result, latest });
 }
 
 type NixCommand = "status" | "check" | "stage" | "activate";
@@ -168,11 +170,13 @@ export function applyNixUpdate(): Promise<boolean> {
   });
 }
 
+export function restartIntoNixUpdate(): Promise<void> {
   return enqueue(async () => {
     const restart = getDesktopHost()?.nixUpdates?.restart;
     try {
       if (!restart) throw new Error("The managed Nix update bridge is unavailable.");
       useNixUpdateStore.setState({ busy: "restarting", failed: false });
+      await restart();
     } catch (error) {
       useNixUpdateStore.setState({ busy: null });
       recordError(error, true);

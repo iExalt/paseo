@@ -172,6 +172,7 @@ describe("Nix restart into the active release", () => {
     running: { version: "0.2.2", outputPath },
   };
 
+  it("hands the macOS restart to the running updater and leaves the daemon running", async () => {
     const calls: string[] = [];
     await restartIntoActiveNixRelease({
       runNixUpdate: async () => status,

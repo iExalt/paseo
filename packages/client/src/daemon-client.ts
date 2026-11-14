@@ -38,6 +38,7 @@ import {
   RenameTerminalResponseSchema,
   RestartRequestedStatusPayloadSchema,
   ShutdownRequestedStatusPayloadSchema,
+  ShutdownDeclinedStatusPayloadSchema,
   DaemonUpdateResponseSchema,
   SessionInboundMessageSchema,
   type AgentSendBehavior,
@@ -830,12 +831,16 @@ export interface AgentForkContextOptions {
 type AgentRefreshedStatusPayload = z.infer<typeof AgentRefreshedStatusPayloadSchema>;
 type RestartRequestedStatusPayload = z.infer<typeof RestartRequestedStatusPayloadSchema>;
 type ShutdownRequestedStatusPayload = z.infer<typeof ShutdownRequestedStatusPayloadSchema>;
+type ShutdownDeclinedStatusPayload = z.infer<typeof ShutdownDeclinedStatusPayloadSchema>;
 export interface ShutdownServerOptions {
   requestId?: string;
   timeout?: number;
   // Leave terminals running for the next daemon. Only daemons advertising
   // `features.terminalsSurviveRestart` honor it; check before sending.
   keepTerminals?: boolean;
+  // Stop only when no agent has work; a busy daemon answers `shutdown_declined`. Refused
+  // before sending unless the daemon advertises `features.shutdownIfIdle`.
+  onlyIfIdle?: boolean;
 }
 export interface DaemonStatusOptions {
   requestId?: string;
@@ -1366,6 +1371,35 @@ export function supportsSpendSummary(features: ServerInfoStatusPayload["features
 // COMPAT(providerUsageList): added in v0.1.98, remove after 2027-03-26.
 export function supportsUsageReports(features: ServerInfoStatusPayload["features"]): boolean {
   return features?.usageSources === true || features?.providerUsageList === true;
+}
+
+export class IdleShutdownUnsupportedError extends Error {
+  readonly code = "IDLE_SHUTDOWN_UNSUPPORTED";
+  // Own fields reach the CLI's JSON error output, which desktop reads.
+  readonly version: string | null;
+
+  constructor(target: string, version: string | null) {
+    super(
+      `The daemon at ${target}${version ? ` (v${version})` : ""} cannot stop only when idle; it would stop even with agents running.`,
+    );
+    this.name = "IdleShutdownUnsupportedError";
+    this.version = version;
+  }
+}
+
+/**
+ * Gate for an idle-only stop. Older daemons drop `onlyIfIdle` and stop at once, killing running
+ * agents, so read the capability on the connection that will carry the shutdown.
+ */
+// COMPAT(shutdownIfIdle): added in v0.21.0, remove gate after 2027-05-04.
+export function requireIdleShutdownCapability(
+  client: Pick<DaemonClient, "getLastServerInfoMessage">,
+  target: string,
+): void {
+  const serverInfo = client.getLastServerInfoMessage();
+  if (serverInfo?.features?.shutdownIfIdle !== true) {
+    throw new IdleShutdownUnsupportedError(target, serverInfo?.version ?? null);
+  }
 }
 
 export class TerminalKeepUnsupportedError extends Error {
@@ -4403,12 +4437,16 @@ export class DaemonClient {
     });
   }
 
-  async shutdownServer(options?: ShutdownServerOptions): Promise<ShutdownRequestedStatusPayload> {
+  async shutdownServer(
+    options?: ShutdownServerOptions,
+  ): Promise<ShutdownRequestedStatusPayload | ShutdownDeclinedStatusPayload> {
+    if (options?.onlyIfIdle) requireIdleShutdownCapability(this, "this connection");
     const resolvedRequestId = this.createRequestId(options?.requestId);
     const message = SessionInboundMessageSchema.parse({
       type: "shutdown_server_request",
       requestId: resolvedRequestId,
       ...(options?.keepTerminals ? { keepTerminals: true } : {}),
+      ...(options?.onlyIfIdle ? { onlyIfIdle: true } : {}),
     });
     return this.sendRequest({
       requestId: resolvedRequestId,
@@ -4419,7 +4457,9 @@ export class DaemonClient {
         if (msg.type !== "status") {
           return null;
         }
-        const shutdown = ShutdownRequestedStatusPayloadSchema.safeParse(msg.payload);
+        const shutdown = ShutdownRequestedStatusPayloadSchema.or(
+          ShutdownDeclinedStatusPayloadSchema,
+        ).safeParse(msg.payload);
         if (!shutdown.success) {
           return null;
         }

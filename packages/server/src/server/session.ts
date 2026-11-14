@@ -3107,6 +3107,7 @@ export class Session {
       case "shutdown_server_request":
         return this.handleShutdownServerRequest(msg.requestId, {
           keepTerminals: msg.keepTerminals === true,
+          onlyIfIdle: msg.onlyIfIdle === true,
         });
       case "client_heartbeat":
         this.handleClientHeartbeat(msg);
@@ -3909,9 +3910,23 @@ export class Session {
 
   private async handleShutdownServerRequest(
     requestId: string,
-    options: { keepTerminals: boolean },
+    options: { keepTerminals: boolean; onlyIfIdle: boolean },
   ): Promise<void> {
     const reason = CLIENT_SHUTDOWN_RPC_REASON;
+    // A true result has already closed admission, so nothing may be awaited before the intent.
+    if (options.onlyIfIdle && !(await this.agentManager.stopAdmittingIfIdle())) {
+      this.sessionLogger.info("Idle-only shutdown declined: an agent still has work");
+      this.emit({
+        type: "status",
+        payload: {
+          status: "shutdown_declined",
+          clientId: this.clientId,
+          requestId,
+          reason: "busy",
+        },
+      });
+      return;
+    }
     this.sessionLogger.warn(
       { reason, keepTerminals: options.keepTerminals },
       "Shutdown requested via websocket",

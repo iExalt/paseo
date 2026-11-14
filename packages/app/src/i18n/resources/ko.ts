@@ -1456,6 +1456,7 @@ export const ko: TranslationResources = {
       },
       advancedSettings: "고급 설정",
       openAdvancedSettings: "고급 데몬 설정 열기",
+      upgrade: en.desktop.daemon.upgrade,
       versionMismatch:
         "앱과 데몬의 버전이 일치하지 않습니다. 최상의 경험을 위해 둘 다 동일한 버전으로 업데이트하세요.",
       loadFailed: "데스크톱 데몬 상태를 불러올 수 없습니다.",
@@ -1481,6 +1482,8 @@ export const ko: TranslationResources = {
         restartTitle: "다시 시작하여 {{version}} 업데이트를 완료할까요?",
         restartMessage: "Paseo가 다시 시작되고 새 버전을 사용합니다.",
         restartConfirm: "다시 시작",
+        agentsKeepRunning:
+          "실행 중인 에이전트({{count}})는 계속 작동합니다. 백그라운드 서비스는 작업이 끝난 뒤 업데이트됩니다.",
         lastAttemptFailed: "마지막 시도가 실패했습니다: {{error}}",
         updateTooltip: "{{version}}(으)로 업데이트",
         restartTooltip: "다시 시작하여 {{version}} 업데이트 완료",
