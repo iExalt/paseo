@@ -12,6 +12,7 @@ import {
   resolveDesktopSidebarInsetLeft,
   resolveDesktopSidebarVisibility,
   resolveSidebarActivity,
+  resolveMenuPressOutcome,
   resolveDesktopSidebarWidth,
   resolveLeftSidebarPresentation,
 } from "@/components/desktop-sidebar-layout";
@@ -247,4 +248,23 @@ it("reserves room for Explorer and the workspace before showing app navigation",
 it("insets an overlay sidebar's content by the left safe area and leaves the dock to app chrome", () => {
   expect(resolveDesktopSidebarInsetLeft({ overlay: true, safeAreaLeft: 20 })).toBe(20);
   expect(resolveDesktopSidebarInsetLeft({ overlay: false, safeAreaLeft: 20 })).toBe(0);
+});
+
+describe("menu press with Explorer open", () => {
+  const base = {
+    isCompactLayout: false,
+    explorerOpen: true,
+    requestedSidebarWidth: 320,
+    viewportWidth: 800,
+  };
+
+  it("shows the sidebar over Explorer when they cannot share the width", () => {
+    expect(resolveMenuPressOutcome(base)).toBe("show-sidebar-over-explorer");
+  });
+
+  it("toggles normally when both fit, Explorer is closed, or the layout is compact", () => {
+    expect(resolveMenuPressOutcome({ ...base, viewportWidth: 1000 })).toBe("toggle-sidebar");
+    expect(resolveMenuPressOutcome({ ...base, explorerOpen: false })).toBe("toggle-sidebar");
+    expect(resolveMenuPressOutcome({ ...base, isCompactLayout: true })).toBe("toggle-sidebar");
+  });
 });
