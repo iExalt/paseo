@@ -6,7 +6,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { ComponentType, ReactNode } from "react";
 import { Alert, Pressable, ScrollView, View, type PressableStateCallbackType } from "react-native";
 import { useRouter } from "expo-router";
-import { useFocusEffect } from "expo-router/react-navigation";
+import { useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
