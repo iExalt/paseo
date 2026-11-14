@@ -31,6 +31,7 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useTranslation } from "react-i18next";
 import { getStreamItemMessageId, type StreamItem } from "@/types/stream";
 import type { Theme } from "@/styles/theme";
+import { getTopmostViewableRowId, READING_VIEWABILITY_CONFIG } from "./reading-anchor";
 import { useStableEvent } from "@/hooks/use-stable-event";
 import { useIsMobilePanelActive } from "@/mobile-panels/provider";
 import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
@@ -158,6 +159,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     isInitialHistoryLoading,
     revealInitialHistory,
     onNearBottomChange,
+    onReadingPositionChange,
     onNearHistoryStart,
     isLoadingOlderHistory,
     hasOlderHistory,
@@ -238,6 +240,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     });
     return {
       ...geometry,
+      historyStartThresholdPx: Math.max(96, metrics.viewportHeight * 2),
       hasOlderHistory,
       isLoadingOlderHistory,
       // Reveal an already-filled measured viewport immediately; keep waiting on
@@ -472,6 +475,55 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     };
   }, [clearPendingUserScrollEnd, disposeHistoryStart, evaluateHistoryStart]);
 
+  const holdReadingPosition = useStableEvent(() => {
+    cancelDisclosureHold();
+    bottomAnchorController.detachByUser();
+  });
+  const jumpToRow = useStableEvent((row: StreamItem | undefined, animated: boolean) => {
+    if (!row) return;
+    holdReadingPosition();
+    onNearBottomChange(false);
+    programmaticScrollEventBudgetRef.current = 3;
+    void listRef.current?.scrollToKey({ key: row.id, viewPosition: 0, animated });
+  });
+  const scrollToMessage = useStableEvent((messageId: string) => {
+    jumpToRow(
+      rows.find((item) => getStreamItemMessageId(item) === messageId),
+      true,
+    );
+  });
+  const scrollToItem = useStableEvent((itemId: string) => {
+    jumpToRow(
+      rows.find((item) => item.id === itemId),
+      false,
+    );
+  });
+  const scrollByWindowDelta = useStableEvent((delta: number) => {
+    holdReadingPosition();
+    onNearBottomChange(false);
+    programmaticScrollEventBudgetRef.current = 3;
+    void listRef.current?.scrollToOffset({
+      offset: Math.max(0, scrollOffsetYRef.current + delta),
+      animated: false,
+    });
+  });
+  const handleViewableItemsChanged = useStableEvent(
+    (info: {
+      viewableItems: Array<{ item: StreamItem; index: number | null; isViewable: boolean }>;
+    }) => {
+      onReadingPositionChange?.(
+        getTopmostViewableRowId(
+          info.viewableItems.map(({ item, index, isViewable }) => ({
+            id: item.id,
+            index: index === null ? null : -index,
+            isViewable,
+          })),
+          rows.at(-1)?.id,
+        ),
+      );
+    },
+  );
+
   useEffect(() => {
     const handle: StreamViewportHandle = {
       scrollToBottom: (reason = "jump-to-bottom") => {
@@ -484,6 +536,10 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
       },
       holdRow,
+      holdReadingPosition,
+      scrollToMessage,
+      scrollToItem,
+      scrollByWindowDelta,
     };
     viewportRef.current = handle;
     return () => {
@@ -491,7 +547,16 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         viewportRef.current = null;
       }
     };
-  }, [agentId, bottomAnchorController, holdRow, viewportRef]);
+  }, [
+    agentId,
+    bottomAnchorController,
+    holdRow,
+    holdReadingPosition,
+    scrollToMessage,
+    scrollToItem,
+    scrollByWindowDelta,
+    viewportRef,
+  ]);
 
   // The scroll-to-bottom button shows whenever following would not resume on its own. A detached
   // list resumes only from the end, so the button shows anywhere short of it. While following, the
@@ -792,6 +857,8 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         scrollEventThrottle={16}
         onContentSizeChange={handleContentSizeChange}
         onItemSizeChanged={handleItemSizeChanged}
+        onViewableItemsChanged={handleViewableItemsChanged}
+        viewabilityConfig={READING_VIEWABILITY_CONFIG}
         onReady={handleListPlaced}
         maintainVisibleContentPosition={maintainVisibleContentPosition}
         renderScrollComponent={renderScrollComponent}

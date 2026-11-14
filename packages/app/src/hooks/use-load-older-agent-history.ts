@@ -7,7 +7,7 @@ import {
   useSessionStore,
   type AgentTimelineCursorState,
 } from "@/stores/session-store";
-import { planTimelineOlderFetch } from "@/timeline/timeline-sync-plan";
+import { getEarliestLoadedSeq, planTimelineOlderFetch } from "@/timeline/timeline-sync-plan";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 
 export interface LoadOlderAgentHistoryClient {
@@ -19,6 +19,7 @@ export interface LoadOlderAgentHistoryClient {
       limit: number;
       projection: "projected";
       timeout: number;
+      mergeWindow?: true;
     },
   ) => Promise<unknown>;
 }
@@ -54,7 +55,8 @@ export async function loadOlderAgentHistory(
   setInFlight(true);
   try {
     await client.fetchAgentTimeline(agentId, {
-      ...planTimelineOlderFetch({ epoch: cursor.epoch, seq: cursor.startSeq }),
+      ...planTimelineOlderFetch({ epoch: cursor.epoch, seq: getEarliestLoadedSeq(cursor) }),
+      ...(cursor.retainedRanges?.length ? { mergeWindow: true as const } : {}),
       timeout: 10_000,
     });
   } catch (error) {
