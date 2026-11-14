@@ -49,6 +49,8 @@ export type SupervisorLifecycleLog = (message: string, fields?: Record<string, u
 interface SupervisorOptions {
   name: string;
   startupMessage: string;
+  // Entries recorded before the durable log opened, written right after the startup message.
+  startupLog?: ReadonlyArray<{ message: string; fields: Record<string, unknown> }>;
   resolveWorkerEntry: () => string;
   workerArgs?: string[];
   workerEnv?: NodeJS.ProcessEnv;
@@ -557,6 +559,9 @@ export function runSupervisor(options: SupervisorOptions): SupervisorController 
 
   process.stdout.write(`[${options.name}] ${options.startupMessage}\n`);
   writeLifecycleLog(options.startupMessage);
+  for (const entry of options.startupLog ?? []) {
+    writeLifecycleLog(entry.message, entry.fields);
+  }
   spawnWorker();
 
   return { requestShutdown };
