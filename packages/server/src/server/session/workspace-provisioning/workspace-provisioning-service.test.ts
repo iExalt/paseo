@@ -2,7 +2,7 @@ import os from "node:os";
 import path from "node:path";
 import { mkdirSync, mkdtempSync, rmSync, statSync, symlinkSync } from "node:fs";
 
-import { afterEach, beforeEach, expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 import { getCheckoutStatus } from "../../../utils/checkout-git.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
@@ -18,6 +18,10 @@ import {
   type WorkspaceRegistry,
 } from "../../workspace-registry.js";
 import { checkoutLiteFromGitSnapshot } from "../../workspace-registry-model.js";
+import {
+  countWorktreePathLockWaiters,
+  withWorktreePathLock,
+} from "../../../utils/worktree-path-lock.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../../worktree-session.js";
 import {
   createWorkspaceProvisioningService,
@@ -582,6 +586,39 @@ test("createWorkspaceForDirectory always mints a fresh workspace even when one a
   expect(first.notifications).toBe("off");
   expect(second.notifications).toBe("on");
   expect(await workspaceRegistry.list()).toHaveLength(2);
+});
+
+test("createWorkspaceForDirectory waits for an archive's delete and refuses the removed directory", async () => {
+  const repo = path.join(tmpDir, "repo");
+  mkdirSync(repo, { recursive: true });
+  gitRoots.add(repo);
+
+  let releaseArchive!: () => void;
+  const archiveHeld = new Promise<void>((resolve) => {
+    releaseArchive = resolve;
+  });
+  let lockAcquired!: () => void;
+  const lockHeld = new Promise<void>((resolve) => {
+    lockAcquired = resolve;
+  });
+  const archive = withWorktreePathLock(repo, async () => {
+    lockAcquired();
+    await archiveHeld;
+    rmSync(repo, { recursive: true, force: true });
+  });
+  await lockHeld;
+  const created = provisioning.createWorkspaceForDirectory(repo);
+  const outcome = created.then(
+    () => "created",
+    (error: Error) => error.message,
+  );
+
+  // Release only once the create has sampled the directory and is queued behind the archive.
+  await vi.waitFor(async () => expect(await countWorktreePathLockWaiters(repo)).toBe(1));
+  releaseArchive();
+  await archive;
+  expect(await outcome).toBe(`Workspace directory was removed: ${repo}`);
+  expect(await workspaceRegistry.list()).toEqual([]);
 });
 
 test("directory creation persists the live branch and a trimmed title", async () => {
