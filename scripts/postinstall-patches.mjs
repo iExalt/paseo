@@ -36,9 +36,15 @@ const patchedPackages = [
   // Android measurements across parent clones. Remove those hunks when upgrading past
   // 1.2.0-nightly-20261019-926ef06f0; reconcile the other local patch hunks separately.
   {
+  // npm nests or hoists this package depending on the rest of the tree; patch either.
+  {
     nodeModulesPath: "packages/app/node_modules/react-native-enriched-markdown",
     patchPrefix: "react-native-enriched-markdown+",
     cwd: "packages/app",
+  },
+  {
+    nodeModulesPath: "node_modules/react-native-enriched-markdown",
+    patchPrefix: "react-native-enriched-markdown+",
   },
   // Registry cleanup: remove after react-native-unistyles ships
   // https://github.com/jpudysz/react-native-unistyles/pull/1203.
@@ -77,10 +83,15 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@gorhom/bottom-sheet",
     patchPrefix: "@gorhom+bottom-sheet+",
   },
+  // npm nests or hoists this package depending on the rest of the tree; patch either.
   {
     nodeModulesPath: "packages/app/node_modules/react-native-svg",
     patchPrefix: "react-native-svg+",
     cwd: "packages/app",
+  },
+  {
+    nodeModulesPath: "node_modules/react-native-svg",
+    patchPrefix: "react-native-svg+",
   },
   {
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
