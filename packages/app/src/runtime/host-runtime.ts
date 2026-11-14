@@ -98,6 +98,10 @@ import { revokePushNotifications } from "@/push-notifications";
 import { createAppWebSocketFactory } from "./websocket-factory";
 import { agentLog, describeError } from "@/utils/agent-log";
 import { recordNotificationOpenStage } from "@/notification-open/trace";
+import {
+  TimelineRequestSupersededError,
+  type TimelineResponseGuard,
+} from "@/timeline/timeline-request";
 import { confirmNotificationReceipt, useNotificationReceipt } from "@/notification-open/preview";
 
 export type HostRuntimeConnectionStatus = "idle" | "connecting" | "online" | "offline" | "error";
@@ -2888,12 +2892,27 @@ export class HostRuntimeStore {
     serverId: string,
     agentId: string,
     request: Parameters<DaemonClient["fetchAgentTimeline"]>[1],
+    isRequestCurrent: () => boolean = () => true,
   ): Promise<Awaited<ReturnType<DaemonClient["fetchAgentTimeline"]>>> {
     const directory = this.directorySyncByServer.get(serverId);
     if (!directory) throw new Error(`Unknown host runtime for serverId ${serverId}`);
     const owner = useSessionStore.getState().sessions[serverId]?.viewedTimelineSync;
     const receipt = useNotificationReceipt.getState().receipt;
-    const page = await directory.fetchTimeline(agentId, request);
+    owner?.flushStreamAgent(agentId);
+    const ownsTimeline = owner?.captureTimelineRequest(agentId, request) ?? (() => true);
+    const isCurrent: TimelineResponseGuard = (page) => {
+      if (useSessionStore.getState().sessions[serverId]?.viewedTimelineSync === owner) {
+        owner?.flushStreamAgent(agentId);
+      }
+      return (
+        this.directorySyncByServer.get(serverId) === directory &&
+        useSessionStore.getState().sessions[serverId]?.viewedTimelineSync === owner &&
+        isRequestCurrent() &&
+        ownsTimeline(page)
+      );
+    };
+    const page = await directory.fetchTimeline(agentId, request, isCurrent);
+    if (!isCurrent(page)) throw new TimelineRequestSupersededError();
     if (owner && useSessionStore.getState().sessions[serverId]?.viewedTimelineSync === owner) {
       owner.flushStreamAgent(agentId);
       owner.applyTimelineResponse(page);

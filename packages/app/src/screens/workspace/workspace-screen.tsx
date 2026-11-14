@@ -163,6 +163,7 @@ import {
 } from "@/screens/workspace/workspace-header-source";
 import {
   resolveWorkspaceRouteState,
+  shouldDismissUnavailableWorkspace,
   type WorkspaceRouteState,
 } from "@/screens/workspace/workspace-route-state";
 import { renderWorkspaceRouteGate } from "@/screens/workspace/workspace-route-state-views";
@@ -1262,6 +1263,16 @@ function WorkspaceScreenContent({
     hasHydratedWorkspaces,
     recovery: workspaceRecovery.state,
   });
+  const router = useRouter();
+  const dismissUnavailableWorkspace = shouldDismissUnavailableWorkspace(
+    workspaceRouteState,
+    isRouteFocused,
+  );
+  useEffect(() => {
+    if (dismissUnavailableWorkspace) {
+      router.replace("/open-project");
+    }
+  }, [dismissUnavailableWorkspace, router]);
   const workspaceHeaderCheckoutState = buildWorkspaceHeaderCheckoutState({
     isCheckoutStatusLoading,
     isError: checkoutQuery.isError,

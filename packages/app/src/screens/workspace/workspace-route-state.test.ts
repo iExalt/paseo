@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 import type { WorkspaceDescriptor } from "@/stores/session-store";
 import type { WorkspaceRecoveryModel } from "@/workspace-recovery/model";
-import { resolveWorkspaceRouteState } from "./workspace-route-state";
+import {
+  resolveWorkspaceRouteState,
+  shouldDismissUnavailableWorkspace,
+} from "./workspace-route-state";
 
 function createWorkspaceDescriptor(): WorkspaceDescriptor {
   return {
@@ -150,7 +153,7 @@ describe("resolveWorkspaceRouteState", () => {
         },
       }),
     ).toEqual({
-      kind: "recoveryUnavailable",
+      kind: "recoveryUnsupported",
       hostName: "Laptop",
       message: "Update Paseo to recover this workspace.",
     });
@@ -171,5 +174,43 @@ describe("resolveWorkspaceRouteState", () => {
         recovery: recoverable,
       }),
     ).toEqual({ kind: "ready" });
+  });
+});
+
+describe("shouldDismissUnavailableWorkspace", () => {
+  it("returns only focused terminally unavailable workspaces to the main menu", () => {
+    const missing = resolve({ recovery: { kind: "idle" } });
+    const unavailable = resolve({
+      recovery: {
+        kind: "unavailable",
+        recovery: {
+          kind: "unavailable",
+          workspaceId: "workspace-1",
+          reason: "workspace_directory_missing",
+          message: "Directory missing",
+        },
+      },
+    });
+    for (const state of [missing, unavailable]) {
+      expect(shouldDismissUnavailableWorkspace(state, true)).toBe(true);
+      expect(shouldDismissUnavailableWorkspace(state, false)).toBe(false);
+    }
+  });
+
+  it("preserves available, loading, offline and actionable recovery states", () => {
+    const states = [
+      resolve({ workspace: createWorkspaceDescriptor() }),
+      resolve({ workspace: createWorkspaceDescriptor(), connectionStatus: "offline" }),
+      resolve({ connectionStatus: "offline" }),
+      resolve({ hasHydratedWorkspaces: false }),
+      resolve({ recovery: { kind: "checking" } }),
+      resolve({ recovery: recoverable }),
+      resolve({ recovery: { kind: "needsHostUpgrade" } }),
+      resolve({ recovery: { kind: "unsupportedAction", action: "repair_from_snapshot" } }),
+      resolve({ recovery: { kind: "inspectionFailed", error: "Try again" } }),
+    ];
+    for (const state of states) {
+      expect(shouldDismissUnavailableWorkspace(state, true)).toBe(false);
+    }
   });
 });

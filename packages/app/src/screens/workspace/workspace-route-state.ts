@@ -25,6 +25,7 @@ export type WorkspaceRouteState =
       recovery: Extract<WorkspaceRecoveryModel, { kind: "recoverable" }>;
     }
   | { kind: "recoveryUnavailable"; hostName: string; message: string }
+  | { kind: "recoveryUnsupported"; hostName: string; message: string }
   | { kind: "recoveryInspectionFailed"; hostName: string; error: string };
 
 export function resolveWorkspaceRouteState(input: {
@@ -82,7 +83,7 @@ export function resolveWorkspaceRouteState(input: {
       };
     case "unsupportedAction":
       return {
-        kind: "recoveryUnavailable",
+        kind: "recoveryUnsupported",
         hostName: input.hostName,
         message: "Update Paseo to recover this workspace.",
       };
@@ -93,4 +94,11 @@ export function resolveWorkspaceRouteState(input: {
         error: input.recovery.error,
       };
   }
+}
+
+export function shouldDismissUnavailableWorkspace(
+  state: WorkspaceRouteState,
+  isRouteFocused: boolean,
+): boolean {
+  return isRouteFocused && (state.kind === "missing" || state.kind === "recoveryUnavailable");
 }
