@@ -71,8 +71,10 @@ describe("runCli", () => {
     { argv: ["agent", "inspect", "--json"], error: "commander.missingArgument" },
     {
       argv: ["clone", "owner/repo", "--format=json"],
-      error: "commander.missingMandatoryOptionValue",
+      error: "INVALID_ARGUMENT",
     },
+    { argv: ["clone", "--search", "paseo", "--dir", "/repo", "--json"], error: "INVALID_ARGUMENT" },
+    { argv: ["clone", "--search", " ", "--json"], error: "INVALID_ARGUMENT" },
     { argv: ["plugin", "add", "-o", "json"], error: "commander.missingArgument" },
     { argv: ["--json", "agent", "inspect"], error: "commander.missingArgument" },
     { argv: ["ls", "--invalid-option", "--format", "JSON"], error: "commander.unknownOption" },

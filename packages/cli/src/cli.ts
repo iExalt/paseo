@@ -1,6 +1,6 @@
 import { createHostCommand } from "./commands/host/index.js";
 import { pairCommand } from "./commands/daemon/pair.js";
-import { Command, Option } from "commander";
+import { Command } from "commander";
 import { createAgentCommand } from "./commands/agent/index.js";
 import { createDaemonCommand } from "./commands/daemon/index.js";
 import { createPermitCommand } from "./commands/permit/index.js";
@@ -36,7 +36,7 @@ import { addArchiveOptions, runArchiveCommand } from "./commands/agent/archive.j
 import { addAttachOptions, runAttachCommand } from "./commands/agent/attach.js";
 import { addImportOptions, runImportCommand } from "./commands/agent/import.js";
 import { withOutput } from "./output/index.js";
-import { runCloneCommand } from "./commands/clone.js";
+import { createCloneCommand } from "./commands/clone.js";
 import { onboardCommand } from "./commands/onboard.js";
 import {
   addDaemonHostOption,
@@ -76,19 +76,7 @@ export function createCli(): Command {
     withOutput(runImportCommand),
   );
 
-  addJsonAndDaemonHostOptions(
-    program
-      .command("clone")
-      .description("Clone a GitHub repo and register it as a Paseo workspace")
-      .argument("<repo>", "GitHub repo in owner/repo format or a full git remote URL")
-      .requiredOption("--dir <path>", "Parent directory to clone into (for example: ~/workspace)"),
-  )
-    .addOption(
-      new Option("--protocol <protocol>", "Protocol for owner/repo shorthand repositories").choices(
-        ["https", "ssh"],
-      ),
-    )
-    .action(withOutput(runCloneCommand));
+  program.addCommand(createCloneCommand());
 
   addDaemonHostOption(addAttachOptions(program.command("attach"))).action(
     withGlobalOptions(runAttachCommand),
