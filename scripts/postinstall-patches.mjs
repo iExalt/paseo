@@ -32,6 +32,10 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/expo-modules-core",
     patchPrefix: "expo-modules-core+",
   },
+  {
+    nodeModulesPath: "node_modules/@expo/cli",
+    patchPrefix: "@expo+cli+",
+  },
   // Registry cleanup: remove after react-native-unistyles ships
   // https://github.com/jpudysz/react-native-unistyles/pull/1203.
   // Adaptive themes: keep until colorScheme reads no longer consume listener-owned media changes.
