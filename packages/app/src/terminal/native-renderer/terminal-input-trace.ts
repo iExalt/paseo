@@ -1,0 +1,115 @@
+import { nativeTerminalPerformanceNow } from "./terminal-performance";
+
+// Dev-only trace of native terminal input order and echo latency, written to
+// logcat (ReactNativeJS) as one `[paseo-terminal-trace]` JSON line per event.
+// EXPO_PUBLIC_* is inlined at bundle time, so a normal build carries only the
+// disabled branch. "1" logs character classes; "full" logs the typed text,
+const TRACE_MODE = process.env.EXPO_PUBLIC_PASEO_TERMINAL_INPUT_TRACE;
+
+
+/**
+ * Letters become `a`, digits `0`, other printable ASCII `p`, other non-ASCII
+ * `u`. Spaces and control characters stay, since they carry no secret and
+ * show the input order.
+ */
+export function redactTerminalTraceText(text: string): string {
+  let result = "";
+  for (const character of text) {
+    if (/\p{L}/u.test(character)) {
+      result += "a";
+    } else if (/\p{N}/u.test(character)) {
+      result += "0";
+    } else if (character <= " " || character === "\x7f") {
+      result += character;
+    } else if (character <= "~") {
+      result += "p";
+    } else {
+      result += "u";
+    }
+  }
+  return result;
+}
+
+// React Native reports a commit of up to two characters as a key, so only
+// these names are logged as they are.
+const TERMINAL_KEY_NAMES =
+  "Backspace|Enter|Tab|Escape|Delete|Home|End|PageUp|PageDown|Insert|Arrow(?:Up|Down|Left|Right)|F\\d{1,2}";
+const TERMINAL_KEY_NAME_PATTERN = new RegExp(`^(?:${TERMINAL_KEY_NAMES})$`);
+
+// A chord such as `C-c` is kept: chords are commands, not typed text.
+const TERMINAL_CHORD_PATTERN = new RegExp(`^(?:[CAM]-)+(?:.|${TERMINAL_KEY_NAMES})$`, "u");
+
+export function redactTerminalTraceKey(key: string): string {
+  if (TERMINAL_KEY_NAME_PATTERN.test(key) || TERMINAL_CHORD_PATTERN.test(key)) {
+    return key;
+  }
+  return traceText(key);
+}
+
+function traceText(text: string): string {
+}
+
+// JSON leaves DEL unescaped, which hides a sent Backspace in a log viewer.
+function writeTraceLine(json: string): void {
+  console.log(`[paseo-terminal-trace] ${json.replaceAll("\x7f", "\\u007f")}`);
+}
+
+export type TerminalInputTraceKind = "key" | "change" | "hwkey";
+
+export type TerminalInputResetReason = "enter" | "key-enter" | "show-keyboard" | "blur" | "blurred";
+
+// Module state, shared by every terminal: enough to tell whether the last
+// clear landed, which is all the trace needs.
+let lastChangeText = "";
+// Resets with no change between them (such as blur, then blurred) share one
+// entry, so the next change is scored against the text before the first.
+let pendingReset: { reason: string; staleText: string } | null = null;
+
+export function traceTerminalInput(kind: TerminalInputTraceKind, raw: string, sent: string): void {
+    return;
+  }
+  const line: Record<string, unknown> = {
+    t: nativeTerminalPerformanceNow(),
+    kind,
+    raw: kind === "change" ? traceText(raw) : redactTerminalTraceKey(raw),
+    sent: traceText(sent),
+  };
+  if (kind === "change") {
+    if (pendingReset) {
+      // A change that still starts with the pre-clear text means the clear never landed.
+      line.afterReset = pendingReset.reason;
+      line.changeChars = raw.length;
+      line.stale = pendingReset.staleText === "" ? null : raw.startsWith(pendingReset.staleText);
+      pendingReset = null;
+    }
+    lastChangeText = raw;
+  }
+  writeTraceLine(JSON.stringify(line));
+}
+
+export function traceTerminalReset(reason: TerminalInputResetReason): void {
+    return;
+  }
+  if (pendingReset) {
+    pendingReset.reason += `+${reason}`;
+    writeTraceLine(
+      JSON.stringify({ t: nativeTerminalPerformanceNow(), reset: reason, merged: true }),
+    );
+    return;
+  }
+  pendingReset = { reason, staleText: lastChangeText };
+  writeTraceLine(
+    JSON.stringify({
+      t: nativeTerminalPerformanceNow(),
+      reset: reason,
+      fieldChars: lastChangeText.length,
+    }),
+  );
+}
+
+
+export function traceTerminalLatency(stage: TerminalLatencyStage, chars: number): void {
+    return;
+  }
+  writeTraceLine(JSON.stringify({ t: nativeTerminalPerformanceNow(), stage, chars }));
+}
