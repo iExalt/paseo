@@ -30,6 +30,7 @@ Arguments marked `?` are optional.
 
 With one host that can open tabs, omit `browserHostId`. With several, pass an ID from `browser_list_hosts`. In Paseo Desktop, search for **Copy browser host name** in the Command Center. The result shows the same name the agent sees. Select it to copy the name. If the selected host is unavailable, list hosts again.
 
+| `click <browser-id> <ref>`                              | Click; accepts `--button left\|right\|middle`, `--double-click`, repeatable `--modifier`.      |
 ## Reading the page
 
 | Tool                 | Arguments                              | Purpose                                                                               |
