@@ -482,6 +482,8 @@ describe("target coalesced behavior", () => {
       await waitForSessionEventQueue();
       await drainStream(canceledRun);
 
+      // A canceled turn didn't finish, so it raises no attention and captures no subject.
+      expect(harness.attentions).toHaveLength(2);
       expect(originalSubject).toEqual({
         turnId: "turn-1",
         text: "original reply",
@@ -524,6 +526,7 @@ describe("target coalesced behavior", () => {
           },
         },
       ]);
+      expect(Object.isFrozen(harness.attentions[2]?.completionSubject)).toBe(true);
       expect(originalSubject).toEqual({
         turnId: "turn-1",
         text: "original reply",
