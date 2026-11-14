@@ -22,6 +22,7 @@ const requests: AgentPermissionRequest[] = [
 class PermissionClient implements PermitClient {
   readonly pending: AgentPermissionRequest[];
   readonly responses = new Map<string, AgentPermissionResponse>();
+  readonly sentRequestIds: string[] = [];
   closed = false;
   private notifyReceived = () => {};
   private readonly confirmations = new Map<
@@ -45,6 +46,7 @@ class PermissionClient implements PermitClient {
     requestId: string,
     response: AgentPermissionResponse,
   ) {
+    this.sentRequestIds.push(requestId);
     this.responses.set(requestId, response);
     this.notifyReceived();
   }
@@ -246,6 +248,27 @@ for (const action of actions) {
       expect(client.pending).toEqual([]);
     });
 
+    it("does not roll back or retry confirmed requests when another batch response is unconfirmed", async () => {
+      const client = new PermissionClient();
+      const command = action.create(async () => client)(
+        agentId,
+        undefined,
+        { ...options, all: true },
+        new Command(),
+      );
+      const failure = expect(command).rejects.toMatchObject({
+        code: "PERMISSION_RESPONSE_UNCONFIRMED",
+        message: expect.stringContaining(requests[1].id),
+      });
+      await client.waitForResponses(2);
+      client.confirm(requests[0].id);
+      client.fail(requests[1].id, new Error("Acknowledgement lost"));
+      await failure;
+      expect(client.pending).toEqual([requests[1]]);
+      expect(client.sentRequestIds).toEqual(requests.map((request) => request.id));
+      expect(client.closed).toBe(true);
+    });
+
     it("rejects an unconfirmed response without returning success", async () => {
       const client = new PermissionClient();
       const command = action.create(async () => client)(
@@ -267,3 +290,32 @@ for (const action of actions) {
     });
   });
 }
+
+describe("permit request selection at command entry", () => {
+  it("allows every pending request when both request ID and --all are omitted", async () => {
+    const client = new PermissionClient();
+    const command = createAllowCommand(async () => client)(
+      agentId,
+      undefined,
+      options,
+      new Command(),
+    );
+    await client.waitForResponses(2);
+    for (const request of requests) client.confirm(request.id);
+    expect((await command).data.map((item) => item.requestId)).toEqual(
+      requests.map((request) => request.id),
+    );
+    expect(client.pending).toEqual([]);
+  });
+
+  it("requires a request ID or --all for denial before connecting", async () => {
+    let connected = false;
+    await expect(
+      createDenyCommand(async () => {
+        connected = true;
+        return new PermissionClient();
+      })(agentId, undefined, options, new Command()),
+    ).rejects.toMatchObject({ code: "MISSING_ARGUMENT" });
+    expect(connected).toBe(false);
+  });
+});
