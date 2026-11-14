@@ -1,3 +1,4 @@
+import { assertRemoteProfileFeatures } from "@getpaseo/protocol/agent-profile";
 import { z } from "zod";
 import { PersistedConfigSchema, type PersistedConfig } from "./persisted-config.js";
 import { ProviderOverridesSchema } from "@getpaseo/protocol/provider-config";
@@ -88,22 +89,9 @@ export function editRemoteConfig(
   if (root === "providers") ProviderOverridesSchema.parse(checked.agents?.providers ?? {});
   if (root === "agentProfiles")
     for (const profile of checked.daemon?.agentProfiles ?? [])
-      validateProfileFeatures(profile.featureValues);
+      assertRemoteProfileFeatures(profile.featureValues);
 
   return { persisted: checked as PersistedConfig, root };
-}
-
-function validateProfileFeatures(value: unknown): void {
-  if (!value || typeof value !== "object") return;
-  for (const [key, child] of Object.entries(value)) {
-    if (
-      ["agentTools", "envOverrides", "hostnames", "cors", "trustedProxies", "relay", "mcp"].some(
-        (blocked) => key.split(".").includes(blocked),
-      )
-    )
-      throw new Error(`Profile feature is local/UI only: ${key}`);
-    validateProfileFeatures(child);
-  }
 }
 
 function schemaAtPath(parts: string[]): z.ZodType {

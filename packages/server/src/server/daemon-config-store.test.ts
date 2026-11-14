@@ -1240,7 +1240,9 @@ describe("DaemonConfigStore reload", () => {
     await expect(store.editRemote("features", { value: {} })).rejects.toThrow();
     await expect(
       store.editRemote("agentProfiles", {
-        value: [{ id: "x", name: "x", provider: "codex", featureValues: { agentTools: true } }],
+        value: [
+          { id: "x", name: "x", provider: "codex", featureValues: { "agentTools.enabled": true } },
+        ],
       }),
     ).rejects.toThrow();
     expect(readFileSync(path.join(paseoHome, "config.json"), "utf8")).toBe(before);
@@ -1268,6 +1270,21 @@ describe("DaemonConfigStore reload", () => {
     await store.editRemote("usage.enabled", { value: false });
     expect(loadPersistedConfig(paseoHome).daemon?.usage?.enabled).toBe(false);
     expect(store.get().usage?.enabled).toBe(true);
+  });
+
+  test("profile comparison rejects stale concurrent writers without losing the first edit", async () => {
+    const { store, paseoHome } = createReloadableStore();
+    const profile = { id: "a", name: "A", provider: "codex" };
+    const results = await Promise.allSettled([
+      store.editRemote("agentProfiles", { value: [profile], expectedValue: [] }),
+      store.editRemote("agentProfiles", {
+        value: [{ id: "b", name: "B", provider: "codex" }],
+        expectedValue: [],
+      }),
+    ]);
+    expect(results.map((result) => result.status)).toEqual(["fulfilled", "rejected"]);
+    expect(store.get().agentProfiles).toEqual([profile]);
+    expect(loadPersistedConfig(paseoHome).daemon?.agentProfiles).toEqual([profile]);
   });
 
   test("remote provider replacement removes omitted fields and serial edits preserve siblings", async () => {

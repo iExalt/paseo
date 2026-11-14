@@ -1813,6 +1813,7 @@ export const DaemonConfigEditRequestSchema = z.object({
   path: z.string(),
   value: z.unknown().optional(),
   unset: z.boolean().optional(),
+  expectedValue: z.unknown().optional(),
 });
 export const DaemonConfigEditResponseSchema = z.object({
   type: z.literal("daemon.config.edit.response"),
@@ -4020,6 +4021,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(daemonConfigReload): added in v0.4.0, remove gate after 2027-02-14.
         daemonConfigReload: z.boolean().optional(),
         daemonConfigEdit: z.boolean().optional(),
+        daemonConfigCompare: z.boolean().optional(),
         // COMPAT(speechSettings): added in v0.12.0, remove gate after 2027-04-18.
         speechSettings: z.boolean().optional(),
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.

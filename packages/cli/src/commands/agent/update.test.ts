@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { applySavedProfile } from "./update.js";
+import { describe, expect, it, vi } from "vitest";
 import { DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
 import type { AgentProviderNotice } from "@getpaseo/protocol/agent-types";
 import { parseFeatureValues } from "../../utils/feature-values.js";
@@ -283,5 +285,67 @@ describe("toAgentUpdateResult", () => {
       notice: "Mode notice",
       notices,
     });
+  });
+});
+
+describe("saved profile application", () => {
+  function client() {
+    const adapter = new DaemonClient({
+      url: "ws://unused",
+      clientId: "profile-apply",
+      reconnect: { enabled: false },
+    });
+    vi.spyOn(adapter, "getLastServerInfoMessage").mockReturnValue({
+      features: { profileList: true, agentConfigApply: true },
+    } as never);
+    vi.spyOn(adapter, "listAgentProfiles").mockResolvedValue({
+      requestId: "r",
+      profiles: [
+        {
+          id: "a",
+          name: "A",
+          provider: "codex",
+          model: "saved",
+          thinkingOptionId: "high",
+          featureValues: { fast: true },
+        },
+      ],
+    });
+    const apply = vi.spyOn(adapter, "applyAgentConfig").mockResolvedValue(null);
+    const metadata = vi.spyOn(adapter, "updateAgent").mockResolvedValue();
+    return { adapter, apply, metadata };
+  }
+  it("sends one config request and lets explicit null overrides win", async () => {
+    const { adapter, apply } = client();
+    await applySavedProfile(adapter, "agent", "codex", "a", {
+      modelId: null,
+      thinkingOptionId: null,
+      features: { fast: false },
+    });
+    expect(apply).toHaveBeenCalledExactlyOnceWith("agent", {
+      modelId: null,
+      thinkingOptionId: null,
+      featureValues: { fast: false },
+    });
+  });
+  it("rejects provider mismatch before config or metadata mutation", async () => {
+    const { adapter, apply, metadata } = client();
+    await expect(
+      applySavedProfile(adapter, "agent", "claude", "a", { metadata: { name: "new" } }),
+    ).rejects.toThrow("does not match");
+    expect(apply).not.toHaveBeenCalled();
+    expect(metadata).not.toHaveBeenCalled();
+  });
+  it("warns that provider failure may leave partial settings and skips metadata", async () => {
+    const { adapter, apply, metadata } = client();
+    apply.mockRejectedValueOnce(new Error("provider rejected mode"));
+    await expect(
+      applySavedProfile(adapter, "agent", "codex", "a", { metadata: { name: "new" } }),
+    ).rejects.toMatchObject({
+      code: "UPDATE_FAILED",
+      details:
+        "Earlier accepted profile settings may remain applied; inspect the agent before retrying.",
+    });
+    expect(metadata).not.toHaveBeenCalled();
   });
 });

@@ -1,3 +1,4 @@
+import { readAgentProfile, profileConfig } from "../../utils/agent-profile.js";
 import type { Command } from "commander";
 import type { AgentProviderNotice } from "@getpaseo/protocol/agent-types";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
@@ -38,6 +39,7 @@ export const updateSchema: OutputSchema<AgentUpdateResult> = {
 };
 
 export interface AgentUpdateOptions extends CommandOptions {
+  profile?: string;
   name?: string;
   label?: string[];
   mode?: string;
@@ -328,7 +330,7 @@ export function parseAgentChanges(options: AgentUpdateOptions): AgentChanges {
   }
   if (Object.keys(features).length > 0) changes.features = features;
   if (hasMetadataUpdates) changes.metadata = metadata;
-  if (Object.keys(changes).length === 0) {
+  if (Object.keys(changes).length === 0 && !options.profile) {
     throw {
       code: "NO_CHANGES_PROVIDED",
       message: "Nothing to update",
@@ -387,7 +389,15 @@ export async function runUpdateCommand(
     }
     const agentId = fetchResult.agent.id;
 
-    const appliedChanges = await applyAgentChanges(client, agentId, changes);
+    const appliedChanges = options.profile
+      ? await applySavedProfile(
+          client,
+          agentId,
+          fetchResult.agent.provider,
+          options.profile,
+          changes,
+        )
+      : await applyAgentChanges(client, agentId, changes);
 
     const updatedResult = await client.fetchAgent({ agentId });
     if (!updatedResult) {
@@ -416,4 +426,45 @@ export async function runUpdateCommand(
     };
     throw error;
   }
+}
+
+export async function applySavedProfile(
+  client: import("@getpaseo/client/internal/daemon-client").DaemonClient,
+  agentId: string,
+  provider: string,
+  profileId: string,
+  changes: AgentChanges,
+): Promise<AppliedAgentChanges> {
+  const profile = await readAgentProfile(client, profileId);
+  if (profile.provider !== provider)
+    throw new Error("Profile provider does not match the running agent");
+  if (client.getLastServerInfoMessage()?.features?.agentConfigApply !== true)
+    throw new Error("Update the host to apply saved profiles");
+  const config = {
+    ...profileConfig(profile),
+    ...(changes.modelId !== undefined ? { modelId: changes.modelId } : {}),
+    ...(changes.modeId !== undefined ? { modeId: changes.modeId } : {}),
+    ...(changes.thinkingOptionId !== undefined
+      ? { thinkingOptionId: changes.thinkingOptionId }
+      : {}),
+    featureValues: { ...profile.featureValues, ...changes.features },
+  };
+  let notice: AgentProviderNotice | null;
+  try {
+    notice = await client.applyAgentConfig(agentId, config);
+  } catch (error) {
+    throw {
+      code: "UPDATE_FAILED",
+      message: error instanceof Error ? error.message : String(error),
+      details:
+        "Earlier accepted profile settings may remain applied; inspect the agent before retrying.",
+    };
+  }
+  const metadata = changes.metadata
+    ? await applyAgentChanges(client, agentId, { metadata: changes.metadata })
+    : { notice: null, notices: [] };
+  return {
+    notice: notice ?? metadata.notice,
+    notices: [...(notice ? [notice] : []), ...metadata.notices],
+  };
 }

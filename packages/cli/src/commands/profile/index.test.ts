@@ -1,8 +1,12 @@
+import { mutateProfile } from "./mutate.js";
 import { runSkillsCommand, createSkillsCommand } from "../skills/index.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
-import { ServerInfoStatusPayloadSchema } from "@getpaseo/protocol/messages";
+import {
+  MutableDaemonConfigSchema,
+  ServerInfoStatusPayloadSchema,
+} from "@getpaseo/protocol/messages";
 import { connectToDaemon } from "../../utils/client.js";
 import { runProfileLsCommand } from "./index.js";
 
@@ -229,4 +233,64 @@ it("skills rejects ambiguous or empty selections before connection", async () =>
       }),
     ).rejects.toMatchObject({ code: "INVALID_SELECTION" });
   }
+});
+
+describe("profile mutations", () => {
+  beforeEach(() => vi.clearAllMocks());
+  it("creates a full profile with conditional array replacement and preserves presentation fields", async () => {
+    const { client } = createClient();
+    vi.mocked(client.getLastServerInfoMessage).mockReturnValue(
+      ServerInfoStatusPayloadSchema.parse({
+        status: "server_info",
+        serverId: "s",
+        features: { daemonConfigCompare: true },
+      }),
+    );
+    const edit = vi
+      .spyOn(client, "editDaemonConfig")
+      .mockResolvedValue({ requestId: "w", config: MutableDaemonConfigSchema.parse({}) });
+    const profile = {
+      id: "a",
+      name: "A",
+      provider: "codex",
+      icon: "code",
+      color: "blue",
+      featureValues: { fast: true },
+    };
+    const result = await mutateProfile("add", undefined, JSON.stringify(profile), { daemonTarget });
+    expect(result.data.profile).toEqual(profile);
+    expect(edit).toHaveBeenCalledWith("agentProfiles", { expectedValue: [], value: [profile] });
+  });
+  it("rejects duplicate IDs, changed IDs and excluded feature values before writing", async () => {
+    for (const [action, id, raw] of [
+      ["add", undefined, '{"id":"a","name":"A","provider":"codex"}'],
+      ["update", "a", '{"id":"other"}'],
+      ["update", "a", '{"featureValues":{"relay.enabled":true}}'],
+    ] as const) {
+      const { client, listProfiles } = createClient();
+      vi.mocked(client.getLastServerInfoMessage).mockReturnValue(
+        ServerInfoStatusPayloadSchema.parse({
+          status: "server_info",
+          serverId: "s",
+          features: { daemonConfigCompare: true },
+        }),
+      );
+      listProfiles.mockResolvedValue({
+        requestId: "r",
+        profiles: [{ id: "a", name: "A", provider: "codex" }],
+      });
+      const edit = vi.spyOn(client, "editDaemonConfig");
+      await expect(mutateProfile(action, id, raw, { daemonTarget })).rejects.toThrow();
+      expect(edit).not.toHaveBeenCalled();
+    }
+  });
+  it("rejects hosts without conditional writes before listing or editing", async () => {
+    const { client, listProfiles } = createClient();
+    const edit = vi.spyOn(client, "editDaemonConfig");
+    await expect(mutateProfile("rm", "a", undefined, { daemonTarget })).rejects.toThrow(
+      "Update the host",
+    );
+    expect(listProfiles).not.toHaveBeenCalled();
+    expect(edit).not.toHaveBeenCalled();
+  });
 });
