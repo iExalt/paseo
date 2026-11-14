@@ -28,6 +28,7 @@ import { useNativeReadingPosition } from "./use-native-reading-position";
 import { NativeRowGeometryContext, NativeStreamCell } from "./native-stream-cell";
 import { shouldAnimateNativeScrollToBottom } from "./native-scroll-animation";
 import { useRevisedHistoryRows } from "./history-row-revision";
+import { ChatFindRowFrame } from "./chat-find/row-frame";
 import { useBottomAnchorController } from "./bottom-anchor-controller";
 import { useScrollKeyboardDismiss } from "./scroll-keyboard-dismiss/use-scroll-keyboard-dismiss";
 import type { StreamRenderInput, StreamStrategy, StreamViewportHandle } from "./strategy";
@@ -409,7 +410,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
       }
     };
   }, [agentId, bottomAnchorController, markNativeViewportSettling, readingPosition, viewportRef]);
-  }, [agentId, bottomAnchorController, markNativeViewportSettling, viewportRef]);
 
   const isScrollEventNearBottom = useStableEvent(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -577,6 +577,11 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
   const renderItem = useStableEvent(
     ({ item, index }: ListRenderItemInfo<StreamItem>): ReactElement | null => {
       const rendered = renderHistoryMountedRow(item, index, historyItems);
+      if (rendered && (item.kind === "user_message" || item.kind === "assistant_message")) {
+        return (
+          <ChatFindRowFrame messageId={getStreamItemMessageId(item)}>{rendered}</ChatFindRowFrame>
+        );
+      }
       return (rendered ?? null) as ReactElement | null;
     },
   );
