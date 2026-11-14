@@ -6,6 +6,7 @@ import path from "node:path";
 import { tmpdir } from "node:os";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it } from "vitest";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { scaffoldPluginDirectory } from "./scaffold.js";
 
 const directories: string[] = [];
@@ -106,7 +107,7 @@ describe("plugin scaffold", () => {
           id: "hello-plugin",
           $comment: expect.stringContaining('"icon": "assets/icon.png"'),
           media: [],
-          requirements: { paseo: `>=${cliPackageJson.version}` },
+          requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
         },
       );
       expect(JSON.parse(await readFile(path.join(directory, "package.json"), "utf8"))).toEqual({
