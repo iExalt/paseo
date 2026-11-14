@@ -6,6 +6,7 @@ import type { AgentManager } from "./agent/agent-manager.js";
 import type { AgentStorage, StoredAgentRecord } from "./agent/agent-storage.js";
 import type { WorkspaceGitService } from "./workspace-git-service.js";
 import type { ForgeService } from "../services/forge-service.js";
+import { withWorktreePathLock } from "../utils/worktree-path-lock.js";
 import {
   deletePaseoWorktree,
   isPaseoOwnedWorktreeCwd,
@@ -476,41 +477,45 @@ async function maybeRemoveDirectory(
     throw error;
   }
 
-  const remainingActive = await dependencies.listActiveWorkspaces();
-  if (
-    !(await isDirectoryUnreferenced(
-      remainingActive,
-      backing.path,
-      new Set(archivedWorkspaceIds),
-      dependencies,
-    ))
-  ) {
-    return { removedDirectory: false };
-  }
+  // From the "unreferenced?" check through the delete: a workspace created on this directory
+  // meanwhile would otherwise be left active on a deleted path.
+  return withWorktreePathLock(backing.path, async () => {
+    const remainingActive = await dependencies.listActiveWorkspaces();
+    if (
+      !(await isDirectoryUnreferenced(
+        remainingActive,
+        backing.path,
+        new Set(archivedWorkspaceIds),
+        dependencies,
+      ))
+    ) {
+      return { removedDirectory: false };
+    }
 
-  // Last chance to keep the directory. Teardown commands already ran, so a cancel here restores
-  // a workspace whose teardown hooks fired; that beats deleting what the user asked to keep.
-  request.checkpoint();
-  try {
-    await deletePaseoWorktree({
-      cwd: backing.mainRepoRoot,
-      worktreePath: backing.path,
-      teardownCwds: [],
-      worktreesRoot: backing.paseoWorktreesRoot ?? undefined,
-      paseoHome: dependencies.paseoHome,
-      worktreesBaseRoot: dependencies.paseoWorktreesBaseRoot,
-      registryProven: backing.registryProven,
-    });
-    dependencies.workspaceGitService.invalidateWorktrees();
-    dependencies.github.invalidate({ cwd: backing.path });
-    return { removedDirectory: true };
-  } catch (error) {
-    dependencies.sessionLogger?.warn(
-      { err: error, targetPath: backing.path, requestId: request.requestId },
-      "Worktree disk removal failed during archive; workspace already archived",
-    );
-    return { removedDirectory: false };
-  }
+    // Last chance to keep the directory. Teardown commands already ran, so a cancel here restores
+    // a workspace whose teardown hooks fired; that beats deleting what the user asked to keep.
+    request.checkpoint();
+    try {
+      await deletePaseoWorktree({
+        cwd: backing.mainRepoRoot,
+        worktreePath: backing.path,
+        teardownCwds: [],
+        worktreesRoot: backing.paseoWorktreesRoot ?? undefined,
+        paseoHome: dependencies.paseoHome,
+        worktreesBaseRoot: dependencies.paseoWorktreesBaseRoot,
+        registryProven: backing.registryProven,
+      });
+      dependencies.workspaceGitService.invalidateWorktrees();
+      dependencies.github.invalidate({ cwd: backing.path });
+      return { removedDirectory: true };
+    } catch (error) {
+      dependencies.sessionLogger?.warn(
+        { err: error, targetPath: backing.path, requestId: request.requestId },
+        "Worktree disk removal failed during archive; workspace already archived",
+      );
+      return { removedDirectory: false };
+    }
+  });
 }
 
 async function filterAllowedTeardownTargets(
