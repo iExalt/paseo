@@ -1755,6 +1755,7 @@ export class OmpAgentSession implements AgentSession {
       const commands = mapOmpAvailableCommandsUpdate(event);
       if (commands) {
         this.commandCache = commands;
+        this.emit({ type: "commands_changed", provider: this.provider });
       } else {
         this.logger.debug({ event }, "Dropped malformed OMP command update event");
       }

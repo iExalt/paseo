@@ -2723,6 +2723,13 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     }
   }
 
+  canResumeRuntime(): boolean {
+    return (
+      this.agentCapabilities?.loadSession === true ||
+      Boolean(this.agentCapabilities?.sessionCapabilities?.resume)
+    );
+  }
+
   async canStopRuntime(): Promise<boolean> {
     return (
       this.activeForegroundTurnId === null &&
@@ -2920,9 +2927,10 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       return;
     }
 
+    this.cachedCommands = commands;
     if (commands.length > 0) {
       this.commandsUpdatedAt = Date.now();
-      this.cachedCommands = commands;
+      this.pushEvent({ type: "commands_changed", provider: this.provider });
       // A non-empty batch may be followed by more. Let the quiet window decide
       // when the inventory is complete rather than settling here; an empty
       // batch is the provider saying it has nothing, which must still unblock
@@ -2930,6 +2938,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       return;
     }
     this.settleCommandsReady();
+    this.pushEvent({ type: "commands_changed", provider: this.provider });
   }
 
   async readTextFile(params: ReadTextFileRequest): Promise<{ content: string }> {
@@ -3325,6 +3334,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
         if (update.availableCommands.length === 0) {
           this.settleCommandsReady();
         }
+        pendingUserEvents.push({ type: "commands_changed", provider: this.provider });
         return pendingUserEvents;
       default:
         return pendingUserEvents;
