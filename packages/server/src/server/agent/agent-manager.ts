@@ -440,14 +440,8 @@ export interface AgentManagerOptions {
 
 export type ActiveTurnSteerDispatchResult =
   | { status: "inactive" | "steered" }
-  | { status: "busy"; turnId: string }
-  | { status: "replaced"; iterator: AsyncGenerator<AgentStreamEvent> };
-
-function stripSteerOptions(options?: AgentSteerOptions): AgentRunOptions | undefined {
-  if (!options) return undefined;
-  const { clearPendingPermissions: _, ...runOptions } = options;
-  return runOptions;
-}
+  /** The provider could not take the steer; it must wait for this turn to end. */
+  | { status: "busy"; turnId: string };
 
 export interface WaitForAgentOptions {
   signal?: AbortSignal;
@@ -3919,29 +3913,14 @@ export class AgentManager {
     return result;
   }
 
-  async steerOrReplaceActiveTurn(
-    agentId: string,
-    prompt: AgentPromptInput,
-    options?: AgentSteerOptions,
-    promptStart?: ForegroundPromptStart,
-  ): Promise<ActiveTurnSteerDispatchResult> {
-    return this.dispatchSteer(agentId, prompt, options, false, promptStart);
-  }
-
+  /**
+   * Delivers a steer into the active turn, or reports which turn it has to wait for. A steer
+   * never interrupts: the user chose to add to the work in progress, not to stop it.
+   */
   async steerOrDeferBehindActiveTurn(
     agentId: string,
     prompt: AgentPromptInput,
     options?: AgentSteerOptions,
-  ): Promise<ActiveTurnSteerDispatchResult> {
-    return this.dispatchSteer(agentId, prompt, options, true);
-  }
-
-  private async dispatchSteer(
-    agentId: string,
-    prompt: AgentPromptInput,
-    options: AgentSteerOptions | undefined,
-    defer: boolean,
-    promptStart?: ForegroundPromptStart,
   ): Promise<ActiveTurnSteerDispatchResult> {
     // A turn that is still starting has no id to steer yet. Replacing it would drop its
     // prompt, so wait until it is accepted (or fails) and steer the turn it became.
@@ -3974,30 +3953,19 @@ export class AgentManager {
       return { status: "steered" };
     }
 
-    if (defer) {
-      await this.beforeSteerUnavailableFallback?.({ agentId, expectedTurnId });
-      this.assertSteerAdmissionOwnsTurn(agent, expectedTurnId);
-      return { status: "busy", turnId: expectedTurnId };
-    }
-
-    // Providers without autonomous steering keep their existing dispatch behavior. The shared
-    // admission may recognize the turn, but only an accepted steer can own it without replacement.
-    if (agent.activeForegroundTurnId === null && agent.activeTurnId === expectedTurnId) {
-      return { status: "inactive" };
-    }
-
     await this.beforeSteerUnavailableFallback?.({ agentId, expectedTurnId });
     this.assertSteerAdmissionOwnsTurn(agent, expectedTurnId);
-    return {
-      status: "replaced",
-      iterator: await this.replaceAdmittedForegroundTurn(
-        agent,
-        expectedTurnId,
-        prompt,
-        stripSteerOptions(options),
-        promptStart,
-      ),
-    };
+    this.logger.info(
+      {
+        agentId,
+        provider: agent.provider,
+        turnId: expectedTurnId,
+        autonomous: agent.activeForegroundTurnId !== expectedTurnId,
+        reason: agent.session.steerActiveTurn ? "provider_declined" : "provider_cannot_steer",
+      },
+      "agent.steer.deferred_behind_turn",
+    );
+    return { status: "busy", turnId: expectedTurnId };
   }
 
   private assertSteerAdmissionOwnsTurn(agent: ActiveManagedAgent, expectedTurnId: string): void {
@@ -4056,19 +4024,6 @@ export class AgentManager {
     }
   }
 
-  private async replaceAdmittedForegroundTurn(
-    agent: ActiveManagedAgent,
-    expectedTurnId: string,
-    prompt: AgentPromptInput,
-    options?: AgentRunOptions,
-    promptStart?: ForegroundPromptStart,
-  ): Promise<AsyncGenerator<AgentStreamEvent>> {
-    this.assertSteerAdmissionOwnsTurn(agent, expectedTurnId);
-    return this.replaceRunInForegroundLane(agent.id, prompt, options, promptStart, (live) =>
-      this.assertSteerAdmissionOwnsTurn(live, expectedTurnId),
-    );
-  }
-
   /**
    * Cancels the current run and reserves its replacement in one foreground mutation, so a
    * concurrent replacement or Stop cannot land between the cancel and the new run's start.
@@ -4078,12 +4033,11 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options: AgentRunOptions | undefined,
     promptStart?: ForegroundPromptStart,
-    assertAdmission?: (agent: ActiveManagedAgent) => void,
   ): Promise<AsyncGenerator<AgentStreamEvent>> {
     // Replacements queue in arrival order; each one holds the foreground lane only while
     // it cancels and reserves, so Stop is never stuck behind a replacement that is waiting.
     return this.runQueuedMutation(this.replacementMutationTails, agentId, () =>
-      this.replaceRunWhenAdmitted(agentId, prompt, options, promptStart, assertAdmission),
+      this.replaceRunWhenAdmitted(agentId, prompt, options, promptStart),
     );
   }
 
@@ -4092,7 +4046,6 @@ export class AgentManager {
     prompt: AgentPromptInput,
     options: AgentRunOptions | undefined,
     promptStart?: ForegroundPromptStart,
-    assertAdmission?: (agent: ActiveManagedAgent) => void,
   ): Promise<AsyncGenerator<AgentStreamEvent>> {
     let stalledStart: PendingForegroundRun | null = null;
     for (;;) {
@@ -4106,7 +4059,6 @@ export class AgentManager {
         if (starting && starting.start.status !== "started" && starting !== stalledStart) {
           return { status: "starting" as const, run: starting };
         }
-        assertAdmission?.(agent);
         if (!this.hasInFlightRun(agent.id)) {
           return {
             status: "reserved" as const,
