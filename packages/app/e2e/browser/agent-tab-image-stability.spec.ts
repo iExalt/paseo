@@ -42,6 +42,69 @@ const test = base.extend<{ imageWorkspace: SeededWorkspace }>({
   },
 });
 
+test("image panning responds to wheel input and reverses immediately at an edge", async ({
+  imageWorkspace: workspace,
+  page,
+}) => {
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const fixture = await createSmallAssistantPng(workspace, {
+    alt: "Pannable image",
+    fileName: "pannable.png",
+    width: 1200,
+    height: 800,
+  });
+  const agent = await createSettledMockAgent(workspace, "Image pan controls");
+  await emitSettledAssistantImage(workspace.client, agent, fixture);
+  await openAssistantImageTimeline(page, agent);
+  await expectAssistantImageRendered(page, fixture);
+  await page.getByRole("button", { name: fixture.alt, exact: true }).click();
+
+  const canvas = page.getByTestId("attachment-lightbox-canvas");
+  const image = page.getByTestId("attachment-lightbox-image");
+  const bounds = async () => {
+    const box = await image.boundingBox();
+    if (!box) throw new Error("The lightbox image is missing");
+    return box;
+  };
+  await canvas.hover();
+  await page.getByTestId("zoomable-viewport-toolbar").hover();
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await expect.poll(async () => (await bounds()).width).toBeCloseTo(1500, 0);
+  const beforeWheel = await bounds();
+  await canvas.hover();
+  await page.mouse.wheel(20, 10);
+  await expect.poll(async () => (await bounds()).x).toBeCloseTo(beforeWheel.x - 20, 0);
+  await expect.poll(async () => (await bounds()).y).toBeCloseTo(beforeWheel.y - 10, 0);
+  expect((await bounds()).width).toBeCloseTo(beforeWheel.width, 0);
+
+  await page.keyboard.down("Control");
+  try {
+    await page.mouse.wheel(0, -20);
+    await expect.poll(async () => (await bounds()).width).toBeGreaterThan(beforeWheel.width);
+  } finally {
+    await page.keyboard.up("Control");
+  }
+  await page.getByRole("button", { name: "Reset view", exact: true }).click();
+  await expect.poll(async () => (await bounds()).width).toBeCloseTo(1200, 0);
+  await page.getByRole("button", { name: "Zoom in", exact: true }).click();
+  await expect.poll(async () => (await bounds()).width).toBeCloseTo(1500, 0);
+
+  await page.mouse.move(720, 450);
+  await page.mouse.down();
+  try {
+    await page.mouse.move(1120, 750, { steps: 8 });
+    await expect.poll(async () => (await bounds()).x).toBeCloseTo(0, 0);
+    await page.mouse.move(1090, 720, { steps: 3 });
+    await expect.poll(async () => (await bounds()).x).toBeCloseTo(-30, 0);
+    await expect.poll(async () => (await bounds()).y).toBeCloseTo(-30, 0);
+  } finally {
+    await page.mouse.up();
+  }
+  await expect(image).toBeVisible();
+  await page.getByTestId("attachment-lightbox-close").click();
+  await expect(image).toHaveCount(0);
+});
+
 test("assistant images at paths with spaces, Unicode and literal percent escapes render", async ({
   imageWorkspace: workspace,
   page,
@@ -101,9 +164,12 @@ test("opens a timeline image in a zoomable lightbox", async ({
   page,
 }) => {
   test.setTimeout(120_000);
+  await page.setViewportSize({ width: 375, height: 800 });
   const image = await createSmallAssistantPng(workspace, {
     alt: "Zoomable timeline image",
     fileName: "zoomable-timeline-image.png",
+    width: 640,
+    height: 400,
   });
   const imageAgent = await createSettledMockAgent(workspace, "Zoomable image timeline");
   await emitSettledAssistantImage(workspace.client, imageAgent, image);
@@ -114,6 +180,25 @@ test("opens a timeline image in a zoomable lightbox", async ({
   const lightboxImage = page.getByTestId("attachment-lightbox-image");
   const canvas = page.getByTestId("attachment-lightbox-canvas");
   await expect(lightboxImage).toBeVisible();
+  const imageState = () =>
+    lightboxImage.evaluate((element) => {
+      const img = element instanceof HTMLImageElement ? element : element.querySelector("img");
+      return { src: img?.currentSrc ?? null, width: img?.naturalWidth ?? 0 };
+    });
+  await expect(canvas).toBeVisible();
+  await expect.poll(async () => (await imageState()).width).toBe(640);
+  const before = await imageState();
+  expect(before.src).toBeTruthy();
+  await lightboxImage.evaluate((element) => element.setAttribute("data-qa-viewer", "original"));
+  const compactWidth = (await canvas.boundingBox())!.width;
+  for (const width of [550, 1440, 1200, 375, 1440]) {
+    await page.setViewportSize({ width, height: 800 });
+    await expect(lightboxImage).toBeVisible();
+    await expect(lightboxImage).toHaveAttribute("data-qa-viewer", "original");
+    await expect.poll(imageState).toEqual(before);
+    if (width === 1440) expect((await canvas.boundingBox())!.width).toBeGreaterThan(compactWidth);
+  }
+
   await page.getByTestId("zoomable-viewport-toolbar").hover();
   const transformedContent = canvas.locator(":scope > div").first();
   const initialBox = await transformedContent.boundingBox();

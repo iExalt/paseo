@@ -810,6 +810,32 @@ function toBase64ImageOutput(block: unknown): ProviderImageOutput | null {
 // reach coerceToolResultContentToString, which JSON.stringifies the whole array — dumping base64
 // into the tool output. We pull those blocks out to render them as image markdown and leave a
 // "[image]" placeholder so image-only results still produce non-empty output.
+// Claude Code downscales the image a Read returns (long edge 2000 px, sometimes JPEG), so point
+// materialization at the file it read.
+async function renderClaudeToolResultImages({
+  images,
+  toolName,
+  input,
+  observedAt,
+}: {
+  images: ProviderImageOutput[];
+  toolName: string;
+  input: AgentMetadata | null | undefined;
+  observedAt: Date | undefined;
+}): Promise<AgentTimelineItem[]> {
+  const readPath = toolName === "Read" ? input?.file_path : undefined;
+  const originalPath = images.length === 1 && typeof readPath === "string" ? readPath : null;
+  const items: AgentTimelineItem[] = [];
+  for (const image of images) {
+    const item = await renderProviderImageOutputAsAssistantMarkdown(
+      { ...image, originalPath, observedAt },
+      { materialize: materializeProviderImage },
+    );
+    if (item) items.push(item);
+  }
+  return items;
+}
+
 function splitClaudeToolResultImages(content: unknown): {
   images: ProviderImageOutput[];
   text: unknown;
@@ -5814,8 +5840,12 @@ class ClaudeAgentSession implements AgentSession {
   }
 
   private async convertHistoryEntry(entry: ClaudeHistoryEntry): Promise<AgentTimelineItem[]> {
+    const timestamp = normalizeProviderReplayTimestamp(entry.timestamp);
+    const observedAt = timestamp ? new Date(timestamp) : undefined;
     return (
-      await convertClaudeHistoryEntry(entry, (content) => this.mapBlocksToTimeline(content))
+      await convertClaudeHistoryEntry(entry, (content) =>
+        this.mapBlocksToTimeline(content, { observedAt }),
+      )
     ).map(limitAgentTimelineItemContent);
   }
 
@@ -5829,6 +5859,8 @@ class ClaudeAgentSession implements AgentSession {
   // suppressAssistantText only applies when textMessageType is "assistant_message" — user text
   // must never be suppressed since the TimelineAssembler only handles assistant text.
   //
+  // observedAt is the history entry's timestamp; tool-result images skip originals modified later.
+  //
   // NOTE: convertClaudeHistoryEntry uses extractUserMessageText directly instead of this function
   // for user entries. Both paths must produce equivalent user_message items.
   private async mapBlocksToTimeline(
@@ -5837,6 +5869,7 @@ class ClaudeAgentSession implements AgentSession {
       textMessageType?: "assistant_message" | "user_message";
       suppressAssistantText?: boolean;
       suppressReasoning?: boolean;
+      observedAt?: Date;
     },
   ): Promise<AgentTimelineItem[]> {
     const textMessageType = options?.textMessageType ?? "assistant_message";
@@ -5871,6 +5904,7 @@ class ClaudeAgentSession implements AgentSession {
         textMessageType,
         suppressText,
         suppressReasoning,
+        observedAt: options?.observedAt,
       });
     }
 
@@ -5918,6 +5952,7 @@ class ClaudeAgentSession implements AgentSession {
       textMessageType: "assistant_message" | "user_message";
       suppressText: boolean;
       suppressReasoning: boolean;
+      observedAt?: Date;
     },
   ): Promise<void> {
     switch (block.type) {
@@ -5943,7 +5978,7 @@ class ClaudeAgentSession implements AgentSession {
       case "code_execution_tool_result":
       case "bash_code_execution_tool_result":
       case "text_editor_code_execution_tool_result":
-        await this.handleToolResult(block, context.items);
+        await this.handleToolResult(block, context.items, context.observedAt);
         break;
       default:
         break;
@@ -5992,6 +6027,7 @@ class ClaudeAgentSession implements AgentSession {
   private async handleToolResult(
     block: ClaudeContentChunk,
     items: AgentTimelineItem[],
+    observedAt: Date | undefined,
   ): Promise<void> {
     const entry =
       typeof block.tool_use_id === "string" ? this.toolUseCache.get(block.tool_use_id) : undefined;
@@ -6024,14 +6060,14 @@ class ClaudeAgentSession implements AgentSession {
     this.pushToolCall(settledToolCall, items);
     this.rememberSettledSubagentToolCall(settledToolCall, entry);
 
-    for (const image of images) {
-      const imageItem = await renderProviderImageOutputAsAssistantMarkdown(image, {
-        materialize: materializeProviderImage,
-      });
-      if (imageItem) {
-        items.push(imageItem);
-      }
-    }
+    items.push(
+      ...(await renderClaudeToolResultImages({
+        images,
+        toolName,
+        input: entry?.input,
+        observedAt,
+      })),
+    );
 
     if (typeof block.tool_use_id === "string") {
       this.toolUseCache.delete(block.tool_use_id);
