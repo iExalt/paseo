@@ -29,6 +29,12 @@ github-issue:<https-url>, or github-pr:<https-url>. Quote each value; commas sta
 Files upload to the selected host; forge links resolve in the target workspace.
 Durations accept s, m, h, and d, including 2h30m and 7d.
 
+Files: file ls/cat/write/create/rename/duplicate/rm/download/suggest select a host
+root with --workspace or --cwd. rename stays in the parent; duplicate chooses its
+new name on the host. write --input <local-file|-> overwrites with concurrent-edit
+detection; rm acts directly. cat --json returns base64 bytes; download saves to a
+new local file. upload sends to the host attachment store and returns its path.
+
 Host inspection: daemon status --json exposes features, sourceId and desktopManaged;
 add --latency for a bounded round-trip measurement. daemon diagnostics collects the
 host report. daemon logs --tail 100 [-f] reads a local home's log; remote endpoints

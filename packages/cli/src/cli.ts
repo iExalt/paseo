@@ -1,3 +1,4 @@
+import { createFileCommand } from "./commands/file/index.js";
 import { createPrCommand } from "./commands/pr/index.js";
 import { createGitCommand } from "./commands/git/index.js";
 import { createSkillsCommand } from "./commands/skills/index.js";
@@ -71,6 +72,7 @@ export function createCli(): Command {
 
   program.addCommand(createPrCommand());
   program.addCommand(createGitCommand());
+  program.addCommand(createFileCommand());
   program.addCommand(createHostCommand());
   program.addCommand(createPrimeCommand());
 
