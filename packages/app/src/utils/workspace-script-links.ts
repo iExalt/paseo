@@ -70,8 +70,13 @@ function addTarget(
 export function resolveWorkspaceScriptLink(input: {
   script: WorkspaceScriptPayload;
   activeConnection: ActiveConnection | null;
+  /**
+   * Whether this device shares the host's loopback. A phone does not: localhost and
+   * *.localhost name the phone itself there, so those targets are never offered.
+   */
+  reachesHostLoopback: boolean;
 }): ResolvedWorkspaceScriptLink {
-  const { script, activeConnection } = input;
+  const { script, activeConnection, reachesHostLoopback } = input;
   if (script.type !== "service" || script.lifecycle !== "running") {
     return { primary: null, targets: [] };
   }
@@ -88,5 +93,8 @@ export function resolveWorkspaceScriptLink(input: {
   addTarget(targets, "paseo", localProxyUrl);
   addTarget(targets, "direct", buildDirectServiceUrl(activeConnection, script.port));
 
-  return { primary: targets[0] ?? null, targets };
+  const reachable = reachesHostLoopback
+    ? targets
+    : targets.filter((target) => !isLocalOnlyUrl(target.url));
+  return { primary: reachable[0] ?? null, targets: reachable };
 }

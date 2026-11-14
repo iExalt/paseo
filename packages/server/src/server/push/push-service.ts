@@ -21,8 +21,14 @@ interface ExpoPushTicket {
   details?: { error?: string };
 }
 
+/** What Expo said about one notification: a ticket, not proof of delivery. */
+export type PushDeliveryOutcome = { outcome: "accepted" } | { outcome: "failed"; error: string };
+
+type BatchResult = { tickets: ExpoPushTicket[] } | { error: string };
+
 const EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send";
 const MAX_BATCH_SIZE = 100;
+const EXPO_REQUEST_TIMEOUT_MS = 10_000;
 
 /**
  * Service for sending Expo push notifications.
@@ -42,13 +48,6 @@ export class PushService {
       return;
     }
 
-    const messages: ExpoPushMessage[] = tokens.map((token) => ({
-      to: token,
-      title: payload.title,
-      body: payload.body,
-      data: payload.data,
-      sound: "default",
-    }));
 
     // Batch tokens (max 100 per request per Expo limits)
     const batches: ExpoPushMessage[][] = [];
@@ -59,6 +58,23 @@ export class PushService {
     await Promise.all(batches.map((batch) => this.sendBatch(batch)));
   }
 
+  /** Send to one device and report Expo's answer, for a user-requested test. */
+  async sendOne(token: string, payload: PushPayload): Promise<PushDeliveryOutcome> {
+    const message = toExpoMessage(token, payload);
+    const result = await this.postBatch([message]);
+    if ("error" in result) return { outcome: "failed", error: result.error };
+    this.handleTickets([message], result.tickets);
+    const ticket = result.tickets[0];
+    if (ticket?.status === "ok") return { outcome: "accepted" };
+    return {
+      outcome: "failed",
+      error: ticket?.message ?? ticket?.details?.error ?? "Expo returned no ticket",
+    };
+  }
+
+  }
+
+  /** Errors are logged and returned, never thrown. */
   private async sendBatch(messages: ExpoPushMessage[]): Promise<void> {
     try {
       const response = await fetch(EXPO_PUSH_URL, {
@@ -68,6 +84,7 @@ export class PushService {
           Accept: "application/json",
         },
         body: JSON.stringify(messages),
+        // A hung Expo request must not hold a test request open after the app gave up.
       });
 
       if (!response.ok) {
@@ -75,13 +92,14 @@ export class PushService {
           { status: response.status, statusText: response.statusText },
           "Expo push API error",
         );
-        return;
+        return { error: `Expo push API error ${response.status} ${response.statusText}`.trim() };
       }
 
       const result = (await response.json()) as { data: ExpoPushTicket[] };
-      this.handleTickets(messages, result.data);
+      return { tickets: result.data };
     } catch (error) {
       this.logger.error({ err: error }, "Failed to send push notifications");
+      return { error: error instanceof Error ? error.message : String(error) };
     }
   }
 
@@ -106,4 +124,6 @@ export class PushService {
       }
     }
   }
+}
+
 }

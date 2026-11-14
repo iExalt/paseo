@@ -3,6 +3,7 @@ import { gfmTable } from "micromark-extension-gfm-table";
 import { gfmTableFromMarkdown } from "mdast-util-gfm-table";
 import type { Nodes, RootContent } from "mdast";
 import { splitRunsForMatches, splitTextForMatches, type MatchPart } from "@/find-highlight/split";
+
 /** A source range, as offsets into the Markdown text. */
 export interface SourceRange {
   start: number;
@@ -33,6 +34,8 @@ export type MarkdownMatch =
       current: number;
     };
 
+export interface MarkdownMatches {
+  count: number;
   /** By occurrence number, in reading order. */
   matches: MarkdownMatch[];
 }
@@ -56,10 +59,14 @@ function range(node: Nodes): SourceRange | null {
   const start = node.position?.start.offset;
   const end = node.position?.end.offset;
   return start === undefined || end === undefined ? null : { start, end };
+}
+
+/**
  * Maps each character of a text node's value to the source character that spells it.
  * The value is the source minus syntax the reader never sees: backslash escapes,
  * container markers and indentation on continued lines. Entities decode to other
  * characters, so the first character that cannot be found ends the mapping.
+ */
 function valueOffsets(source: string, value: string, start: number, end: number) {
   const offsets: (number | null)[] = [];
   let cursor = start;
@@ -74,10 +81,15 @@ function valueOffsets(source: string, value: string, start: number, end: number)
     cursor += character.length;
   }
   return offsets;
+}
+
+/**
  * The text a reader sees in an inline container, as chat search reads it
  * (`searchableBlocks` in `@getpaseo/protocol/chat-search-text`): text and inline code,
  * line breaks as newlines, never image alt text or raw HTML.
+ */
 function inlineRuns(source: string, nodes: readonly Nodes[], runs: Run[]) {
+  for (const node of nodes) {
     const nodeRange = range(node);
     if (node.type === "text") {
       runs.push({
@@ -96,8 +108,13 @@ function inlineRuns(source: string, nodes: readonly Nodes[], runs: Run[]) {
     } else if (node.type === "break") {
       runs.push({ text: "\n", offsets: [null], span: null });
     } else if (node.type === "image" || node.type === "imageReference" || node.type === "html") {
+      continue;
     } else if ("children" in node) {
       inlineRuns(source, node.children, runs);
+    }
+  }
+}
+
 /** Highlight ranges for one occurrence's pieces, trimmed to what a delimiter can hug. */
 /** A piece of a run that a match covers; `at` is where the piece starts in its run. */
 type Piece = Run & { at: number };
@@ -121,6 +138,8 @@ function markRanges(pieces: readonly Piece[], source: string): SourceRange[] {
     marks.push({ start: escaped ? first - 1 : first, end: last + 1 });
   }
   return marks;
+}
+
 function needsWholeMessage(node: Nodes): boolean {
   if (node.type === "definition" || node.type === "html") return true;
   return "children" in node && node.children.some(needsWholeMessage);
@@ -136,6 +155,7 @@ function lineStart(text: string, offset: number): number {
  * a match may span `**bold**` edges and line breaks but never two blocks. Diagrams
  * draw no text, so they hold no occurrences.
  */
+export function findMarkdownMatches(text: string, pattern: RegExp): MarkdownMatches {
   const matches: MarkdownMatch[] = [];
   const tree = parse(text);
   const children = tree.children;
@@ -171,7 +191,9 @@ function lineStart(text: string, offset: number): number {
             parts,
             current,
           });
+        }
         return;
+      }
       if (node.type === "paragraph" || node.type === "heading" || node.type === "tableCell") {
         const runs: Run[] = [];
         inlineRuns(text, node.children, runs);
@@ -218,10 +240,12 @@ function equalsSigns(text: string): number[] {
         }
       });
       return;
+    }
     if ("children" in node) node.children.forEach(visit);
   };
   visit(parse(text));
   return offsets;
+}
 
 /**
  * The Markdown with `marks` wrapped in highlight delimiters (`==`), for a renderer that

@@ -77,6 +77,7 @@ import { resolveStreamRenderStrategy } from "./strategy-resolver";
 import { createReadingSeqDedupe } from "./reading-anchor";
 import { type StreamSegmentRenderers, type StreamViewportHandle } from "./strategy";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
+import { chatOutlineAvailable } from "@/agent-stream/chat-outline/model";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
@@ -631,7 +632,11 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       timelineEpoch,
       tail: effectiveStreamItems,
       head: effectiveStreamHead,
-      enabled: supportsChatOutline && chatOutlineEnabled,
+      enabled: chatOutlineAvailable({
+        supported: supportsChatOutline,
+        enabled: chatOutlineEnabled,
+        isCompact: isMobile,
+      }),
       viewportRef,
       onJumpError: handleTimelineHistoryLoadError,
       mountedHistoryMessageIds,
@@ -731,6 +736,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             serverId={resolvedServerId}
             agentId={agentId}
             messageId={item.messageId}
+            findItemId={item.id}
             message={item.text}
             sender={item.sender}
             images={item.images}
@@ -789,6 +795,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                   client={client}
                   spacing={layoutItem.assistantSpacing}
                   phase={layoutItem.phase}
+                  findItemId={item.id}
                 />
               )}
             </ChatFindExpansion>
@@ -1205,6 +1212,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       ],
     );
 
+    const findRows = useMemo(
+      () => [...baseRenderModel.history, ...baseRenderModel.segments.liveHead],
+      [baseRenderModel.history, baseRenderModel.segments.liveHead],
+    );
     const findItems = useMemo(
       () => [...effectiveStreamItems, ...(effectiveStreamHead ?? [])],
       [effectiveStreamItems, effectiveStreamHead],
@@ -1215,6 +1226,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         serverId={resolvedServerId}
         epoch={timelineEpoch}
         items={findItems}
+        rows={findRows}
         viewportRef={viewportRef}
         revealLoadedMessage={revealLoadedMessage}
         visibleMessageIds={mountedMessageIds}

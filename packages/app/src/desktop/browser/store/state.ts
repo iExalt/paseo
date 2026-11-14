@@ -169,6 +169,54 @@ export function applyBrowserPatch<S extends BrowserIndexState>(
   };
 }
 
+/** The conventional favicon location for a web page, or null for non-web URLs. */
+export function deriveBrowserFaviconUrl(url: string): string | null {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return null;
+    }
+    return `${parsed.origin}/favicon.ico`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The record patch for a navigation state report from a native WebView. A new URL
+ * drops the previous page's favicon and title (the label falls back to the host);
+ * a report for the same URL keeps the title until the page names itself.
+ */
+export function buildBrowserNavigationPatch(
+  existing: Pick<BrowserRecord, "url" | "faviconUrl"> | null,
+  navigation: {
+    url: string;
+    title: string;
+    canGoBack: boolean;
+    canGoForward: boolean;
+    loading: boolean;
+  },
+): BrowserRecordPatch {
+  const url = normalizeBrowserUrl(navigation.url);
+  const urlChanged = existing === null || existing.url !== url;
+  const reportedTitle = navigation.title.trim();
+  const patch: BrowserRecordPatch = {
+    url,
+    canGoBack: navigation.canGoBack,
+    canGoForward: navigation.canGoForward,
+    isLoading: navigation.loading,
+  };
+  if (urlChanged) {
+    patch.faviconUrl = deriveBrowserFaviconUrl(url);
+    patch.title = "";
+  }
+  // Android reports the URL as the title until the page sets one.
+  if (reportedTitle && reportedTitle !== url) {
+    patch.title = reportedTitle;
+  }
+  return patch;
+}
+
 export function removeBrowserFromIndex<S extends BrowserIndexState>(
   state: S,
   browserId: string,
