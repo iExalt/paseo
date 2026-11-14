@@ -68,10 +68,12 @@ import { NixDesktopAppUpdateRow } from "./nix-desktop-app-update-row";
 import { useNixUpdateStore } from "./nix-updates";
 
 const prior = {
+  releaseTag: "paseo-v0.1.0",
   version: "0.1.0",
   outputPath: "/nix/store/12345678901234567890123456789012-paseo-desktop-0.1.0",
 };
 const candidate = {
+  releaseTag: "paseo-v0.1.1",
   version: "0.1.1",
   outputPath: "/nix/store/23456789012345678901234567890123-paseo-desktop-0.1.1",
 };

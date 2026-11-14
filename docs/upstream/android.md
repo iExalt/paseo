@@ -4,7 +4,27 @@
 
 Controlled by `APP_VARIANT` in `packages/app/app.config.js` (vanilla Expo, no custom Gradle plugin):
 
+| Variant       | App name     | Package ID        |
+| ------------- | ------------ | ----------------- |
+| `production`  | Paseo        | `sh.paseo`        |
+| `development` | Paseo Debug  | `sh.paseo.debug`  |
+| `fork`        | Paseo iExalt | `sh.paseo.iexalt` |
 
+The fork variant keeps the iOS bundle identifier at `sh.paseo`. A fork Android
+build selects `APP_VARIANT=fork` and must set `PASEO_ANDROID_VERSION_CODE` to an
+explicit canonical positive integer from 1 through 2,100,000,000; the fork fails
+configuration if it is missing or invalid. Production and development continue
+deriving their Android version codes from the package version.
+
+The `fork` profile in `packages/app/eas.json` exists for interactive Android
+credential management so EAS resolves the fork application identifier. It sets
+`APP_VARIANT=fork`; the credential command also needs the fork version code and
+Firebase client path/project ID in its process environment. Although declared
+under `build` for the EAS CLI, this profile is solely for interactive credential
+management and is not ready for EAS builds.
+
+Profiles in `packages/app/eas.json`: `development`, `production`,
+`production-apk`, and `fork`.
 
 `development` uses Android `debug`.
 
@@ -157,6 +177,10 @@ Java 25 native-access flag lets Prefab's JNA library load without a warning that
 the current Android Gradle plugin misclassifies as a build error. It does not
 change the machine's Java configuration.
 
+The generated Gradle release build currently uses the debug keystore. The
+fork workflow below replaces that signature in a separate job and verifies the
+approved certificate before publishing its artifact.
+
 The normal camera and notification modules remain included. Push requires a
 Firebase Android client for `sh.paseo.debug`, the matching
 `GOOGLE_SERVICES_FILE_DEBUG` configuration, and FCM credentials in the configured
@@ -173,7 +197,35 @@ key outside the repository and upload it to that Expo project's FCM V1
 credentials for `sh.paseo.debug`. It is not the APK signing key and must never be
 bundled into the app. Preserve `android/app/debug.keystore` when rebuilding an
 installed local APK; use the non-clean prebuild command above.
+
+The `fork` variant has separate Firebase wiring. It requires an absolute
+`GOOGLE_SERVICES_FILE_FORK` path to a decrypted client config and
+`FIREBASE_PROJECT_ID_FORK` set to the expected public Firebase project ID. App
+config rejects missing/unreadable JSON, a project ID mismatch, or a client that
+does not name `sh.paseo.iexalt`. Decrypt the SOPS file to a mode-0600 temporary
+path outside the repository and remove it after the build; see
+[`secrets/firebase/README.md`](../../secrets/firebase/README.md).
+
+Expo project `@iexalt/paseo` is ID `3a777534-569c-47e5-81ad-1a4e47d5127c`.
+Its FCM V1 service-account credential must be assigned to Android app
+`sh.paseo.iexalt` separately from the client config. The service-account key
+must remain server-side and must never be bundled into the app.
+
+## Fork release APK
+
+`.github/workflows/release.yml` builds the fork APK (`APP_VARIANT=fork`, arm64)
+at the release commit. Its version code is `forkAndroidVersionCode` in
+`packages/protocol/src/fork-version.ts`: the package version plus a fixed
+200000 offset that keeps same-certificate installs above legacy code 200008.
+Never derive it from run numbers or release history.
+
+The build job receives only `PASEO_FORK_GOOGLE_SERVICES_JSON`, validated against
+project `paseo-18157` and `sh.paseo.iexalt`. A separate signer job receives only
+`PASEO_FORK_SIGNING_KEY_PKCS8_PEM` and `PASEO_FORK_SIGNING_CERT_PEM`, and fails
+unless the APK's single signer matches `FORK_ANDROID_CERTIFICATE_SHA256`, the
+certificate clients pin. The Firebase Admin SDK key stays server-side for Expo
 FCM V1. See the [release-stable skill](../../.agents/skills/release-stable/SKILL.md) for the release
+procedure.
 
 ## Running on an emulator against a worktree daemon
 
