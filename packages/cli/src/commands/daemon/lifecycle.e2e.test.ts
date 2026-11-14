@@ -849,3 +849,32 @@ test("daemon log follow rejects normalized structured formats before reading", a
     await f.close();
   }
 });
+
+test("host discovery command entrypoints return canonical records from an isolated daemon", async () => {
+  const f = await fixture();
+  const home = f.homes[0]!;
+  try {
+    await f.configure(home, `127.0.0.1:${await port()}`);
+    await f.ok(["daemon", "start", "--home", home, "--timeout", "30"]);
+    const skills = await f.ok(["skills", "status", "--home", home]);
+    expect(skills.available).toEqual(expect.any(Array));
+    const models = await f.ok(["speech", "models", "ls", "--home", home]);
+    expect(models.models).toEqual(expect.any(Array));
+    const catalog = await f.ok(["plugin", "catalog", "--home", home]);
+    expect(catalog.plugins).toEqual(expect.any(Array));
+    const recent = await f.ok([
+      "agent",
+      "import",
+      "--list",
+      "--provider",
+      "codex",
+      "--cwd",
+      f.root,
+      "--home",
+      home,
+    ]);
+    expect(recent.entries).toEqual(expect.any(Array));
+  } finally {
+    await f.close();
+  }
+}, 60_000);

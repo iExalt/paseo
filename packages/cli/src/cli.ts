@@ -1,5 +1,6 @@
 import { createPrCommand } from "./commands/pr/index.js";
 import { createGitCommand } from "./commands/git/index.js";
+import { createSkillsCommand } from "./commands/skills/index.js";
 import { createHostCommand } from "./commands/host/index.js";
 import { pairCommand } from "./commands/daemon/pair.js";
 import { Command } from "commander";
@@ -36,7 +37,11 @@ import { addInspectOptions, runInspectCommand } from "./commands/agent/inspect.j
 import { addWaitOptions, runWaitCommand } from "./commands/agent/wait.js";
 import { addArchiveOptions, runArchiveCommand } from "./commands/agent/archive.js";
 import { addAttachOptions, runAttachCommand } from "./commands/agent/attach.js";
-import { addImportOptions, runImportCommand } from "./commands/agent/import.js";
+import {
+  addImportOptions,
+  runImportCommand,
+  type AgentImportData,
+} from "./commands/agent/import.js";
 import { withOutput } from "./output/index.js";
 import { createCloneCommand } from "./commands/clone.js";
 import { onboardCommand } from "./commands/onboard.js";
@@ -77,7 +82,7 @@ export function createCli(): Command {
   );
 
   addJsonAndDaemonHostOptions(addImportOptions(program.command("import"))).action(
-    withOutput(runImportCommand),
+    withOutput<AgentImportData, [string | undefined]>(runImportCommand),
   );
 
   program.addCommand(createCloneCommand());
@@ -155,6 +160,7 @@ export function createCli(): Command {
 
   // Speech model commands
   program.addCommand(createSpeechCommand());
+  program.addCommand(createSkillsCommand());
 
   // Workspace commands
   program.addCommand(createProjectCommand());

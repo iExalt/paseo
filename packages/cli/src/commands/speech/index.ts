@@ -1,3 +1,4 @@
+import { speechModelsCommand } from "./models.js";
 import { Command } from "commander";
 import { normalizeSpeakText } from "@getpaseo/protocol/speech/speak-text";
 import type {
@@ -33,6 +34,7 @@ export function createSpeechCommand(): Command {
         "Agent (ID, prefix, or full session ID) whose active voice session should speak",
       ),
   ).action(withOutput(runSpeechSpeakCommand));
+  speech.addCommand(speechModelsCommand());
   return speech;
 }
 
