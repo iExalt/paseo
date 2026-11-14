@@ -9,7 +9,8 @@ import type { Readable } from "node:stream";
 import { join } from "node:path";
 import { createDaemonTestContext } from "./test-utils/daemon-test-context.js";
 import { createTestAgentClients } from "./test-utils/fake-agent-client.js";
-import type { AgentPromptInput, AgentStreamEvent } from "@getpaseo/protocol/agent-types";
+import type { AgentPromptInput } from "@getpaseo/protocol/agent-types";
+import type { AgentStreamEvent } from "./agent/agent-sdk-types.js";
 
 interface CliResult {
   exitCode: number | null;
@@ -222,6 +223,100 @@ test("logs --since filters history and live output through the CLI and daemon", 
       ]);
       assert.strictEqual(unsupportedRewind.exitCode, 1, unsupportedRewind.stderr);
       assert.strictEqual(JSON.parse(unsupportedRewind.stderr).error.code, "UNSUPPORTED_FEATURE");
+
+      const nativeParent = await ctx.client.createAgent({
+        provider: "codex",
+        cwd: ctx.daemon.paseoHome,
+        title: "Native parent",
+      });
+      historyEvents.push(
+        {
+          type: "provider_subagent",
+          provider: "codex",
+          event: {
+            type: "upsert",
+            id: "native-child",
+            title: "Native child",
+            status: "completed",
+            parentSubagentId: "native-ancestor",
+          },
+        },
+        {
+          type: "provider_subagent",
+          provider: "codex",
+          event: {
+            type: "timeline",
+            id: "native-child",
+            item: { type: "user_message", text: "CHILD_USER" },
+          },
+        },
+        {
+          type: "provider_subagent",
+          provider: "codex",
+          event: {
+            type: "timeline",
+            id: "native-child",
+            item: {
+              type: "tool_call",
+              callId: "child-tool",
+              name: "Bash",
+              status: "completed",
+              detail: {
+                type: "unknown",
+                input: { nested: true },
+                output: "child output ".repeat(100),
+              },
+              error: null,
+            },
+          },
+        },
+      );
+      await ctx.client.refreshAgent(nativeParent.id);
+      const managedChild = await ctx.client.createAgent({
+        provider: "codex",
+        cwd: ctx.daemon.paseoHome,
+        callerAgentId: nativeParent.id,
+        relationship: "subagent",
+      });
+      const subagents = await logs(["agent", "subagents", nativeParent.id.slice(0, 12), "--json"]);
+      assert.strictEqual(subagents.exitCode, 0, subagents.stderr);
+      const children = JSON.parse(subagents.stdout);
+      assert.deepStrictEqual(
+        children.paseoChildren.map((child: { id: string }) => child.id),
+        [managedChild.id],
+      );
+      assert.strictEqual(children.providerSubagents[0].id, "native-child");
+      assert.strictEqual(children.providerSubagents[0].parentSubagentId, "native-ancestor");
+      const nativePage = await logs([
+        "agent",
+        "subagents",
+        "timeline",
+        nativeParent.id,
+        "native-child",
+        "--json",
+        "--limit",
+        "1",
+      ]);
+      assert.strictEqual(nativePage.exitCode, 0, nativePage.stderr);
+      const nativeRows = JSON.parse(nativePage.stdout);
+      assert.strictEqual(nativeRows.rows.length, 1);
+      assert.strictEqual(nativeRows.rows[0].item.detail.output, "child output ".repeat(100));
+      const nativeBefore = await logs([
+        "agent",
+        "subagents",
+        "timeline",
+        nativeParent.id,
+        "native-child",
+        "--json",
+        "--limit",
+        "1",
+        "--before",
+        `${nativeRows.startCursor.epoch}:${nativeRows.startCursor.seq}`,
+      ]);
+      assert.strictEqual(nativeBefore.exitCode, 0, nativeBefore.stderr);
+      assert.strictEqual(JSON.parse(nativeBefore.stdout).rows[0].item.text, "CHILD_USER");
+      historyEvents.length = 0;
+
       const toolOutput = "complete tool output ".repeat(100);
       await manager.appendTimelineItem(structuredAgent.id, {
         type: "tool_call",

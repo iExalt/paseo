@@ -1,5 +1,7 @@
 import { addRewindOptions, runRewindCommand } from "./rewind.js";
 import type { AgentRunOptions } from "./run.js";
+
+import { createSubagentsCommand } from "./subagents.js";
 import { Command } from "commander";
 import { addAckOptions, runAckCommand } from "./ack.js";
 import { runModeCommand } from "./mode.js";
@@ -32,6 +34,7 @@ import {
 
 export function createAgentCommand(): Command {
   const agent = new Command("agent").description("Manage agents (advanced operations)");
+  agent.addCommand(createSubagentsCommand());
 
   addJsonAndDaemonHostOptions(addAckOptions(agent.command("ack"))).action(
     withOutput(runAckCommand),
