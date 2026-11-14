@@ -1,3 +1,4 @@
+import { getE2EWebBaseURL } from "./web-url";
 import { test as base, expect, type Page } from "@playwright/test";
 import { hideDeveloperToasts } from "./developer-ui.mjs";
 import { startOutdatedDaemon, type OutdatedDaemon } from "./helpers/daemon-update";
@@ -29,7 +30,7 @@ const metroTest = base.extend({
     if (!metroPort) {
       throw new Error("E2E_METRO_PORT not set - globalSetup must run first");
     }
-    await provide(`http://localhost:${metroPort}`);
+    await provide(getE2EWebBaseURL(Number(metroPort)));
   },
 });
 
