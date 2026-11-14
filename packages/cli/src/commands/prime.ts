@@ -46,6 +46,12 @@ Use --limit N and --before epoch:seq from startCursor to read older pages (0 mea
 --full prints complete entries; --search query [--cursor nextCursor] returns locations.
 agent prompts <id> --json returns prompt previews and positions. JSON/full logs do not follow.
 
+Attention: agent ls --attention filters unread agents; --parent <id> lists Paseo
+children (combine with -a -g to search all). Listing JSON includes requiresAttention,
+attentionReason, attentionTimestamp, labels, lastError and updatedAt. Inspect uses
+RequiresAttention, AttentionReason and AttentionTimestamp. agent ack <id...> clears
+attention after resolving all targets; JSON reports agentIds and acknowledgedCount.
+
 Questions: inspect request.input.questions in permit ls --json, then answer with
 permit allow <agent> <req_id> --input '{"answers":{"Question 1":"chosen label or free text"}}'.
 Use every question's header as the key, not its id; values are strings, not Codex
