@@ -23,6 +23,10 @@ import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useAgentStreamTail } from "@/agent-stream/use-agent-stream-tail";
 import { useRetainedSessionSelector } from "@/stores/session-store-hooks/use-retained-session-selector";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
+import {
+  TimelineReadinessMarker,
+  useCountClosedTurns,
+} from "@/agent-stream/timeline-readiness-marker";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { ComposerDock } from "@/composer/dock";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
@@ -1102,6 +1106,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   // The dock lays out fullscreen for the same session the composer edits in.
   const composerEditingSession = useComposerEditingSession("chat");
   const isComposerFullscreen = useComposerFullscreen(composerEditingSession);
+  useCountClosedTurns(serverId, agentId);
   const hasActiveComposer = !agentState.archivedAt && !isArchivingCurrentAgent;
   const parentAgentId = useParentAgentId(serverId, agentId);
   // With a composer the parent is a pill above it; without one, the box takes the composer's place.
@@ -1246,6 +1251,9 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       ) : null}
 
       <TimelineSyncStatus sync={timelineSync} toast={toast} onDismiss={dismiss} />
+      {timelineSync ? (
+        <TimelineReadinessMarker serverId={serverId} agentId={agentId} sync={timelineSync} />
+      ) : null}
     </>
   );
 
