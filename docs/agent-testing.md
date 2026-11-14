@@ -70,8 +70,19 @@ $A open --cold 'paseo://settings/general?addHost=1'
 $A switch clock=frozen notifications=skip
 n=$($A turns <agentId>) || n=0   # unknown (exit 3): no line yet; 0 only if the chat was open since launch
 paseo agent send --no-wait <agentId> "…"; $A wait-turn <agentId> --after "$n"
+$A capture --output /private/run/screen.png --receipt /private/run/capture.json
 $A lock /tmp/t3/LOCK-<name> <owner>; …; $A unlock /tmp/t3/LOCK-<name> <owner>
 ```
+
+`capture` runs `AGENT_ADB exec-out screencap -p`. Use a private directory and fresh file paths; it
+creates both files with mode `0600` and refuses to overwrite. The command streams at most 32 MiB of
+raw output to the PNG file, hashes all bytes it reads, and keeps at most 8 KiB of stderr in the
+receipt. It times out after 20 seconds by default (maximum 120) and terminates the launched process
+or process group. The receipt names that process and its status, including when `AGENT_ADB` is a
+wrapper. A failure keeps the raw bytes and receipt for diagnosis.
+
+The helper checks the PNG signature, IHDR dimensions, chunk CRCs, image data, and terminal IEND. It
+does not decompress the image data.
 
 - `tap`, `type` and `key` send input only while the package has focus, so they never reach the
   launcher, Settings or a permission dialog.
