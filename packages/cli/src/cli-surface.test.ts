@@ -355,3 +355,283 @@ describe("subagent command dispatch", () => {
     });
   });
 });
+
+describe("Git checkout commands", () => {
+  it("registers targeting and explicit destructive confirmation", () => {
+    const git = createCli().commands.find((c) => c.name() === "git")!;
+    expect(git.commands.map((c) => c.name())).toEqual([
+      "status",
+      "diff",
+      "log",
+      "commit",
+      "pull",
+      "push",
+      "refresh",
+      "merge",
+      "discard",
+      "switch",
+      "rename",
+      "stash",
+    ]);
+    expect(git.commands.find((c) => c.name() === "discard")!.helpInformation()).toContain(
+      "--force",
+    );
+    expect(git.commands.find((c) => c.name() === "diff")!.helpInformation()).toContain(
+      "--workspace",
+    );
+  });
+  it("refuses destructive requests before connecting", async () => {
+    const { runGitCommand } = await import("./commands/git/run.js");
+    const connect = vi.fn();
+    await expect(
+      runGitCommand(
+        "discard",
+        [["file"]],
+        { daemonTarget: { kind: "endpoint", host: "remote" } },
+        connect,
+      ),
+    ).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
+    expect(connect).not.toHaveBeenCalled();
+  });
+  it("uses the selected host path and preserves payloads, then closes", async () => {
+    const { runGitCommand } = await import("./commands/git/run.js");
+    const calls: unknown[] = [];
+    const connect = async () => ({
+      checkoutCommit: async (...args: unknown[]) => {
+        calls.push(args);
+        return { success: true, sha: "abc", message: "Generated message", error: null };
+      },
+      close: async () => {
+        calls.push("closed");
+      },
+    });
+    const result = await runGitCommand(
+      "commit",
+      [],
+      { cwd: "/remote/repo", daemonTarget: { kind: "endpoint", host: "remote" } },
+      connect as never,
+    );
+    expect(calls).toEqual([["/remote/repo", { message: undefined, addAll: true }], "closed"]);
+    expect(result.data).toMatchObject({
+      success: true,
+      sha: "abc",
+      message: "Generated message",
+      cwd: "/remote/repo",
+    });
+  });
+  it("reports embedded failure and closes without leaking the local cwd to remote hosts", async () => {
+    const { runGitCommand } = await import("./commands/git/run.js");
+    const close = vi.fn(async () => {});
+    const getCheckoutStatus = vi.fn(async () => ({ error: { message: "failed" } }));
+    const connect = async () => ({ getCheckoutStatus, close });
+    vi.stubEnv("PASEO_WORKSPACE_ID", "");
+    try {
+      await expect(
+        runGitCommand(
+          "status",
+          [],
+          { daemonTarget: { kind: "endpoint", host: "remote" } },
+          connect as never,
+        ),
+      ).rejects.toMatchObject({ code: "MISSING_TARGET" });
+      expect(getCheckoutStatus).not.toHaveBeenCalled();
+      await expect(
+        runGitCommand(
+          "status",
+          [],
+          { cwd: "/remote", daemonTarget: { kind: "endpoint", host: "remote" } },
+          connect as never,
+        ),
+      ).rejects.toMatchObject({ code: "CHECKOUT_OPERATION_FAILED", message: "failed" });
+      expect(close).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+});
+
+describe("Forge checkout commands", () => {
+  it("registers forge-neutral PR commands with host selection", () => {
+    const pr = createCli().commands.find((c) => c.name() === "pr")!;
+    expect(pr.commands.map((c) => c.name())).toEqual([
+      "status",
+      "checks",
+      "check",
+      "timeline",
+      "create",
+      "merge",
+      "auto-merge",
+    ]);
+    expect(pr.commands.find((c) => c.name() === "merge")!.helpInformation()).toContain("--force");
+    expect(pr.commands.find((c) => c.name() === "check")!.helpInformation()).toContain(
+      "--workflow-run-id",
+    );
+  });
+  it.each(["merge", "auto-merge"])(
+    "requires confirmation for %s before connecting",
+    async (operation) => {
+      const { runPrCommand } = await import("./commands/pr/run.js");
+      const connect = vi.fn();
+      await expect(
+        runPrCommand(operation, { daemonTarget: { kind: "endpoint", host: "remote" } }, connect),
+      ).rejects.toMatchObject({ code: "CONFIRMATION_REQUIRED" });
+      expect(connect).not.toHaveBeenCalled();
+    },
+  );
+  it.each([
+    { forge: "github", override: false },
+    { forge: "gitea", override: true },
+    { forge: "gitlab", override: false },
+  ])(
+    "routes $forge check details with adapter-compatible identity",
+    async ({ forge, override }) => {
+      const { runPrCommand } = await import("./commands/pr/run.js");
+      const calls: unknown[] = [];
+      const connect = async () => ({
+        getLastServerInfoMessage: () => ({ features: { forgeCheckDetails: true } }),
+        checkoutPrStatus: async () => ({
+          forge,
+          status: {
+            number: 8,
+            repoOwner: forge === "gitlab" ? "group/subgroup" : "owner",
+            repoName: "repo",
+          },
+          error: null,
+        }),
+        checkoutForgeGetCheckDetails: async (input: unknown) => {
+          if (forge !== "gitlab")
+            expect(input).toMatchObject({ repoOwner: "owner", repoName: "repo" });
+          calls.push(input);
+          return { success: true, details: { forge: "gitea", log: "details" }, error: null };
+        },
+        close: async () => {
+          calls.push("closed");
+        },
+      });
+      const result = await runPrCommand(
+        "check",
+        {
+          cwd: "/repo",
+          ...(forge === "gitea" ? { workflowRunId: "42" } : { checkRunId: "42" }),
+          ...(override ? { number: "7" } : {}),
+          daemonTarget: { kind: "endpoint", host: "remote" },
+        },
+        connect as never,
+      );
+      expect(calls).toEqual([
+        {
+          cwd: "/repo",
+          checkRunId: forge === "gitea" ? undefined : 42,
+          workflowRunId: forge === "gitea" ? 42 : undefined,
+          changeRequestNumber: override ? 7 : 8,
+          ...(forge === "gitlab" ? {} : { repoOwner: "owner", repoName: "repo" }),
+        },
+        "closed",
+      ]);
+      expect(result.data.details).toEqual({ forge: "gitea", log: "details" });
+    },
+  );
+  it("gates auto-merge without falling back and closes", async () => {
+    const { runPrCommand } = await import("./commands/pr/run.js");
+    const calls: string[] = [];
+    const connect = async () => ({
+      getLastServerInfoMessage: () => ({ features: {} }),
+      close: async () => {
+        calls.push("closed");
+      },
+    });
+    await expect(
+      runPrCommand(
+        "auto-merge",
+        { cwd: "/repo", force: true, daemonTarget: { kind: "endpoint", host: "remote" } },
+        connect as never,
+      ),
+    ).rejects.toMatchObject({ code: "DAEMON_UPDATE_REQUIRED" });
+    expect(calls).toEqual(["closed"]);
+  });
+  it("derives current timeline identity and preserves forge facts", async () => {
+    const { runPrCommand } = await import("./commands/pr/run.js");
+    const calls: unknown[] = [];
+    const connect = async () => ({
+      checkoutPrStatus: async () => ({
+        status: { number: 8, repoOwner: "group/subgroup", repoName: "repo" },
+        error: null,
+      }),
+      pullRequestTimeline: async (input: unknown) => {
+        calls.push(input);
+        return { entries: [{ type: "review", body: "review text" }], error: null };
+      },
+      close: async () => {
+        calls.push("closed");
+      },
+    });
+    const result = await runPrCommand(
+      "timeline",
+      { cwd: "/repo", daemonTarget: { kind: "endpoint", host: "remote" } },
+      connect as never,
+    );
+    expect(calls).toEqual([
+      { cwd: "/repo", prNumber: 8, repoOwner: "group/subgroup", repoName: "repo" },
+      "closed",
+    ]);
+    expect(result.data.entries).toEqual([{ type: "review", body: "review text" }]);
+  });
+});
+
+describe("checkout argument safety", () => {
+  it.each([
+    ["git", "commit", "unflagged message"],
+    ["git", "rename", "multi", "word"],
+    ["pr", "merge", "unexpected"],
+  ])("rejects excess args %j before dispatch", async (...args) => {
+    const cli = createCli()
+      .exitOverride()
+      .configureOutput({ writeErr: () => {} });
+    for (const group of cli.commands)
+      for (const command of group.commands)
+        command.exitOverride().configureOutput({ writeErr: () => {} });
+    await expect(cli.parseAsync(args, { from: "user" })).rejects.toMatchObject({
+      code: "commander.excessArguments",
+    });
+  });
+  it("rejects unsupported merge strategy before connecting", async () => {
+    const { runGitCommand } = await import("./commands/git/run.js");
+    const connect = vi.fn();
+    await expect(
+      runGitCommand(
+        "merge",
+        [],
+        {
+          force: true,
+          fromBase: true,
+          strategy: "squash",
+          daemonTarget: { kind: "endpoint", host: "remote" },
+        },
+        connect,
+      ),
+    ).rejects.toMatchObject({ code: "INVALID_OPTIONS" });
+    expect(connect).not.toHaveBeenCalled();
+  });
+  it.each([false, true])("passes stash filtering explicitly: paseoOnly=%s", async (paseoOnly) => {
+    const { runGitCommand } = await import("./commands/git/run.js");
+    const calls: unknown[] = [];
+    const connect = async () => ({
+      stashList: async (...args: unknown[]) => {
+        calls.push(args);
+        return { stashes: [], error: null };
+      },
+      close: async () => {},
+    });
+    await runGitCommand(
+      "stash-ls",
+      [],
+      {
+        cwd: "/repo",
+        ...(paseoOnly ? { paseoOnly } : {}),
+        daemonTarget: { kind: "endpoint", host: "remote" },
+      },
+      connect as never,
+    );
+    expect(calls).toEqual([["/repo", { paseoOnly }]]);
+  });
+});

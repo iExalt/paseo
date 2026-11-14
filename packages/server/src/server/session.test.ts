@@ -5577,7 +5577,7 @@ describe("session pull request timeline handling", () => {
     { prNumber: 0, repoOwner: "getpaseo", repoName: "paseo" },
     { prNumber: -1, repoOwner: "getpaseo", repoName: "paseo" },
     { prNumber: 42, repoOwner: "get paseo", repoName: "paseo" },
-    { prNumber: 42, repoOwner: "getpaseo/cli", repoName: "paseo" },
+    { prNumber: 42, repoOwner: "getpaseo//cli", repoName: "paseo" },
     { prNumber: 42, repoOwner: "get$paseo", repoName: "paseo" },
     { prNumber: 42, repoOwner: "getpaseo", repoName: "pa seo" },
     { prNumber: 42, repoOwner: "getpaseo", repoName: "paseo/app" },

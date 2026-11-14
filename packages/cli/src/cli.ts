@@ -1,3 +1,5 @@
+import { createPrCommand } from "./commands/pr/index.js";
+import { createGitCommand } from "./commands/git/index.js";
 import { createHostCommand } from "./commands/host/index.js";
 import { pairCommand } from "./commands/daemon/pair.js";
 import { Command } from "commander";
@@ -62,6 +64,8 @@ export function createCli(): Command {
     .option("--no-color", "disable colored output");
   addDaemonHostOption(program);
 
+  program.addCommand(createPrCommand());
+  program.addCommand(createGitCommand());
   program.addCommand(createHostCommand());
   program.addCommand(createPrimeCommand());
 

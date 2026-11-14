@@ -109,6 +109,14 @@ Directories: managed terminal create defaults to the caller's scoped directory
 and workspace, even after shell cd. Request --cwd "$PWD" for the shell directory;
 caller restrictions still apply.
 
+Checkout: git and pr commands use the selected host's daemon, with --workspace
+or --cwd pointing to a directory on that host. Remote hosts require an explicit
+target. --cwd overrides an ambient workspace; --cwd and --workspace conflict.
+git merge merges this checkout into base; --from-base reverses the direction.
+Destructive operations require --force. git commit generates a message when
+--message is omitted and stages all changes unless --no-add-all is passed.
+pr check accepts --check-run-id or --workflow-run-id.
+
 Cleanup: archive closes runtimes; running agents still require --force.
 Self-archive or archiving your workspace can terminate the invoking shell before
 it prints a result. Send the handoff first; have an external session perform
