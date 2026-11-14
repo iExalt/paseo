@@ -24,6 +24,33 @@ export function lineAtOffset(
 }
 
 /**
+ * Where a character range sits along its line, in a monospace Text whose lines do not
+ * wrap: its column times the width of a character, read off the widest line. Tabs and
+ * double-width characters put it a little off.
+ */
+export function monospaceRangeX(
+  lines: readonly (TextLine & { width: number })[],
+  start: number,
+  end: number,
+): { x: number; width: number } | null {
+  let lineStart = 0;
+  let column: number | null = null;
+  let charWidth = 0;
+  let widest = -1;
+  for (const line of lines) {
+    if (lineStart <= start) column = start - lineStart;
+    const length = line.text.replace(/\n$/, "").length;
+    if (length > 0 && line.width > widest) {
+      widest = line.width;
+      charWidth = line.width / length;
+    }
+    lineStart += line.text.length;
+  }
+  if (column === null || widest < 0) return null;
+  return { x: column * charWidth, width: (end - start) * charWidth };
+}
+
+/**
  * How far, in window pixels, content must move up so a match sits inside the visible
  * band; negative moves it down, 0 leaves a visible match alone. A match outside the
  * band lands in its middle, clear of controls floating at its edges, such as the
