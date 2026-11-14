@@ -2,7 +2,9 @@ import type { WorkspaceArchiveRestoreRequest } from "../../workspace-archive-ser
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
 import type { PluginLifecycle } from "../../plugins/lifecycle/index.js";
 import { describeHookWorkspace } from "../../plugins/lifecycle/index.js";
+import { stat } from "node:fs/promises";
 import { basename, resolve } from "node:path";
+import { withWorktreePathLock } from "../../../utils/worktree-path-lock.js";
 import type { ProjectCheckoutLitePayload } from "@getpaseo/protocol/messages";
 import type { Logger } from "pino";
 import {
@@ -267,44 +269,57 @@ export function createWorkspaceProvisioningService(deps: {
     },
   ): Promise<PersistedWorkspaceRecord> {
     const normalizedCwd = resolve(cwd);
-    const checkout = await workspaceGitService.getCheckout(normalizedCwd);
-    const project = projectId
-      ? await refreshProjectKind(await requireActiveProject(projectId), normalizedCwd, checkout)
-      : // COMPAT(workspaceCreateMissingProjectId): added in v0.1.107, remove after 2027-01-15.
-        await findOrCreateProjectForDirectory(normalizedCwd);
-    const create = async () => {
-      const baseMetadata =
-        checkout.isGit && checkout.isPaseoOwnedWorktree
-          ? await readPaseoWorktreeMetadata(checkout.worktreeRoot ?? normalizedCwd)
-          : null;
-      const checkoutRoot = checkout.worktreeRoot ?? normalizedCwd;
-      const { untrustedSource: inheritedUntrustedSource } = await resolveCheckoutUntrustedSource(
-        checkoutRoot,
-        baseMetadata?.untrustedSource,
+    const isDirectory = () =>
+      stat(normalizedCwd).then(
+        (info) => info.isDirectory(),
+        () => false,
       );
-      const timestamp = new Date().toISOString();
-      const workspace = createPersistedWorkspaceRecord({
-        workspaceId: context?.workspaceId ?? generateWorkspaceId(),
-        projectId: project.projectId,
-        ...initialWorkspacePlacement({ source: "checkout", cwd: normalizedCwd, checkout }),
-        baseBranch: baseMetadata?.baseRef ?? baseMetadata?.baseRefName ?? null,
-        worktreeManagerPluginId: baseMetadata?.worktreeManagerPluginId ?? null,
-        title: title?.trim() || null,
-        metadata: context?.metadata,
-        ...(inheritedUntrustedSource ? { untrustedSource: inheritedUntrustedSource } : {}),
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        ...(await resolveCreationMetadata(context)),
-      });
-      await workspaceRegistry.upsert(workspace, {
-        expectsInitialAgent: context?.expectsInitialAgent,
-      });
-      emitWorkspaceCreated(workspace);
-      return workspace;
-    };
-    return deps.withCheckoutLock && checkout.isGit && checkout.isPaseoOwnedWorktree
-      ? deps.withCheckoutLock(checkout.worktreeRoot ?? normalizedCwd, create)
-      : create();
+    const existedBeforeLock = await isDirectory();
+    // Serialized with archive's delete of the worktree this directory may live in.
+    return withWorktreePathLock(normalizedCwd, async () => {
+      if (existedBeforeLock && !(await isDirectory())) {
+        throw new Error(`Workspace directory was removed: ${normalizedCwd}`);
+      }
+      const checkout = await workspaceGitService.getCheckout(normalizedCwd);
+      const project = projectId
+        ? await refreshProjectKind(await requireActiveProject(projectId), normalizedCwd, checkout)
+        : // COMPAT(workspaceCreateMissingProjectId): added in v0.1.107, remove after 2027-01-15.
+          await findOrCreateProjectForDirectory(normalizedCwd);
+      const create = async () => {
+        const baseMetadata =
+          checkout.isGit && checkout.isPaseoOwnedWorktree
+            ? await readPaseoWorktreeMetadata(checkout.worktreeRoot ?? normalizedCwd)
+            : null;
+        const checkoutRoot = checkout.worktreeRoot ?? normalizedCwd;
+        const { untrustedSource: inheritedUntrustedSource } = await resolveCheckoutUntrustedSource(
+          checkoutRoot,
+          baseMetadata?.untrustedSource,
+        );
+        const timestamp = new Date().toISOString();
+        const workspace = createPersistedWorkspaceRecord({
+          workspaceId: context?.workspaceId ?? generateWorkspaceId(),
+          projectId: project.projectId,
+          ...initialWorkspacePlacement({ source: "checkout", cwd: normalizedCwd, checkout }),
+          baseBranch: baseMetadata?.baseRef ?? baseMetadata?.baseRefName ?? null,
+          title: title?.trim() || null,
+          metadata: context?.metadata,
+          worktreeManagerPluginId: baseMetadata?.worktreeManagerPluginId ?? null,
+          ...(inheritedUntrustedSource ? { untrustedSource: inheritedUntrustedSource } : {}),
+          createdAt: timestamp,
+          updatedAt: timestamp,
+          ...(await resolveCreationMetadata(context)),
+          notifications: context?.notifications,
+        });
+        await workspaceRegistry.upsert(workspace, {
+          expectsInitialAgent: context?.expectsInitialAgent,
+        });
+        emitWorkspaceCreated(workspace);
+        return workspace;
+      };
+      return deps.withCheckoutLock && checkout.isGit && checkout.isPaseoOwnedWorktree
+        ? deps.withCheckoutLock(checkout.worktreeRoot ?? normalizedCwd, create)
+        : create();
+    });
   }
 
   async function createWorkspaceForWorktree(
