@@ -163,6 +163,7 @@ export interface ProcessTimelineResponseInput {
 }
 
 export interface ProcessTimelineResponseOutput {
+  replaced: boolean;
   commit: "apply" | "discard";
   tail: StreamItem[];
   head: StreamItem[];
@@ -1253,6 +1254,7 @@ export function processTimelineResponse(
   // ------------------------------------------------------------------
   if (payload.error) {
     return {
+      replaced: false,
       commit: "apply",
       tail: currentTail,
       head: currentHead,
@@ -1324,6 +1326,7 @@ export function processTimelineResponse(
   });
   const discard = resumeTailPolicy.kind === "discard";
   let timelineResult: TimelinePathResult;
+  let replaced = false;
   if (discard) {
     timelineResult = {
       tail: currentTail,
@@ -1349,6 +1352,7 @@ export function processTimelineResponse(
       toHydratedEvents,
     });
   } else if (replace || resumeTailPolicy.kind === "replace") {
+    replaced = true;
     const isResumeReplacement = resumeTailPolicy.kind === "replace";
     timelineResult = applyTimelineReplacePath({
       timelineUnits,
@@ -1413,6 +1417,7 @@ export function processTimelineResponse(
   const commit = discard ? "discard" : "apply";
 
   return {
+    replaced,
     commit,
     tail: nextTail,
     head: nextHead,
