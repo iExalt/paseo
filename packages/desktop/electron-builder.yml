@@ -71,13 +71,15 @@ linux:
     - AppImage
     - deb
     - rpm
-    - tar.gz
 deb:
+  compression: gz
   afterInstall: scripts/linux-sandbox/after-install.tpl
 rpm:
+  compression: gzip
   afterInstall: scripts/linux-sandbox/after-install.tpl
 appImage:
-  # A nonempty argument list replaces builder's hardcoded --no-sandbox default.
+  # Replace the desktop entry's --no-sandbox default. AppRun still probes user
+  # namespaces and may select its own --no-sandbox fallback at launch.
   executableArgs: ["--class=Paseo"]
   # Keep the AppImage filename stable across versions (no ${version}) so
   # electron-updater overwrites the file in place instead of renaming it to a new
@@ -93,10 +95,6 @@ win:
       to: bin/paseo.cmd
   target:
     - target: nsis
-      arch:
-        - x64
-        - arm64
-    - target: zip
       arch:
         - x64
         - arm64

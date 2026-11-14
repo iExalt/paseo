@@ -5,6 +5,11 @@ import { lstat, mkdir, mkdtemp, readFile, readdir, rename, rm, writeFile } from 
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
+  compareForkVersions,
+  forkReleaseTag,
+  forkVersionFromTag,
+} from "../packages/protocol/src/fork-version.ts";
+import {
   validateForkReleaseManifest,
   FORK_RELEASE_LINEAGE,
 } from "../packages/protocol/src/release-manifest-v2.ts";
@@ -589,6 +594,7 @@ function productionAdapters() {
 function summary(target) {
   if (!target || target.lineage === "legacy-v1") return null;
   return {
+    releaseTag: forkReleaseTag(target.version),
     version: target.version,
     outputPath: target.outputPath,
   };
