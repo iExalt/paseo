@@ -5171,6 +5171,48 @@ describe("timeline response publication ownership", () => {
     },
   );
 
+  it("only confirms a notification receipt for the request that still owns publication", async () => {
+    const { host, client, store, owner } = await setup();
+    const receipt = {
+      serverId: host.serverId,
+      agentId: "target",
+      tapId: "current-tap",
+      preview: {
+        v: 1 as const,
+        kind: "permission" as const,
+        requestId: "permission",
+        text: "current receipt",
+        truncated: false,
+      },
+    };
+    useNotificationReceipt.setState({ receipt });
+    const held = createDeferred<TimelineResponsePayload>();
+    client.fetchAgentTimeline.mockReturnValueOnce(held.promise);
+    let current = true;
+    const request = {
+      direction: "after" as const,
+      projection: "projected" as const,
+      cursor: { epoch: "epoch-1", seq: 10 },
+    };
+    const pending = store.fetchAgentTimeline(host.serverId, "target", request, () => current);
+    const outcome = pending.catch((error: unknown) => error);
+    current = false;
+    const response = timelinePage({ direction: "after", error: null, hasNewer: false });
+    held.resolve(response);
+    const result = await outcome;
+    expect(useNotificationReceipt.getState().receipt).toBe(receipt);
+    expect(useNotificationReceipt.getState().receipt?.synchronized).not.toBe(true);
+    expect(result).toBeInstanceOf(TimelineRequestSupersededError);
+    current = true;
+    client.fetchAgentTimeline.mockResolvedValueOnce(response);
+    await store.fetchAgentTimeline(host.serverId, "target", request, () => current);
+    expect(useNotificationReceipt.getState().receipt).toEqual({ ...receipt, synchronized: true });
+    useNotificationReceipt.setState({ receipt: null });
+    owner.dispose();
+    store.syncHosts([]);
+    useSessionStore.getState().clearSession(host.serverId);
+  });
+
   it("rejects a tail overtaken by live progress and permits a fetch from the current cursor", async () => {
     const { host, client, store, owner } = await setup();
     const held = createDeferred<TimelineResponsePayload>();
