@@ -2076,6 +2076,8 @@ export const ja: TranslationResources = {
     output: "出力",
   },
   turnSummary: {
+    messages: { one: "{{count}}件のメッセージを作成", other: "{{count}}件のメッセージを作成" },
+    agentMessage: "エージェントメッセージ",
     details: "ターンの詳細を表示",
     sentBy: "{{name}} から送信",
     showMore: "もっと見る",
@@ -2099,6 +2101,7 @@ export const ja: TranslationResources = {
       one: "{{count}}回検索",
       other: "{{count}}回検索",
     },
+    sentMessages: { one: "{{count}}件のメッセージを送信", other: "{{count}}件のメッセージを送信" },
     otherTools: {
       one: "その他のツールを{{count}}回使用",
       other: "その他のツールを{{count}}回使用",

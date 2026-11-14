@@ -2089,6 +2089,8 @@ export const ptBR: TranslationResources = {
     output: "Saída",
   },
   turnSummary: {
+    messages: { one: "escreveu {{count}} mensagem", other: "escreveu {{count}} mensagens" },
+    agentMessage: "Mensagem de agente",
     details: "Ver detalhes do turno",
     sentBy: "Enviado por {{name}}",
     showMore: "Mostrar mais",
@@ -2112,6 +2114,7 @@ export const ptBR: TranslationResources = {
       one: "pesquisou {{count}} vez",
       other: "pesquisou {{count}} vezes",
     },
+    sentMessages: { one: "enviou {{count}} mensagem", other: "enviou {{count}} mensagens" },
     otherTools: {
       one: "usou {{count}} outra ferramenta",
       other: "usou {{count}} outras ferramentas",

@@ -2089,6 +2089,8 @@ export const ru: TranslationResources = {
     output: "Выходные данные",
   },
   turnSummary: {
+    messages: { one: "написано {{count}} сообщение", other: "написано сообщений: {{count}}" },
+    agentMessage: "Сообщение агента",
     details: "Показать подробности хода",
     sentBy: "Отправлено агентом {{name}}",
     showMore: "Показать больше",
@@ -2111,6 +2113,10 @@ export const ru: TranslationResources = {
     searches: {
       one: "выполнен {{count}} поиск",
       other: "выполнены поисковые запросы ({{count}})",
+    },
+    sentMessages: {
+      one: "отправлено {{count}} сообщение",
+      other: "отправлено {{count}} сообщений",
     },
     otherTools: {
       one: "использован {{count}} другой инструмент",

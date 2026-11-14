@@ -2056,6 +2056,8 @@ export const ar: TranslationResources = {
     output: "الإخراج",
   },
   turnSummary: {
+    messages: { one: "كتب {{count}} رسالة", other: "كتب {{count}} رسائل" },
+    agentMessage: "رسالة وكيل",
     details: "عرض تفاصيل الجولة",
     sentBy: "أرسلها {{name}}",
     showMore: "عرض المزيد",
@@ -2079,6 +2081,7 @@ export const ar: TranslationResources = {
       one: "بحث {{count}} مرة",
       other: "بحث {{count}} مرات",
     },
+    sentMessages: { one: "تم إرسال {{count}} رسالة", other: "تم إرسال {{count}} رسائل" },
     otherTools: {
       one: "استخدم {{count}} أداة أخرى",
       other: "استخدم {{count}} أدوات أخرى",
