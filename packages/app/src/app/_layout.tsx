@@ -133,9 +133,13 @@ import {
 } from "@/utils/host-routes";
 import { PluginCatalogSync } from "@/plugins";
 import { NotificationOpenRouter } from "@/notification-open/react";
+import { agentLog, describeError } from "@/utils/agent-log";
+import { loadAgentSwitches } from "@/diagnostics/agent-switches";
 import { ensureOsNotificationPermission } from "@/utils/os-notifications";
 
 polyfillCrypto();
+// Before anything reads a switch, and so the log shows them at every launch.
+loadAgentSwitches();
 
 export interface HostRuntimeBootstrapState {
   splashError: string | null;
@@ -623,9 +627,13 @@ function OfferLinkListener() {
         return;
       try {
         const result = await getHostRuntimeStore().importConnectionLink(url, "openProject");
+        agentLog("link", "import", {
+          status: result.status,
+          serverId: "serverId" in result ? result.serverId : undefined,
+        });
         if (!cancelled && result.status === "connected") router.replace(buildOpenProjectRoute());
       } catch (error) {
-        console.warn("[OfferLinkListener] Pairing link failed", error);
+        agentLog("link", "import", { status: "failed", reason: describeError(error) });
       }
     };
 
@@ -810,6 +818,7 @@ function RootStack() {
       nestedNavigatorScreens={ROOT_STACK_NESTED_NAVIGATOR_SCREENS}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="pair" />
       <Stack.Protected guard={storeReady}>
         <Stack.Screen name="welcome" />
         <Stack.Screen name="settings/index" />
