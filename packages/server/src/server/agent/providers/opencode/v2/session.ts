@@ -65,6 +65,7 @@ export interface OpenCodeV2SessionOptions {
   moved?: (connection: V2Connection) => void;
   historyOnly?: boolean;
   streamIdleTimeoutMs?: number;
+  turnRecoveryIntervalMs?: number;
 }
 
 export class OpenCodeV2Session implements AgentSession {
@@ -170,6 +171,7 @@ export class OpenCodeV2Session implements AgentSession {
         return { info: this.info, history: this.history };
       },
       scheduleReconcile: () => this.scheduleReconcile(),
+      recoveryIntervalMs: options.turnRecoveryIntervalMs,
       reportReconciliationError: (error) =>
         this.logger.warn(
           { error: toDiagnosticErrorMessage(error) },

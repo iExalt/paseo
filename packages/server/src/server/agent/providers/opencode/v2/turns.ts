@@ -140,6 +140,8 @@ async function waitForCompletionOrAbort(
   }
 }
 
+const TURN_RECOVERY_INTERVAL_MS = 5_000;
+
 interface TurnSnapshot {
   info: SessionInfo;
   history: SessionMessageInfo[];
@@ -157,6 +159,8 @@ interface TurnOptions {
   scheduleReconcile(): void;
   clearPermissions(): Promise<void>;
   reportReconciliationError(error: unknown): void;
+  // How long a turn may sit unreconciled before its persisted state is re-read.
+  recoveryIntervalMs?: number;
 }
 interface Turn {
   output?: ReturnType<typeof structuredOutput>;
@@ -301,7 +305,7 @@ export class SessionTurns {
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       this.requestReconciliation();
-    }, 5_000);
+    }, this.options.recoveryIntervalMs ?? TURN_RECOVERY_INTERVAL_MS);
     this.retryTimer.unref();
   }
   reconcile(): Promise<void> {
