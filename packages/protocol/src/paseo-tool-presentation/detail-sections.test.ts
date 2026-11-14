@@ -157,7 +157,8 @@ describe("published Paseo tool-call detail entry", () => {
   it("preserves the 0.11.4 runtime export and types at the old subpath", () => {
     const packageRoot = fileURLToPath(new URL("../../", import.meta.url));
     const compiler = fileURLToPath(
-      new URL("../../../../node_modules/typescript/bin/tsc", import.meta.url),
+      // The fork builds with TypeScript 7 (`tsc` from @typescript/native); `typescript` is 6.
+      new URL("../../../../node_modules/@typescript/native/bin/tsc", import.meta.url),
     );
     const fixture = mkdtempSync(path.join(tmpdir(), "paseo-tool-call-detail-"));
     try {
@@ -213,6 +214,9 @@ assert.deepEqual(build("mcp__paseo__send_agent_prompt", { prompt: "Hello", agent
           "ES2020",
           "--strict",
           "--skipLibCheck",
+          "--ignoreConfig",
+          "--types",
+          "node",
         ],
         { stdio: "inherit" },
       );

@@ -1500,6 +1500,8 @@ export class AgentManager {
       : resumeOptions;
     const purpose = currentResumeOptions?.purpose ?? "interactive";
 
+    const { workspaceId = null, labels = {} } = options ?? {};
+    const { title = mergedConfig.title ?? null, labels: recordLabels = labels } = record ?? {};
     const launchEnv = record?.launchEnv;
     const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
       mergedConfig,
@@ -1523,9 +1525,9 @@ export class AgentManager {
       {
         reason: "resume",
         purpose,
-        workspaceId: options?.workspaceId ?? null,
-        title: record?.title ?? mergedConfig.title ?? null,
-        labels: record?.labels ?? options?.labels ?? {},
+        workspaceId,
+        title,
+        labels: recordLabels,
       },
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
@@ -1696,6 +1698,8 @@ export class AgentManager {
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     if (
+      Object.keys(stripLegacyInternalPaseoMcpServer(providerLaunchConfig).mcpServers ?? {}).length >
+        0 &&
       Object.keys(stripInternalPaseoMcpServer(providerLaunchConfig).mcpServers ?? {}).length > 0 &&
       existing.session.capabilities.supportsMcpServers !== true
     ) {
@@ -5670,6 +5674,28 @@ export class AgentManager {
       : next;
   }
 
+  private createSessionOpenRequest(
+    agentId: string,
+    client: AgentClient,
+    cwd: string,
+    env: Record<string, string> | undefined,
+    opening: Parameters<AgentManager["buildLaunchContext"]>[5],
+  ) {
+    return {
+      agentId,
+      provider: client.provider,
+      cwd,
+      workspaceId: opening?.workspaceId ?? null,
+      reason: opening?.reason ?? "resume",
+      purpose: opening?.purpose ?? "interactive",
+      env: { ...env },
+      title: opening?.title ?? null,
+      labels: opening?.labels ?? {},
+      tools: [],
+      mcpServers: {},
+    };
+  }
+
   private async buildLaunchContext(
     agentId: string,
     client: AgentClient,
@@ -5690,19 +5716,7 @@ export class AgentManager {
     let mcpServers: AgentSessionConfig["mcpServers"];
     let mcpServerOwners: Record<string, string> | undefined;
     if (this.pluginLifecycle) {
-      const request = {
-        agentId,
-        provider: client.provider,
-        cwd,
-        workspaceId: opening?.workspaceId ?? null,
-        reason: opening?.reason ?? "resume",
-        purpose: opening?.purpose ?? "interactive",
-        env: { ...env },
-        title: opening?.title ?? null,
-        labels: opening?.labels ?? {},
-        tools: [],
-        mcpServers: {},
-      };
+      const request = this.createSessionOpenRequest(agentId, client, cwd, env, opening);
       const transformed = await this.pluginLifecycle.before("agent.open.before", request);
       env = transformed.env;
       if (request.purpose === "interactive") {

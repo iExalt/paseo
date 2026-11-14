@@ -6,6 +6,7 @@
   "packages/desktop/scripts/after-pack.test.mjs",
   "scripts/paseo-nix-update-delta.test.mjs",
   "scripts/paseo-nix-update-semver.test.mjs",
+  "scripts/postinstall-patches.test.mjs",
   "scripts/nix-source-filter.test.mjs",
 ]; // Need built packages or Nix; run by hand, not by routine CI.
   if (selection.domains.includes("cli"))

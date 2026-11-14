@@ -1,5 +1,18 @@
+import {
+  appendFile,
+  chmod,
+  lstat,
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  writeFile,
+} from "node:fs/promises";
+import { dirname, join, posix, relative as relativePath, resolve } from "node:path";
 import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
+import { tmpdir } from "node:os";
 import {
   FORK_CONFIG_PATH,
   inspectForkRelease,
@@ -13,9 +26,27 @@ const UPSTREAM_REF = "refs/heads/upstream/main";
 const CACHE_PREFIX = "resolutions/";
 const SCHEMA_PATH = "schema.json";
 const SCHEMA_TEXT = '{"version":1,"format":"git-rerere-cache-v1"}\n';
+const DELETIONS_PATH = "deletions.json";
+const FIXUPS_PREFIX = "fixups/";
+const WORKFLOWS_DIR = ".github/workflows/";
+const SIGNING_NAME = "Clement Liaw";
+const SIGNING_EMAIL = "clliaw@nvidia.com";
+// Every verified email of the GitHub account that registered the signing key. GitHub marks a
+// replayed commit verified only when its committer email is one of these.
+const SIGNING_EMAILS = new Set([SIGNING_EMAIL, "cman101202@gmail.com"]);
+// GitHub's web merges commit as GitHub and carry GitHub's signature, which no replay can keep.
+const WEB_FLOW_EMAIL = "noreply@github.com";
+const SIGNING_PUBLIC_KEY =
+  "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIEScQeKzAdwWjNsrJ7xQNq2BAKGSkXP6FPbBD7PZrM9J";
+
+// Commits and rebases start detached auto-maintenance, whose rerere-gc task takes
+// MERGE_RR.lock and races the next pick's rerere, failing it with "Unable to create
+// MERGE_RR.lock: File exists".
+const NO_AUTO_MAINTENANCE = ["-c", "maintenance.auto=false"];
 
 async function git(repositoryPath, args, options = {}) {
   try {
+    const result = await execFileAsync("git", [...NO_AUTO_MAINTENANCE, ...args], {
       cwd: repositoryPath,
       encoding: "utf8",
       env: { ...process.env, LC_ALL: "C", ...options.env },
@@ -39,7 +70,9 @@ async function gitChecked(repositoryPath, args, options) {
   return result.stdout;
 }
 
+async function gitObject(repositoryPath, type, oid) {
   try {
+    const result = await execFileAsync("git", ["cat-file", type, oid], {
       cwd: repositoryPath,
       encoding: "buffer",
       env: { ...process.env, LC_ALL: "C" },
@@ -48,7 +81,14 @@ async function gitChecked(repositoryPath, args, options) {
     return result.stdout;
   } catch (error) {
     const stderr = Buffer.isBuffer(error.stderr) ? error.stderr.toString("utf8") : error.stderr;
+    throw new Error(`git cat-file ${type} ${oid} failed: ${(stderr ?? error.message).trim()}`, {
+      cause: error,
+    });
   }
+}
+
+async function gitBlob(repositoryPath, oid) {
+  return gitObject(repositoryPath, "blob", oid);
 }
 
 function parseLsRemote(text) {
@@ -115,6 +155,14 @@ function parseTree(text) {
   return entries;
 }
 
+function assertFixupEntries(entries) {
+  for (const entry of entries.filter(({ path }) => path.startsWith(FIXUPS_PREFIX))) {
+    if (!/^fixups\/[0-9a-f]{40}\.patch$/.test(entry.path) || entry.mode !== "100644") {
+      throw new Error(`Unsupported path or file mode in resolution branch: ${entry.path}`);
+    }
+  }
+}
+
 export async function importResolutions(repositoryPath, resolutionSha) {
   if (!/^[0-9a-f]{40}$/.test(resolutionSha ?? "")) {
     throw new Error("A captured resolution-branch SHA is required");
@@ -135,7 +183,19 @@ export async function importResolutions(repositoryPath, resolutionSha) {
     throw new Error(`Unsupported resolution schema in ${SCHEMA_PATH}`);
   }
 
+  const deletions = entries.find((entry) => entry.path === DELETIONS_PATH);
+  if (deletions) {
+    if (deletions.mode !== "100644")
+      throw new Error("Unsupported path or file mode: deletions.json");
+    parseDeletionResolutions(await gitChecked(repositoryPath, ["cat-file", "blob", deletions.oid]));
+  }
+  assertFixupEntries(entries);
+  const cacheEntries = entries.filter(
+    (entry) =>
+      ![SCHEMA_PATH, DELETIONS_PATH].includes(entry.path) && !entry.path.startsWith(FIXUPS_PREFIX),
+  );
   const pairs = new Map();
+  for (const entry of cacheEntries) {
     const match = /^resolutions\/([0-9a-f]{40})\/(preimage|postimage)(\.\d+)?$/.exec(entry.path);
     if (!match || entry.mode !== "100644") {
       throw new Error(`Unsupported path or file mode in resolution branch: ${entry.path}`);
@@ -156,6 +216,7 @@ export async function importResolutions(repositoryPath, resolutionSha) {
     ? cacheRoot.trim()
     : join(repositoryPath, cacheRoot.trim());
   await mkdir(resolvedCacheRoot, { recursive: true });
+  for (const entry of cacheEntries) {
     const relative = entry.path.slice(CACHE_PREFIX.length);
     const destination = join(resolvedCacheRoot, relative);
     await mkdir(dirname(destination), { recursive: true });
@@ -163,6 +224,84 @@ export async function importResolutions(repositoryPath, resolutionSha) {
     await writeFile(destination, content, { flag: "wx", mode: 0o600 });
   }
   return pairs.size;
+}
+
+export function parseDeletionResolutions(text) {
+  const records = JSON.parse(text);
+  if (!Array.isArray(records)) throw new Error("Deletion resolutions must be an array");
+  const keys = new Set();
+  for (const record of records) {
+    const action = record?.action ?? "delete";
+    const shape = record?.stages?.map?.((entry) => entry?.stage).join();
+    // A delete/modify conflict leaves stage 1 and one side. A rename/rename conflict leaves
+    // each name at a single stage: delete the base and the losing name, keep the winner.
+    const validShape =
+      action === "keep"
+        ? ["2", "3"].includes(shape)
+        : ["1,2", "1,3", "1", "2", "3"].includes(shape);
+    if (
+      !record ||
+      !["commit,path,stages,upstream", "action,commit,path,stages,upstream"].includes(
+        Object.keys(record).sort().join(),
+      ) ||
+      !["delete", "keep"].includes(action) ||
+      !validShape ||
+      !/^[0-9a-f]{40}$/.test(record.commit) ||
+      !/^[0-9a-f]{40}$/.test(record.upstream) ||
+      typeof record.path !== "string" ||
+      !record.path
+        .split("/")
+        .every(
+          (part) =>
+            /^[A-Za-z0-9_@+.-]+$/.test(part) && ![".", "..", ".git"].includes(part.toLowerCase()),
+        ) ||
+      !Array.isArray(record.stages) ||
+      record.stages.some(
+        (entry) =>
+          !entry ||
+          Object.keys(entry).sort().join() !== "mode,oid,stage" ||
+          entry.mode !== "100644" ||
+          !/^[0-9a-f]{40}$/.test(entry.oid),
+      )
+    )
+      throw new Error("Invalid exact deletion resolution");
+    const key = `${record.upstream}:${record.commit}:${record.path}`;
+    if (keys.has(key)) throw new Error("Duplicate deletion resolution");
+    keys.add(key);
+  }
+  return records;
+}
+
+async function loadDeletionResolutions(repositoryPath, resolutionSha) {
+  const entry = await gitChecked(repositoryPath, ["ls-tree", resolutionSha, "--", DELETIONS_PATH]);
+  if (!entry) return [];
+  return parseDeletionResolutions(
+    await gitChecked(repositoryPath, ["show", `${resolutionSha}:${DELETIONS_PATH}`]),
+  );
+}
+
+async function applyDeletionResolutions(repositoryPath, records, upstream) {
+  const commit = (await gitChecked(repositoryPath, ["rev-parse", "REBASE_HEAD"])).trim();
+  const matching = records.filter(
+    (record) => record.commit === commit && record.upstream === upstream,
+  );
+  for (const record of matching) {
+    const actual = await gitChecked(repositoryPath, ["ls-files", "-u", "-z", "--", record.path]);
+    const expected = record.stages
+      .map(({ mode, oid, stage }) => `${mode} ${oid} ${stage}\t${record.path}\0`)
+      .join("");
+    if (actual !== expected) throw new Error(`Deletion resolution index mismatch: ${record.path}`);
+  }
+  for (const { action, path, stages } of matching) {
+    if (action === "keep") {
+      const [{ mode, oid }] = stages;
+      await gitChecked(repositoryPath, ["update-index", "--cacheinfo", `${mode},${oid},${path}`]);
+      await gitChecked(repositoryPath, ["checkout", "--", path]);
+    } else {
+      await gitChecked(repositoryPath, ["rm", "--", path]);
+    }
+  }
+  return matching.length;
 }
 
 async function unmergedPaths(repositoryPath) {
@@ -183,15 +322,30 @@ async function rebaseProgress(repositoryPath) {
   return `${head}:${current.code === 0 ? current.stdout.trim() : "none"}:${staged}:${unmerged}`;
 }
 
+function reusedRerereRecords(result) {
+  const diagnostics = `${result.stdout}\n${result.stderr}`;
+  return (diagnostics.match(/^Staged '.+' using previous resolution\.$/gm) ?? []).length;
+}
+
+function isReusableRerereStop(result, paths, resolved, deletions = 0) {
   const diagnostics = `${result.stdout}\n${result.stderr}`;
   return (
     result.code !== 0 &&
     /CONFLICT \(/.test(diagnostics) &&
     /could not apply [0-9a-f]+/.test(diagnostics) &&
+    (reusedRerereRecords(result) > 0 || deletions > 0) &&
     paths.length === 0 &&
+    resolved
   );
 }
 
+async function continueKnownResolutions(
+  repositoryPath,
+  firstResult,
+  maxContinuations,
+  deletionRecords = [],
+  upstream,
+) {
   let result = firstResult;
   for (let attempt = 0; attempt < maxContinuations; attempt += 1) {
     const state = await git(repositoryPath, ["rev-parse", "-q", "--verify", "REBASE_HEAD"]);
@@ -205,6 +359,41 @@ async function rebaseProgress(repositoryPath) {
         () => false,
       ),
     );
+    const conflictStop =
+      result.code !== 0 &&
+      /CONFLICT \(/.test(`${result.stdout}\n${result.stderr}`) &&
+      /could not apply [0-9a-f]+/.test(`${result.stdout}\n${result.stderr}`);
+    const deletions =
+      state.code === 0 && directoryExists && conflictStop
+        ? await applyDeletionResolutions(repositoryPath, deletionRecords, upstream)
+        : 0;
+    const conflicts = await unmergedPaths(repositoryPath);
+    const staged = await stagedPaths(repositoryPath);
+    // A commit that only changed paths upstream deleted is empty once they are deleted, and
+    // a reviewed resolution can settle on upstream's side when upstream already made the
+    // change. Keep it empty, with its own author and message, so the replay still maps 1:1.
+    const resolvedByRecords = deletions > 0 || (conflictStop && reusedRerereRecords(result) > 0);
+    const emptied = resolvedByRecords && conflicts.length === 0 && staged.length === 0;
+    if (emptied) {
+      await gitChecked(repositoryPath, [
+        "-c",
+        "user.name=Rebase staging",
+        "-c",
+        "user.email=rebase-staging@users.noreply.github.com",
+        "-c",
+        "commit.gpgsign=false",
+        "commit",
+        "--allow-empty",
+        "--no-verify",
+        "-C",
+        "REBASE_HEAD",
+      ]);
+    }
+    if (
+      state.code !== 0 ||
+      !directoryExists ||
+      !isReusableRerereStop(result, conflicts, staged.length > 0 || emptied, deletions)
+    ) {
       throw new Error(
         `Rebase stopped without a safely reusable completed resolution:\n${result.stdout}\n${result.stderr}`,
       );
@@ -215,6 +404,10 @@ async function rebaseProgress(repositoryPath) {
       "rerere.enabled=true",
       "-c",
       "rerere.autoupdate=true",
+      "-c",
+      "user.name=Rebase staging",
+      "-c",
+      "user.email=rebase-staging@users.noreply.github.com",
       "-c",
       "core.editor=true",
       "rebase",
@@ -231,6 +424,12 @@ async function rebaseProgress(repositoryPath) {
 
 async function replayCommitCount(repositoryPath, upstreamSha, devSha) {
   const output = (
+    await gitChecked(repositoryPath, [
+      "rev-list",
+      "--count",
+      "--no-merges",
+      `${upstreamSha}..${devSha}`,
+    ])
   ).trim();
   if (!/^(0|[1-9]\d*)$/.test(output)) {
     throw new Error(`Git returned an invalid replay commit count: ${JSON.stringify(output)}`);
@@ -242,6 +441,401 @@ async function replayCommitCount(repositoryPath, upstreamSha, devSha) {
   return count;
 }
 
+// A merge whose tree differs from Git's own merge of its parents holds hand edits that a
+// replay, which drops merges, would silently lose.
+async function assertCleanMerge(repositoryPath, sha) {
+  const parents = (await gitChecked(repositoryPath, ["rev-list", "--parents", "-n", "1", sha]))
+    .trim()
+    .split(" ")
+    .slice(1);
+  const merged = await git(repositoryPath, ["merge-tree", "--write-tree", ...parents]);
+  const tree = (await gitChecked(repositoryPath, ["rev-parse", `${sha}^{tree}`])).trim();
+  if (parents.length !== 2 || merged.code !== 0 || merged.stdout.split("\n")[0] !== tree) {
+    throw new Error(`Merge ${sha} is not Git's clean merge of its parents; linearize it by hand`);
+  }
+}
+
+// The commits rebase replays, in its order: merges dropped, the rest topologically sorted.
+async function replayCommitIds(repositoryPath, upstreamSha, devSha) {
+  const range = `${upstreamSha}..${devSha}`;
+  const merges = (await gitChecked(repositoryPath, ["rev-list", "--merges", range])).trim();
+  for (const merge of merges ? merges.split("\n") : [])
+    await assertCleanMerge(repositoryPath, merge);
+  const output = await gitChecked(repositoryPath, [
+    "rev-list",
+    "--reverse",
+    "--topo-order",
+    "--no-merges",
+    range,
+  ]);
+  return output.trim() ? output.trim().split("\n") : [];
+}
+
+function replayCommitter(original, sha) {
+  if (SIGNING_EMAILS.has(original.committer.email)) return original.committer;
+  if (original.committer.email !== WEB_FLOW_EMAIL) {
+    throw new Error(
+      `Cannot sign replay of ${sha} from unrecognized committer email ${original.committer.email}`,
+    );
+  }
+  const { date } = original.committer;
+  return {
+    line: `committer ${SIGNING_NAME} <${SIGNING_EMAIL}> ${date}`,
+    name: SIGNING_NAME,
+    email: SIGNING_EMAIL,
+    date,
+  };
+}
+
+function parseCommitObject(raw, sha) {
+  const separator = raw.indexOf(Buffer.from("\n\n"));
+  if (separator < 0) throw new Error(`Commit ${sha} has no header/message separator`);
+  const headerBytes = raw.subarray(0, separator);
+  let headerText;
+  try {
+    headerText = new TextDecoder("utf-8", { fatal: true }).decode(headerBytes);
+  } catch {
+    throw new Error(`Commit ${sha} has unsupported non-UTF-8 metadata`);
+  }
+  const headers = new Map();
+  let previous = "";
+  for (const line of headerText.split("\n")) {
+    if (line.startsWith(" ")) {
+      if (previous !== "gpgsig")
+        throw new Error(`Commit ${sha} has an unsupported continued header`);
+      continue;
+    }
+    const separatorIndex = line.indexOf(" ");
+    if (separatorIndex < 1) throw new Error(`Commit ${sha} has an invalid header`);
+    const name = line.slice(0, separatorIndex);
+    if (!["tree", "parent", "author", "committer", "encoding", "gpgsig"].includes(name)) {
+      throw new Error(`Commit ${sha} has an unsupported ${name} header`);
+    }
+    const value = line.slice(separatorIndex + 1);
+    const values = headers.get(name) ?? [];
+    values.push(value);
+    headers.set(name, values);
+    previous = name;
+  }
+  const one = (name, required = true) => {
+    const values = headers.get(name) ?? [];
+    if (values.length > 1 || (required && values.length !== 1)) {
+      throw new Error(`Commit ${sha} has an unsupported ${name} header count`);
+    }
+    return values[0];
+  };
+  const parents = headers.get("parent") ?? [];
+  if (parents.length !== 1) throw new Error(`Commit ${sha} is not a single-parent replay commit`);
+  const encoding = one("encoding", false);
+  if (encoding && !/^[A-Za-z0-9._-]+$/.test(encoding)) {
+    throw new Error(`Commit ${sha} has an unsupported encoding header`);
+  }
+  const author = one("author");
+  const committer = one("committer");
+  const parseIdentity = (field, value) => {
+    const match = /^(.*) <([^>]*)> (-?\d+ [+-]\d{4})$/.exec(value);
+    if (!match) throw new Error(`Commit ${sha} has an unsupported ${field} identity`);
+    return { line: `${field} ${value}`, name: match[1], email: match[2], date: match[3] };
+  };
+  return {
+    author: parseIdentity("author", author),
+    committer: parseIdentity("committer", committer),
+    encoding,
+    message: raw.subarray(separator + 2),
+  };
+}
+
+async function validateSigningKey(signingKey, publicKey) {
+  if (!signingKey) throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is required");
+  const trustedPublicKey = publicKey.trim().split(/\s+/).slice(0, 2).join(" ");
+  if (!/^ssh-ed25519 [A-Za-z0-9+/=]+$/.test(trustedPublicKey)) {
+    throw new Error("Configured rebase SSH public key is invalid");
+  }
+  const temporaryDirectory = await mkdtemp(
+    join(process.env.RUNNER_TEMP ?? tmpdir(), "paseo-rebase-key-check-"),
+  );
+  const privateKeyPath = join(temporaryDirectory, "signing-key");
+  try {
+    await writeFile(privateKeyPath, signingKey, { flag: "wx", mode: 0o600 });
+    await chmod(privateKeyPath, 0o600);
+    let derivedKey;
+    try {
+      derivedKey = await execFileAsync("ssh-keygen", ["-y", "-f", privateKeyPath], {
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C" },
+        maxBuffer: 1024 * 1024,
+      });
+    } catch {
+      throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is not a readable SSH private key");
+    }
+    const derivedPublicKey = derivedKey.stdout.trim().split(/\s+/).slice(0, 2).join(" ");
+    if (derivedPublicKey !== trustedPublicKey) {
+      throw new Error("PASEO_REBASE_SSH_SIGNING_KEY does not match the trusted public key");
+    }
+    return trustedPublicKey;
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+// A pick that stopped on a conflict is committed with message cleanup, which ends the
+// message with a newline; GitHub web merges have none. Signing writes the original bytes.
+function sameMessage(original, rewritten) {
+  const trim = (message) => {
+    let end = message.length;
+    while (end > 0 && message[end - 1] === 0x0a) end -= 1;
+    return message.subarray(0, end);
+  };
+  return trim(original).equals(trim(rewritten));
+}
+
+async function signRebasedCommits(
+  repositoryPath,
+  upstreamSha,
+  originalCommits,
+  signingKey,
+  publicKey,
+) {
+  if (!signingKey) throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is required");
+  const trustedPublicKey = publicKey.trim().split(/\s+/).slice(0, 2).join(" ");
+  if (!/^ssh-ed25519 [A-Za-z0-9+/=]+$/.test(trustedPublicKey)) {
+    throw new Error("Configured rebase SSH public key is invalid");
+  }
+
+  const rebasedHead = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
+  const rebasedCommits = await replayCommitIds(repositoryPath, upstreamSha, rebasedHead);
+  if (originalCommits.length !== rebasedCommits.length) {
+    throw new Error(
+      `Replayed commit count changed (${originalCommits.length} original, ${rebasedCommits.length} rewritten)`,
+    );
+  }
+  const originals = [];
+  const rebased = [];
+  for (let index = 0; index < originalCommits.length; index += 1) {
+    const original = parseCommitObject(
+      await gitObject(repositoryPath, "commit", originalCommits[index]),
+      originalCommits[index],
+    );
+    const rewritten = parseCommitObject(
+      await gitObject(repositoryPath, "commit", rebasedCommits[index]),
+      rebasedCommits[index],
+    );
+    if (
+      original.author.line !== rewritten.author.line ||
+      !sameMessage(original.message, rewritten.message)
+    ) {
+      throw new Error(
+        `Rebase changed the author or message while mapping ${originalCommits[index]}`,
+      );
+    }
+    originals.push({ ...original, committer: replayCommitter(original, originalCommits[index]) });
+    rebased.push(rebasedCommits[index]);
+  }
+
+  const temporaryDirectory = await mkdtemp(
+    join(process.env.RUNNER_TEMP ?? tmpdir(), "paseo-rebase-sign-"),
+  );
+  const privateKeyPath = join(temporaryDirectory, "signing-key");
+  const allowedSignersPath = join(temporaryDirectory, "allowed-signers");
+  const messagePath = join(temporaryDirectory, "commit-message");
+  try {
+    await writeFile(privateKeyPath, signingKey, { flag: "wx", mode: 0o600 });
+    await chmod(privateKeyPath, 0o600);
+    let derivedKey;
+    try {
+      derivedKey = await execFileAsync("ssh-keygen", ["-y", "-f", privateKeyPath], {
+        encoding: "utf8",
+        env: { ...process.env, LC_ALL: "C" },
+        maxBuffer: 1024 * 1024,
+      });
+    } catch {
+      throw new Error("PASEO_REBASE_SSH_SIGNING_KEY is not a readable SSH private key");
+    }
+    const derivedPublicKey = derivedKey.stdout.trim().split(/\s+/).slice(0, 2).join(" ");
+    if (derivedPublicKey !== trustedPublicKey) {
+      throw new Error("PASEO_REBASE_SSH_SIGNING_KEY does not match the trusted public key");
+    }
+    await writeFile(allowedSignersPath, `${[...SIGNING_EMAILS].join(",")} ${trustedPublicKey}\n`, {
+      flag: "wx",
+      mode: 0o600,
+    });
+    let parent = upstreamSha;
+    for (let index = 0; index < originals.length; index += 1) {
+      const original = originals[index];
+      const tree = (
+        await gitChecked(repositoryPath, ["rev-parse", `${rebased[index]}^{tree}`])
+      ).trim();
+      await writeFile(messagePath, original.message, { mode: 0o600 });
+      const args = ["-c", "gpg.format=ssh", "-c", `user.signingkey=${privateKeyPath}`];
+      if (original.encoding) args.push("-c", `i18n.commitEncoding=${original.encoding}`);
+      args.push("commit-tree", "-S", tree, "-p", parent, "-F", messagePath);
+      const commitEnvironment = {
+        ...process.env,
+        LC_ALL: "C",
+        GIT_AUTHOR_NAME: original.author.name,
+        GIT_AUTHOR_EMAIL: original.author.email,
+        GIT_AUTHOR_DATE: original.author.date,
+        GIT_COMMITTER_NAME: original.committer.name,
+        GIT_COMMITTER_EMAIL: original.committer.email,
+        GIT_COMMITTER_DATE: original.committer.date,
+      };
+      const signedSha = (await gitChecked(repositoryPath, args, { env: commitEnvironment })).trim();
+      const signed = parseCommitObject(
+        await gitObject(repositoryPath, "commit", signedSha),
+        signedSha,
+      );
+      if (
+        signed.author.line !== original.author.line ||
+        signed.committer.line !== original.committer.line ||
+        signed.encoding !== original.encoding ||
+        !signed.message.equals(original.message)
+      ) {
+        throw new Error(
+          `Signing changed replayed metadata or message for ${originalCommits[index]}`,
+        );
+      }
+      await gitChecked(repositoryPath, [
+        "-c",
+        "gpg.format=ssh",
+        "-c",
+        `gpg.ssh.allowedSignersFile=${allowedSignersPath}`,
+        "verify-commit",
+        signedSha,
+      ]);
+      parent = signedSha;
+    }
+    if (originals.length > 0) {
+      await gitChecked(repositoryPath, ["reset", "--hard", parent]);
+      const finalTree = (await gitChecked(repositoryPath, ["rev-parse", "HEAD^{tree}"])).trim();
+      const expectedTree = (
+        await gitChecked(repositoryPath, ["rev-parse", `${rebasedHead}^{tree}`])
+      ).trim();
+      if (finalTree !== expectedTree)
+        throw new Error("Signed commit chain changed the rebased tree");
+    }
+    return originals.length;
+  } finally {
+    await rm(temporaryDirectory, { recursive: true, force: true });
+  }
+}
+
+  return commitSignedIndex(repositoryPath, { message, signingKey, publicKey });
+}
+
+async function workflowPaths(repositoryPath, revision) {
+  const names = await gitChecked(repositoryPath, [
+    "ls-tree",
+    "-z",
+    "--name-only",
+    revision,
+    "--",
+    WORKFLOWS_DIR,
+  ]);
+  return new Set(names.split("\0").filter(Boolean));
+}
+
+// The fork keeps only the workflows it owns. Upstream edits to workflows dev deleted
+// surface as conflicts, but a workflow upstream adds would replay silently and start
+// running in the fork, so any workflow file captured dev lacks stops the run.
+async function assertNoInheritedWorkflows(repositoryPath, devSha) {
+  const owned = await workflowPaths(repositoryPath, devSha);
+  const inherited = [...(await workflowPaths(repositoryPath, "HEAD"))].filter(
+    (path) => !owned.has(path),
+  );
+  if (inherited.length > 0) {
+    throw new Error(
+      `Rebase would add upstream workflows to dev: ${inherited.join(", ")}. ` +
+        `Delete them in ${FIXUPS_PREFIX}<upstream sha>.patch on the resolution branch.`,
+    );
+  }
+}
+
+// The fork moved upstream's docs/*.md into docs/upstream/ once. A doc upstream adds later
+// replays at the top level of docs/, where fork docs live, and upstream edits to moved docs
+// keep links written for docs/ (such as ../public-docs/). Either replays without a conflict,
+// so a new top-level doc or a newly dead relative link stops the run.
+const DOCS_TOP_LEVEL = /^docs\/[^/]+\.md$/;
+const DOCS_LINKED = /^(docs\/.+|CLAUDE)\.md$/;
+
+async function treePaths(repositoryPath, revision) {
+  const names = await gitChecked(repositoryPath, ["ls-tree", "-r", "-z", "--name-only", revision]);
+  const files = names.split("\0").filter(Boolean);
+  const paths = new Set(files);
+  for (const file of files) {
+    for (let dir = posix.dirname(file); dir !== "."; dir = posix.dirname(dir)) paths.add(dir);
+  }
+  return { files, paths };
+}
+
+export function relativeLinkTargets(markdown) {
+  const targets = [];
+  for (const match of markdown.matchAll(/\]\(([^)\s#]+)(?:#[^)\s]*)?\)/g)) {
+    if (!/^([a-z][a-z0-9+.-]*:|\/)/i.test(match[1])) targets.push(match[1]);
+  }
+  return targets;
+}
+
+async function deadDocLinks(repositoryPath, revision) {
+  const { files, paths } = await treePaths(repositoryPath, revision);
+  const dead = new Set();
+  for (const file of files.filter((path) => DOCS_LINKED.test(path))) {
+    const text = (await gitBlob(repositoryPath, `${revision}:${file}`)).toString("utf8");
+    for (const target of relativeLinkTargets(text)) {
+      const resolved = posix.normalize(posix.join(posix.dirname(file), decodeURI(target)));
+      if (!paths.has(resolved.replace(/\/$/, ""))) dead.add(`${file} -> ${target}`);
+    }
+  }
+  return { files, dead };
+}
+
+async function assertDocsLayoutPreserved(repositoryPath, devSha) {
+  const before = await deadDocLinks(repositoryPath, devSha);
+  const after = await deadDocLinks(repositoryPath, "HEAD");
+  const owned = new Set(before.files);
+  const misplaced = after.files.filter((path) => DOCS_TOP_LEVEL.test(path) && !owned.has(path));
+  const broken = [...after.dead].filter((link) => !before.dead.has(link));
+  const problems = [];
+  if (misplaced.length > 0) {
+    problems.push(`adds upstream docs at the top of docs/: ${misplaced.join(", ")}`);
+  }
+  if (broken.length > 0) problems.push(`breaks doc links: ${broken.join(", ")}`);
+  if (problems.length > 0) {
+    throw new Error(
+      `Rebase ${problems.join("; ")}. Move new upstream docs to docs/upstream/ and fix the ` +
+        `links in ${FIXUPS_PREFIX}<upstream sha>.patch on the resolution branch.`,
+    );
+  }
+}
+
+// Upstream code can break the fork without any textual conflict, for example a new upstream
+// file written for an older toolchain than the fork pins. A reviewed patch keyed to the exact
+// captured upstream adapts it in one signed commit; a patch that does not apply stops the run.
+async function applyUpstreamFixup(
+  repositoryPath,
+  { resolutionSha, upstreamSha, signingKey, publicKey },
+) {
+  const path = `${FIXUPS_PREFIX}${upstreamSha}.patch`;
+  if (!(await gitChecked(repositoryPath, ["ls-tree", resolutionSha, "--", path]))) return 0;
+  const directory = await mkdtemp(join(process.env.RUNNER_TEMP ?? tmpdir(), "paseo-fixup-"));
+  try {
+    const patchPath = join(directory, "fixup.patch");
+    await writeFile(patchPath, await gitBlob(repositoryPath, `${resolutionSha}:${path}`));
+    const applied = await git(repositoryPath, ["apply", "--index", patchPath]);
+    if (applied.code !== 0) {
+      throw new Error(`Upstream fixup ${path} does not apply: ${applied.stderr.trim()}`);
+    }
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+  return commitSignedIndex(repositoryPath, {
+    message: "chore(rebase): adapt incorporated upstream to the fork",
+    signingKey,
+    publicKey,
+  });
+}
+
+async function commitSignedIndex(repositoryPath, { message, signingKey, publicKey }) {
+  const parent = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
 async function writeDiagnostics(path, snapshots, message, repositoryPath) {
   if (!path) return;
   const status = await git(repositoryPath, ["status", "--short", "--branch"]);
@@ -290,6 +884,23 @@ async function writeExportFile(path, contents) {
   }
 }
 
+async function readResolutionVariants(idDirectory, id) {
+  const variants = new Map();
+  for (const entry of await readdir(idDirectory, { withFileTypes: true })) {
+    const match = /^(preimage|postimage)(\.\d+)?$/.exec(entry.name);
+    if (!match) continue;
+    if (entry.isSymbolicLink() || !entry.isFile()) {
+      throw new Error(`Rerere variant is not a regular file: ${id}/${entry.name}`);
+    }
+    const [, side, suffix = ""] = match;
+    const pair = variants.get(suffix) ?? {};
+    if (pair[side]) throw new Error(`Duplicate rerere variant: ${id}/${entry.name}`);
+    pair[side] = await readFile(join(idDirectory, entry.name));
+    variants.set(suffix, pair);
+  }
+  return variants;
+}
+
 export async function exportResolutions({ repositoryPath, destinationPath } = {}) {
   if (!repositoryPath || !destinationPath) {
     throw new Error("repositoryPath and destinationPath are required");
@@ -303,6 +914,7 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
   }
   const destinationAbsolute = resolve(destinationPath);
   const destinationStat = await lstat(destinationAbsolute);
+  if (!destinationStat.isDirectory()) {
     throw new Error("Export destination must be a real directory");
   }
   const cacheRootText = await gitChecked(repositoryPath, ["rev-parse", "--git-path", "rr-cache"]);
@@ -325,6 +937,7 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
       throw new Error(`Rerere ID entry is not a regular directory: ${idEntry.name}`);
     }
     const idDirectory = join(cacheRoot, idEntry.name);
+    const variants = await readResolutionVariants(idDirectory, idEntry.name);
     for (const [suffix, pair] of variants) {
       // Unfinished rerere records lack one side; export completed pairs only.
       if (pair.preimage && pair.postimage) {
@@ -352,9 +965,35 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
   return completed.length;
 }
 
+// Apple Git 2.54 fails partway through this replay: a pick that reuses a rerere
+// resolution cannot create MERGE_RR.lock. 2.55, which GitHub runners ship, replays it.
+const MIN_GIT_VERSION = [2, 55];
+
+export function assertGitVersion(versionText) {
+  const match = /^git version (\d+)\.(\d+)/.exec(versionText.trim());
+  if (!match) throw new Error(`Unrecognized git version: ${versionText.trim()}`);
+  const [major, minor] = [Number(match[1]), Number(match[2])];
+  const [minMajor, minMinor] = MIN_GIT_VERSION;
+  if (major < minMajor || (major === minMajor && minor < minMinor)) {
+    throw new Error(
+      `${versionText.trim()} cannot replay dev; use git ${minMajor}.${minMinor} or later`,
+    );
+  }
+}
+
+export async function rebaseDev({
+  repositoryPath,
+  remote = "origin",
+  diagnosticsPath,
+  signingKey,
+  publicKey = SIGNING_PUBLIC_KEY,
+} = {}) {
   if (!repositoryPath) throw new Error("repositoryPath is required");
   let snapshots = {};
   try {
+    if (signingKey && !signingKey.endsWith("\n")) signingKey += "\n";
+    await validateSigningKey(signingKey, publicKey);
+    assertGitVersion(await gitChecked(repositoryPath, ["--version"]));
     const status = await gitChecked(repositoryPath, ["status", "--porcelain"]);
     if (status) throw new Error("Refusing to rebase a worktree with local changes");
     snapshots = await snapshotRefs(repositoryPath, remote);
@@ -366,13 +1005,23 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
       snapshots.upstream,
       snapshots.dev,
     );
+    const originalCommits = await replayCommitIds(
+      repositoryPath,
+      snapshots.upstream,
+      snapshots.dev,
+    );
     await importResolutions(repositoryPath, snapshots.resolutions);
+    const deletionRecords = await loadDeletionResolutions(repositoryPath, snapshots.resolutions);
     await gitChecked(repositoryPath, ["checkout", "--detach", snapshots.dev]);
     const rebaseResult = await git(repositoryPath, [
       "-c",
       "rerere.enabled=true",
       "-c",
       "rerere.autoupdate=true",
+      "-c",
+      "user.name=Rebase staging",
+      "-c",
+      "user.email=rebase-staging@users.noreply.github.com",
       "rebase",
       "--merge",
       "--keep-empty",
@@ -381,10 +1030,34 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
       snapshots.upstream,
     ]);
     if (rebaseResult.code !== 0) {
+      await continueKnownResolutions(
+        repositoryPath,
+        rebaseResult,
+        maxContinuations,
+        deletionRecords,
+        snapshots.upstream,
+      );
     }
+    const signedCommits = await signRebasedCommits(
+      repositoryPath,
+      snapshots.upstream,
+      originalCommits,
+      signingKey,
+      publicKey,
+    );
     const readRelease = () =>
       inspectForkRelease((file) => readFile(join(repositoryPath, file), "utf8"));
+    // The fixup may repair what the replay left inconsistent, such as a lockfile whose
+    // package.json changed on both sides, so check the release after it.
+    const fixupCommits = await applyUpstreamFixup(repositoryPath, {
+      resolutionSha: snapshots.resolutions,
+      upstreamSha: snapshots.upstream,
+      signingKey,
+      publicKey,
+    });
     assertForkReleasePreserved(before, await readRelease());
+    await assertNoInheritedWorkflows(repositoryPath, snapshots.dev);
+    await assertDocsLayoutPreserved(repositoryPath, snapshots.dev);
     let provenanceCommits = 0;
     if (before.config.upstreamBase !== snapshots.upstream) {
       // Keep replayed author/message metadata intact. Provenance is a separate,
@@ -399,6 +1072,7 @@ export async function exportResolutions({ repositoryPath, destinationPath } = {}
       "Rebase completed; this snapshot will aid diagnosis if a later validation or publication step fails.",
       repositoryPath,
     );
+    return { ...snapshots, signedCommits, fixupCommits, provenanceCommits, boundaryCommits };
   } catch (error) {
     await writeDiagnostics(diagnosticsPath, snapshots, error.message, repositoryPath);
     throw error;
@@ -467,9 +1141,12 @@ async function main() {
     }
     return;
   }
+  const signingKey = process.env.PASEO_REBASE_SSH_SIGNING_KEY;
+  delete process.env.PASEO_REBASE_SSH_SIGNING_KEY;
   const snapshots = await rebaseDev({
     repositoryPath,
     diagnosticsPath: process.env.REBASE_DEV_DIAGNOSTICS,
+    signingKey,
   });
   const outputsPath = process.env.GITHUB_OUTPUT;
   if (outputsPath) {

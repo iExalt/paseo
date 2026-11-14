@@ -7,6 +7,8 @@ import {
   rmSync,
   symlinkSync,
   unlinkSync,
+  utimesSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -475,7 +477,10 @@ describe("searchDirectoryEntries", () => {
       }),
     ).resolves.toEqual([]);
 
+    const before = statSync(dynamicRoot);
     mkdirSync(path.join(dynamicRoot, "fresh-project"));
+    // Make cache invalidation deterministic on filesystems with coarse timestamps.
+    utimesSync(dynamicRoot, before.atime, new Date(before.mtimeMs + 2_000));
 
     await expect(
       searchDirectoryEntries({

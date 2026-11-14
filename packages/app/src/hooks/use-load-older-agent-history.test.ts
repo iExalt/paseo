@@ -160,6 +160,7 @@ describe("loadOlderAgentHistory", () => {
     expect(started).toBe(true);
   });
 
+        wholeTurns: true,
   it("shows a panel toast, warns, and clears in-flight on failure", async () => {
     const error = new Error("network");
     const client = createClient(async () => {

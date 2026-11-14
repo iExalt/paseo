@@ -1086,6 +1086,31 @@ async function runRegression({
   };
 }
 
+async function runSettingsRegressions(page, inspectorPort, artifactDir, browserOnly) {
+  if (browserOnly) return {};
+  const settingsScroll = await runSettingsScrollRegression(page, (size) =>
+    resizeDesktopWindow(inspectorPort, size),
+  );
+  if (process.env.PASEO_DESKTOP_SETTINGS_SCROLL_ONLY === "1") {
+    writeJson(path.join(artifactDir, "result.json"), { settingsScroll });
+    console.log("Desktop Settings scroll regression passed.");
+    return { completed: true };
+  }
+  const settingsMemory = await runSettingsMemoryRegression(page);
+  if (process.env.PASEO_DESKTOP_SETTINGS_MEMORY_ONLY === "1") {
+    writeJson(path.join(artifactDir, "result.json"), { settingsMemory });
+    console.log(
+      `Desktop Settings memory regression passed: ${settingsMemory.detachedAfterWarmRound} detached panes after warm and stress rotations.`,
+    );
+    return { completed: true };
+  }
+
+  const adaptiveTheme = await runAdaptiveThemeRegression(artifactDir);
+  await runAppearanceFontSizeRegression(page);
+
+  return { settingsScroll, settingsMemory, adaptiveTheme };
+}
+
 async function main() {
   const artifactDir =
     process.env.PASEO_DESKTOP_BROWSER_E2E_ARTIFACT_DIR ??
@@ -1221,26 +1246,14 @@ async function main() {
       console.log("Plugin external links and workspace browser passed.");
       return;
     }
+    const settings = await runSettingsRegressions(page, inspectorPort, artifactDir, browserOnly);
+    if (settings.completed) return;
     const settingsScroll = await runSettingsScrollRegression(page, (size) =>
-      resizeDesktopWindow(inspectorPort, size),
-    );
     if (process.env.PASEO_DESKTOP_SETTINGS_SCROLL_ONLY === "1") {
-      writeJson(path.join(artifactDir, "result.json"), { settingsScroll });
-      console.log("Desktop Settings scroll regression passed.");
-      return;
-    }
     const settingsMemory = await runSettingsMemoryRegression(page);
     if (process.env.PASEO_DESKTOP_SETTINGS_MEMORY_ONLY === "1") {
-      writeJson(path.join(artifactDir, "result.json"), { settingsMemory });
-      console.log(
-        `Desktop Settings memory regression passed: ${settingsMemory.detachedAfterWarmRound} detached panes after warm and stress rotations.`,
-      );
-      return;
-    }
-
     const adaptiveTheme = await runAdaptiveThemeRegression(artifactDir);
     await runAppearanceFontSizeRegression(page);
-
     const callerAgentId = await createCallerAgent(daemonPort);
     const typingAgent = {
       workspaceId: workspaceIds.at(-1),

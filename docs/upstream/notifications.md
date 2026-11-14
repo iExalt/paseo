@@ -50,8 +50,6 @@ read by Expo arrives under `userInfo.body`; simulator payloads must match:
 An Android FCM launch intent needs `google.message_id` and a JSON `body` extra.
 An arbitrary Activity launch with data extras does not exercise Expo's FCM path.
 
-Foreground pushes remain in Notification Center without a banner or sound.
-This preserves notifications sent with stale presence information.
 
 ## Startup and verification
 

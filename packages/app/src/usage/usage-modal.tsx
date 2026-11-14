@@ -52,6 +52,7 @@ function HostUsageModal({
   hosts: UsageHost[];
   onSelectHost: (serverId: string) => void;
 }) {
+  const { t } = useTranslation();
   const hostSelection = useMemo(
     () => ({ hosts, serverId, onSelect: onSelectHost }),
     [hosts, onSelectHost, serverId],
@@ -61,6 +62,7 @@ function HostUsageModal({
   return (
     <UsageModalFrame {...props} actions={controls}>
       <View testID={`usage-host-${serverId}`}>
+        <SettingsSection title={t("providerUsage.title")}>
         <UsageBody serverId={serverId} view={view} display={display} onRefresh={refresh} />
       </View>
     </UsageModalFrame>

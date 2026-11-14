@@ -1,3 +1,4 @@
+import { RewindBranchIndex } from "./rewound-branches.js";
 import { assignTaskNotificationReplayIds } from "./task-notification-tool-call.js";
 import fs, { type FileHandle } from "node:fs/promises";
 import { setImmediate } from "node:timers/promises";
@@ -161,10 +162,11 @@ export interface ClaudeReplayHistory {
 export async function withClaudeReplayHistory<T>(
   historyPath: string,
   consume: (history: ClaudeReplayHistory) => Promise<T>,
+  options: { pendingRewind?: { leafUuid: string | null } } = {},
 ): Promise<T> {
   const descriptors = new Map<string, FileHandle>();
   try {
-    return await consume(await indexHistory(historyPath, descriptors));
+    return await consume(await indexHistory(historyPath, descriptors, options.pendingRewind));
   } finally {
     await closeReplaySources(descriptors.values());
   }
@@ -179,6 +181,7 @@ async function closeReplaySources(descriptors: Iterable<FileHandle>): Promise<vo
 async function indexHistory(
   historyPath: string,
   descriptors: Map<string, FileHandle>,
+  pendingRewind?: { leafUuid: string | null },
 ): Promise<ClaudeReplayHistory> {
   const sessionDirectory = path.join(
     path.dirname(historyPath),
@@ -216,6 +219,7 @@ async function indexHistory(
     }
   }
   const parentLocations: RecordLocation[] = [];
+  const rewindIndex = new RewindBranchIndex();
   const locationsByAgentId = new Map<string, RecordLocation[]>();
   async function scan(
     file: string,
@@ -227,13 +231,17 @@ async function indexHistory(
   }
   for (const file of sidechainFiles) {
     await scan(file, (entry, location) => {
-      if (file === historyPath && entry.isSidechain !== true) parentLocations.push(location);
+      if (file === historyPath && entry.isSidechain !== true) {
+        rewindIndex.add(entry);
+        parentLocations.push(location);
+      }
       if (entry.isSidechain !== true || typeof entry.agentId !== "string") return;
       const locations = locationsByAgentId.get(entry.agentId) ?? [];
       locations.push(location);
       locationsByAgentId.set(entry.agentId, locations);
     });
   }
+  if (pendingRewind) rewindIndex.cut(pendingRewind.leafUuid);
   const workflowEntriesByRunId = new Map<string, AsyncIterable<TranscriptEntry>>();
   for (const [runId, files] of workflowFiles) {
     const locations: RecordLocation[] = [];
@@ -250,7 +258,10 @@ async function indexHistory(
     workflowEntriesByRunId.set(runId, indexedRecords(locations, descriptors));
   }
   return {
-    parentEntries: indexedRecords(parentLocations, descriptors),
+    parentEntries: indexedRecords(
+      parentLocations.filter((_, row) => rewindIndex.keeps(row)),
+      descriptors,
+    ),
     subagents: [...locationsByAgentId].map(([agentId, locations]) => ({
       agentId,
       meta: metaByAgentId.get(agentId) ?? null,

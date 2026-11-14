@@ -763,6 +763,10 @@ function isTimelineItemStoredLosslessly(item: StreamItem): boolean {
   }
 }
 
+      if (
+        items.length >= MAX_TIMELINE_ITEMS &&
+        !continuesTurn(item, visited[visited.length - 1]!)
+      ) {
 function serializeTimeline(timeline: CachedTimeline): StoredTimeline | null {
   const canonicalItems = timeline.items.filter(
     (item) => item.kind !== "user_message" || !isUnreconciledLocalUserMessage(item),

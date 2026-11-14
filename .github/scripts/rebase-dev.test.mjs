@@ -16,8 +16,19 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { spawnSync } from "node:child_process";
+import {
+  assertGitVersion,
+  exportResolutions,
+  importResolutions,
+  parseDeletionResolutions,
+  publishRebase,
+  rebaseDev,
+} from "./rebase-dev.mjs";
 
 const yaml = createRequire(import.meta.url)("js-yaml");
+// Detached auto-maintenance runs rerere-gc, which takes MERGE_RR.lock and races the
+// fixture's own rebase picks.
+const NO_AUTO_MAINTENANCE = ["-c", "maintenance.auto=false"];
 process.env.GIT_CONFIG_GLOBAL = "/dev/null";
 process.env.GIT_CONFIG_NOSYSTEM = "1";
 process.env.GIT_AUTHOR_NAME = "Rebase fixture";
@@ -28,11 +39,20 @@ process.env.GIT_COMMITTER_EMAIL = "fixture@example.invalid";
 const root = mkdtempSync(join(tmpdir(), "paseo-rebase-dev-test-"));
 const cleanup = () => rmSync(root, { recursive: true, force: true });
 test.after(cleanup);
+const testSigningKeyPath = join(root, "fixture-signing-key");
+execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", testSigningKeyPath]);
+const testSigningKey = readFileSync(testSigningKeyPath, "utf8");
+const testSigningPublicKey = readFileSync(`${testSigningKeyPath}.pub`, "utf8").trim();
+const wrongSigningKeyPath = join(root, "wrong-fixture-signing-key");
+execFileSync("ssh-keygen", ["-q", "-t", "ed25519", "-N", "", "-f", wrongSigningKeyPath]);
+const wrongSigningKey = readFileSync(wrongSigningKeyPath, "utf8");
+const signingOptions = { signingKey: testSigningKey, publicKey: testSigningPublicKey };
 
 function git(cwd, ...args) {
   return execFileSync(
     "git",
     [
+      ...NO_AUTO_MAINTENANCE,
       "-c",
       "commit.gpgsign=false",
       "-c",
@@ -49,7 +69,41 @@ function git(cwd, ...args) {
   ).trimEnd();
 }
 
+function gitWithEnv(cwd, extraEnv, ...args) {
+  return execFileSync(
+    "git",
+    [
+      ...NO_AUTO_MAINTENANCE,
+      "-c",
+      "commit.gpgsign=false",
+      "-c",
+      "init.defaultBranch=main",
+      "-c",
+      "advice.defaultBranchName=false",
+      ...args,
+    ],
+    {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, LC_ALL: "C", ...extraEnv },
+    },
+  ).trimEnd();
+}
+
+function commit(cwd, message, metadata = {}) {
   git(cwd, "add", "-A");
+  gitWithEnv(cwd, metadata, "commit", "-m", message);
+}
+
+function devMetadata(authorName, authorEmail, authorDate, committerName, committerDate) {
+  return {
+    GIT_AUTHOR_NAME: authorName,
+    GIT_AUTHOR_EMAIL: authorEmail,
+    GIT_AUTHOR_DATE: authorDate,
+    GIT_COMMITTER_NAME: committerName,
+    GIT_COMMITTER_EMAIL: "clliaw@nvidia.com",
+    GIT_COMMITTER_DATE: committerDate,
+  };
 }
 
 function content({ target = "base target", far = "base far", marker = "base marker" } = {}) {
@@ -72,8 +126,110 @@ function initRepo(path) {
   git(path, "config", "commit.gpgsign", "false");
 }
 
+// A side branch merged into dev, with committers from the user's other verified email and
+// from GitHub's web merges.
+function addMergeHistory(seed, mergeHistory) {
+  if (!mergeHistory) return;
+  const metadata = (committerName, committerEmail, date) => ({
+    ...devMetadata("Side Author", "side@example.invalid", date, committerName, date),
+    GIT_COMMITTER_EMAIL: committerEmail,
+  });
+  git(seed, "checkout", "-b", "side");
+  writeFileSync(join(seed, "side.txt"), "side\n");
+  commit(seed, "side edit", metadata("Clement Liaw", "cman101202@gmail.com", "1700000600 +0000"));
+  git(seed, "checkout", "dev");
+  writeFileSync(join(seed, "web.txt"), "web\n");
+  commit(seed, "web merge", metadata("GitHub", "noreply@github.com", "1700000700 +0000"));
+  const mergeMetadata = devMetadata(
+    "Side Author",
+    "side@example.invalid",
+    "1700000800 +0000",
+    "Clement Liaw",
+    "1700000800 +0000",
+  );
+  gitWithEnv(seed, mergeMetadata, "merge", "--no-ff", "--no-commit", "side");
+  if (mergeHistory === "hand-edited")
+    writeFileSync(join(seed, "side.txt"), "edited in the merge\n");
+  git(seed, "add", "-A");
+  gitWithEnv(seed, mergeMetadata, "commit", "-m", "merge side");
+}
+
+// A dev edit to a file upstream deleted, and nothing else.
+function commitPatchOnlyEdit(seed, enabled) {
+  if (!enabled) return;
+  writeFileSync(join(seed, "renamed.patch"), content({ target: "patch-only edit" }));
+  commit(
+    seed,
+    "dev patch-only edit",
+    devMetadata(
+      "Patch Author",
+      "patch@example.invalid",
+      "1700000350 +0000",
+      "Clement Liaw",
+      "1700000351 +0000",
+    ),
+  );
+}
+
+// The patch-only edit stops on its own modify/delete conflict, which leaves it empty.
+function resolvePatchOnlyEdit(recorder, enabled, recordDeletion) {
+  if (!enabled) return;
+  const stopped = spawnSync(
+    "git",
+    [...NO_AUTO_MAINTENANCE, "-c", "core.editor=true", "rebase", "--continue"],
+    {
+      cwd: recorder,
+      encoding: "utf8",
+    },
+  );
+  assert.notEqual(stopped.status, 0, "fixture must stop on the patch-only edit");
+  recordDeletion();
+  git(recorder, "commit", "--allow-empty", "-C", "REBASE_HEAD");
+}
+
+// Upstream and dev rename old.patch to different names, as when both bump a patched
+// dependency. `null` seeds the base copy.
+function renamePatch(seed, enabled, name) {
+  if (!enabled) return;
+  if (name === null) writeFileSync(join(seed, "old.patch"), content());
+  else git(seed, "mv", "old.patch", name);
+}
+
+// Each name of a rename/rename conflict sits at a single stage. Keep the fork's name.
+function resolveRenameRename(recorder, upstream, enabled) {
+  if (!enabled) return [];
+  const replayed = git(recorder, "rev-parse", "REBASE_HEAD");
+  const records = [
+    ["old.patch", "delete"],
+    ["upstream.patch", "delete"],
+    ["fork.patch", "keep"],
+  ].map(([path, action]) => {
+    const [mode, oid, stage] = git(recorder, "ls-files", "-u", "--", path).split(/\s+/);
+    return {
+      upstream,
+      commit: replayed,
+      path,
+      action,
+      stages: [{ mode, oid, stage: Number(stage) }],
+    };
+  });
+  git(recorder, "rm", "--", "old.patch", "upstream.patch");
+  git(recorder, "add", "--", "fork.patch");
+  return records;
+}
+
 async function makeFixture(
   name,
+  {
+    unknown = false,
+    adaptedContext = false,
+    initiallyEmpty = false,
+    newlyEmpty = false,
+    deletion = false,
+    deletionOnly = false,
+    renameRename,
+    mergeHistory,
+  } = {},
 ) {
   const directory = join(root, name);
   const remote = join(directory, "origin.git");
@@ -88,6 +244,8 @@ async function makeFixture(
     join(seed, "package.json"),
     JSON.stringify({ name: "fixture", version: "0.11.2", workspaces: [] }) + "\n",
   );
+  if (deletion) writeFileSync(join(seed, "old.patch"), content());
+  renamePatch(seed, renameRename, null);
   commit(seed, "base");
   const baseSha = git(seed, "rev-parse", "HEAD");
   git(seed, "remote", "add", "origin", remote);
@@ -96,12 +254,28 @@ async function makeFixture(
 
   git(seed, "checkout", "-b", "upstream/main");
   writeFileSync(join(seed, "shared.txt"), content({ target: "upstream target" }));
+  if (deletion) git(seed, "rm", "old.patch");
+  renamePatch(seed, renameRename, "upstream.patch");
   commit(seed, "upstream target edit");
   git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
   let upstreamSha = git(seed, "rev-parse", "HEAD");
 
   git(seed, "checkout", "dev");
   if (initiallyEmpty) {
+    gitWithEnv(
+      seed,
+      devMetadata(
+        "Empty Author",
+        "empty@example.invalid",
+        "1700000100 -0700",
+        "Clement Liaw",
+        "1700000101 +0545",
+      ),
+      "commit",
+      "--allow-empty",
+      "-m",
+      "originally empty dev commit\n\nkept as an original empty commit\n",
+    );
   }
   writeFileSync(join(seed, "shared.txt"), content({ target: "dev target" }));
   mkdirSync(join(seed, ".github"), { recursive: true });
@@ -122,9 +296,45 @@ async function makeFixture(
     JSON.stringify({ version: "0.1.0", packages: { "": forkPackage } }) + "\n",
   );
   writeFileSync(join(seed, "CHANGELOG.fork.md"), "# Fork fixture\n");
+  if (deletion) {
+    git(seed, "mv", "old.patch", "renamed.patch");
+    writeFileSync(join(seed, "renamed.patch"), content({ target: "updated patch" }));
+  }
+  renamePatch(seed, renameRename, "fork.patch");
+  // Like a GitHub squash merge, the message has no final newline, which a conflicted
+  // pick adds back.
+  git(seed, "add", "-A");
+  writeFileSync(join(directory, "message"), "dev target edit\n\nconflicting replay body");
+  gitWithEnv(
+    seed,
+    devMetadata(
+      "Zoë Author",
+      "zoe@example.invalid",
+      "1700000300 +0930",
+      "Clement Liaw",
+      "1700000301 -0330",
+    ),
+    "commit",
+    "--cleanup=verbatim",
+    "-F",
+    join(directory, "message"),
+  );
+  commitPatchOnlyEdit(seed, deletionOnly);
   if (unknown) {
     writeFileSync(join(seed, "shared.txt"), content({ target: "dev target", far: "dev far" }));
+    commit(
+      seed,
+      "dev unknown edit",
+      devMetadata(
+        "Unknown Author",
+        "unknown@example.invalid",
+        "1700000400 +0000",
+        "Clement Liaw",
+        "1700000401 +0000",
+      ),
+    );
   }
+  addMergeHistory(seed, mergeHistory);
   git(seed, "push", "origin", "HEAD:refs/heads/dev");
   const devSha = git(seed, "rev-parse", "HEAD");
 
@@ -146,6 +356,7 @@ async function makeFixture(
   const initialRebase = spawnSync(
     "git",
     [
+      ...NO_AUTO_MAINTENANCE,
       "-c",
       "rerere.enabled=true",
       "-c",
@@ -164,9 +375,29 @@ async function makeFixture(
     },
   );
   assert.notEqual(initialRebase.status, 0, "fixture must record a real rebase conflict");
+  const deletionRecords = [];
+  const recordDeletion = () => {
+    const stages = git(recorder, "ls-files", "-u", "--", "renamed.patch")
+      .split("\n")
+      .map((line) => {
+        const [mode, oid, stage] = line.split(/\s+/);
+        return { mode, oid, stage: Number(stage) };
+      });
+    const replayed = git(recorder, "rev-parse", "REBASE_HEAD");
+    deletionRecords.push({
+      upstream: upstreamSha,
+      commit: replayed,
+      path: "renamed.patch",
+      stages,
+    });
+    git(recorder, "rm", "renamed.patch");
+  };
+  if (deletion) recordDeletion();
+  deletionRecords.push(...resolveRenameRename(recorder, upstreamSha, renameRename));
   const resolution = content({ target: "resolved target" });
   writeFileSync(join(recorder, "shared.txt"), resolution);
   git(recorder, "add", "shared.txt");
+  resolvePatchOnlyEdit(recorder, deletionOnly, recordDeletion);
   git(recorder, "-c", "core.editor=true", "rebase", "--continue");
 
   const cache = join(recorder, ".git", "rr-cache");
@@ -188,6 +419,8 @@ async function makeFixture(
   assert.ok(exportedPairs > 0, "export helper should preserve the completed rerere pair");
   assert.equal(existsSync(join(resolverPath, "resolutions", activeId)), false);
   assert.equal(existsSync(join(resolverPath, "resolutions", id, "thisimage")), false);
+  if (deletionRecords.length > 0)
+    writeFileSync(join(resolverPath, "deletions.json"), JSON.stringify(deletionRecords) + "\n");
   commit(resolverPath, "seed completed rerere resolution");
   git(resolverPath, "remote", "add", "origin", remote);
   git(resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
@@ -205,9 +438,139 @@ async function makeFixture(
   if (newlyEmpty) {
     git(seed, "checkout", "dev");
     writeFileSync(join(seed, "shared.txt"), content({ target: "dev target", far: "same far" }));
+    commit(
+      seed,
+      "dev patch now empty against upstream",
+      devMetadata(
+        "Emptying Author",
+        "emptying@example.invalid",
+        "1700000500 +0000",
+        "Clement Liaw",
+        "1700000501 +0000",
+      ),
+    );
     git(seed, "push", "origin", "HEAD:refs/heads/dev");
   }
+  const [deletionRecord] = deletionRecords;
+  return {
+    directory,
+    remote,
+    devSha,
+    upstreamSha,
+    resolverPath,
+    recorder,
+    id,
+    deletionRecord,
+    deletionRecords,
+  };
 }
+
+test("replay refuses git older than 2.55", () => {
+  assert.doesNotThrow(() => assertGitVersion("git version 2.55.0\n"));
+  assert.doesNotThrow(() => assertGitVersion("git version 3.0.1"));
+  assert.throws(
+    () => assertGitVersion("git version 2.54.0 (Apple Git-157)"),
+    /cannot replay dev; use git 2\.55 or later/,
+  );
+});
+
+test("exact rename/delete resolutions replay and mismatched blobs fail closed", async () => {
+  const fixture = await makeFixture("deletion", { deletion: true });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  assert.equal(existsSync(join(clone, "renamed.patch")), false);
+  assert.equal(git(clone, "ls-files", "-u"), "");
+
+  const record = structuredClone(fixture.deletionRecord);
+  record.stages[1].oid = "a".repeat(40);
+  writeFileSync(join(fixture.resolverPath, "deletions.json"), JSON.stringify([record]));
+  commit(fixture.resolverPath, "chore: record mismatched deletion fixture");
+  git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+  const rejected = join(fixture.directory, "mismatch");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, rejected);
+  const beforeRefs = git(rejected, "ls-remote", "--refs", "origin");
+  await assert.rejects(
+    rebaseDev({ repositoryPath: rejected, ...signingOptions }),
+    /index mismatch/,
+  );
+  assert.equal(existsSync(join(rejected, "renamed.patch")), true);
+  assert.match(git(rejected, "ls-files", "-u"), /renamed.patch/);
+  assert.equal(git(rejected, "ls-remote", "--refs", "origin"), beforeRefs);
+});
+
+test("rename/rename records keep the fork's name and delete the others", async () => {
+  const fixture = await makeFixture("rename-rename", { renameRename: true });
+  assert.deepEqual(
+    fixture.deletionRecords.map(({ path, action, stages }) => [path, action, stages[0].stage]),
+    [
+      ["old.patch", "delete", 1],
+      ["upstream.patch", "delete", 2],
+      ["fork.patch", "keep", 3],
+    ],
+  );
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const patches = git(clone, "ls-tree", "--name-only", "HEAD")
+    .split("\n")
+    .filter((name) => name.endsWith(".patch"));
+  assert.deepEqual(patches, ["fork.patch"]);
+  assert.equal(git(clone, "show", "HEAD:fork.patch"), content().trimEnd());
+  assert.equal(git(clone, "status", "--porcelain"), "");
+});
+
+test("a commit left empty by deletion records replays as an empty commit", async () => {
+  const fixture = await makeFixture("deletion-only", { deletion: true, deletionOnly: true });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const replayed = git(clone, "log", "--format=%H", "--grep=dev patch-only edit");
+  assert.match(replayed, /^[0-9a-f]{40}$/);
+  assert.equal(git(clone, "show", "--format=%an", "--name-only", replayed), "Patch Author");
+});
+
+test("deletion records reject unsafe paths, modes, duplicate keys and non-deletion stages", () => {
+  const record = {
+    upstream: "a".repeat(40),
+    commit: "b".repeat(40),
+    path: "patches/example.patch",
+    stages: [
+      { mode: "100644", oid: "c".repeat(40), stage: 1 },
+      { mode: "100644", oid: "d".repeat(40), stage: 3 },
+    ],
+  };
+  assert.deepEqual(parseDeletionResolutions(JSON.stringify([record])), [record]);
+  for (const path of ["../file", "/file", ".git/config", "a/../file", "a\nfile", "a\\file"]) {
+    assert.throws(() => parseDeletionResolutions(JSON.stringify([{ ...record, path }])), /Invalid/);
+  }
+  for (const stages of [
+    [],
+    [...record.stages, { ...record.stages[1], stage: 2 }],
+    record.stages.map((stage) => ({ ...stage, mode: "120000" })),
+  ]) {
+    assert.throws(
+      () => parseDeletionResolutions(JSON.stringify([{ ...record, stages }])),
+      /Invalid/,
+    );
+  }
+  const [base, fork] = record.stages;
+  for (const accepted of [
+    { ...record, stages: [base] },
+    { ...record, stages: [fork] },
+    { ...record, action: "keep", stages: [fork] },
+  ]) {
+    assert.deepEqual(parseDeletionResolutions(JSON.stringify([accepted])), [accepted]);
+  }
+  for (const rejected of [
+    { ...record, action: "keep" },
+    { ...record, action: "keep", stages: [base] },
+    { ...record, action: "rename", stages: [fork] },
+  ]) {
+    assert.throws(() => parseDeletionResolutions(JSON.stringify([rejected])), /Invalid/);
+  }
+  assert.throws(() => parseDeletionResolutions(JSON.stringify([record, record])), /Duplicate/);
+});
 
 test("workflow is manual, actor/repository/ref guarded, and gates publication on validation", () => {
   const workflow = yaml.load(
@@ -220,10 +583,23 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   assert.match(workflow.jobs.rebase.if, /github\.repository == 'iExalt\/paseo'/);
   assert.match(workflow.jobs.rebase.if, /github\.ref == 'refs\/heads\/dev'/);
   assert.match(workflow.jobs.rebase.if, /github\.actor == 'iExalt'/);
+  assert.deepEqual(workflow.jobs.rebase.permissions, { contents: "read" });
   const rebaseStep = workflow.jobs.rebase.steps.find((step) => step.id === "rebase");
+  assert.equal(
+    rebaseStep.env.PASEO_REBASE_SSH_SIGNING_KEY,
+    "${{ secrets.PASEO_REBASE_SSH_SIGNING_KEY }}",
+  );
+  assert.equal("GIT_COMMITTER_NAME" in rebaseStep.env, false);
+  assert.equal("GIT_COMMITTER_EMAIL" in rebaseStep.env, false);
   const steps = workflow.jobs.rebase.steps;
   const publishIndex = steps.findIndex(
     (step) => step.name === "Publish backup and rebased dev atomically",
+  );
+  assert.equal(steps[publishIndex].env.GH_TOKEN, "${{ steps.token.outputs.token }}");
+  const tokenStep = steps[publishIndex - 1];
+  assert.equal(tokenStep.id, "token");
+  assert.match(tokenStep.uses, /^actions\/create-github-app-token@/);
+  assert.equal(tokenStep.with["permission-workflows"], "write");
   );
   assert.match(steps[publishIndex].run, /rebase-dev\.mjs publish/);
   const helper = readFileSync(new URL("./rebase-dev.mjs", import.meta.url), "utf8");
@@ -269,10 +645,27 @@ test("resolution export and import preserve arbitrary Git blob bytes", async () 
   );
 });
 
+test("known rerere resolution is imported and resumes while preserving adapted context", async () => {
   const fixture = await makeFixture("known", { adaptedContext: true, initiallyEmpty: true });
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
 
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone }),
+    /PASEO_REBASE_SSH_SIGNING_KEY is required/,
+  );
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions, signingKey: wrongSigningKey }),
+    /does not match the trusted public key/,
+  );
+  assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
+
+  const snapshots = await rebaseDev({
+    repositoryPath: clone,
+    ...signingOptions,
+    signingKey: testSigningKey.trimEnd(),
+  });
 
   assert.equal(snapshots.dev, fixture.devSha);
   assert.equal(snapshots.upstream, fixture.upstreamSha);
@@ -286,6 +679,61 @@ test("resolution export and import preserve arbitrary Git blob bytes", async () 
     /originally empty dev commit/,
   );
   assert.match(git(clone, "status", "--porcelain"), /^$/);
+  const originalCommits = git(
+    clone,
+    "rev-list",
+    "--reverse",
+    `${fixture.upstreamSha}..${fixture.devSha}`,
+  ).split("\n");
+  const rewrittenCommits = git(
+    clone,
+    "rev-list",
+    "--reverse",
+  ).split("\n");
+  assert.equal(rewrittenCommits.length, originalCommits.length);
+  const allowedSigners = join(fixture.directory, "allowed-signers");
+  writeFileSync(
+    allowedSigners,
+    `clliaw@nvidia.com ${testSigningPublicKey.split(/\s+/).slice(0, 2).join(" ")}\n`,
+  );
+  for (let index = 0; index < originalCommits.length; index += 1) {
+    const original = execFileSync("git", ["cat-file", "commit", originalCommits[index]], {
+      cwd: clone,
+      encoding: "buffer",
+    });
+    const rewritten = execFileSync("git", ["cat-file", "commit", rewrittenCommits[index]], {
+      cwd: clone,
+      encoding: "buffer",
+    });
+    const separator = Buffer.from("\n\n");
+    const originalSeparator = original.indexOf(separator);
+    const rewrittenSeparator = rewritten.indexOf(separator);
+    const originalHeaders = original.subarray(0, originalSeparator).toString("utf8").split("\n");
+    const rewrittenHeaders = rewritten.subarray(0, rewrittenSeparator).toString("utf8").split("\n");
+    assert.equal(
+      rewrittenHeaders.find((line) => line.startsWith("author ")),
+      originalHeaders.find((line) => line.startsWith("author ")),
+    );
+    assert.equal(
+      rewrittenHeaders.find((line) => line.startsWith("committer ")),
+      originalHeaders.find((line) => line.startsWith("committer ")),
+    );
+    assert.deepEqual(
+      rewritten.subarray(rewrittenSeparator + 2),
+      original.subarray(originalSeparator + 2),
+    );
+    assert.match(rewrittenHeaders.join("\n"), /gpgsig -----BEGIN SSH SIGNATURE-----/);
+    git(
+      clone,
+      "-c",
+      "gpg.format=ssh",
+      "-c",
+      `gpg.ssh.allowedSignersFile=${allowedSigners}`,
+      "verify-commit",
+      rewrittenCommits[index],
+    );
+  }
+  assert.ok(snapshots.signedCommits > 0);
   assert.equal(snapshots.provenanceCommits, 1);
   assert.equal(
     JSON.parse(readFileSync(join(clone, ".github/fork-release.json"))).upstreamBase,
@@ -353,6 +801,7 @@ test("upstream version changes and missing fork authority stop before publicatio
   assert.equal(git(missing, "ls-remote", "--refs", "origin"), missingRefs);
 });
 
+test("unknown conflict stops without publishing any refs", async () => {
   const fixture = await makeFixture("unknown", { unknown: true });
   const clone = join(fixture.directory, "checkout");
   const diagnostics = join(fixture.directory, "diagnostics.txt");
@@ -360,6 +809,7 @@ test("upstream version changes and missing fork authority stop before publicatio
   const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
 
   await assert.rejects(
+    rebaseDev({ repositoryPath: clone, diagnosticsPath: diagnostics, ...signingOptions }),
     /without a safely reusable completed resolution/,
   );
 
@@ -371,12 +821,181 @@ test("upstream version changes and missing fork authority stop before publicatio
   assert.match(diagnosticText, /diff --cc shared\.txt/);
 });
 
+test("clean merges drop like rebase and web-flow committers become the signing identity", async () => {
+  const fixture = await makeFixture("mixed-history", { mergeHistory: "clean" });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+
+  const replayed = `${fixture.upstreamSha}..HEAD~1`;
+  assert.equal(git(clone, "rev-list", "--merges", replayed), "");
+  assert.equal(git(clone, "show", "HEAD:side.txt"), "side");
+  const committers = git(clone, "log", "--format=%s|%cn <%ce> %cd", "--date=raw", replayed);
+  assert.deepEqual(
+    committers
+      .split("\n")
+      .filter((line) => !line.startsWith("dev "))
+      .sort(),
+    [
+      "side edit|Clement Liaw <cman101202@gmail.com> 1700000600 +0000",
+      `web merge|Clement Liaw <${devMetadata().GIT_COMMITTER_EMAIL}> 1700000700 +0000`,
+    ],
+  );
+});
+
+test("an upstream fixup applies exactly as one signed commit or stops the run", async () => {
+  const fixture = await makeFixture("fixup");
+  const fixupPath = join(fixture.resolverPath, "fixups", `${fixture.upstreamSha}.patch`);
+  mkdirSync(join(fixture.resolverPath, "fixups"));
+  const run = async (patch) => {
+    writeFileSync(fixupPath, patch);
+    commit(fixture.resolverPath, "fixup");
+    git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+    const clone = join(fixture.directory, `checkout-${patch.length}`);
+    git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+    return { clone, result: rebaseDev({ repositoryPath: clone, ...signingOptions }) };
+  };
+
+  const stale = await run("--- a/fixup.txt\n+++ b/fixup.txt\n@@ -1 +1 @@\n-stale\n+adapted\n");
+  await assert.rejects(stale.result, /does not apply/);
+
+  const { clone, result } = await run(
+    "diff --git a/fixup.txt b/fixup.txt\nnew file mode 100644\n--- /dev/null\n+++ b/fixup.txt\n@@ -0,0 +1 @@\n+adapted\n",
+  );
+  assert.equal((await result).fixupCommits, 1);
+  assert.equal(git(clone, "show", "HEAD:fixup.txt"), "adapted");
+  assert.match(git(clone, "log", "--format=%s"), /adapt incorporated upstream to the fork/);
+});
+
+test("a workflow added upstream stops the run until a fixup deletes it", async () => {
+  const fixture = await makeFixture("inherited-workflow");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "upstream/main");
+  mkdirSync(join(seed, ".github", "workflows"), { recursive: true });
+  writeFileSync(join(seed, ".github", "workflows", "upstream.yml"), "on: push\n");
+  commit(seed, "ci: add upstream workflow");
+  git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
+  const upstreamSha = git(seed, "rev-parse", "HEAD");
+  const rebase = (name) => {
+    const clone = join(fixture.directory, name);
+    git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+    return { clone, result: rebaseDev({ repositoryPath: clone, ...signingOptions }) };
+  };
+
+  await assert.rejects(
+    rebase("inherited").result,
+    /upstream workflows to dev: \.github\/workflows\/upstream\.yml/,
+  );
+
+  mkdirSync(join(fixture.resolverPath, "fixups"));
+  writeFileSync(
+    join(fixture.resolverPath, "fixups", `${upstreamSha}.patch`),
+    "diff --git a/.github/workflows/upstream.yml b/.github/workflows/upstream.yml\ndeleted file mode 100644\n--- a/.github/workflows/upstream.yml\n+++ /dev/null\n@@ -1 +0,0 @@\n-on: push\n",
+  );
+  commit(fixture.resolverPath, "fixup: drop upstream workflow");
+  git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+  const { clone, result } = rebase("dropped");
+  assert.equal((await result).fixupCommits, 1);
+  assert.equal(git(clone, "ls-tree", "--name-only", "HEAD", "--", ".github/workflows/"), "");
+});
+
+test("an upstream doc at the top of docs/ with a dead link stops the run until a fixup moves it", async () => {
+  const fixture = await makeFixture("misplaced-upstream-doc");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "upstream/main");
+  mkdirSync(join(seed, "docs"), { recursive: true });
+  writeFileSync(
+    join(seed, "docs", "new.md"),
+    "See [ok](../shared.txt) and [gone](../missing.md#x).\n",
+  );
+  commit(seed, "docs: add upstream doc");
+  git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
+  const upstreamSha = git(seed, "rev-parse", "HEAD");
+  const rebase = (name) => {
+    const clone = join(fixture.directory, name);
+    git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+    return { clone, result: rebaseDev({ repositoryPath: clone, ...signingOptions }) };
+  };
+
+  await assert.rejects(
+    rebase("misplaced").result,
+    /adds upstream docs at the top of docs\/: docs\/new\.md; breaks doc links: docs\/new\.md -> \.\.\/missing\.md\./,
+  );
+
+  mkdirSync(join(fixture.resolverPath, "fixups"));
+  writeFileSync(
+    join(fixture.resolverPath, "fixups", `${upstreamSha}.patch`),
+    "diff --git a/docs/new.md b/docs/new.md\ndeleted file mode 100644\n--- a/docs/new.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-See [ok](../shared.txt) and [gone](../missing.md#x).\n" +
+      "diff --git a/docs/upstream/new.md b/docs/upstream/new.md\nnew file mode 100644\n--- /dev/null\n+++ b/docs/upstream/new.md\n@@ -0,0 +1 @@\n+See [ok](../../shared.txt).\n",
+  );
+  commit(fixture.resolverPath, "fixup: move upstream doc");
+  git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+  const { clone, result } = rebase("moved");
+  assert.equal((await result).fixupCommits, 1);
+  assert.equal(
+    git(clone, "ls-tree", "-r", "--name-only", "HEAD", "--", "docs/"),
+    "docs/upstream/new.md",
+  );
+});
+
+test("a merge carrying hand edits stops before the replay", async () => {
+  const fixture = await makeFixture("hand-edited-merge", { mergeHistory: "hand-edited" });
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
+
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions }),
+    /is not Git's clean merge of its parents/,
+  );
+  assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
+});
+
+test("a pick a reused resolution settles on upstream's side replays as an empty commit", async () => {
+  const fixture = await makeFixture("resolved-empty");
+  const seed = join(fixture.directory, "seed");
+  git(seed, "checkout", "upstream/main");
+  writeFileSync(join(seed, "other.txt"), "upstream superset\n");
+  commit(seed, "upstream adds other");
+  git(seed, "push", "origin", "HEAD:refs/heads/upstream/main");
+  git(seed, "checkout", "dev");
+  writeFileSync(join(seed, "other.txt"), "fork subset\n");
+  commit(seed, "fork adds other", devMetadata());
+  git(seed, "push", "origin", "HEAD:refs/heads/dev");
+
+  // Record that the fork's pick resolves to upstream's file.
+  const { recorder } = fixture;
+  git(recorder, "fetch", "origin");
+  git(recorder, "checkout", "--detach", "origin/upstream/main");
+  assert.throws(() => git(recorder, "-c", "rerere.enabled=true", "cherry-pick", "origin/dev"));
+  writeFileSync(join(recorder, "other.txt"), "upstream superset\n");
+  git(recorder, "-c", "rerere.enabled=true", "rerere");
+  git(recorder, "cherry-pick", "--abort");
+  await exportResolutions({ repositoryPath: recorder, destinationPath: fixture.resolverPath });
+  commit(fixture.resolverPath, "record upstream-side resolution");
+  git(fixture.resolverPath, "push", "origin", "HEAD:refs/heads/rebase-resolutions");
+
+  const clone = join(fixture.directory, "checkout");
+  git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+
+  assert.equal(git(clone, "show", "HEAD:other.txt"), "upstream superset");
+  const upstream = git(clone, "rev-parse", "origin/upstream/main");
+  const replayed = git(clone, "log", "--format=%H %s", `${upstream}..HEAD`).split("\n");
+  const emptied = replayed.find((line) => line.endsWith(" fork adds other"));
+  assert.ok(emptied);
+  assert.equal(git(clone, "diff-tree", "--no-commit-id", "--name-only", emptied.split(" ")[0]), "");
+});
+
+test("a newly empty replay stops with rebase state intact", async () => {
   const fixture = await makeFixture("newly-empty", { newlyEmpty: true });
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
   const beforeRefs = git(clone, "ls-remote", "--refs", "origin");
 
   await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions }),
     /without a safely reusable completed resolution/,
   );
 
@@ -385,6 +1004,7 @@ test("upstream version changes and missing fork authority stop before publicatio
   assert.equal(git(clone, "ls-remote", "--refs", "origin"), beforeRefs);
 });
 
+test("schema-only resolution branch imports and leaves an unknown conflict diagnosable", async () => {
   const fixture = await makeFixture("schema-only");
   git(fixture.resolverPath, "rm", "-r", "resolutions");
   commit(fixture.resolverPath, "initialize empty resolution cache");
@@ -394,6 +1014,7 @@ test("upstream version changes and missing fork authority stop before publicatio
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
 
   await assert.rejects(
+    rebaseDev({ repositoryPath: clone, diagnosticsPath: diagnostics, ...signingOptions }),
     /without a safely reusable completed resolution/,
   );
 
@@ -402,6 +1023,7 @@ test("upstream version changes and missing fork authority stop before publicatio
   assert.notEqual(git(clone, "ls-files", "-u"), "");
 });
 
+test("export and import refuse symlinked rerere variants", async () => {
   const fixture = await makeFixture("symlink");
   const sourceVariant = join(fixture.recorder, ".git", "rr-cache", fixture.id, "preimage");
   const savedVariant = `${sourceVariant}.saved`;
@@ -428,12 +1050,18 @@ test("upstream version changes and missing fork authority stop before publicatio
   git(fixture.resolverPath, "push", "--force", "origin", "HEAD:refs/heads/rebase-resolutions");
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await assert.rejects(
+    rebaseDev({ repositoryPath: clone, ...signingOptions }),
+    /Unsupported path or file mode/,
+  );
   assert.equal(existsSync(join(clone, ".git", "rr-cache", fixture.id)), false);
 });
 
+test("atomic publication saves captured dev and rejects a stale dev lease", async () => {
   const fixture = await makeFixture("publish");
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
+  await rebaseDev({ repositoryPath: clone, ...signingOptions });
 
   const first = await publishRebase({
     repositoryPath: clone,

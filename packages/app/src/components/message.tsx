@@ -9,6 +9,14 @@ import {
   AttachmentThumbnail,
 } from "@/components/attachment-pill";
 import { MarkdownRenderer } from "@/components/markdown/renderer";
+import type { MarkdownFind } from "@/components/markdown/find-split";
+import { TurnSourceSheet } from "@/components/turn-source-sheet";
+import { useChatFindAnchorText } from "@/agent-stream/chat-find/anchor";
+import { useChatFindItemHighlight } from "@/agent-stream/chat-find/highlight-store";
+import { findMarkdownMatches } from "@/agent-stream/chat-find/markdown-matches";
+import { matchPartsOffset, renderMatchParts } from "@/find-highlight/match-parts";
+import { splitTextForMatches } from "@/find-highlight/split";
+import { searchPattern } from "@getpaseo/protocol/chat-search-text";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { RewindMenu, type RewindMode } from "@/components/rewind/rewind-menu";
 import { useRewindAgentMutation } from "@/components/rewind/use-rewind-agent-mutation";
@@ -45,6 +53,7 @@ import {
   MicVocal,
   Plus,
   Scissors,
+  TextCursor,
   TriangleAlertIcon,
   XCircle,
 } from "lucide-react-native";
@@ -1187,6 +1196,25 @@ export const AssistantMessage = memo(function AssistantMessage({
     [occurrenceKey, revealedMessage.length],
   );
 
+  // Native chat find marks its selected occurrence once the message has fully revealed;
+  // web marks the DOM it searched instead (chat-find/index.web.tsx).
+  const findHighlight = useChatFindItemHighlight(isNative ? findItemId : undefined);
+  const findQuery = findHighlight?.query ?? null;
+  const findCurrent = findHighlight?.index ?? -1;
+  const findComplete = phase === "complete" && revealedMessage === renderedMessage.text;
+  const findMatches = useMemo(
+    () =>
+      findQuery !== null && findComplete
+        ? findMarkdownMatches(revealedMessage, searchPattern(findQuery))
+        : null,
+    [findComplete, findQuery, revealedMessage],
+  );
+  const find = useMemo<MarkdownFind | null>(() => {
+    const match = findMatches?.matches[findCurrent];
+    if (!match || findItemId === undefined) return null;
+    return { match, anchor: { itemId: findItemId, index: findCurrent, offset: 0 } };
+  }, [findCurrent, findItemId, findMatches]);
+
   const measureMessage = useStableEvent((event: import("react-native").LayoutChangeEvent) => {
     setAssistantMessageHeight({ markdown: revealedMessage, ...event.nativeEvent.layout });
   });
@@ -1203,6 +1231,7 @@ export const AssistantMessage = memo(function AssistantMessage({
         client={client}
         workspaceRoot={workspaceRoot}
         serverId={serverId}
+        find={find}
       />
       {fullMessageByteLength !== null ? (
         <Text

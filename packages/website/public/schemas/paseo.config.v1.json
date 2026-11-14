@@ -78,6 +78,15 @@
             }
           }
         },
+        "agentTools": {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            }
+          },
+          "additionalProperties": {}
+        },
         "browserTools": {
           "type": "object",
           "properties": {
@@ -206,6 +215,8 @@
               "description": "Admit only relay clients that negotiate protected endpoint security (replay protection). Defaults to false; older clients still connect while it is off.",
               "type": "boolean"
             },
+              "type": "boolean"
+            },
             "endpoint": {
               "type": "string"
             },
@@ -324,6 +335,22 @@
             "additionalProperties": false
           }
         ]
+      }
+    },
+    "replyRules": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string"
+          },
+          "flags": {
+            "type": "string"
+          }
+        },
+        "required": ["source", "flags"],
+        "additionalProperties": false
       }
     },
     "worktrees": {

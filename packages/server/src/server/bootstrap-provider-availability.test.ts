@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import pino from "pino";
@@ -34,7 +34,17 @@ describe("bootstrap provider availability", () => {
     })
       .split(/\r?\n/)[0]
       .trim();
-    process.env.PATH = path.dirname(gitPath);
+    if (process.platform === "win32") {
+      process.env.PATH = path.dirname(gitPath);
+    } else {
+      // The terminal worker needs ps, while provider CLIs must remain unavailable.
+      const psPath = execFileSync("which", ["ps"], { encoding: "utf8" }).trim();
+      const bin = path.join(root, "bin");
+      await mkdir(bin);
+      await symlink(gitPath, path.join(bin, "git"));
+      await symlink(psPath, path.join(bin, "ps"));
+      process.env.PATH = bin;
+    }
     expect(execFileSync("git", ["--version"], { encoding: "utf8" })).toMatch(/git version/i);
     const paseoHome = path.join(root, ".paseo");
     const staticDir = path.join(root, "static");

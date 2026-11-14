@@ -4,6 +4,7 @@ import { migrateSidebarViewState } from "@/stores/sidebar-view-store";
 import { PersistedCollapsedProjectsSchema } from "@/stores/sidebar-collapsed-sections-store/state";
 import { PanelPersistedStateSchema } from "@/stores/panel-store/state";
 import { WorkspaceLayoutPersistedStateSchema } from "@/stores/workspace-layout-storage";
+import { APP_SETTINGS_KEY, normalizeAppSettings } from "@/hooks/use-settings/storage";
 import {
   buildSelectedPreferencesImport,
   createPreferencesTransfer,
@@ -293,5 +294,26 @@ describe("portable preferences projection", () => {
       "expandedPaths",
     );
     expect(writes.some(({ key }) => key.includes("daemon-registry"))).toBe(false);
+  });
+  it("imports a bridge export's tool call detail level as the chat display", async () => {
+    const storage = new MemoryStorage();
+    const exported = parseTransferForPreview(
+      await createPreferencesTransfer({ storage, configuredDaemonIds: [], sourceLabel: "Bridge" }),
+    );
+    const { chatDisplay: _chatDisplay, ...app } = exported.app;
+    const transfer = parseTransferForPreview(
+      JSON.stringify({ ...exported, app: { ...app, toolCallDetailLevel: "overview" } }),
+    );
+    storage.values.set(APP_SETTINGS_KEY, JSON.stringify({ chatDisplay: "collapseTurns" }));
+
+    const writes = await buildSelectedPreferencesImport({
+      storage,
+      transfer,
+      destinationDaemonIds: [],
+      selected: ["appearance"],
+    });
+
+    const written = writes.find(({ key }) => key === APP_SETTINGS_KEY)?.value ?? "{}";
+    expect(normalizeAppSettings(JSON.parse(written)).chatDisplay).toBe("collapseToolCalls");
   });
 });
