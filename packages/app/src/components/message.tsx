@@ -5,7 +5,7 @@ import { useStableEvent } from "@/hooks/use-stable-event";
 import { getAgentAttachmentPillContent } from "@/attachments/attachment-pill-content";
 import { AssistantForkMenu, type AssistantForkTarget } from "@/components/assistant-fork-menu";
 import { TurnMetricsButton } from "@/components/turn-metrics";
-import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
+import { useAttachmentLightbox } from "@/components/attachment-lightbox-context";
 import {
   AttachmentFrame,
   AttachmentLabel,
@@ -434,11 +434,10 @@ export const UserMessage = memo(function UserMessage({
   const isCompact = useIsCompactFormFactor();
   const { t } = useTranslation();
   const [isHovered, setIsHovered] = useState(false);
-  const [lightboxMetadata, setLightboxMetadata] = useState<UserMessageImageAttachment | null>(null);
-  const handleLightboxClose = useCallback(() => setLightboxMetadata(null), []);
-  const lightboxSource = useMemo<ImageLightboxSource | null>(
-    () => (lightboxMetadata ? { type: "attachment", metadata: lightboxMetadata } : null),
-    [lightboxMetadata],
+  const { open: openLightbox, localLightbox } = useAttachmentLightbox();
+  const openImage = useCallback(
+    (metadata: UserMessageImageAttachment) => openLightbox({ type: "attachment", metadata }),
+    [openLightbox],
   );
   const resolvedDisableOuterSpacing = useDisableOuterSpacing(disableOuterSpacing);
   const findHighlight = useChatFindItemHighlight(findItemId);
@@ -534,7 +533,7 @@ export const UserMessage = memo(function UserMessage({
                   <UserMessageImagePill
                     key={image.id}
                     image={image}
-                    onOpen={setLightboxMetadata}
+                    onOpen={openImage}
                     accessibilityLabel={t("composer.attachments.openImage")}
                   />
                 ))}
@@ -596,7 +595,7 @@ export const UserMessage = memo(function UserMessage({
           </View>
         ) : null}
       </View>
-      <AttachmentLightbox source={lightboxSource} onClose={handleLightboxClose} />
+      {localLightbox}
     </View>
   );
 });
