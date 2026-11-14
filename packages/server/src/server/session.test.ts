@@ -423,6 +423,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     getSnapshot: vi.fn(),
     suggestBranchesForCwd: vi.fn(),
     listStashes: vi.fn(),
+    invalidateStashes: vi.fn(),
 
     validateBranchRef: vi.fn(),
     hasLocalBranch: vi.fn(),
@@ -5174,6 +5175,39 @@ describe("session stash list handling", () => {
 });
 
 describe("session stash mutation handling", () => {
+  test("refuses to pop when the stash at that index is no longer the one listed", async () => {
+    const messages: unknown[] = [];
+    const session = createSessionForTest({
+      workspaceGitService: { getSnapshot: vi.fn().mockResolvedValue({}) },
+      messages,
+    });
+    gitCommandMocks.runGitCommand.mockImplementation(async (args: string[]) => ({
+      // Another worktree pushed a stash, so stash@{0} is now a different commit.
+      stdout: args[0] === "rev-parse" ? "other-worktree-stash\n" : "",
+      stderr: "",
+      exitCode: 0,
+      signal: null,
+      truncated: false,
+    }));
+
+    await session.handleMessage({
+      type: "stash_pop_request",
+      cwd: "/tmp/repo",
+      stashIndex: 0,
+      stashHash: "listed-stash",
+      requestId: "request-stale-pop",
+    });
+
+    expect(gitCommandMocks.runGitCommand).not.toHaveBeenCalledWith(
+      ["stash", "pop", "stash@{0}"],
+      expect.anything(),
+    );
+    expect(messages).toContainEqual({
+      type: "stash_pop_response",
+      payload: expect.objectContaining({ success: false, requestId: "request-stale-pop" }),
+    });
+  });
+
   test("forces a workspace git snapshot refresh after pushing a stash", async () => {
     const messages: unknown[] = [];
     const workspaceGitService = { getSnapshot: vi.fn().mockResolvedValue({}) };

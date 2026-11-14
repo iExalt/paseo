@@ -1742,7 +1742,7 @@ describe("WorkspaceGitServiceImpl D2 read methods", () => {
 
   test("listStashes cold-loads, warms, forces, and coalesces per cwd", async () => {
     let nowMs = 0;
-    const stashOutput = "stash@{0}\u0000paseo-auto-stash: feature\n";
+    const stashOutput = "stash@{0}\u0000abc123\u0000paseo-auto-stash: feature\n";
     const stashDeferred = createDeferred<{
       stdout: string;
       stderr: string;
@@ -1778,8 +1778,24 @@ describe("WorkspaceGitServiceImpl D2 read methods", () => {
       signal: null,
     });
     await expect(Promise.all([first, second])).resolves.toEqual([
-      [{ index: 0, message: "paseo-auto-stash: feature", branch: "feature", isPaseo: true }],
-      [{ index: 0, message: "paseo-auto-stash: feature", branch: "feature", isPaseo: true }],
+      [
+        {
+          index: 0,
+          hash: "abc123",
+          message: "paseo-auto-stash: feature",
+          branch: "feature",
+          isPaseo: true,
+        },
+      ],
+      [
+        {
+          index: 0,
+          hash: "abc123",
+          message: "paseo-auto-stash: feature",
+          branch: "feature",
+          isPaseo: true,
+        },
+      ],
     ]);
 
     nowMs = 1_000;
