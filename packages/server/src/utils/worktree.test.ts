@@ -444,22 +444,29 @@ describe("paseo worktree manager", () => {
       git(["remote", "set-url", "origin", silentRemote.url], repoDir);
 
       try {
+        const refreshTimeoutMs = 1_000;
         const startedAt = Date.now();
         const created = await createLegacyWorktreeForTest({
-          branchName: "from-silent-remote",
           cwd: repoDir,
-          baseBranch: "origin/main",
           worktreeSlug: "from-silent-remote",
+          source: {
+            kind: "branch-off",
+            baseBranch: "origin/main",
+            branchName: "from-silent-remote",
+          },
           paseoHome,
+          remoteBaseRefreshTimeoutMs: refreshTimeoutMs,
         });
+        const elapsedMs = Date.now() - startedAt;
 
-        // Clients give up on a create request after 60s, so the fallback has to land well before.
-        expect(Date.now() - startedAt).toBeLessThan(30_000);
+        // The fetch is abandoned at the refresh timeout (not skipped, not waited out in full).
+        expect(elapsedMs).toBeGreaterThanOrEqual(refreshTimeoutMs - 100);
+        expect(elapsedMs).toBeLessThan(refreshTimeoutMs + 10_000);
         expect(git(["rev-parse", "HEAD"], created.worktreePath)).toBe(cachedTip);
       } finally {
         await silentRemote.close();
       }
-    }, 45_000);
+    }, 20_000);
   });
 });
 
