@@ -6,7 +6,8 @@ export type UpdateCalloutBody =
   | { kind: "available"; versionLabel: string | null; readyToInstall?: boolean }
   | { kind: "downloading"; versionLabel: string | null; percent: number }
   | { kind: "installing" }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string }
+  | { kind: "waiting"; message: string };
 
 export type UpdateCalloutActionRole = "changelog" | "install" | "retry";
 
@@ -36,6 +37,7 @@ export interface ResolveUpdateCalloutInput {
   availableUpdate: { latestVersion?: string | null; readyToInstall?: boolean } | null;
   downloadProgress?: DesktopAppUpdateDownloadProgress | null;
   errorMessage: string | null;
+  installMessage?: string | null;
 }
 
 function formatVersionLabel(latestVersion: string | null | undefined): string | null {
@@ -100,21 +102,30 @@ export function resolveUpdateCalloutDescriptor(
   input: ResolveUpdateCalloutInput,
 ): UpdateCalloutDescriptor | null {
   if (!input.isDesktopApp) return null;
-  if (input.status !== "available" && input.status !== "installing" && input.status !== "error") {
+  if (!["available", "installing", "error", "waiting"].includes(input.status)) {
     return null;
   }
 
   const isError = input.status === "error";
+  const isWaiting = input.status === "waiting";
   const isInstalling = input.isInstalling;
   const isDownloading = isInstalling && input.downloadProgress != null;
-  const isAvailable = !isInstalling && !isError;
+  const isAvailable = !isInstalling && !isError && !isWaiting;
   const readyToInstall = input.availableUpdate?.readyToInstall !== false;
 
   const latestVersion =
     input.availableUpdate?.latestVersion ?? input.downloadProgress?.version ?? null;
   const dismissalKey = `desktop-update:${input.status}:${latestVersion ?? "unknown"}`;
 
-  const { title, body } = resolveCalloutPresentation({
+  const { title, body } = isWaiting && !isInstalling
+    ? {
+        title: i18n.t("desktop.updates.callout.availableTitle"),
+        body: {
+          kind: "waiting" as const,
+          message: input.installMessage ?? i18n.t("desktop.updates.callout.genericError"),
+        },
+      }
+    : resolveCalloutPresentation({
     isError,
     isInstalling,
     readyToInstall,
@@ -131,7 +142,9 @@ export function resolveUpdateCalloutDescriptor(
   } else {
     actions.push({
       role: "install",
-      label: resolveInstallActionLabel({ isDownloading, isInstalling, readyToInstall }),
+      label: isWaiting && !isInstalling
+        ? i18n.t("common.actions.retry")
+        : resolveInstallActionLabel({ isDownloading, isInstalling, readyToInstall }),
       variant: "primary",
       disabled: isInstalling,
     });

@@ -1,13 +1,14 @@
 import { randomBytes } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { app, autoUpdater as electronAutoUpdater, BrowserWindow } from "electron";
+import { app, BrowserWindow } from "electron";
 import { UUID } from "builder-util-runtime";
 import log from "electron-log/main";
-import { autoUpdater } from "electron-updater";
 import { getDesktopSettingsStore } from "../settings/desktop-settings-electron.js";
+import { resolveDesktopInstallation } from "./nix-managed-install.js";
 import {
   createAppUpdateService,
+  type BeforeUpdateQuit,
   type AppUpdateCheckResult,
   type AppUpdateDownloadProgress,
   type AppUpdateInstallLaunchResult,
@@ -36,7 +37,59 @@ export {
 
 let cachedStagingUserIdPromise: Promise<string> | null = null;
 
-const UPDATE_CHANNEL_NOT_PUBLISHED_CODE = "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND";
+type ElectronAutoUpdater = import("./windows-fork-updater.js").ForkNsisUpdater;
+
+const DESKTOP_INSTALLATION = resolveDesktopInstallation(process.resourcesPath);
+
+export function assertElectronAutoUpdaterEnabled(mode = DESKTOP_INSTALLATION.mode): void {
+  if (mode !== "electron") {
+    throw new Error("Electron updates are disabled for Nix-managed desktop installations.");
+  }
+}
+
+export function createElectronAutoUpdaterLoader<T>(input: {
+  mode: "electron" | "nix" | "nix-invalid";
+  load: () => Promise<T>;
+}): () => Promise<T> {
+  let updaterPromise: Promise<T> | null = null;
+  return () => {
+    if (input.mode !== "electron") {
+      return Promise.reject(
+        new Error("electron-updater is disabled for Nix-managed desktop installations."),
+      );
+    }
+    updaterPromise ??= input.load();
+    return updaterPromise;
+  };
+}
+
+let prepareForkInstall: ((version: string) => Promise<void>) | null = null;
+
+const loadAutoUpdater = createElectronAutoUpdaterLoader({
+  mode: DESKTOP_INSTALLATION.mode,
+  load: async () => {
+    const { ForkNsisUpdater, configureForkWindowsUpdater } =
+      await import("./windows-fork-updater.js");
+    const autoUpdater = new ForkNsisUpdater();
+    prepareForkInstall = configureForkWindowsUpdater(autoUpdater, {
+      platform: process.platform,
+      arch: process.arch,
+      stateDirectory: app.getPath("userData"),
+      runningVersion: app.getVersion(),
+    });
+    return autoUpdater;
+  },
+});
+
+function loadElectronAutoUpdater(): Promise<ElectronAutoUpdater> {
+  return loadAutoUpdater();
+}
+
+export async function registerBeforeQuitForUpdate(handler: () => void): Promise<void> {
+  assertElectronAutoUpdaterEnabled();
+  const { autoUpdater } = await import("electron");
+  autoUpdater.on("before-quit-for-update", handler);
+}
 
 interface AppUpdateLogSink {
   info(message: string, details: object): void;
@@ -79,6 +132,7 @@ export function createAppUpdateLifecycleLogger(logger: AppUpdateLogSink) {
 }
 
 const updateLifecycleLog = createAppUpdateLifecycleLogger(log);
+const UPDATE_CHANNEL_NOT_PUBLISHED_CODE = "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND";
 
 function isUpdateChannelNotPublished(error: unknown): boolean {
   return (
@@ -126,9 +180,9 @@ export function shouldInstallAppUpdateOnQuit(input: {
   platform: NodeJS.Platform;
   isAppImage: boolean;
 }): boolean {
-  // AppImage's no-relaunch install path blocks while launching the replacement
-  // binary, which can hang after the running file has already been replaced.
-  return !(input.platform === "linux" && input.isAppImage);
+  // Fork updates apply explicitly after the platform safety gate.
+  void input;
+  return false;
 }
 
 const APP_UPDATE_DOWNLOAD_PROGRESS_EVENT = "paseo:event:app-update-download-progress";
@@ -174,125 +228,35 @@ function broadcastDownloadProgress(progress: AppUpdateDownloadProgress | null): 
   }
 }
 
-export const MACOS_INSTALL_HANDOFF_TIMEOUT_MS = 2 * 60 * 1000;
-
-export interface QuitAndInstallEventSource {
-  on(event: string, listener: (...args: unknown[]) => void): unknown;
-  removeListener?(event: string, listener: (...args: unknown[]) => void): unknown;
-}
-
-function formatLaunchError(error: unknown): string {
-  return error instanceof Error && typeof error.message === "string"
-    ? error.message
-    : String(error);
-}
-
-export function runElectronQuitAndInstall({
-  platform,
-  updater,
-  nativeUpdater,
-  isSilent,
-  isForceRunAfter,
-  timeoutMs = MACOS_INSTALL_HANDOFF_TIMEOUT_MS,
-}: {
-  platform: NodeJS.Platform;
-  updater: QuitAndInstallEventSource & {
-    quitAndInstall(isSilent?: boolean, isForceRunAfter?: boolean): void;
-  };
-  nativeUpdater?: QuitAndInstallEventSource;
-  isSilent: boolean;
-  isForceRunAfter: boolean;
-  timeoutMs?: number;
-}): Promise<AppUpdateInstallLaunchResult> {
-  // Only await macOS Squirrel preparation for explicit Download / Restart Now
-  // installs (isForceRunAfter === true). Quit-time installs (isForceRunAfter === false)
-  // return immediately so quit-lifecycle owns its separate handoff deadline.
-  if (platform !== "darwin" || !isForceRunAfter || typeof nativeUpdater?.on !== "function") {
-    let launchError: unknown = null;
-    const captureLaunchError = (error: unknown) => {
-      launchError ??= error;
-    };
-    updater.on("error", captureLaunchError);
-    try {
-      updater.quitAndInstall(isSilent, isForceRunAfter);
-    } catch (error) {
-      launchError ??= error;
-    } finally {
-      updater.removeListener?.("error", captureLaunchError);
-    }
-    if (launchError !== null) {
-      return Promise.resolve({ started: false, errorMessage: formatLaunchError(launchError) });
-    }
-    return Promise.resolve({ started: true });
-  }
-
-  // With autoInstallOnAppQuit disabled, electron-updater's MacUpdater starts
-  // native Squirrel preparation asynchronously inside quitAndInstall(). Keep
-  // the explicit install promise pending until Squirrel hands off to quit, fails,
-  // or hits the safety timeout.
-  return new Promise<AppUpdateInstallLaunchResult>((resolve) => {
-    let settled = false;
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const cleanup = () => {
-      if (timer !== undefined) {
-        clearTimeout(timer);
-      }
-      updater.removeListener?.("error", handleError);
-      nativeUpdater.removeListener?.("error", handleError);
-      nativeUpdater.removeListener?.("update-not-available", handleNotAvailable);
-      nativeUpdater.removeListener?.("before-quit-for-update", handleQuitStarted);
-    };
-    const finish = (result: AppUpdateInstallLaunchResult) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      resolve(result);
-    };
-
-    const handleError = (error: unknown) => {
-      finish({ started: false, errorMessage: formatLaunchError(error) });
-    };
-    const handleNotAvailable = () => {
-      finish({ started: false, errorMessage: "Update could not be prepared for installation." });
-    };
-    const handleQuitStarted = () => {
-      finish({ started: true });
-    };
-
-    timer = setTimeout(() => {
-      finish({
-        started: false,
-        errorMessage: "Timed out waiting for the update installer to start.",
-      });
-    }, timeoutMs);
-
-    updater.on("error", handleError);
-    nativeUpdater.on("error", handleError);
-    nativeUpdater.on("update-not-available", handleNotAvailable);
-    nativeUpdater.on("before-quit-for-update", handleQuitStarted);
-
-    try {
-      updater.quitAndInstall(isSilent, isForceRunAfter);
-    } catch (error) {
-      handleError(error);
-    }
-  });
-}
-
 class ElectronAppUpdateRuntime implements AppUpdateRuntime {
-  private configured = false;
   private configuration: AppUpdateRuntimeConfiguration | null = null;
+  private configuredPromise: Promise<ElectronAutoUpdater> | null = null;
+  private autoUpdater: ElectronAutoUpdater | null = null;
 
   configure(input: AppUpdateRuntimeConfiguration): void {
     this.configuration = input;
+    if (!this.configuredPromise) {
+      this.configuredPromise = loadElectronAutoUpdater().then((autoUpdater) => {
+        this.autoUpdater = autoUpdater;
+        this.applyConfiguration(autoUpdater);
+        return autoUpdater;
+      });
+    } else if (this.autoUpdater) {
+      this.applyConfiguration(this.autoUpdater);
+    }
+  }
+
+  private applyConfiguration(autoUpdater: ElectronAutoUpdater): void {
+    const input = this.configuration;
+    if (!input) return;
     autoUpdater.autoDownload = input.autoDownload;
     autoUpdater.autoRunAppAfterInstall = true;
     // Paseo revalidates the current manifest before explicitly installing on quit.
     // Electron's built-in handler would install an older download without checking
     // whether a newer release has superseded it.
     autoUpdater.autoInstallOnAppQuit = false;
-    autoUpdater.allowPrerelease = input.releaseChannel === "beta";
-    autoUpdater.channel = input.releaseChannel === "beta" ? "beta" : "latest";
+    autoUpdater.allowPrerelease = false;
+    autoUpdater.channel = "latest";
     autoUpdater.allowDowngrade = false;
     autoUpdater.isUserWithinRollout = async (info) => {
       try {
@@ -302,8 +266,8 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
       }
     };
 
-    if (this.configured) return;
-    this.configured = true;
+    if (this.listenersConfigured) return;
+    this.listenersConfigured = true;
 
     // electron-updater logs every emitted error before consumers can classify it.
     // Paseo reports genuine check, runtime, and install failures through the
@@ -337,47 +301,66 @@ class ElectronAppUpdateRuntime implements AppUpdateRuntime {
   }
 
   setAutoDownload(enabled: boolean): void {
-    autoUpdater.autoDownload = enabled;
+    if (this.configuration) this.configuration.autoDownload = enabled;
+    if (this.autoUpdater) this.autoUpdater.autoDownload = enabled;
+  }
+
+  private listenersConfigured = false;
+
+  private async getConfiguredUpdater(): Promise<ElectronAutoUpdater> {
+    if (!this.configuredPromise) {
+      throw new Error("The Electron updater has not been configured.");
+    }
+    const autoUpdater = await this.configuredPromise;
+    if (this.autoUpdater) this.applyConfiguration(autoUpdater);
+    return autoUpdater;
   }
 
   async checkForUpdates(): Promise<RuntimeUpdateCheckResult | null> {
-    try {
-      const result = await autoUpdater.checkForUpdates();
-      if (!result) return null;
-      return {
-        isUpdateAvailable: result.isUpdateAvailable,
-        updateInfo: result.updateInfo as RuntimeUpdateInfo,
-      };
-    } catch (error) {
-      if (isUpdateChannelNotPublished(error)) return null;
-      throw error;
-    }
+    const autoUpdater = await this.getConfiguredUpdater();
+    const result = await autoUpdater.checkForUpdates();
+    if (!result) return null;
+    // Download failures are surfaced by the error event; also consume the rejected promise.
+    void result.downloadPromise?.catch(() => undefined);
+    return {
+      isUpdateAvailable: result.isUpdateAvailable,
+      updateInfo: result.updateInfo as RuntimeUpdateInfo,
+    };
   }
 
-  downloadUpdate(targetVersion: string): Promise<unknown> {
+  async downloadUpdate(targetVersion: string): Promise<unknown> {
     updateLifecycleLog.downloadRequested(targetVersion);
+    const autoUpdater = await this.getConfiguredUpdater();
     return autoUpdater.downloadUpdate();
   }
 
-  quitAndInstall({
+  async prepareInstall(targetVersion: string): Promise<void> {
+    await this.getConfiguredUpdater();
+    if (!prepareForkInstall) throw new Error("Fork updater is not configured.");
+    await prepareForkInstall(targetVersion);
+  }
+
+  async quitAndInstall({
     targetVersion,
     isSilent,
     isForceRunAfter,
   }: AppUpdateInstallRequest): Promise<AppUpdateInstallLaunchResult> {
     broadcastDownloadProgress(null);
+    if (!this.autoUpdater) {
+      throw new Error("The Electron updater is unavailable for this installation.");
+    }
+    const autoUpdater = this.autoUpdater;
     autoUpdater.autoRunAppAfterInstall = isForceRunAfter;
     updateLifecycleLog.quitAndInstallRequested({
       targetVersion,
       isSilent,
       isForceRunAfter,
     });
-    return runElectronQuitAndInstall({
-      platform: process.platform,
-      updater: autoUpdater,
-      nativeUpdater: electronAutoUpdater,
-      isSilent,
-      isForceRunAfter,
-    });
+    await autoUpdater.launchForkInstaller(isSilent, isForceRunAfter);
+    const { autoUpdater: nativeUpdater } = await import("electron");
+    nativeUpdater.emit("before-quit-for-update");
+    app.quit();
+    return { started: true };
   }
 }
 
@@ -427,7 +410,7 @@ const appUpdateService = createAppUpdateService({
  * update cooldown. Call once when the app is ready. Never rejects.
  */
 export function startAppUpdatePacing(): Promise<void> {
-  if (!app.isPackaged) return Promise.resolve();
+  if (DESKTOP_INSTALLATION.mode !== "electron" || !app.isPackaged) return Promise.resolve();
   return appUpdatePacing.start();
 }
 
@@ -442,10 +425,11 @@ export async function checkForAppUpdate({
   intent: AppUpdateCheckIntent;
   autoDownload?: boolean;
 }): Promise<AppUpdateCheckResult> {
+  assertElectronAutoUpdaterEnabled();
   updateLifecycleLog.checkStarted({ currentVersion, releaseChannel, intent });
   const result = await appUpdateService.checkForAppUpdate({
     currentVersion,
-    releaseChannel,
+    releaseChannel: "stable",
     intent,
     autoDownload,
   });
@@ -469,10 +453,12 @@ export async function downloadAndInstallUpdate(
     currentVersion: string;
     releaseChannel: AppReleaseChannel;
   },
-  onBeforeQuit?: () => Promise<void>,
+  onBeforeQuit?: BeforeUpdateQuit,
 ): Promise<AppUpdateInstallResult> {
+  assertElectronAutoUpdaterEnabled();
+  void releaseChannel;
   return appUpdateService.downloadAndInstallUpdate(
-    { currentVersion, releaseChannel },
+    { currentVersion, releaseChannel: "stable" },
     onBeforeQuit,
   );
 }
@@ -486,6 +472,7 @@ export async function installAppUpdateOnQuit({
   releaseChannel: AppReleaseChannel;
   signal: AbortSignal;
 }): Promise<boolean> {
+  assertElectronAutoUpdaterEnabled();
   if (
     !shouldInstallAppUpdateOnQuit({
       platform: process.platform,

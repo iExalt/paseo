@@ -368,13 +368,13 @@ describe("desktop app updater — install", () => {
     });
   });
 
-  it("moves to 'up-to-date' when the install reports nothing to install", async () => {
+  it("shows a refused install as waiting instead of claiming the app is current", async () => {
     const { updater, port } = createUpdater();
     port.nextInstallResult(buildFakeInstallResult({ installed: false }));
 
     await updater.installUpdate({ releaseChannel: "stable" });
 
-    expect(updater.getSnapshot().status).toBe("up-to-date");
+    expect(updater.getSnapshot().status).toBe("waiting");
   });
 
   it("moves to 'error' instead of 'up-to-date' when the install returns an errorMessage", async () => {
@@ -615,5 +615,23 @@ describe("formatStatusText", () => {
     } finally {
       await i18n.changeLanguage("en");
     }
+  });
+});
+
+it("retains the verified retry target and waiting reason across silent checks", async () => {
+  const { updater, port } = createUpdater();
+  const update = buildFakeCheckResult({ hasUpdate: true, readyToInstall: true });
+  port.nextCheckResult(update);
+  await updater.checkForUpdates({ releaseChannel: "stable" });
+  port.nextInstallResult(
+    buildFakeInstallResult({ installed: false, message: "Waiting for active agents" }),
+  );
+  await updater.installUpdate({ releaseChannel: "stable" });
+  port.nextCheckResult(update);
+  await updater.checkForUpdates({ releaseChannel: "stable", intent: "automatic", silent: true });
+  expect(updater.getSnapshot()).toMatchObject({
+    status: "waiting",
+    installMessage: "Waiting for active agents",
+    availableUpdate: { readyToInstall: true },
   });
 });

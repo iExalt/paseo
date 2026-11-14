@@ -30,7 +30,7 @@ function renderBody(body: UpdateCalloutBody, t: ReturnType<typeof useTranslation
     );
   }
   if (body.kind === "installing") return t("desktop.updates.callout.installingDescription");
-  if (body.kind === "error") return body.message;
+  if (body.kind === "error" || body.kind === "waiting") return body.message;
   return (
     <UpdateAvailableDescription
       versionLabel={body.versionLabel ?? undefined}
@@ -64,6 +64,7 @@ export function UpdateCalloutSource() {
     availableUpdate,
     downloadProgress,
     errorMessage,
+    installMessage,
     checkForUpdates,
     installUpdate,
     isInstalling,
@@ -100,6 +101,7 @@ export function UpdateCalloutSource() {
       availableUpdate,
       downloadProgress,
       errorMessage,
+      installMessage,
     });
     if (!descriptor) return;
 
@@ -125,6 +127,7 @@ export function UpdateCalloutSource() {
     callouts,
     downloadProgress,
     errorMessage,
+    installMessage,
     install,
     isDesktopApp,
     isInstalling,

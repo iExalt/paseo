@@ -1,57 +1,60 @@
-import { EventEmitter } from "node:events";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { UUID } from "builder-util-runtime";
 import { describe, expect, it, vi } from "vitest";
 
-const { autoUpdaterMock, getAllWindowsMock, desktopSettingsMock } = vi.hoisted(() => {
-  const handlers = new Map<string, Set<(value: unknown) => void>>();
-  return {
-    getAllWindowsMock: vi.fn<() => unknown[]>(() => []),
-    desktopSettingsMock: {
-      mode: "automatic" as "automatic" | "notify" | "off",
-      error: null as Error | null,
-    },
-    autoUpdaterMock: {
-      handlers: {
-        get: (event: string) => (value: unknown) => {
-          for (const listener of handlers.get(event) ?? []) {
-            listener(value);
-          }
+const { autoUpdaterMock, getAllWindowsMock, desktopSettingsMock, electronAutoUpdaterMock } =
+  vi.hoisted(() => {
+    const handlers = new Map<string, Set<(value: unknown) => void>>();
+    return {
+      getAllWindowsMock: vi.fn<() => unknown[]>(() => []),
+      desktopSettingsMock: {
+        mode: "automatic" as "automatic" | "notify" | "off",
+        error: null as Error | null,
+      },
+      autoUpdaterMock: {
+        handlers: {
+          get: (event: string) => (value: unknown) => {
+            for (const listener of handlers.get(event) ?? []) {
+              listener(value);
+            }
+          },
         },
+        logger: {
+          debug: vi.fn(),
+          error: vi.fn((message: unknown) => console.error(message)),
+          info: vi.fn(),
+          warn: vi.fn(),
+        },
+        checkForUpdates: vi.fn(),
+        downloadUpdate: vi.fn(),
+        on: vi.fn((event: string, handler: (value: unknown) => void) => {
+          let set = handlers.get(event);
+          if (!set) {
+            set = new Set();
+            handlers.set(event, set);
+          }
+          set.add(handler);
+        }),
+        removeListener: vi.fn((event: string, handler: (value: unknown) => void) => {
+          handlers.get(event)?.delete(handler);
+        }),
+        launchForkInstaller: vi.fn(),
       },
-      logger: {
-        debug: vi.fn(),
-        error: vi.fn((message: unknown) => console.error(message)),
-        info: vi.fn(),
-        warn: vi.fn(),
-      },
-      checkForUpdates: vi.fn(),
-      downloadUpdate: vi.fn(),
-      on: vi.fn((event: string, handler: (value: unknown) => void) => {
-        let set = handlers.get(event);
-        if (!set) {
-          set = new Set();
-          handlers.set(event, set);
-        }
-        set.add(handler);
-      }),
-      removeListener: vi.fn((event: string, handler: (value: unknown) => void) => {
-        handlers.get(event)?.delete(handler);
-      }),
-      quitAndInstall: vi.fn(),
-    },
-  };
-});
+      electronAutoUpdaterMock: { on: vi.fn(), emit: vi.fn() },
+    };
+  });
 
 vi.mock("electron", () => ({
+  autoUpdater: electronAutoUpdaterMock,
   app: {
     // No userData path: update pacing has no state file here, so it paces nothing.
     getPath: vi.fn(),
+    getVersion: vi.fn(() => "1.2.3"),
     isPackaged: true,
+    quit: vi.fn(),
   },
-  autoUpdater: undefined,
   BrowserWindow: {
     getAllWindows: getAllWindowsMock,
   },
@@ -73,22 +76,141 @@ vi.mock("../settings/desktop-settings-electron.js", () => ({
   }),
 }));
 
-vi.mock("electron-updater", () => ({
-  autoUpdater: autoUpdaterMock,
+vi.mock("./windows-fork-updater.js", () => ({
+  configureForkWindowsUpdater: vi.fn(() => async () => {}),
+  ForkNsisUpdater: function MockForkNsisUpdater() {
+    return autoUpdaterMock;
+  },
 }));
 
 import {
   checkForAppUpdate,
+  createElectronAutoUpdaterLoader,
   createAppUpdateLifecycleLogger,
   downloadAndInstallUpdate,
+  assertElectronAutoUpdaterEnabled,
+  registerBeforeQuitForUpdate,
   resolveStagingUserId,
-  runElectronQuitAndInstall,
   shouldInstallAppUpdateOnQuit,
   shouldUseWindowProgressBar,
 } from "./auto-updater";
+import { app } from "electron";
+
+describe("electron updater loading", () => {
+  it("registers the built-in Electron quit event without loading electron-updater", async () => {
+    const handler = vi.fn();
+
+    await registerBeforeQuitForUpdate(handler);
+
+    expect(electronAutoUpdaterMock.on).toHaveBeenCalledWith("before-quit-for-update", handler);
+  });
+
+  it.each(["nix", "nix-invalid"] as const)(
+    "blocks direct update-service access in %s mode",
+    (mode) => {
+      expect(() => assertElectronAutoUpdaterEnabled(mode)).toThrow("disabled for Nix-managed");
+    },
+  );
+
+  it.each(["nix", "nix-invalid"] as const)(
+    "never loads electron-updater in %s mode",
+    async (mode) => {
+      const load = vi.fn(async () => autoUpdaterMock);
+      const loadUpdater = createElectronAutoUpdaterLoader({ mode, load });
+
+      await expect(loadUpdater()).rejects.toThrow("disabled for Nix-managed");
+      expect(load).not.toHaveBeenCalled();
+    },
+  );
+
+  it("loads the Electron updater once in Electron mode", async () => {
+    const load = vi.fn(async () => autoUpdaterMock);
+    const loadUpdater = createElectronAutoUpdaterLoader({ mode: "electron", load });
+
+    await expect(loadUpdater()).resolves.toBe(autoUpdaterMock);
+    await expect(loadUpdater()).resolves.toBe(autoUpdaterMock);
+    expect(load).toHaveBeenCalledOnce();
+  });
+});
 
 describe("checkForAppUpdate", () => {
-  it("treats an unpublished channel manifest as an unavailable update", async () => {
+  it("keeps the app open until the installer starts, and reports a launch failure", async () => {
+    autoUpdaterMock.checkForUpdates.mockImplementation(async () => {
+      const info = { version: "1.2.5" };
+      autoUpdaterMock.handlers.get("update-available")?.(info);
+      autoUpdaterMock.handlers.get("update-downloaded")?.(info);
+      return { isUpdateAvailable: true, updateInfo: info };
+    });
+    let finishLaunch!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      finishLaunch = resolve;
+    });
+    autoUpdaterMock.launchForkInstaller.mockRejectedValueOnce(new Error("blocked installer"));
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const failed = await downloadAndInstallUpdate({
+        currentVersion: "1.2.3",
+        releaseChannel: "stable",
+      });
+      expect(failed.installed).toBe(false);
+      expect(failed.message).toContain("blocked installer");
+      expect(app.quit).not.toHaveBeenCalled();
+      let reachedLaunch!: () => void;
+      const started = new Promise<void>((resolve) => {
+        reachedLaunch = resolve;
+      });
+      autoUpdaterMock.launchForkInstaller.mockImplementationOnce(() => {
+        reachedLaunch();
+        return gate;
+      });
+      const install = downloadAndInstallUpdate({
+        currentVersion: "1.2.3",
+        releaseChannel: "stable",
+      });
+      await started;
+      expect(app.quit).not.toHaveBeenCalled();
+      finishLaunch();
+      expect((await install).installed).toBe(true);
+      expect(electronAutoUpdaterMock.emit).toHaveBeenCalledWith("before-quit-for-update");
+      expect(app.quit).toHaveBeenCalledOnce();
+    } finally {
+      errorLog.mockRestore();
+      autoUpdaterMock.checkForUpdates.mockReset();
+    }
+  });
+  it("observes background download rejection and keeps its failure visible", async () => {
+    const error = new Error("download interrupted");
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    let failDownload!: () => void;
+    const download = new Promise<never>((_resolve, reject) => {
+      failDownload = () => {
+        autoUpdaterMock.handlers.get("error")?.(error);
+        reject(error);
+      };
+    });
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    autoUpdaterMock.checkForUpdates.mockImplementationOnce(async () => {
+      const info = { version: "1.2.4" };
+      autoUpdaterMock.handlers.get("update-available")?.(info);
+      queueMicrotask(failDownload);
+      return { isUpdateAvailable: true, updateInfo: info, downloadPromise: download };
+    });
+    try {
+      const result = await checkForAppUpdate({
+        currentVersion: "1.2.3",
+        releaseChannel: "stable",
+        intent: "manual",
+      });
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(unhandled).not.toHaveBeenCalled();
+      expect(result.errorMessage).toBe("download interrupted");
+    } finally {
+      process.off("unhandledRejection", unhandled);
+      consoleError.mockRestore();
+    }
+  });
+  it("reports missing update metadata rather than claiming the app is current", async () => {
     const error = Object.assign(new Error("Cannot find latest-mac.yml"), {
       code: "ERR_UPDATER_CHANNEL_FILE_NOT_FOUND",
     });
@@ -113,9 +235,9 @@ describe("checkForAppUpdate", () => {
       latestVersion: "1.2.3",
       body: null,
       date: null,
-      errorMessage: null,
+      errorMessage: "Cannot find latest-mac.yml",
     });
-    expect(consoleError).not.toHaveBeenCalled();
+    expect(consoleError).toHaveBeenCalled();
     consoleError.mockRestore();
   });
 
@@ -361,97 +483,6 @@ describe("checkForAppUpdate", () => {
     }
   });
 
-  it("reports a failure when quitAndInstall emits an installer error and returns normally", async () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
-    autoUpdaterMock.checkForUpdates.mockResolvedValueOnce({
-      isUpdateAvailable: true,
-      updateInfo: { version: "1.2.8" },
-    });
-    autoUpdaterMock.downloadUpdate.mockResolvedValueOnce(undefined);
-    autoUpdaterMock.quitAndInstall.mockImplementationOnce(() => {
-      autoUpdaterMock.handlers.get("error")?.(new Error("EROFS: read-only file system"));
-    });
-
-    const result = await downloadAndInstallUpdate({
-      currentVersion: "1.2.3",
-      releaseChannel: "stable",
-    });
-
-    expect(result).toMatchObject({
-      installed: false,
-      errorMessage: "EROFS: read-only file system",
-    });
-    consoleError.mockRestore();
-  });
-
-  it("waits on macOS explicit installs until Squirrel reports an error or signals quit, while returning immediately on quit-time handoff", async () => {
-    const updater = Object.assign(new EventEmitter(), {
-      quitAndInstall: vi.fn(),
-    });
-    const nativeUpdater = new EventEmitter();
-
-    const failedInstall = runElectronQuitAndInstall({
-      platform: "darwin",
-      updater,
-      nativeUpdater,
-      isSilent: false,
-      isForceRunAfter: true,
-    });
-    expect(
-      await Promise.race([failedInstall.then(() => "settled"), Promise.resolve("pending")]),
-    ).toBe("pending");
-
-    nativeUpdater.emit("error", new Error("Code signature invalid"));
-    await expect(failedInstall).resolves.toEqual({
-      started: false,
-      errorMessage: "Code signature invalid",
-    });
-    expect(updater.listenerCount("error")).toBe(0);
-    expect(nativeUpdater.listenerCount("error")).toBe(0);
-    expect(nativeUpdater.listenerCount("before-quit-for-update")).toBe(0);
-
-    const restartInstall = runElectronQuitAndInstall({
-      platform: "darwin",
-      updater,
-      nativeUpdater,
-      isSilent: false,
-      isForceRunAfter: true,
-    });
-    nativeUpdater.emit("before-quit-for-update");
-    await expect(restartInstall).resolves.toEqual({ started: true });
-
-    // Quit-time install (isForceRunAfter: false) returns immediately so
-    // quit-lifecycle owns its separate handoff deadline.
-    await expect(
-      runElectronQuitAndInstall({
-        platform: "darwin",
-        updater,
-        nativeUpdater,
-        isSilent: true,
-        isForceRunAfter: false,
-      }),
-    ).resolves.toEqual({ started: true });
-    expect(nativeUpdater.listenerCount("before-quit-for-update")).toBe(0);
-
-    // Explicit install times out cleanly instead of hanging forever if Squirrel never emits.
-    await expect(
-      runElectronQuitAndInstall({
-        platform: "darwin",
-        updater,
-        nativeUpdater,
-        isSilent: false,
-        isForceRunAfter: true,
-        timeoutMs: 10,
-      }),
-    ).resolves.toEqual({
-      started: false,
-      errorMessage: "Timed out waiting for the update installer to start.",
-    });
-    expect(updater.listenerCount("error")).toBe(0);
-    expect(nativeUpdater.listenerCount("error")).toBe(0);
-    expect(nativeUpdater.listenerCount("before-quit-for-update")).toBe(0);
-  });
-
   it("logs the update handoff with current and selected target versions", () => {
     const info = vi.fn();
     const lifecycleLog = createAppUpdateLifecycleLogger({ info });
@@ -500,9 +531,9 @@ describe("checkForAppUpdate", () => {
 describe("shouldInstallAppUpdateOnQuit", () => {
   it("keeps Linux AppImage updates on the manual install path", () => {
     expect(shouldInstallAppUpdateOnQuit({ platform: "linux", isAppImage: true })).toBe(false);
-    expect(shouldInstallAppUpdateOnQuit({ platform: "linux", isAppImage: false })).toBe(true);
-    expect(shouldInstallAppUpdateOnQuit({ platform: "darwin", isAppImage: false })).toBe(true);
-    expect(shouldInstallAppUpdateOnQuit({ platform: "win32", isAppImage: false })).toBe(true);
+    expect(shouldInstallAppUpdateOnQuit({ platform: "linux", isAppImage: false })).toBe(false);
+    expect(shouldInstallAppUpdateOnQuit({ platform: "darwin", isAppImage: false })).toBe(false);
+    expect(shouldInstallAppUpdateOnQuit({ platform: "win32", isAppImage: false })).toBe(false);
   });
 });
 

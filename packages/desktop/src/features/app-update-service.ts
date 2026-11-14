@@ -80,10 +80,13 @@ export interface AppUpdateRuntime {
   setAutoDownload?(enabled: boolean): void;
   checkForUpdates(): Promise<RuntimeUpdateCheckResult | null>;
   downloadUpdate(targetVersion: string): Promise<unknown>;
+  prepareInstall?(targetVersion: string): Promise<void>;
   quitAndInstall(
     input: AppUpdateInstallRequest,
   ): Promise<AppUpdateInstallLaunchResult> | AppUpdateInstallLaunchResult;
 }
+
+export type BeforeUpdateQuit = () => Promise<void | (() => Promise<void>)>;
 
 export interface AppUpdateService {
   checkForAppUpdate(input: {
@@ -97,7 +100,7 @@ export interface AppUpdateService {
       currentVersion: string;
       releaseChannel: AppReleaseChannel;
     },
-    onBeforeQuit?: () => Promise<void>,
+    onBeforeQuit?: BeforeUpdateQuit,
   ): Promise<AppUpdateInstallResult>;
   installUpdateOnQuit(input: {
     currentVersion: string;
@@ -159,18 +162,25 @@ async function performQuitAndInstall(
     restart,
   }: {
     targetVersion: string;
-    onBeforeQuit?: () => Promise<void>;
+    onBeforeQuit?: BeforeUpdateQuit;
     restart: boolean;
   },
 ): Promise<void> {
-  if (onBeforeQuit) await onBeforeQuit();
-  const launch = await runtime.quitAndInstall({
-    targetVersion,
-    isSilent: !restart,
-    isForceRunAfter: restart,
-  });
-  if (!launch.started) {
-    throw new Error(launch.errorMessage ?? "Failed to launch update installer.");
+  await runtime.prepareInstall?.(targetVersion);
+  const rollback = await onBeforeQuit?.();
+  try {
+    await runtime.prepareInstall?.(targetVersion);
+    const launch = await runtime.quitAndInstall({
+      targetVersion,
+      isSilent: !restart,
+      isForceRunAfter: restart,
+    });
+    if (!launch.started) {
+      throw new Error(launch.errorMessage ?? "Failed to launch update installer.");
+    }
+  } catch (error) {
+    await rollback?.();
+    throw error;
   }
 }
 
@@ -513,7 +523,7 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
    */
   async function runUpdateCheck(
     { currentVersion, releaseChannel, intent, autoDownload }: UpdateCheckInput,
-    { spaced }: { spaced: boolean },
+    { spaced, alreadyExclusive = false }: { spaced: boolean; alreadyExclusive?: boolean },
   ): Promise<AppUpdateCheckResult> {
     if (!deps.isPackaged()) {
       return buildCheckResult({
@@ -523,7 +533,7 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
       });
     }
 
-    return runCheckExclusively(async () => {
+    const check = async () => {
       const respectsInterval = spaced && intent === "automatic" && releaseChannel === "stable";
       const checkIsDue = respectsInterval ? await deps.pacing.isAutomaticCheckDue() : true;
 
@@ -587,14 +597,15 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
           errorMessage: getErrorMessage(error),
         });
       }
-    });
+    };
+    return alreadyExclusive ? check() : runCheckExclusively(check);
   }
 
   function checkForAppUpdate(input: UpdateCheckInput): Promise<AppUpdateCheckResult> {
     return runUpdateCheck(input, { spaced: true });
   }
 
-  async function downloadAndInstallUpdate(
+  async function performDownloadAndInstallUpdate(
     {
       currentVersion,
       releaseChannel,
@@ -602,7 +613,7 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
       currentVersion: string;
       releaseChannel: AppReleaseChannel;
     },
-    onBeforeQuit?: () => Promise<void>,
+    onBeforeQuit?: BeforeUpdateQuit,
   ): Promise<AppUpdateInstallResult> {
     if (!deps.isPackaged()) {
       return {
@@ -614,7 +625,7 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
 
     const check = await runUpdateCheck(
       { currentVersion, releaseChannel, intent: "manual", autoDownload: false },
-      { spaced: false },
+      { spaced: false, alreadyExclusive: true },
     );
     if (!check.hasUpdate) {
       return {
@@ -645,6 +656,13 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
       cachedUpdateInfo?.version === readyVersion &&
       !signal?.aborted
     );
+  }
+
+  function downloadAndInstallUpdate(
+    input: { currentVersion: string; releaseChannel: AppReleaseChannel },
+    onBeforeQuit?: BeforeUpdateQuit,
+  ): Promise<AppUpdateInstallResult> {
+    return runCheckExclusively(() => performDownloadAndInstallUpdate(input, onBeforeQuit));
   }
 
   async function ensureUpdateDownloaded(
@@ -691,7 +709,7 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
       signal,
       restart,
     }: {
-      onBeforeQuit?: () => Promise<void>;
+      onBeforeQuit?: BeforeUpdateQuit;
       signal?: AbortSignal;
       restart: boolean;
     },
@@ -732,10 +750,12 @@ export function createAppUpdateService(deps: AppUpdateServiceDeps): AppUpdateSer
       return {
         installed: true,
         version: readyVersion,
-        message: "Update downloaded. The app will restart shortly.",
+        message: "Update installation requested. The app will restart when the installer starts.",
       };
     } catch (error) {
       deps.onDownloadProgress?.(null);
+      downloadedUpdateVersion = null;
+      stagedChainHead = null;
       const message = error instanceof Error ? error.message : String(error);
       deps.reportInstallError?.(message);
       return {
