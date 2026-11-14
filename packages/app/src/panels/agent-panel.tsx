@@ -23,6 +23,10 @@ import { useStoreWithEqualityFn } from "zustand/traditional";
 import { useAgentStreamTail } from "@/agent-stream/use-agent-stream-tail";
 import { useRetainedSessionSelector } from "@/stores/session-store-hooks/use-retained-session-selector";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
+import {
+  TimelineReadinessMarker,
+  useCountClosedTurns,
+} from "@/agent-stream/timeline-readiness-marker";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { ComposerDock } from "@/composer/dock";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
@@ -1101,6 +1105,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
   // The dock lays out fullscreen for the same session the composer edits in.
   const composerEditingSession = useComposerEditingSession("chat");
   const isComposerFullscreen = useComposerFullscreen(composerEditingSession);
+  useCountClosedTurns(serverId, agentId);
   const subagentRows = useSubagentsForParent({ serverId, parentAgentId: agentId });
   const tasks = useSessionStore((state): TodoEntry[] | undefined =>
     state.sessions[serverId]?.agentTasks.get(agentId),
@@ -1245,6 +1250,9 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       ) : null}
 
       <TimelineSyncStatus sync={timelineSync} toast={toast} onDismiss={dismiss} />
+      {timelineSync ? (
+        <TimelineReadinessMarker serverId={serverId} agentId={agentId} sync={timelineSync} />
+      ) : null}
     </>
   );
 
