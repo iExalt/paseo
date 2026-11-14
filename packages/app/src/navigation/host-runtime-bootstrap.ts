@@ -121,6 +121,7 @@ export interface ResolveIndexStartupRouteInput extends ResolveStartupRouteBaseIn
 
 export interface ResolveHostStartupRouteInput extends ResolveStartupRouteBaseInput {
   route: HostStartupRouteTarget;
+  initialDiscoverySettled: boolean;
 }
 
 export type ResolveStartupRouteInput = ResolveIndexStartupRouteInput | ResolveHostStartupRouteInput;
@@ -237,6 +238,9 @@ export function resolveStartupRoute(input: ResolveStartupRouteInput): StartupRou
   if (isHostStartupRouteInput(input)) {
     if (input.startupBlocker.kind !== "none" || input.hostRegistryStatus === "loading") {
       return { kind: "render" };
+    }
+    if (!hostExists(input.hosts, input.route.serverId) && !input.initialDiscoverySettled) {
+      return { kind: "splash" };
     }
     return resolveReadyHostStartupRoute(input);
   }
