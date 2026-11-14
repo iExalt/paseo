@@ -14,6 +14,7 @@
 
 import nacl from "tweetnacl";
 import { fromByteArray, toByteArray } from "base64-js";
+import { openAfterInSlices, type SliceScheduler } from "./sliced-open.js";
 
 export interface KeyPair {
   publicKey: Uint8Array; // 32 bytes
@@ -178,4 +179,29 @@ export function decrypt(sharedKey: SharedKey, data: ArrayBuffer): ArrayBuffer {
   }
 
   return toArrayBuffer(opened);
+}
+
+/**
+ * Like decrypt, but yields to the event loop between slices so a large bundle does not hold the
+ * JavaScript thread for its whole open.
+ */
+export async function decryptInSlices(
+  sharedKey: SharedKey,
+  data: ArrayBuffer,
+  scheduler: SliceScheduler,
+): Promise<ArrayBuffer> {
+  const bytes = new Uint8Array(data);
+  if (bytes.byteLength < NONCE_LENGTH) {
+    throw new Error("Ciphertext bundle too short");
+  }
+  const opened = await openAfterInSlices(
+    bytes.subarray(NONCE_LENGTH),
+    bytes.subarray(0, NONCE_LENGTH),
+    sharedKey,
+    scheduler,
+  );
+  if (!opened) {
+    throw new Error("Decryption failed");
+  }
+  return opened.buffer as ArrayBuffer;
 }
