@@ -99,4 +99,4 @@ A plugin can solve a problem for its users without adding that workflow to every
 
 The aim is an ecosystem that can develop independently of the maintainer's ability to review core changes. Its value comes from useful things people build, maintain, and share.
 
-Paseo is an independent project. Sustainable development, a coherent product, and the freedom to keep building are priorities. See [Contributing](../CONTRIBUTING.md) for how to participate.
+Paseo is an independent project. Sustainable development, a coherent product, and the freedom to keep building are priorities. See [Contributing](../../CONTRIBUTING.md) for how to participate.
