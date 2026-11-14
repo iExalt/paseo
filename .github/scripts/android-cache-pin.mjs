@@ -171,6 +171,12 @@ async function planCommand() {
   }
   const restore = planRestore(pin, { deps, modules });
   if (pin && !restore.modules) {
+    console.log(
+      "::notice::" +
+        (pin.modules
+          ? "The pinned node_modules inputs differ (lockfile, platform, or install files)"
+          : `The ${pin.version} pin has no node_modules entry`) +
+        "; building that cache cold.",
     );
   }
   await output({
