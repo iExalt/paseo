@@ -13,11 +13,12 @@ import {
 } from "@/components/ui/icon-button-chrome";
 import { WORKSPACE_SECONDARY_HEADER_HEIGHT } from "@/constants/layout";
 import { useHasWindowChromeObstruction } from "@/utils/desktop-window";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 
 const ThemedPanelRight = withUnistyles(PanelRight);
 
-const EXPLORER_TOGGLE_KEYS: ShortcutKey[] = ["mod", "E"];
+const NO_SHORTCUT: ShortcutKey[] = [];
 
 interface WorkspaceExplorerToggleProps {
   onPress: () => void;
@@ -36,12 +37,14 @@ function WorkspaceExplorerToggle({
   mobile,
   style,
 }: WorkspaceExplorerToggleProps) {
+  const tooltipChord = useShortcutKeys("toggle-right-sidebar");
   return (
     <HeaderToggleButton
       testID="workspace-explorer-toggle"
       onPress={onPress}
       tooltipLabel={tooltipLabel}
-      tooltipKeys={EXPLORER_TOGGLE_KEYS}
+      tooltipKeys={NO_SHORTCUT}
+      tooltipChord={tooltipChord}
       tooltipSide="left"
       style={style}
       accessible
