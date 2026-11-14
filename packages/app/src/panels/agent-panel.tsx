@@ -24,6 +24,10 @@ import { useAgentStreamTail } from "@/agent-stream/use-agent-stream-tail";
 import { useRetainedSessionSelector } from "@/stores/session-store-hooks/use-retained-session-selector";
 import { AgentStreamView, type AgentStreamViewHandle } from "@/agent-stream/view";
 import { CHAT_COLUMN_RAIL_DATASET, ChatColumnRailSurface } from "@/chat-rail";
+import {
+  TimelineReadinessMarker,
+  useCountClosedTurns,
+} from "@/agent-stream/timeline-readiness-marker";
 import { ArchivedAgentCallout } from "@/components/archived-agent-callout";
 import { ComposerDock } from "@/composer/dock";
 import { FileDropZone } from "@/components/file-drop/file-drop-zone";
@@ -1123,6 +1127,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     workspaceId,
     agentId,
   });
+  useCountClosedTurns(serverId, agentId);
   const hasActiveComposer = !agentState.archivedAt && !isArchivingCurrentAgent;
   const focusRestoredComposer = useStableEvent(() => {
     if (isPaneFocused && showsComposer && hasActiveComposer) {
@@ -1284,6 +1289,9 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
       ) : null}
 
       <TimelineSyncStatus sync={timelineSync} toast={toast} onDismiss={dismiss} />
+      {timelineSync ? (
+        <TimelineReadinessMarker serverId={serverId} agentId={agentId} sync={timelineSync} />
+      ) : null}
     </>
   );
 
