@@ -312,12 +312,22 @@ it("propagates connection and request failures", async () => {
 });
 
 describe("usage CLI registration", () => {
-  it("registers default, ls and inspect with the accepted selectors", () => {
+  it("registers reporting, spend and live usage toggles with the accepted selectors", () => {
     const usage = createCli().commands.find((command) => command.name() === "usage")!;
-    expect(usage.commands.map((command) => command.name())).toEqual(["ls", "inspect", "spend"]);
+    expect(usage.commands.map((command) => command.name())).toEqual([
+      "on",
+      "off",
+      "ls",
+      "inspect",
+      "spend",
+    ]);
     expect(usage.helpInformation()).toContain("--agent <id>");
-    expect(usage.commands[0]!.helpInformation()).toContain("--refresh");
-    expect(usage.commands[1]!.helpInformation()).toContain("<report-id>");
+    expect(usage.commands.find((command) => command.name() === "ls")!.helpInformation()).toContain(
+      "--refresh",
+    );
+    expect(
+      usage.commands.find((command) => command.name() === "inspect")!.helpInformation(),
+    ).toContain("<report-id>");
   });
 });
 
