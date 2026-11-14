@@ -25,6 +25,16 @@ const createWorkspace = vi.fn(async () => ({
     notifications: "off" as const,
   },
 }));
+const listWorkspaceLabels = vi.fn();
+const setWorkspaceLabel = vi.fn();
+const updateWorkspaceLabel = vi.fn();
+const deleteWorkspaceLabel = vi.fn();
+const inspectWorkspaceLabelDelete = vi.fn();
+const inspectWorkspaceRecovery = vi.fn();
+const restoreWorkspace = vi.fn();
+const getLastServerInfoMessage = vi.fn(() => ({
+  features: { workspaceLabels: true, workspaceRecovery: true },
+}));
 const fetchWorkspaces = vi.fn();
 const fetchWorkspaceSetupStatus = vi.fn();
 const runWorkspaceSetup = vi.fn();
@@ -32,6 +42,14 @@ const close = vi.fn(async () => undefined);
 
 vi.mock("../../utils/client.js", () => ({
   connectToDaemon: vi.fn(async () => ({
+    listWorkspaceLabels,
+    setWorkspaceLabel,
+    updateWorkspaceLabel,
+    deleteWorkspaceLabel,
+    inspectWorkspaceLabelDelete,
+    inspectWorkspaceRecovery,
+    restoreWorkspace,
+    getLastServerInfoMessage,
     fetchWorkspaces,
     fetchWorkspaceSetupStatus,
     runWorkspaceSetup,
@@ -365,5 +383,124 @@ describe("workspace descriptor inspection", () => {
       runSetupCommand("missing", { ...options, status: true }, {} as never),
     ).rejects.toMatchObject({ code: "WORKSPACE_SETUP_FAILED" });
     expect(close).toHaveBeenCalledOnce();
+  });
+});
+
+import { runRecoverCommand } from "./recover.js";
+
+describe("workspace label catalog and recovery", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+  async function parse(args: string[]) {
+    return createWorkspaceCommand().parseAsync(args, { from: "user" });
+  }
+  it("lists labels and creates with an explicit workspace assignment", async () => {
+    listWorkspaceLabels.mockResolvedValueOnce({ labels: [{ name: "Ready", color: "sky" }] });
+    setWorkspaceLabel.mockResolvedValueOnce({
+      label: { name: "Ready", color: "sky" },
+      workspaceLabels: ["Ready"],
+    });
+    await parse(["label", "ls"]);
+    await parse(["label", "create", "Ready", "--workspace", "ws-1", "--color", "sky"]);
+    expect(setWorkspaceLabel).toHaveBeenCalledExactlyOnceWith({
+      workspaceId: "ws-1",
+      label: { name: "Ready", color: "sky" },
+      assigned: true,
+    });
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+  it("renames and recolors in one catalog mutation", async () => {
+    updateWorkspaceLabel.mockResolvedValueOnce({
+      label: { name: "Blocked", color: "red" },
+      affectedWorkspaceCount: 2,
+    });
+    await parse(["label", "update", "Ready", "--name", "Blocked", "--color", "red"]);
+    expect(updateWorkspaceLabel).toHaveBeenCalledExactlyOnceWith({
+      name: "Ready",
+      newName: "Blocked",
+      color: "red",
+    });
+  });
+  it("inspects deletion separately from confirmed deletion", async () => {
+    inspectWorkspaceLabelDelete.mockResolvedValueOnce({ affectedWorkspaceCount: 2 });
+    deleteWorkspaceLabel.mockResolvedValueOnce({ affectedWorkspaceCount: 2 });
+    await parse(["label", "delete", "Ready", "--inspect"]);
+    expect(deleteWorkspaceLabel).not.toHaveBeenCalled();
+    await parse(["label", "delete", "Ready", "--force"]);
+    expect(inspectWorkspaceLabelDelete).toHaveBeenCalledExactlyOnceWith({ name: "Ready" });
+    expect(deleteWorkspaceLabel).toHaveBeenCalledExactlyOnceWith({ name: "Ready" });
+  });
+  it.each([
+    ["label", "delete", "Needs", "Review", "--force"],
+    ["label", "delete", "Ready"],
+    ["label", "delete", "Ready", "--force", "--inspect"],
+    ["label", "create", "Ready", "--color", "sky"],
+    ["label", "create", "Ready", "--workspace", "ws-1", "--color", "invalid"],
+    ["label", "update", "Ready"],
+    ["label", "update", " ", "--color", "sky"],
+  ])("refuses invalid catalog requests before connecting: %j", async (...args) => {
+    const workspace = createWorkspaceCommand()
+      .exitOverride()
+      .configureOutput({ writeErr: () => undefined });
+    const label = workspace.commands.find((command) => command.name() === "label")!;
+    label.exitOverride();
+    for (const command of label.commands) command.exitOverride();
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("CLI exit");
+    });
+    try {
+      await expect(workspace.parseAsync(args, { from: "user" })).rejects.toThrow();
+      expect(getLastServerInfoMessage).not.toHaveBeenCalled();
+      expect(deleteWorkspaceLabel).not.toHaveBeenCalled();
+      expect(setWorkspaceLabel).not.toHaveBeenCalled();
+    } finally {
+      exit.mockRestore();
+    }
+  });
+  it("preserves unavailable recovery state without restoring", async () => {
+    const state = {
+      kind: "unavailable",
+      workspaceId: "ws-1",
+      reason: "missing",
+      message: "Branch unavailable",
+    };
+    inspectWorkspaceRecovery.mockResolvedValueOnce(state);
+    const result = await runRecoverCommand(
+      "ws-1",
+      { daemonTarget: { kind: "instance", home: "/tmp/recover-test" }, inspect: true },
+      {} as never,
+    );
+    expect(result.data).toEqual({ workspaceId: "ws-1", restored: false, state });
+    expect(restoreWorkspace).not.toHaveBeenCalled();
+    expect(close).toHaveBeenCalledOnce();
+  });
+  it("routes recovery and propagates errors with cleanup", async () => {
+    await parse(["recover", "ws-1"]);
+    expect(restoreWorkspace).toHaveBeenCalledExactlyOnceWith("ws-1");
+    restoreWorkspace.mockRejectedValueOnce(new Error("Restore refused"));
+    await expect(
+      runRecoverCommand(
+        "ws-1",
+        { daemonTarget: { kind: "instance", home: "/tmp/recover-test" } },
+        {} as never,
+      ),
+    ).rejects.toThrow("Restore refused");
+    expect(close).toHaveBeenCalledTimes(2);
+  });
+  it("refuses unavailable capabilities and closes connections", async () => {
+    getLastServerInfoMessage.mockReturnValueOnce({
+      features: { workspaceLabels: false, workspaceRecovery: true },
+    });
+    const exit = vi.spyOn(process, "exit").mockImplementation(() => {
+      throw new Error("CLI exit");
+    });
+    try {
+      await expect(parse(["label", "ls"])).rejects.toThrow();
+      expect(listWorkspaceLabels).not.toHaveBeenCalled();
+      expect(close).toHaveBeenCalledOnce();
+    } finally {
+      exit.mockRestore();
+    }
   });
 });
