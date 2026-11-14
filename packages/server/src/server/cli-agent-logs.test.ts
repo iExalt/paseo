@@ -1,3 +1,4 @@
+import { FakeRewindSession, REWIND_TEST_CAPABILITIES } from "./agent/rewind/test-rewind-session.js";
 import { test } from "vitest";
 import assert from "node:assert";
 import { spawn } from "node:child_process";
@@ -8,7 +9,7 @@ import type { Readable } from "node:stream";
 import { join } from "node:path";
 import { createDaemonTestContext } from "./test-utils/daemon-test-context.js";
 import { createTestAgentClients } from "./test-utils/fake-agent-client.js";
-import type { AgentStreamEvent } from "@getpaseo/protocol/agent-types";
+import type { AgentPromptInput, AgentStreamEvent } from "@getpaseo/protocol/agent-types";
 
 interface CliResult {
   exitCode: number | null;
@@ -104,8 +105,25 @@ test("logs --since filters history and live output through the CLI and daemon", 
   try {
     console.log("--since filters logs through the real CLI and daemon");
     const historyEvents: AgentStreamEvent[] = [];
+    const startedPrompts: AgentPromptInput[] = [];
+    const rewindSession = new FakeRewindSession();
     const ctx = await createDaemonTestContext({
-      agentClients: createTestAgentClients({ historyEvents }),
+      agentClients: {
+        ...createTestAgentClients({
+          historyEvents,
+          onStartTurn: (prompt) => {
+            startedPrompts.push(prompt);
+          },
+        }),
+        claude: {
+          provider: "claude",
+          capabilities: REWIND_TEST_CAPABILITIES,
+          createSession: async () => rewindSession,
+          resumeSession: async () => rewindSession,
+          fetchCatalog: async () => ({ models: [], modes: [] }),
+          isAvailable: async () => true,
+        },
+      },
     });
     try {
       const agent = await ctx.client.createAgent({
@@ -140,6 +158,70 @@ test("logs --since filters history and live output through the CLI and daemon", 
         type: "assistant_message",
         text: "OLD_REPLY",
       });
+      const sourceBefore = await ctx.client.fetchAgentTimeline(structuredAgent.id, { limit: 0 });
+      const forked = await logs([
+        "agent",
+        "fork",
+        structuredAgent.id,
+        "continue",
+        "--no-wait",
+        "--json",
+        "--relationship",
+        "detached",
+      ]);
+      assert.strictEqual(forked.exitCode, 0, forked.stderr);
+      const forkId = JSON.parse(forked.stdout).agentId;
+      assert.notStrictEqual(forkId, structuredAgent.id);
+      const promptText = JSON.stringify(startedPrompts);
+      assert.ok(promptText.includes("OLD_USER"), promptText);
+      assert.ok(promptText.includes("OLD_REPLY"), promptText);
+      const sourceAfter = await ctx.client.fetchAgentTimeline(structuredAgent.id, { limit: 0 });
+      assert.deepStrictEqual(sourceAfter.entries, sourceBefore.entries);
+      const forkSnapshot = await ctx.client.fetchAgent({ agentId: forkId });
+      assert.strictEqual(forkSnapshot?.agent.provider, "codex");
+      const rewindable = await ctx.client.createAgent({
+        provider: "claude",
+        cwd: ctx.daemon.paseoHome,
+      });
+      const rewindResult = await logs([
+        "agent",
+        "rewind",
+        rewindable.id,
+        "--to",
+        "message-1",
+        "--mode",
+        "conversation",
+        "--force",
+        "--json",
+      ]);
+      assert.strictEqual(rewindResult.exitCode, 0, rewindResult.stderr);
+      assert.deepStrictEqual(rewindSession.recordedRewinds, [
+        { mode: "conversation", messageId: "message-1" },
+      ]);
+      assert.strictEqual(JSON.parse(rewindResult.stdout).changed, true);
+      const refusedRewind = await logs([
+        "agent",
+        "rewind",
+        structuredAgent.id,
+        "--to",
+        "missing",
+        "--json",
+      ]);
+      assert.strictEqual(refusedRewind.exitCode, 1, refusedRewind.stderr);
+      assert.strictEqual(JSON.parse(refusedRewind.stderr).error.code, "CONFIRMATION_REQUIRED");
+      const unsupportedRewind = await logs([
+        "agent",
+        "rewind",
+        structuredAgent.id,
+        "--to",
+        "missing",
+        "--force",
+        "--mode",
+        "files",
+        "--json",
+      ]);
+      assert.strictEqual(unsupportedRewind.exitCode, 1, unsupportedRewind.stderr);
+      assert.strictEqual(JSON.parse(unsupportedRewind.stderr).error.code, "UNSUPPORTED_FEATURE");
       const toolOutput = "complete tool output ".repeat(100);
       await manager.appendTimelineItem(structuredAgent.id, {
         type: "tool_call",

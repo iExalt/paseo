@@ -1,3 +1,5 @@
+import { addRewindOptions, runRewindCommand } from "./rewind.js";
+import type { AgentRunOptions } from "./run.js";
 import { Command } from "commander";
 import { addAckOptions, runAckCommand } from "./ack.js";
 import { runModeCommand } from "./mode.js";
@@ -33,6 +35,30 @@ export function createAgentCommand(): Command {
 
   addJsonAndDaemonHostOptions(addAckOptions(agent.command("ack"))).action(
     withOutput(runAckCommand),
+  );
+
+  addJsonAndDaemonHostOptions(addRewindOptions(agent.command("rewind"))).action(
+    withOutput(runRewindCommand),
+  );
+  addJsonAndDaemonHostOptions(
+    addRunOptions(agent.command("fork").argument("<id>", "Source agent ID"))
+      .description("Fork chat history into a new agent and send a prompt")
+      .option("--at <message-id>", "Include history through this assistant message"),
+  ).action(
+    withOutput(
+      (id: string, prompt: string | undefined, options: AgentRunOptions, command: Command) =>
+        runRunCommand(
+          prompt,
+          {
+            ...options,
+            forkSource: {
+              agentId: id,
+              boundaryMessageId: typeof options.at === "string" ? options.at : undefined,
+            },
+          },
+          command,
+        ),
+    ),
   );
 
   // Primary agent commands (same as top-level)
