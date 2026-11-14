@@ -195,6 +195,7 @@ interface RemoteProviderConnection {
 }
 
 interface PluginRuntimeDependencies {
+  compatibilityVersion?: string;
   settingsDirectory?: string;
   onSettingsChanged?: (pluginId: string, settingsId: string) => void;
   spawnChild?: () => PluginChild;
@@ -445,7 +446,6 @@ export class PluginRuntime {
       this.dependencies.compatibilityVersion ?? this.daemonVersion,
       input.id,
     );
-    const bundles = await compileDirectoryPlugin(directory, this.daemonVersion, input.id);
     const { manifest } = bundles;
     if (!bundles.serverBundle) throw new Error(`Built-in plugin ${input.id} needs a server entry`);
     const loaded = await this.launchPlugin({
@@ -465,7 +465,6 @@ export class PluginRuntime {
       path.resolve(configuredPath),
       this.dependencies.compatibilityVersion ?? this.daemonVersion,
     );
-    await compileDirectoryPlugin(path.resolve(configuredPath), this.daemonVersion);
   }
 
   async stopPluginById(pluginId: string): Promise<boolean> {
@@ -1069,7 +1068,6 @@ export class PluginRuntime {
       directory,
       this.dependencies.compatibilityVersion ?? this.daemonVersion,
     );
-    const bundles = await compileDirectoryPlugin(directory, this.daemonVersion);
     const { manifest } = bundles;
     if (!canPublish()) throw new Error(`Plugin start cancelled: ${pluginId}`);
     const serverBundle = bundles.serverBundle;
