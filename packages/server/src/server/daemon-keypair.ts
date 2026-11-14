@@ -48,7 +48,11 @@ export async function loadOrCreateDaemonKeyPair(
       log?.info({ filePath }, "Loaded daemon keypair");
       return { keyPair: { publicKey, secretKey }, publicKeyB64 };
     } catch (error) {
-      log?.warn({ err: error, filePath }, "Failed to load daemon keypair, regenerating");
+      // Never regenerate over an unreadable file: paired devices pin this public key.
+      throw new Error(
+        `Failed to load the daemon keypair at ${filePath}. Fix or remove the file; removing it unpairs every device.`,
+        { cause: error },
+      );
     }
   }
 

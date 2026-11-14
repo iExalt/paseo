@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, statSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
@@ -40,6 +40,23 @@ describe.skipIf(process.platform === "win32")("daemon keypair file permissions",
 
       expect(loaded.publicKeyB64).toBe(created.publicKeyB64);
       expect(modeOf(keypairPath)).toBe(PRIVATE_FILE_MODE);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("daemon keypair load errors", () => {
+  test("throws on an unreadable keypair instead of replacing the daemon identity", async () => {
+    const home = createTempHome();
+    const keypairPath = path.join(home, "daemon-keypair.json");
+    try {
+      writeFileSync(keypairPath, '{"v":2,"publicKeyB64":');
+
+      await expect(loadOrCreateDaemonKeyPair(home)).rejects.toThrow(
+        "Failed to load the daemon keypair",
+      );
+      expect(readFileSync(keypairPath, "utf8")).toBe('{"v":2,"publicKeyB64":');
     } finally {
       rmSync(home, { recursive: true, force: true });
     }
