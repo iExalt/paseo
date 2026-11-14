@@ -110,6 +110,7 @@ const patchedPackages = [
   },
   // Android resize: retain until upstream clears descendant geometry when the SVG canvas resizes.
   // The native pixel regression is included in the patch; preserve the separate transform hunks.
+  // npm nests or hoists this package depending on the rest of the tree; patch either.
   {
     nodeModulesPath: "packages/app/node_modules/react-native-svg",
     patchPrefix: "react-native-svg+",
@@ -126,6 +127,10 @@ const patchedPackages = [
   },
   // Keep Android PasteTextInput aligned with RN AndroidTextInput (omit iOS-only
   // onSelectionChangeShouldSetResponder), plus ref/eventCount/trailing-newline fixes.
+  {
+    nodeModulesPath: "node_modules/react-native-svg",
+    patchPrefix: "react-native-svg+",
+  },
   {
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",

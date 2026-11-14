@@ -10,6 +10,7 @@ export interface ChatFindProps {
   serverId: string;
   epoch: string | null;
   items: StreamItem[];
+  /** The rows the stream draws, newest first on native. */
   viewportRef: RefObject<StreamViewportHandle | null>;
   revealLoadedMessage(messageId: string): boolean;
   visibleMessageIds: MountedMessageIds;

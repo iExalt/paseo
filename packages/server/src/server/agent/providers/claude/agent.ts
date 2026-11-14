@@ -5898,6 +5898,10 @@ class ClaudeAgentSession implements AgentSession {
     return this.historyReady;
   }
 
+  private async loadPersistedHistory(
+    sessionId: string,
+    pendingRewind?: { leafUuid: string | null },
+  ): Promise<void> {
   private async loadPersistedHistory(sessionId: string): Promise<void> {
     let historyPath: string | null = null;
     this.replayingHistory = true;
@@ -5911,10 +5915,15 @@ class ClaudeAgentSession implements AgentSession {
         );
         return;
       }
-      await withClaudeReplayHistory(historyPath, async (history) => {
-        const replay = await this.ingestPersistedSidechains(history);
+      await withClaudeReplayHistory(
+        historyPath,
+        async (history) => {
+          const replay = await this.ingestPersistedSidechains(history);
+          await this.ingestPersistedHistory(history.parentEntries, replay);
+        },
+        { pendingRewind },
+      );
         await this.ingestPersistedHistory(history.parentEntries, replay);
-      });
     } catch (error) {
       this.logger.warn(
         { err: error, sessionId, historyPath },

@@ -437,7 +437,7 @@ export interface PluginClientBundleStore {
   load(): Promise<PluginClientBundle[]>;
   replace(bundles: PluginClientBundle[]): Promise<void>;
 }
-/** Endpoint security negotiated on a relay connection. See docs/relay-endpoint-security.md. */
+/** Endpoint security negotiated on a relay connection. See docs/upstream/relay-endpoint-security.md. */
 export type RelaySecurityMode = "legacy" | "protected";
 
 export interface DaemonClientConfig {
@@ -495,6 +495,7 @@ export interface DaemonClientTrace {
 /** A queued agent message carries the applied behavior and what happens next. */
 export interface AgentMessageReceipt {
   deliveryStatus?: "queued";
+  disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
   activeTurnBehavior?: AgentActiveTurnBehavior;
   guidance?: string;
 }

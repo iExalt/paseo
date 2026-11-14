@@ -14,6 +14,7 @@ jobs:
     if: github.repository == 'iExalt/paseo' && github.ref == 'refs/heads/dev' && github.actor == 'iExalt'
     timeout-minutes: 45
     permissions:
+      contents: read
     steps:
         with:
           fetch-depth: 0
@@ -26,11 +27,23 @@ jobs:
         run: node .github/scripts/rebase-dev.mjs
         env:
           REBASE_DEV_DIAGNOSTICS: ${{ runner.temp }}/rebase-dev-diagnostics.txt
+          PASEO_REBASE_SSH_SIGNING_KEY: ${{ secrets.PASEO_REBASE_SSH_SIGNING_KEY }}
 
           test "$(node --version)" = v26.13.0
 
+      # GITHUB_TOKEN cannot push commits that change workflow files. Mint the
+      # one-hour App token only once validation has passed.
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: token
+        with:
+          client-id: ${{ vars.PASEO_SYNC_APP_CLIENT_ID }}
+          private-key: ${{ secrets.PASEO_SYNC_APP_PRIVATE_KEY }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-workflows: write
       - name: Publish backup and rebased dev atomically
         env:
+          GH_TOKEN: ${{ steps.token.outputs.token }}
           DEV_SHA: ${{ steps.rebase.outputs.dev-sha }}
           UPSTREAM_SHA: ${{ steps.rebase.outputs.upstream-sha }}
           RESOLUTIONS_SHA: ${{ steps.rebase.outputs.resolutions-sha }}

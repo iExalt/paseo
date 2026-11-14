@@ -1,4 +1,5 @@
 import { measureMainThreadWork } from "../../../test-utils/main-thread-work.js";
+import { runInThisContext } from "node:vm";
 import assert from "node:assert/strict";
 import { open as openFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -56,7 +57,7 @@ try {
     results.push({ blockingMs });
   }
   // Evaluate after both probes so parsing the returned code is not charged to compilation.
-  const factory = globalThis.eval(service.catalog()[0]!.clientBundle) as (
+  const factory = runInThisContext(service.catalog()[0]!.clientBundle) as (
     require: (specifier: string) => never,
   ) => { default: () => () => string };
   const result = factory((specifier) => {
