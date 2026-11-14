@@ -98,6 +98,10 @@ export const PARITY_MANIFEST: ParityManifest = {
       note: "Native shows documents in a WebView; Android's has no inline viewer for PDF and other documents",
     },
     "file-panels/html-preview": equivalent,
+    "file-panels/use-reader-bottom-inset": {
+      kind: "equivalent",
+      note: "Native reserves the system bar's overlap; web has no native system bar",
+    },
     "file-panels/source/editor/view": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "file-panels/source/readonly/view": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "git/diff-document/horizontal-scroll": equivalent,
