@@ -12,6 +12,7 @@ import { View, Text } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
 import { PaneFind, findShortcutPlatform, isFindShortcut, type PaneFindHandle } from "@/pane-find";
+import { usePaneFindRequest } from "@/pane-find/open-requests";
 import { Button } from "@/components/ui/button";
 import { usePaneFocus } from "@/panels/pane-context";
 import { useRetainedPanelActive } from "@/components/retained-panel";
@@ -116,6 +117,11 @@ export function ChatFind({
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
   }, [active, isInteractive, model]);
+  const openFromMenu = useCallback(() => {
+    model.open();
+    widget.current?.focus();
+  }, [model]);
+  usePaneFindRequest(active ? `agent:${agentId}` : null, openFromMenu);
   const close = useCallback(() => {
     model.close();
     viewportRef.current?.focus?.();

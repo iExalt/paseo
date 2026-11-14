@@ -64,6 +64,10 @@ export interface StreamViewportHandle {
    */
   holdRow: (rowId: string, apply: () => void, triggerEdge: DisclosureTriggerEdge) => void;
   scrollToMessage?: (messageId: string, occurrence?: ScrollToMessageOccurrence) => void;
+  /** Native: put a row's start at the top at once, without animating. */
+  scrollToItem?: (itemId: string) => void;
+  /** Native: move content up by a window distance, negative for down, at once. */
+  scrollByWindowDelta?: (delta: number) => void;
 }
 
 export interface StreamSegmentRenderers {

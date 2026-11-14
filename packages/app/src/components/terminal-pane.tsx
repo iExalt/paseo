@@ -1229,6 +1229,7 @@ export function TerminalPane({
         <TerminalFind
           key={terminalStreamKey}
           ref={findRef}
+          target={`terminal:${terminalId}`}
           terminal={emulatorRef}
           active={
             isTerminalPresented && isPaneFocused && rendererReadyStreamKey === terminalStreamKey

@@ -6,7 +6,7 @@ import { navigateToWorkspace } from "@/stores/navigation-active-workspace-store"
 import { navigateToAgent } from "@/utils/navigate-to-agent";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 
-import { getIsElectron } from "@/constants/platform";
+import { getBrowserTabsAvailable } from "@/desktop/browser/availability";
 import { createWorkspaceBrowser } from "@/desktop/browser/store";
 import { createPluginHostNavigation } from "./host-navigation-model";
 import { useSidebarViewStore } from "@/stores/sidebar-view-store";
@@ -17,7 +17,7 @@ export function usePluginHostNavigation(
   return useMemo(
     () =>
       createPluginHostNavigation(serverId, {
-        browserAvailable: getIsElectron(),
+        browserAvailable: getBrowserTabsAvailable(),
         isHostRegistered: (targetServerId) =>
           getHostRuntimeStore()
             .getHosts()

@@ -1,0 +1,33 @@
+diff --git a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+index 0287e1c..af4e1a5 100644
+--- a/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/node_modules/react-native-webview/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -92,6 +92,11 @@ public class RNCWebViewClient extends WebViewClient {
+ 
+     @Override
+     public boolean shouldOverrideUrlLoading(WebView view, String url) {
++        return this.shouldOverrideUrlLoading(view, url, true);
++    }
++
++    // Paseo: report whether the load is the main frame, as iOS does.
++    private boolean shouldOverrideUrlLoading(WebView view, String url, boolean isTopFrame) {
+         final RNCWebView rncWebView = (RNCWebView) view;
+         final boolean isJsDebugging = rncWebView.getReactApplicationContext().getJavaScriptContextHolder().get() == 0;
+ 
+@@ -101,6 +106,7 @@ public class RNCWebViewClient extends WebViewClient {
+             final AtomicReference<RNCWebViewModuleImpl.ShouldOverrideUrlLoadingLock.ShouldOverrideCallbackState> lockObject = lock.second;
+ 
+             final WritableMap event = createWebViewEvent(view, url);
++            event.putBoolean("isTopFrame", isTopFrame);
+             event.putDouble("lockIdentifier", lockIdentifier);
+             rncWebView.dispatchDirectShouldStartLoadWithRequest(event);
+ 
+@@ -143,7 +149,7 @@ public class RNCWebViewClient extends WebViewClient {
+     @Override
+     public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+         final String url = request.getUrl().toString();
+-        return this.shouldOverrideUrlLoading(view, url);
++        return this.shouldOverrideUrlLoading(view, url, request.isForMainFrame());
+     }
+ 
+     @Override

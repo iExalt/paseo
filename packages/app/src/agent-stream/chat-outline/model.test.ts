@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  chatOutlineAvailable,
+  railIndexAt,
   createActivePromptPublisher,
   shouldAcceptPromptIndexEpoch,
   promptTickMagnification,
@@ -68,5 +70,29 @@ describe("createActivePromptPublisher", () => {
 
     expect(notifications).toBe(2);
     expect(publisher.getActiveSeq()).toBeNull();
+  });
+});
+
+describe("railIndexAt", () => {
+  it("maps a finger to the centred band of slots and clamps outside it", () => {
+    // Three 8 px slots centred on a 100 px rail fill 38..62.
+    const at = (y: number) => railIndexAt({ y, height: 100, count: 3, slotHeight: 8 });
+    expect([at(39), at(47), at(61)]).toEqual([0, 1, 2]);
+    expect([at(0), at(100)]).toEqual([0, 2]);
+  });
+
+  it("shares the whole rail once the slots shrink to fit", () => {
+    const at = (y: number) => railIndexAt({ y, height: 100, count: 50, slotHeight: 8 });
+    expect([at(0), at(50), at(99.9)]).toEqual([0, 25, 49]);
+  });
+});
+
+describe("chatOutlineAvailable", () => {
+  it("needs a wide layout on every platform, as well as host support and the setting", () => {
+    const wide = { supported: true, enabled: true, isCompact: false };
+    expect(chatOutlineAvailable(wide)).toBe(true);
+    expect(chatOutlineAvailable({ ...wide, isCompact: true })).toBe(false);
+    expect(chatOutlineAvailable({ ...wide, supported: false })).toBe(false);
+    expect(chatOutlineAvailable({ ...wide, enabled: false })).toBe(false);
   });
 });

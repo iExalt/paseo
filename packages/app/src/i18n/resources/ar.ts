@@ -7,6 +7,9 @@ export const ar: TranslationResources = {
     empty: "لا توجد نتائج",
     failed: "فشل البحث: {{message}}",
   },
+  nativePermissions: en.nativePermissions,
+  nativeBrowser: en.nativeBrowser,
+  nativeNotifications: en.nativeNotifications,
   paneFind: {
     connectionFailure: "تعذر البحث في هذه المحادثة. تحقق من الاتصال بالمضيف وأعد المحاولة.",
     historyChangedFailure: "تغيّرت المحادثة أثناء البحث. أعد البحث.",
@@ -351,6 +354,8 @@ export const ar: TranslationResources = {
       copyQuote: "نسخ الاقتباس",
       copyCode: "نسخ الرمز",
       copyTurn: "نسخ بدوره",
+      selectText: "تحديد النص",
+      selectTextTruncated: "يتم عرض أول 50,000 حرف. نسخ بدوره ينسخ كل شيء.",
       copyMessage: "انسخ الرسالة",
       forkMenu: "تفريع الرسالة",
       turnStats: "إحصاءات الدور",
@@ -2513,7 +2518,7 @@ export const ar: TranslationResources = {
     editor: {
       title: "المحرر",
       vimKeybindings: "اختصارات Vim",
-      vimHint: "تنطبق على ملفات المصدر في الويب وسطح المكتب.",
+      vimHint: "تنطبق على ملفات المصدر في المحرر.",
     },
     files: {
       title: "الملفات",
@@ -2921,7 +2926,6 @@ export const ar: TranslationResources = {
     shortcuts: {
       dialogTitle: "الاختصارات",
       searchPlaceholder: "البحث في الاختصارات",
-      unavailableOnMobile: "اختصارات لوحة المفاتيح متاحة فقط على سطح المكتب",
       capturePrompt: "اضغط على الاختصار...",
       captureIndexPrompt: "اختم برقم من 1 إلى 9.",
       unassigned: "غير معين",
