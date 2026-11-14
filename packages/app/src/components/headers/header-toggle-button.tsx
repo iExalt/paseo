@@ -19,6 +19,8 @@ interface HeaderToggleButtonProps extends Omit<PressableProps, "style" | "onPres
   onPress: NonNullable<PressableProps["onPress"]>;
   tooltipLabel: string;
   tooltipKeys: ShortcutKey[];
+  /** A resolved binding, which may be a multi-step chord; takes precedence over `tooltipKeys`. */
+  tooltipChord?: ShortcutKey[][] | null;
   tooltipSide: "left" | "right" | "top" | "bottom";
   tooltipDelayDuration?: number;
   style?: StyleProp<ViewStyle>;
@@ -29,6 +31,7 @@ export function HeaderToggleButton({
   onPress,
   tooltipLabel,
   tooltipKeys,
+  tooltipChord,
   tooltipSide,
   tooltipDelayDuration = 0,
   style,
@@ -69,7 +72,7 @@ export function HeaderToggleButton({
       <TooltipContent testID={tooltipTestID} side={tooltipSide} align="center" offset={8}>
         <View style={styles.tooltipRow}>
           <Text style={styles.tooltipText}>{tooltipLabel}</Text>
-          <Shortcut keys={tooltipKeys} style={styles.shortcut} />
+          <Shortcut keys={tooltipKeys} chord={tooltipChord ?? undefined} style={styles.shortcut} />
         </View>
       </TooltipContent>
     </Tooltip>
