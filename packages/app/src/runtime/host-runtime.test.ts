@@ -10,7 +10,10 @@ import type {
   FetchAgentsEntry,
   FetchAgentsOptions,
 } from "@getpaseo/client/internal/daemon-client";
-import { DaemonAuthenticationError } from "@getpaseo/client/internal/daemon-client";
+import {
+  DaemonAuthenticationError,
+  DaemonConnectionError,
+} from "@getpaseo/client/internal/daemon-client";
 import type { HostDirectory } from "@getpaseo/protocol/hosts";
 import type { ConnectionOffer } from "@getpaseo/protocol/connection-offer";
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
@@ -3225,7 +3228,7 @@ describe("HostRuntimeStore", () => {
   it("restores an automatically drained message when sending fails", async () => {
     const host = makeHost({ serverId: "srv_failed_queue_drain" });
     const fakeClient = new FakeDaemonClient();
-    fakeClient.sendAgentMessageFailures.push(new Error("connection lost"));
+    fakeClient.sendAgentMessageFailures.push(new DaemonConnectionError("connection lost"));
     const store = new HostRuntimeStore({
       deps: {
         createClient: () => fakeClient as unknown as DaemonClient,
