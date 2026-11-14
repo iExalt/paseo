@@ -18,6 +18,7 @@ export interface ZoomableViewportProps {
   maxScale?: number;
   minScale?: number;
   onPressOutsideContent?: () => void;
+  panWithWheel?: boolean;
   style?: StyleProp<ViewStyle>;
   testID?: string;
   wheelActivation?: "always" | "modifier";
