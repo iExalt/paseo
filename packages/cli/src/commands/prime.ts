@@ -38,6 +38,11 @@ agent query --json: id/title, separate provider/model, absolute cwd, createdAt,
 and optional attention fields. agent status --json nests details under snapshot.
 workspace ls --json uses workspaceId. prime always prints text, even with --json.
 
+Timeline: agent logs <id> --json returns complete projected entries and page metadata.
+Use --limit N and --before epoch:seq from startCursor to read older pages (0 means all).
+--full prints complete entries; --search query [--cursor nextCursor] returns locations.
+agent prompts <id> --json returns prompt previews and positions. JSON/full logs do not follow.
+
 Questions: inspect request.input.questions in permit ls --json, then answer with
 permit allow <agent> <req_id> --input '{"answers":{"Question 1":"chosen label or free text"}}'.
 Use every question's header as the key, not its id; values are strings, not Codex

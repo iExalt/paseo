@@ -120,9 +120,89 @@ test("logs --since filters history and live output through the CLI and daemon", 
       const logs = (args: string[]) =>
         runLocalPaseo(["--host", host, ...args], {}, ctx.daemon.paseoHome);
 
+      const missing = await logs(["logs", "missing-agent", "--json"]);
+      assert.strictEqual(missing.exitCode, 1, missing.stderr);
+      assert.strictEqual(JSON.parse(missing.stderr).error.code, "AGENT_NOT_FOUND");
       const baseline = await logs(["logs", agent.id]);
       assert.strictEqual(baseline.exitCode, 0, baseline.stderr);
       assert.strictEqual(baseline.stdout, "[User] OLD_USER\nOLD_REPLY\n");
+
+      const structuredAgent = await ctx.client.createAgent({
+        provider: "codex",
+        cwd: ctx.daemon.paseoHome,
+        title: "structured logs",
+      });
+      await manager.appendTimelineItem(structuredAgent.id, {
+        type: "user_message",
+        text: "OLD_USER",
+      });
+      await manager.appendTimelineItem(structuredAgent.id, {
+        type: "assistant_message",
+        text: "OLD_REPLY",
+      });
+      const toolOutput = "complete tool output ".repeat(100);
+      await manager.appendTimelineItem(structuredAgent.id, {
+        type: "tool_call",
+        callId: "lossless",
+        name: "Bash",
+        status: "completed",
+        detail: { type: "unknown", input: { command: "test" }, output: toolOutput },
+        error: null,
+      });
+      const structured = await logs([
+        "agent",
+        "logs",
+        structuredAgent.id,
+        "--json",
+        "--limit",
+        "1",
+      ]);
+      assert.strictEqual(structured.exitCode, 0, structured.stderr);
+      const page = JSON.parse(structured.stdout);
+      assert.strictEqual(page.entries.length, 1);
+      assert.strictEqual(page.entries[0].item.detail.output, toolOutput);
+      assert.strictEqual(typeof page.entries[0].timestamp, "string");
+      const before = await logs([
+        "logs",
+        structuredAgent.id,
+        "--json",
+        "--limit",
+        "1",
+        "--before",
+        `${page.startCursor.epoch}:${page.startCursor.seq}`,
+      ]);
+      assert.strictEqual(before.exitCode, 0, before.stderr);
+      const older = JSON.parse(before.stdout);
+      assert.strictEqual(older.entries.length, 1);
+      assert.ok(older.entries[0].seqEnd < page.entries[0].seqStart);
+      const full = await logs(["agent", "logs", structuredAgent.id, "--full", "--limit", "1"]);
+      assert.strictEqual(full.exitCode, 0, full.stderr);
+      assert.strictEqual(JSON.parse(full.stdout).entries[0].item.detail.output, toolOutput);
+      const pluginData = { nested: [1, "two", { ok: true }] };
+      await manager.appendTimelineItem(structuredAgent.id, {
+        type: "plugin",
+        id: "plugin-1",
+        pluginId: "example",
+        kind: "result",
+        version: 1,
+        data: pluginData,
+      });
+      const plugin = await logs(["logs", structuredAgent.id, "--json", "--limit", "1"]);
+      assert.strictEqual(plugin.exitCode, 0, plugin.stderr);
+      assert.deepStrictEqual(JSON.parse(plugin.stdout).entries[0].item.data, pluginData);
+      const prompts = await logs(["agent", "prompts", structuredAgent.id, "--json"]);
+      assert.strictEqual(prompts.exitCode, 0, prompts.stderr);
+      assert.strictEqual(JSON.parse(prompts.stdout).prompts[0].preview, "OLD_USER");
+      const search = await logs([
+        "agent",
+        "logs",
+        structuredAgent.id,
+        "--search",
+        "OLD_USER",
+        "--json",
+      ]);
+      assert.strictEqual(search.exitCode, 0, search.stderr);
+      assert.strictEqual(JSON.parse(search.stdout).locations.length, 1);
 
       for (const command of [["logs"], ["agent", "logs"]]) {
         const result = await logs([...command, agent.id, "--since", "2100-01-01T00:00:00Z"]);
