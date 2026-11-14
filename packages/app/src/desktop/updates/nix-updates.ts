@@ -55,6 +55,11 @@ export function resolveNixUpdatePhase(facts: NixUpdateFacts): NixUpdatePhase {
   if (!result) return { kind: "unknown" };
   const { active, running } = result;
   const staged = result.staged ?? null;
+  if (staged && isNewer(staged, active)) {
+    // A release published after the download supersedes it; staging that one replaces it.
+    if (latest && isNewer(latest, staged)) return { kind: "available", release: latest };
+    return { kind: "ready", release: staged };
+  }
   if (active && active.outputPath !== running.outputPath) {
     return { kind: "restart", release: active };
   }
