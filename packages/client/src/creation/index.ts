@@ -18,7 +18,9 @@ export interface CreationResult {
   requestId?: string;
 }
 interface Dependencies {
-  supports: (feature: "creationLifecycle" | "agentRequestReceipts") => boolean;
+  supports: (
+    feature: "creationLifecycle" | "agentRequestReceipts" | "workspaceNotifications",
+  ) => boolean;
   requestId: () => string;
   request: (kind: Kind, input: Record<string, unknown>) => Promise<CreationResult>;
   observe: (
@@ -58,6 +60,9 @@ export class CreationClient {
     return this.start("agent", request, onEvent, () => this.legacyAgent(request));
   }
   createWorkspace(input: CreateWorkspaceRequestOptions): Promise<CreationResult> {
+    if (input.notifications !== undefined && !this.deps.supports("workspaceNotifications")) {
+      return Promise.reject(new Error("Update the host to manage workspace notifications."));
+    }
     const { onEvent, ...request } = input;
     return this.start("workspace", request, onEvent, async (operation) => {
       if (request.workspaceId || request.agent?.agentId)
