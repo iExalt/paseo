@@ -1,3 +1,4 @@
+import { runRefreshCommand } from "./refresh.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -196,4 +197,33 @@ describe("provider full record output", () => {
       message: "Failed to fetch models for codex: catalog unavailable",
     });
   });
+});
+
+it("refresh forwards the daemon cwd and provider filter and returns its acknowledgment", async () => {
+  let closed = false;
+  const response = { requestId: "refresh-1", acknowledged: true };
+  const result = await runRefreshCommand(
+    "Codex",
+    { daemonTarget, cwd: "/remote/project" },
+    new Command(),
+    async (options) => {
+      expect(options.target).toEqual(daemonTarget);
+      return {
+        getLastServerInfoMessage: () => ({
+          status: "server_info",
+          serverId: "host",
+          features: { providersSnapshot: true },
+        }),
+        refreshProvidersSnapshot: async (request) => {
+          expect(request).toEqual({ cwd: "/remote/project", providers: ["codex"] });
+          return response;
+        },
+        close: async () => {
+          closed = true;
+        },
+      };
+    },
+  );
+  expect(result.data).toBe(response);
+  expect(closed).toBe(true);
 });
