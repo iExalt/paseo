@@ -906,11 +906,12 @@ export class HubRelationshipHarness {
   }
 
   async createForeignExecution(executionId: string): Promise<string> {
+    const workspaceId = await this.createSiblingWorkspace(this.root);
     const agent = await this.daemon!.agentManager.createAgent(
       { provider: "codex", cwd: this.root },
       undefined,
       {
-        workspaceId: "foreign-workspace",
+        workspaceId,
         owner: { kind: "daemon", daemonId: "another-daemon", executionId },
       },
     );
@@ -1163,10 +1164,11 @@ export class HubRelationshipHarness {
   }
 
   async createUnrelatedLocalAgent(): Promise<string> {
+    const workspaceId = await this.createSiblingWorkspace(this.root);
     const agent = await this.daemon!.agentManager.createAgent(
       { provider: "codex", cwd: this.root },
       undefined,
-      { workspaceId: "local-workspace" },
+      { workspaceId },
     );
     return agent.id;
   }
@@ -1406,6 +1408,7 @@ export class HubRelationshipHarness {
     execFileSync("git", ["init", "-b", "main", this.root], { stdio: "ignore" });
     execFileSync("git", ["-C", this.root, "config", "user.email", "hub@test.invalid"]);
     execFileSync("git", ["-C", this.root, "config", "user.name", "Hub Test"]);
+    execFileSync("git", ["-C", this.root, "config", "commit.gpgsign", "false"]);
     execFileSync("git", ["-C", this.root, "commit", "--allow-empty", "-m", "initial"], {
       stdio: "ignore",
     });
