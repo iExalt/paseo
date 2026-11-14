@@ -38,6 +38,7 @@ import {
   expectTimelinePromptVisible,
   holdOlderHistoryPages,
   openAgentTimeline,
+  scrollNewerRecordingTurns,
   scrollThroughOlderHistoryPages,
   scrollTimelineToNewestLoadedEdge,
   seedLongMockAgentTimeline,
@@ -92,6 +93,11 @@ test.describe("desktop chat outline", () => {
       await expectTimelinePromptLandedBelowTop(page, agent.prompts[39]);
       await expect.poll(() => jumps.requests()).toHaveLength(1);
       expect(jumps.requests()[0]).toMatchObject({ limit: 40, mergeWindow: true });
+
+      // The rows between the jump window and the loaded tail load as the reader nears them.
+      const seenTurns = await scrollNewerRecordingTurns(page, 60);
+      expect(seenTurns).toContain(54);
+      expect(seenTurns.indexOf(54)).toBeLessThan(seenTurns.indexOf(60));
 
       await page.getByTestId("scroll-to-bottom-button").click();
       await expectTimelinePromptVisible(page, agent.newestPrompt);

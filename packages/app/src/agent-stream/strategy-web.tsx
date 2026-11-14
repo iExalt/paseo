@@ -1443,6 +1443,7 @@ export function createWebStreamStrategy(input: CreateWebStreamStrategyInput): St
     anchorBottomOnContentSizeChange: true,
     animateManualScrollToBottom: false,
     useVirtualizedList: false,
+    fillTimelineGaps: true,
     isNearBottom: (inputMetrics) => {
       const distanceFromBottom = Math.max(
         0,
