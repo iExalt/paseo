@@ -1,7 +1,9 @@
 name: Deep verification
 
 on:
+  # Every PR reports the required gate; only release PRs run the deep lanes.
   pull_request:
+    types: [opened, synchronize, reopened]
     branches: [dev]
   workflow_dispatch:
 
@@ -80,3 +82,21 @@ jobs:
           path: .dev/github-workflows/deep/${{ matrix.lane }}/
           if-no-files-found: error
           retention-days: 1
+
+  required:
+    name: Deep verification required
+    if: always()
+    needs: browser
+    runs-on: ubuntu-26.04
+    timeout-minutes: 2
+    steps:
+      - name: Require release deep success
+        env:
+          DEEP_REQUIRED: ${{ github.event_name != 'pull_request' || startsWith(github.event.pull_request.head.ref, 'release-please--branches--') }}
+          RESULT: ${{ needs.browser.result }}
+        run: |
+          if [[ "$DEEP_REQUIRED" == true ]]; then
+            test "$RESULT" = success
+          else
+            test "$RESULT" = skipped
+          fi
