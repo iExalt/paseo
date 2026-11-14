@@ -26,6 +26,8 @@ import {
   processTimelineResponse,
 } from "./session-stream-reducers";
 import { isTimelineResumeSnapshotAuthoritative } from "./timeline-sync-plan";
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { TimelineRequestSupersededError, type TimelineResponseGuard } from "./timeline-request";
 import { replaceWithCanonicalStream } from "@/types/stream";
 
 export interface TimelineReplicaStorage {
@@ -274,6 +276,7 @@ function applyAuthoritativeTimelineResponse(input: {
   cachedCursor?: AgentTimelineCursorState;
   recoverGap: (agentId: string, cursor: { epoch: string; endSeq: number }) => void;
   drainQueuedAgentMessage: (agentId: string) => void;
+  onReplacement: (agentId: string) => void;
 }): boolean {
   const { serverId, payload } = input;
   const agentId = payload.agentId;
@@ -300,6 +303,7 @@ function applyAuthoritativeTimelineResponse(input: {
     return false;
   }
 
+  if (result.replaced) input.onReplacement(agentId);
   const synchronized = isTimelineResumeSnapshotAuthoritative({
     direction: payload.direction,
     hasNewer: payload.hasNewer,
@@ -326,8 +330,9 @@ export interface ViewedTimelineSyncPorts {
   fetchPage(
     agentId: string,
     request: ProjectedTimelineForwardFetchPlan,
+    isCurrent: () => boolean,
   ): Promise<TimelinePageResult>;
-  fetchLatestTail(agentId: string): Promise<TimelinePageResult>;
+  fetchLatestTail(agentId: string, isCurrent: () => boolean): Promise<TimelinePageResult>;
   /**
    * The sync no longer owes this chat a catch-up: it reached current, or it left the
    * demanded set. Disconnect and backgrounding keep the obligation and do not report here.
@@ -367,6 +372,10 @@ export type ViewedTimelineOwnerPorts = Omit<
 >;
 
 export interface ViewedTimelineOwner extends ViewedTimelineSync {
+  captureTimelineRequest(
+    agentId: string,
+    request: Parameters<DaemonClient["fetchAgentTimeline"]>[1],
+  ): TimelineResponseGuard;
   applyTimelineResponse(payload: TimelineResponsePayload): void;
   enqueueStreamEvent(agentId: string, event: AgentStreamReducerEvent): void;
   flushStreamAgent(agentId: string): void;
@@ -380,12 +389,14 @@ export function createViewedTimelineOwner(input: {
   ports: ViewedTimelineOwnerPorts;
 }): ViewedTimelineOwner {
   const forcedTailReplacements = new Set<string>();
+  const incarnations = new Map<string, number>();
+  let disposed = false;
   const sync = createViewedTimelineSync({
     ...input.ports,
-    fetchLatestTail: async (agentId) => {
+    fetchLatestTail: async (agentId, isCurrent) => {
       forcedTailReplacements.add(agentId);
       try {
-        return await input.ports.fetchLatestTail(agentId);
+        return await input.ports.fetchLatestTail(agentId, isCurrent);
       } finally {
         forcedTailReplacements.delete(agentId);
       }
@@ -404,12 +415,41 @@ export function createViewedTimelineOwner(input: {
   });
   return {
     ...sync,
+    captureTimelineRequest(agentId, request) {
+      const incarnation = incarnations.get(agentId);
+      const readRange = () =>
+        useSessionStore.getState().sessions[input.serverId]?.agentTimelineCursor.get(agentId);
+      const requestedRange = readRange();
+      const epoch = requestedRange?.epoch;
+      const initKey = getInitKey(input.serverId, agentId);
+      const deferred = getInitDeferred(initKey);
+      return (page) => {
+        const currentRange = readRange();
+        // A tail that covered the request cursor cannot rewind live rows received while it waited.
+        const overtakenTail =
+          page?.direction === "tail" &&
+          requestedRange &&
+          currentRange &&
+          page.epoch === epoch &&
+          page.window.maxSeq >= requestedRange.endSeq &&
+          page.window.maxSeq < currentRange.endSeq;
+        return (
+          !disposed &&
+          incarnations.get(agentId) === incarnation &&
+          currentRange?.epoch === epoch &&
+          getInitDeferred(initKey) === deferred &&
+          (!epoch || !request?.cursor || request.cursor.epoch === epoch) &&
+          !overtakenTail
+        );
+      };
+    },
     applyTimelineResponse(receivedPayload) {
       const payload = consumeForcedTimelineTailReplacement(receivedPayload, forcedTailReplacements);
       const accepted = applyAuthoritativeTimelineResponse({
         serverId: input.serverId,
         payload,
         cachedCursor: input.replica.readRange(payload.agentId),
+        onReplacement: (agentId) => incarnations.set(agentId, (incarnations.get(agentId) ?? 0) + 1),
         recoverGap: (agentId, cursor) => sync.recoverGap(agentId, cursor),
         drainQueuedAgentMessage: input.drainQueuedAgentMessage,
       });
@@ -422,6 +462,7 @@ export function createViewedTimelineOwner(input: {
       streamQueue.flushAgent(agentId);
     },
     dispose() {
+      disposed = true;
       streamQueue.dispose({ flush: true });
       sync.dispose();
     },
@@ -562,15 +603,16 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
     generation: number,
     request: ProjectedTimelineForwardFetchPlan,
     fallbackToLatestTailOnOverflow: boolean,
+    replanSuperseded = true,
   ): Promise<void> => {
     if (!ownsCatchUp(agentId, generation)) return;
 
     try {
-      const page = await ports.fetchPage(agentId, request);
+      const page = await ports.fetchPage(agentId, request, () => ownsCatchUp(agentId, generation));
       if (!ownsCatchUp(agentId, generation)) return;
       if (page.hasNewer && page.endCursor) {
         if (fallbackToLatestTailOnOverflow) {
-          await ports.fetchLatestTail(agentId);
+          await ports.fetchLatestTail(agentId, () => ownsCatchUp(agentId, generation));
           if (!ownsCatchUp(agentId, generation)) return;
           catchUps.set(agentId, { generation, status: "complete" });
           setVisibilityCatchUpReady(agentId);
@@ -595,7 +637,21 @@ export function createViewedTimelineSync(ports: ViewedTimelineSyncPorts): Viewed
       }
       setVisibilityCatchUpReady(agentId);
     } catch (error) {
-      if (catchUps.get(agentId)?.generation === generation) {
+      if (
+        error instanceof TimelineRequestSupersededError &&
+        ownsCatchUp(agentId, generation) &&
+        replanSuperseded
+      ) {
+        await fetchUntilCurrent(
+          agentId,
+          generation,
+          planTimelineResumeFetch(ports.readCursor(agentId)),
+          false,
+          false,
+        );
+        return;
+      }
+      if (ownsCatchUp(agentId, generation)) {
         catchUps.set(agentId, { generation, status: "error", request });
         setVisibilityCatchUpError([agentId], error);
         ports.reportError(error);
