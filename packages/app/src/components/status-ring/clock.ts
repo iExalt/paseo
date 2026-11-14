@@ -1,5 +1,10 @@
 import { useLayoutEffect, useState } from "react";
-import { makeMutable, type SharedValue, useSharedValue } from "react-native-reanimated";
+import {
+  makeMutable,
+  type SharedValue,
+  useReducedMotion,
+  useSharedValue,
+} from "react-native-reanimated";
 import { scheduleOnUI } from "react-native-worklets";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { getStatusRingRotation } from "@/components/status-ring/geometry";
@@ -57,6 +62,10 @@ function unregisterStatusRing(registered: SharedValue<boolean>, listenerId: numb
 
 export function useStatusRingRotation(): SharedValue<number> {
   // Hidden retained views must not subscribe their animated styles to the shared clock.
+  const panelActive = useRetainedPanelActive();
+  // Under reduced motion the ring stays a still arc, like SyncedLoader's dots.
+  const reduceMotion = useReducedMotion();
+  const active = panelActive && !reduceMotion;
   const rotation = useSharedValue(getStatusRingRotation(Date.now()));
   const registered = useSharedValue(false);
   const [listenerId] = useState(() => nextListenerId++);
