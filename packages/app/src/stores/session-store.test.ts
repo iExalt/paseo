@@ -12,6 +12,7 @@ import {
   type Agent,
   type WorkspaceDescriptor,
 } from "./session-store";
+import { useQueuedMessageSnapshot } from "./queued-message-snapshot";
 import type { StreamItem } from "../types/stream";
 import { reduceTurnLiveness, type TurnLivenessTransition } from "@/timeline/turn-liveness";
 
@@ -86,6 +87,7 @@ function createWorkspace(
 
 afterEach(() => {
   useSessionStore.getState().clearSession("test-server");
+  useQueuedMessageSnapshot.setState({ byServer: {} });
 });
 
 function initializeTestSession(): void {
@@ -874,5 +876,20 @@ describe("removeWorkspace", () => {
     expect(after.sessions).toBe(before.sessions);
     expect(after.session).toBe(before.session);
     expect(after.workspaces).toBe(before.workspaces);
+  });
+});
+
+describe("queued messages", () => {
+  it("restores an agent's queued prompts when its session starts again, as after a reload", () => {
+    const queued = { id: "queued-1", text: "run the tests next", attachments: [] };
+    initializeTestSession();
+    useSessionStore.getState().setQueuedMessages("test-server", new Map([["agent-1", [queued]]]));
+
+    useSessionStore.getState().clearSession("test-server");
+    initializeTestSession();
+
+    expect(
+      useSessionStore.getState().sessions["test-server"]?.queuedMessages.get("agent-1"),
+    ).toEqual([queued]);
   });
 });

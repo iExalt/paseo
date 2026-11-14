@@ -51,7 +51,8 @@ export function useMarkdownSource(text: string, context: MarkdownImageContext) {
     return createAssistantImageFileAcquisition({
       port: context.client
         ? {
-            readFile: (cwd, path) => context.client!.readFile(cwd, path),
+            readFile: (cwd, path, maxBytes) =>
+              context.client!.readFile(cwd, path, undefined, maxBytes),
             persist: persistAttachmentFromBytes,
           }
         : null,

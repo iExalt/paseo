@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { AgentAttachment, ForgeSearchItem } from "@getpaseo/protocol/messages";
+import { DaemonConnectionError } from "@getpaseo/client/internal/daemon-client";
 import type {
   AttachmentMetadata,
   ComposerAttachment,
@@ -464,6 +465,28 @@ describe("dispatchComposerAgentMessage", () => {
     expect(legacy.tail.get("legacy")?.[0]?.turnId).toBeUndefined();
   });
 
+  it("does not resend a retried message the timeline already shows", async () => {
+    const client = createFakeSendClient();
+    const stream = createFakeStream();
+    const send = () =>
+      dispatchComposerAgentMessage({
+        client,
+        agentId: "agent",
+        text: "queued",
+        attachments: [],
+        encodeImages: async () => [],
+        submission: stream,
+        activeTurnBehavior: "steer",
+        clientMessageId: "msg-queued",
+      });
+
+    await send();
+    await send();
+
+    expect(client.calls).toHaveLength(1);
+    expect(client.calls[0]?.options.messageId).toBe("msg-queued");
+  });
+
   it("removes the submitted prompt when the host rejects it", async () => {
     const rejection = new Error("Host rejected prompt");
     const client = createFakeSendClient({ rejection });
@@ -824,10 +847,17 @@ describe("sendQueuedComposerMessageNow", () => {
     expect(result).toEqual({ status: "submitted" });
     expect(queue.state.get("agent")).toEqual([]);
     expect(submitted).toEqual([
+      // The queue item's ID is the message ID, so a retry after a lost reply is delivered once.
+      {
+        text: "send me",
+        attachments: [review],
+        activeTurnBehavior: "steer",
+        clientMessageId: "msg-1",
+      },
     ]);
   });
 
-  it("restores the queued entry to the front and surfaces the error message on failure", async () => {
+  it("restores the queued entry to the front with its ID when the connection drops", async () => {
     const queue = createFakeQueue(
       new Map([
         [
@@ -844,12 +874,53 @@ describe("sendQueuedComposerMessageNow", () => {
       messageId: "msg-1",
       queue,
       submitMessage: async () => {
-        throw new Error("network down");
+        throw new DaemonConnectionError("network down");
       },
     });
     expect(result).toEqual({ status: "failed", errorMessage: "network down" });
     const state = queue.state.get("agent");
     expect(state?.map((m) => m.id)).toEqual(["msg-1", "msg-2"]);
+  });
+
+  it("re-queues a definitely failed send under a new ID, which the daemon's receipt would refuse", async () => {
+    const queue = createFakeQueue(
+      new Map([["agent", [{ id: "msg-1", text: "first", attachments: [] }]]]),
+    );
+    await sendQueuedComposerMessageNow({
+      agentId: "agent",
+      messageId: "msg-1",
+      queue,
+      submitMessage: async () => {
+        throw new Error("Active turn changed before steering could be delivered");
+      },
+    });
+    const [head] = queue.state.get("agent") ?? [];
+    expect(head?.text).toBe("first");
+    expect(head?.id).not.toBe("msg-1");
+  });
+
+  it("drops a queued entry the daemon has a receipt for, so it can't block the queue", async () => {
+    const queue = createFakeQueue(
+      new Map([
+        [
+          "agent",
+          [
+            { id: "msg-1", text: "first", attachments: [] },
+            { id: "msg-2", text: "second", attachments: [] },
+          ],
+        ],
+      ]),
+    );
+    const result = await sendQueuedComposerMessageNow({
+      agentId: "agent",
+      messageId: "msg-1",
+      queue,
+      submitMessage: async () => {
+        throw new Error("agent_request_outcome_unknown");
+      },
+    });
+    expect(result).toEqual({ status: "failed", errorMessage: "agent_request_outcome_unknown" });
+    expect(queue.state.get("agent")?.map((m) => m.id)).toEqual(["msg-2"]);
   });
 });
 

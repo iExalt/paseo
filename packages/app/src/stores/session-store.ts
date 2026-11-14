@@ -59,6 +59,10 @@ import {
   type TurnLiveness,
   type TurnPresentation,
 } from "@/timeline/turn-liveness";
+import {
+  readQueuedMessageSnapshot,
+  useQueuedMessageSnapshot,
+} from "@/stores/queued-message-snapshot";
 
 export interface AgentRuntimeInfo {
   provider: AgentProvider;
@@ -687,7 +691,7 @@ function createInitialSessionState(
     restoringWorkspaces: new Map(),
     pendingPermissions: new Map(),
     fileExplorer: new Map(),
-    queuedMessages: new Map(),
+    queuedMessages: readQueuedMessageSnapshot(serverId),
   };
 }
 
@@ -1849,6 +1853,8 @@ export const useSessionStore = create<SessionStore>()(
             },
           };
         });
+        const queues = get().sessions[serverId]?.queuedMessages;
+        if (queues) useQueuedMessageSnapshot.getState().save(serverId, queues);
       },
 
       // Hydration
@@ -1932,6 +1938,23 @@ export const useSessionStore = create<SessionStore>()(
     };
   }),
 );
+
+// A session can start before the snapshot finishes loading from storage. Restore the queues it
+// holds for agents that have queued nothing since.
+useQueuedMessageSnapshot.persist.onFinishHydration(() => {
+  const { sessions, setQueuedMessages } = useSessionStore.getState();
+  for (const serverId of Object.keys(sessions)) {
+    const restored = readQueuedMessageSnapshot(serverId);
+    if (restored.size === 0) continue;
+    setQueuedMessages(serverId, (current) => {
+      const next = new Map(current);
+      for (const [agentId, queue] of restored) {
+        if (!next.has(agentId)) next.set(agentId, queue);
+      }
+      return next;
+    });
+  }
+});
 
 export function useWorkspaceRestoreStatus(
   serverId: string | null,
