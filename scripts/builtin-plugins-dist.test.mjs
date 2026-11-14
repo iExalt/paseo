@@ -5,6 +5,7 @@ import os from "node:os";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import pino from "pino";
+import { PASEO_PLUGIN_API_VERSION } from "../packages/protocol/dist/plugin-requirements.js";
 import {
   builtinPlugins,
   resolveBuiltinPluginsRoot,
@@ -30,7 +31,11 @@ test("built output compiles and starts every listed built-in", async () => {
     await readFile(path.join(repoRoot, "packages/server/package.json"), "utf8"),
   );
   const settingsDirectory = await mkdtemp(path.join(os.tmpdir(), "builtin-dist-settings-"));
-  const runtime = new PluginRuntime(pino({ level: "silent" }), version, { settingsDirectory });
+  const runtime = new PluginRuntime(pino({ level: "silent" }), version, {
+    // Bootstrap checks manifests against the plugin API version, not the fork product version.
+    compatibilityVersion: PASEO_PLUGIN_API_VERSION,
+    settingsDirectory,
+  });
   runtime.bindPaseoSessionHost({
     async attachPluginSocket(_pluginId, socket) {
       const closed = new Promise((resolve) => socket.once("close", resolve));
