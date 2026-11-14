@@ -101,6 +101,7 @@ function createServer(
   agentManagerOverrides?: Record<string, unknown>,
   workspaceRegistry?: WorkspaceRegistry,
   daemonConfigStoreOverrides?: Record<string, unknown>,
+  agentStorageRecord: { title: string } | null = null,
 ) {
   const pushNotifications = new RecordingPushNotificationSender();
   const logger = createLogger();
@@ -133,7 +134,6 @@ function createServer(
     createStub<pino.Logger>(logger),
     "srv-test",
     createStub<AgentManager>(agentManager),
-    createStub<AgentStorage>({}),
     createStub<DownloadTokenStore>({}),
     "/tmp/paseo-test",
     createStub<DaemonConfigStore>(daemonConfigStore),
@@ -298,19 +298,24 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
     expect(pushNotifications.sent).toHaveLength(1);
   });
 
-  it("uses assistant preview text for push notifications with markdown removed", async () => {
+  it("titles push notifications by thread with markdown-free assistant previews", async () => {
     const getLastAssistantMessage = vi.fn(
       async () => "**Done**. Updated `README.md` and [link](https://example.com).",
     );
-    const { server, pushNotifications } = createServer({
-      getAgent: vi.fn(() => ({
-        config: { title: null },
-        cwd: "/tmp/worktree",
-        workspaceId: WORKSPACE_ID,
-        pendingPermissions: new Map(),
-      })),
-      getLastAssistantMessage,
-    });
+    const { server, pushNotifications } = createServer(
+      {
+        getAgent: vi.fn(() => ({
+          config: { title: null },
+          cwd: "/tmp/worktree",
+          workspaceId: WORKSPACE_ID,
+          pendingPermissions: new Map(),
+        })),
+        getLastAssistantMessage,
+      },
+      undefined,
+      undefined,
+      { title: "Fix login redirect" },
+    );
 
     await asInternals<WebSocketServerInternals>(server).broadcastAgentAttention({
       agentId: "agent-1",
@@ -320,7 +325,7 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
 
     expect(pushNotifications.sent).toEqual([
       {
-        title: "Agent finished",
+        title: "Fix login redirect",
         body: "Done. Updated README.md and link.",
         data: {
           serverId: "srv-test",
@@ -331,6 +336,8 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
       },
     ]);
     expect(getLastAssistantMessage).toHaveBeenCalledWith("agent-1");
+  });
+
   it("publishes committed rules only to subscribed clients that opted into the field", () => {
     const { server } = createServer();
     const legacy = connectClient(server, null);
