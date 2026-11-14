@@ -2034,6 +2034,8 @@ export const zhCN: TranslationResources = {
     output: "输出",
   },
   turnSummary: {
+    messages: { one: "写了 {{count}} 条消息", other: "写了 {{count}} 条消息" },
+    agentMessage: "智能体消息",
     details: "查看轮次详情",
     sentBy: "由 {{name}} 发送",
     showMore: "展开",
@@ -2057,6 +2059,7 @@ export const zhCN: TranslationResources = {
       one: "搜索了 {{count}} 次",
       other: "搜索了 {{count}} 次",
     },
+    sentMessages: { one: "发送了 {{count}} 条消息", other: "发送了 {{count}} 条消息" },
     otherTools: {
       one: "使用了 {{count}} 个其他工具",
       other: "使用了 {{count}} 个其他工具",

@@ -56,8 +56,11 @@ export interface StreamViewportHandle {
   focus?: () => void;
   scrollToBottom: (reason?: BottomAnchorLocalRequest["reason"]) => void;
   prepareForViewportChange: () => void;
-  /** Stop following output so the rows on screen stay put while rows below them open or close. */
-  holdReadingPosition: () => void;
+  /**
+   * Stop following output so the rows on screen stay put while rows below them open or close.
+   * With a row id, native also keeps that row's header in place while the row itself resizes.
+   */
+  holdReadingPosition: (rowId?: string) => void;
   scrollToMessage?: (messageId: string, occurrence?: ScrollToMessageOccurrence) => void;
   /** Native: put a row's start at the top at once, without animating. */
   scrollToItem?: (itemId: string) => void;

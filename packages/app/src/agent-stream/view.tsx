@@ -745,6 +745,10 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
     });
 
     const setToolCallGroupExpanded = toolCallExpansion.setGroupExpanded;
+    const holdReadingPosition = useCallback(
+      (rowId?: string) => viewportRef.current?.holdReadingPosition(rowId),
+      [],
+    );
 
     const renderUserMessageItem = useCallback(
       (layoutItem: StreamLayoutItem, item: Extract<StreamItem, { kind: "user_message" }>) => {
@@ -757,6 +761,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
             findItemId={item.id}
             message={item.text}
             sender={item.sender}
+            onAgentMessageToggle={holdReadingPosition}
             images={item.images}
             attachments={item.attachments}
             timestamp={item.timestamp.getTime()}
@@ -785,6 +790,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
         agentId,
         client,
         getCollapsedTurn,
+        holdReadingPosition,
         pendingClientMessageIds,
         resolvedServerId,
         setTurnExpanded,

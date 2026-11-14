@@ -9,6 +9,8 @@ import { summarizeToolCalls, type OverviewSummary } from "@/tool-calls/detail-le
 
 export interface TurnSummary {
   tools: OverviewSummary;
+  /** Agent messages folded with the work, so the summary line can say it hides text. */
+  messageCount: number;
 }
 
 export interface CollapsedTurn {
@@ -47,11 +49,13 @@ function summarizeTurn(
   getGroupedCalls: CollapseTurnsInput["getGroupedCalls"],
 ): TurnSummary {
   const calls: (ToolCallItem | ThoughtItem)[] = [];
+  let messageCount = 0;
   for (const item of items) {
+    if (item.kind === "assistant_message") messageCount += 1;
     if ((item.kind === "tool_call" || item.kind === "thought") && !isTurnTrigger(item))
       calls.push(...(getGroupedCalls(item.id) ?? [item]));
   }
-  return { tools: summarizeToolCalls(calls) };
+  return { tools: summarizeToolCalls(calls), messageCount };
 }
 
 function hasWork(summary: TurnSummary): boolean {
@@ -100,7 +104,7 @@ export function collapseTurns(input: CollapseTurnsInput): TurnCollapse {
     }
     const folded = tail.slice(runStart, replyIndex);
     const summary = summarizeTurn(folded, input.getGroupedCalls);
-    if (!hasWork(summary) && !folded.some((item) => item.kind === "assistant_message")) {
+    if (!hasWork(summary) && summary.messageCount === 0) {
       output.push(...tail.slice(runStart, runEnd));
       return;
     }

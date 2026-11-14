@@ -107,6 +107,7 @@ describe("collapseTurns", () => {
       expanded: false,
       summary: {
         tools: expect.objectContaining({ commandCount: 2 }),
+        messageCount: 1,
       },
     });
     expect(result.hostIdByFoldedMessageId.get("early")).toBe("u1");

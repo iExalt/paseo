@@ -2140,8 +2140,10 @@ export const en = {
     output: "Output",
   },
   turnSummary: {
+    messages: { one: "wrote {{count}} message", other: "wrote {{count}} messages" },
     details: "View turn details",
     sentBy: "Sent by {{name}}",
+    agentMessage: "Agent message",
     showMore: "Show more",
     showLess: "Show less",
   },
@@ -2163,6 +2165,7 @@ export const en = {
       one: "searched {{count}} time",
       other: "searched {{count}} times",
     },
+    sentMessages: { one: "sent {{count}} message", other: "sent {{count}} messages" },
     otherTools: {
       one: "used {{count}} other tool",
       other: "used {{count}} other tools",
