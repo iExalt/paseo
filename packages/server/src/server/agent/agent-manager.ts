@@ -3,6 +3,7 @@ import type { AttachedAgentTool, PluginAgentToolsRuntime } from "../plugins/agen
 import { ProviderOptionsValidationError } from "./provider-options.js";
 import type { AgentToolResult } from "@getpaseo/plugin/server";
 import type { RuntimeCleanupCandidate } from "./idle-runtime-cleanup/index.js";
+import { withWorkspaceLifecycleLock } from "../workspace-lifecycle-lock.js";
 import {
   AgentNotFoundError,
   ensureAgentLoaded,
@@ -911,6 +912,49 @@ export class AgentManager {
   private appendSystemPrompt: string;
   private onAgentAttention?: AgentAttentionCallback;
   private onAgentArchived?: AgentArchivedCallback;
+  private workspaceLifecycle?: {
+    assertActive(workspaceId: string): Promise<void>;
+    onAgentRemoved(workspaceId: string): Promise<void>;
+  };
+
+  setWorkspaceLifecycle(callbacks: NonNullable<AgentManager["workspaceLifecycle"]>): void {
+    this.workspaceLifecycle = callbacks;
+  }
+
+  private deferEmptyWorkspaceCheck(agent: Pick<StoredAgentRecord, "id" | "workspaceId">): void {
+    const workspaceId = agent.workspaceId;
+    if (!workspaceId || !this.workspaceLifecycle) return;
+    const settled = this.lifecycleMutationTails.get(agent.id) ?? Promise.resolve();
+    // Do not await from an archive: workspace teardown itself archives agents.
+    setImmediate(() => {
+      void settled
+        .then(() => this.workspaceLifecycle?.onAgentRemoved(workspaceId))
+        .catch((error) => {
+          this.logger.warn({ err: error, workspaceId }, "Failed to archive empty workspace");
+        });
+    });
+  }
+
+  private async assertWorkspaceResumeAllowed(
+    record: StoredAgentRecord | null,
+    options: { workspaceId?: string } | undefined,
+    purpose: string,
+  ): Promise<void> {
+    const workspaceId = options?.workspaceId ?? record?.workspaceId;
+    if (purpose !== "history" && workspaceId)
+      await this.workspaceLifecycle?.assertActive(workspaceId);
+  }
+
+  private async withWorkspaceAdmission<T>(
+    workspaceId: string | undefined,
+    work: () => Promise<T>,
+  ): Promise<T> {
+    if (!workspaceId) return work();
+    return withWorkspaceLifecycleLock([workspaceId], async () => {
+      await this.workspaceLifecycle?.assertActive(workspaceId);
+      return work();
+    });
+  }
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
@@ -1585,9 +1629,11 @@ export class AgentManager {
     const resolvedAgentId = validateAgentId(agentId ?? this.idFactory(), "createAgent");
     const barrier = this.skillRefreshBarrier;
     const operation = () =>
-      this.runLifecycleMutation(resolvedAgentId, async () => {
-        return this.createAgentInternal(config, resolvedAgentId, options);
-      });
+      this.withWorkspaceAdmission(options.workspaceId, () =>
+        this.runLifecycleMutation(resolvedAgentId, async () => {
+          return this.createAgentInternal(config, resolvedAgentId, options);
+        }),
+      );
     return this.trackAgentRegistrationOperation(barrier ? barrier.then(operation) : operation());
   }
 
@@ -1599,27 +1645,31 @@ export class AgentManager {
   createAgentFromRecord(agentId: string): Promise<ManagedAgent> {
     const resolvedAgentId = validateAgentId(agentId, "createAgentFromRecord");
     const barrier = this.skillRefreshBarrier;
-    const operation = () =>
-      this.runLifecycleMutation(resolvedAgentId, async () => {
-        const record = await this.requireRegistry().get(resolvedAgentId);
-        if (!record) throw new AgentNotFoundError(resolvedAgentId);
-        const config = buildSessionConfig(record, {
-          validProviders: this.getRegisteredProviderIds(),
-        });
-        if (!config) {
-          throw new Error(
-            `Agent ${resolvedAgentId} references unavailable provider '${record.provider}'`,
-          );
-        }
-        return this.createAgentInternal(config, resolvedAgentId, {
-          labels: record.labels,
-          metadata: record.metadata,
-          workspaceId: record.workspaceId,
-          owner: record.owner,
-          background: record.background,
-          env: record.launchEnv,
-        });
-      });
+    const operation = async () => {
+      const initial = await this.requireRegistry().get(resolvedAgentId);
+      return this.withWorkspaceAdmission(initial?.workspaceId, () =>
+        this.runLifecycleMutation(resolvedAgentId, async () => {
+          const record = await this.requireRegistry().get(resolvedAgentId);
+          if (!record) throw new AgentNotFoundError(resolvedAgentId);
+          const config = buildSessionConfig(record, {
+            validProviders: this.getRegisteredProviderIds(),
+          });
+          if (!config) {
+            throw new Error(
+              `Agent ${resolvedAgentId} references unavailable provider '${record.provider}'`,
+            );
+          }
+          return this.createAgentInternal(config, resolvedAgentId, {
+            labels: record.labels,
+            metadata: record.metadata,
+            workspaceId: record.workspaceId,
+            owner: record.owner,
+            background: record.background,
+            env: record.launchEnv,
+          });
+        }),
+      );
+    };
     return this.trackAgentRegistrationOperation(barrier ? barrier.then(operation) : operation());
   }
 
@@ -1731,16 +1781,21 @@ export class AgentManager {
       "resumeAgentFromPersistence",
     );
     const barrier = this.skillRefreshBarrier;
-    const operation = () =>
-      this.runLifecycleMutation(resolvedAgentId, async () => {
-        return this.resumeAgentFromPersistenceInternal(
-          handle,
-          overrides,
-          resolvedAgentId,
-          options,
-          resumeOptions,
-        );
-      });
+    const operation = async () => {
+      const record = await this.registry?.get(resolvedAgentId);
+      const workspaceId = options?.workspaceId ?? record?.workspaceId;
+      return withWorkspaceLifecycleLock(workspaceId ? [workspaceId] : [], () =>
+        this.runLifecycleMutation(resolvedAgentId, async () => {
+          return this.resumeAgentFromPersistenceInternal(
+            handle,
+            overrides,
+            resolvedAgentId,
+            options,
+            resumeOptions,
+          );
+        }),
+      );
+    };
     return this.trackAgentRegistrationOperation(barrier ? barrier.then(operation) : operation());
   }
 
@@ -1779,6 +1834,7 @@ export class AgentManager {
     const record = this.registry ? await this.registry.get(resolvedAgentId) : null;
     const purpose = await resolveResumePurpose(record, resumeOptions?.purpose, mergedConfig.cwd);
     const currentResumeOptions = { purpose } satisfies AgentResumeSessionOptions;
+    await this.assertWorkspaceResumeAllowed(record, options, purpose);
 
     const { labels = {} } = options ?? {};
     const { title = mergedConfig.title ?? null, labels: recordLabels = labels } = record ?? {};
@@ -2338,6 +2394,7 @@ export class AgentManager {
       await this.deleteAgentState(agentId);
       this.retireInternalAgent({ record, lastMessage });
       await this.cascadeArchiveChildren(record);
+      this.deferEmptyWorkspaceCheck(record);
       return { archivedAt };
     }
     if (!this.registry) {
@@ -2360,6 +2417,7 @@ export class AgentManager {
     this.discardRetainedAgentState(agentId);
 
     await this.cascadeArchiveChildren(archivedRecord);
+    this.deferEmptyWorkspaceCheck(archivedRecord);
 
     return { archivedAt };
   }
@@ -2991,6 +3049,7 @@ export class AgentManager {
 
     await this.fireAgentArchived(agentId);
     await this.cascadeArchiveChildren(nextRecord);
+    this.deferEmptyWorkspaceCheck(nextRecord);
 
     return nextRecord;
   }
@@ -2999,8 +3058,9 @@ export class AgentManager {
     agentId: string,
     updates?: { workspaceId?: string; labels?: AgentLabelPatch },
   ): Promise<boolean> {
-    return this.runLifecycleMutation(agentId, () =>
-      this.unarchiveSnapshotUnlocked(agentId, updates),
+    const record = await this.requireRegistry().get(agentId);
+    return this.withWorkspaceAdmission(updates?.workspaceId ?? record?.workspaceId, () =>
+      this.runLifecycleMutation(agentId, () => this.unarchiveSnapshotUnlocked(agentId, updates)),
     );
   }
 
@@ -4247,6 +4307,7 @@ export class AgentManager {
   }
 
   notifyAgentRemoved(agent: Pick<StoredAgentRecord, "id" | "workspaceId" | "internal">): void {
+    this.deferEmptyWorkspaceCheck(agent);
     this.dispatch({
       type: "agent_removed",
       agentId: agent.id,
