@@ -38,9 +38,9 @@ selects daily/monthly boundaries; it defaults to the caller's time zone.
 Discovery: agent import --list [--provider <id>] [--cwd <daemon-path>] lists recent
 sessions without importing them. provider features <provider> --cwd <daemon-path>
 accepts --mode, --model and --thinking to inspect a draft's feature choices.
-skills status/select/reconcile/uninstall manages host-provided skills; mutations
-require --force. Select exactly --all, --none or names. speech models ls/download/rm
-manages host speech models (rm requires --force). plugin catalog is read-only.
+skills status/select/reconcile/uninstall manages host-provided skills. Select
+exactly --all, --none or names. speech models ls/download/rm manages host speech
+models. plugin catalog is read-only.
 
 JSON: parse stdout only; keep stderr separate, never merge 2>&1 into a parser.
 run --no-wait --json returns agentId/title. agent ls --json returns display

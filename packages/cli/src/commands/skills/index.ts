@@ -9,7 +9,6 @@ type SkillsAction = "status" | "select" | "reconcile" | "uninstall";
 interface SkillsOptions extends CommandOptions {
   all?: boolean;
   none?: boolean;
-  force?: boolean;
 }
 type SkillsClient = Pick<
   DaemonClient,
@@ -29,9 +28,7 @@ const schema: OutputSchema<AgentSkillsStatus> = {
 export function createSkillsCommand(): Command {
   const skills = new Command("skills").description("Manage daemon-provided agent skills");
   for (const action of ["status", "reconcile", "uninstall"] as const) {
-    addJsonAndDaemonHostOptions(
-      skills.command(action).option("--force", "Allow managed skill changes"),
-    ).action(
+    addJsonAndDaemonHostOptions(skills.command(action)).action(
       withOutput((options: CommandOptions, command: Command) =>
         runSkillsCommand(action, [], options, command),
       ),
@@ -42,8 +39,7 @@ export function createSkillsCommand(): Command {
       .command("select")
       .argument("[names...]", "Exact skill names")
       .option("--all", "Select all available skills")
-      .option("--none", "Select no skills")
-      .option("--force", "Allow managed skills to be changed or removed"),
+      .option("--none", "Select no skills"),
   ).action(
     withOutput((names: string[], options: CommandOptions, command: Command) =>
       runSkillsCommand("select", names, options, command),
@@ -59,12 +55,6 @@ export async function runSkillsCommand(
   _command: Command,
   connect: (options: ConnectOptions) => Promise<SkillsClient> = connectToDaemon,
 ) {
-  if (action !== "status" && !options.force) {
-    throw {
-      code: "FORCE_REQUIRED",
-      message: `skills ${action} changes managed files; pass --force.`,
-    };
-  }
   let selection: AgentSkillSelection = { mode: "all" };
   if (action === "select") {
     const choices =

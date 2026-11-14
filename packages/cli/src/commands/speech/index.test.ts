@@ -152,7 +152,7 @@ it.each(["ls", "download", "rm"] as const)(
         : await runSpeechModelsCommand(
             action,
             " model ",
-            { daemonTarget: target, force: true },
+            { daemonTarget: target },
             new Command(),
             connectModels,
           );
@@ -162,13 +162,8 @@ it.each(["ls", "download", "rm"] as const)(
   },
 );
 
-it("speech model deletion refuses without force and unsupported hosts close without RPC", async () => {
+it("unsupported speech model hosts close without RPC", async () => {
   const target = { kind: "endpoint" as const, host: "speech-host:1234" };
-  await expect(
-    runSpeechModelsCommand("rm", "m", { daemonTarget: target }, new Command(), async () => {
-      throw new Error("must not connect");
-    }),
-  ).rejects.toMatchObject({ code: "FORCE_REQUIRED" });
   let closed = false;
   const unavailable = async () => {
     throw new Error("must not request");

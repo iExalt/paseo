@@ -1,4 +1,4 @@
-import { runSkillsCommand } from "../skills/index.js";
+import { runSkillsCommand, createSkillsCommand } from "../skills/index.js";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Command } from "commander";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
@@ -47,13 +47,15 @@ describe("runProfileLsCommand", () => {
   });
 });
 
-it("skills mutations require force before connecting", async () => {
-  for (const action of ["select", "reconcile", "uninstall"] as const) {
-    await expect(
-      runSkillsCommand(action, [], { daemonTarget }, new Command(), async () => {
-        throw new Error("must not connect");
-      }),
-    ).rejects.toMatchObject({ code: "FORCE_REQUIRED" });
+it("skills mutations reject obsolete confirmation flags", async () => {
+  for (const flag of ["--force", "--yes"]) {
+    const command = createSkillsCommand().exitOverride();
+    const uninstall = command.commands.find((entry) => entry.name() === "uninstall")!;
+    uninstall.exitOverride().configureOutput({ writeErr: () => {} });
+    uninstall.action(() => {});
+    await expect(command.parseAsync(["uninstall", flag], { from: "user" })).rejects.toMatchObject({
+      code: "commander.unknownOption",
+    });
   }
 });
 
@@ -70,7 +72,7 @@ it("skills selection confirms exactly the removals returned by the host", async 
   const result = await runSkillsCommand(
     "select",
     [],
-    { daemonTarget, all: true, force: true },
+    { daemonTarget, all: true },
     new Command(),
     async () => ({
       getLastServerInfoMessage: () => ({
@@ -109,27 +111,21 @@ it("skills selection fails when removal confirmation changes", async () => {
   };
   let calls = 0;
   await expect(
-    runSkillsCommand(
-      "select",
-      [],
-      { daemonTarget, none: true, force: true },
-      new Command(),
-      async () => ({
-        getLastServerInfoMessage: () => ({
-          status: "server_info",
-          serverId: "host",
-          features: { skillManagement: true },
-        }),
-        getAgentSkillsStatus: async () => status,
-        reconcileAgentSkills: async () => status,
-        uninstallAgentSkills: async () => status,
-        saveAgentSkillsSelection: async () => {
-          calls++;
-          return { ...status, confirmationRequired: { removals: [String(calls)] } };
-        },
-        close: async () => {},
+    runSkillsCommand("select", [], { daemonTarget, none: true }, new Command(), async () => ({
+      getLastServerInfoMessage: () => ({
+        status: "server_info",
+        serverId: "host",
+        features: { skillManagement: true },
       }),
-    ),
+      getAgentSkillsStatus: async () => status,
+      reconcileAgentSkills: async () => status,
+      uninstallAgentSkills: async () => status,
+      saveAgentSkillsSelection: async () => {
+        calls++;
+        return { ...status, confirmationRequired: { removals: [String(calls)] } };
+      },
+      close: async () => {},
+    })),
   ).rejects.toMatchObject({ code: "CONFIRMATION_CHANGED" });
   expect(calls).toBe(2);
 });
@@ -176,7 +172,7 @@ it.each(["status", "reconcile", "uninstall"] as const)(
   "skills %s dispatches only that operation",
   async (action) => {
     const fake = skillsFixture(true);
-    await runSkillsCommand(action, [], { daemonTarget, force: true }, new Command(), fake.connect);
+    await runSkillsCommand(action, [], { daemonTarget }, new Command(), fake.connect);
     expect(fake.calls).toEqual([action, "close"]);
   },
 );
@@ -192,13 +188,7 @@ it("skills gates unsupported hosts before skill RPCs", async () => {
 it("skills rejects unknown names before any mutation", async () => {
   const fake = skillsFixture(true);
   await expect(
-    runSkillsCommand(
-      "select",
-      ["agnt-tools"],
-      { daemonTarget, force: true },
-      new Command(),
-      fake.connect,
-    ),
+    runSkillsCommand("select", ["agnt-tools"], { daemonTarget }, new Command(), fake.connect),
   ).rejects.toMatchObject({
     code: "INVALID_SELECTION",
     details: { unknown: ["agnt-tools"], available: ["agent-tools"] },
@@ -211,7 +201,7 @@ it("skills checks and saves trimmed explicit names", async () => {
   await runSkillsCommand(
     "select",
     [" agent-tools "],
-    { daemonTarget, force: true },
+    { daemonTarget },
     new Command(),
     async () => ({
       ...(await fake.connect()),
@@ -234,15 +224,9 @@ it("skills checks and saves trimmed explicit names", async () => {
 it("skills rejects ambiguous or empty selections before connection", async () => {
   for (const selection of [{ all: true, none: true }, {}]) {
     await expect(
-      runSkillsCommand(
-        "select",
-        [],
-        { daemonTarget, force: true, ...selection },
-        new Command(),
-        async () => {
-          throw new Error("must not connect");
-        },
-      ),
+      runSkillsCommand("select", [], { daemonTarget, ...selection }, new Command(), async () => {
+        throw new Error("must not connect");
+      }),
     ).rejects.toMatchObject({ code: "INVALID_SELECTION" });
   }
 });

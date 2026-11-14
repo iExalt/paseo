@@ -42,10 +42,7 @@ export function speechModelsCommand(): Command {
   );
   for (const action of ["download", "rm"] as const) {
     addJsonAndDaemonHostOptions(
-      models
-        .command(action)
-        .argument("<model-id>", "Exact model ID")
-        .option("--force", "Allow removal"),
+      models.command(action).argument("<model-id>", "Exact model ID"),
     ).action(
       withOutput((modelId: string, options: CommandOptions, command: Command) =>
         runSpeechModelsCommand(action, modelId, options, command),
@@ -58,12 +55,10 @@ export function speechModelsCommand(): Command {
 export async function runSpeechModelsCommand(
   action: "download" | "rm",
   modelId: string,
-  options: CommandOptions & { force?: boolean },
+  options: CommandOptions,
   _command: Command,
   connect: (options: ConnectOptions) => Promise<ModelsClient> = connectToDaemon,
 ): Promise<SingleResult<ModelResult>> {
-  if (action === "rm" && !options.force)
-    throw { code: "FORCE_REQUIRED", message: "Pass --force to remove a speech model." };
   const id = modelId.trim();
   if (!id) throw { code: "INVALID_MODEL", message: "A nonempty model ID is required." };
   const client = await connect({ target: options.daemonTarget });
