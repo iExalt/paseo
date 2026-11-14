@@ -46,6 +46,7 @@ function HostUsageModal({
   hosts: UsageHost[];
   onSelectHost: (serverId: string) => void;
 }) {
+  const { t } = useTranslation();
   const hostSelection = useMemo(
     () => ({ hosts, serverId, onSelect: onSelectHost }),
     [hosts, onSelectHost, serverId],

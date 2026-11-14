@@ -9,9 +9,9 @@ const appDir = fileURLToPath(new URL(".", import.meta.url));
 const rootDir = path.resolve(appDir, "../..");
 const require = createRequire(import.meta.url);
 const vitestEntry = path.join(path.dirname(require.resolve("vitest/package.json")), "vitest.mjs");
-const tsgoEntry = path.join(
-  path.dirname(require.resolve("@typescript/native-preview/package.json")),
-  "bin/tsgo.js",
+const tscEntry = path.join(
+  path.dirname(require.resolve("@typescript/native/package.json")),
+  "bin/tsc",
 );
 
 it("the test configuration typechecks with Expo's generated environment declaration", () => {
@@ -28,7 +28,7 @@ it("the test configuration typechecks with Expo's generated environment declarat
     );
     const result = spawnSync(
       process.execPath,
-      [tsgoEntry, "--noEmit", "--project", path.join(fixtureDir, "tsconfig.json")],
+      [tscEntry, "--noEmit", "--project", path.join(fixtureDir, "tsconfig.json")],
       { cwd: appDir, encoding: "utf8", timeout: 30_000 },
     );
 

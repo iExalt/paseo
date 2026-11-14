@@ -1,3 +1,4 @@
+import { View } from "react-native";
 import { memo, useMemo, useState } from "react";
 import { EnrichedMarkdownText, type LinkPressEvent } from "react-native-enriched-markdown";
 import { withUnistyles } from "react-native-unistyles";
@@ -10,6 +11,7 @@ import { matchCommandLink, useAgentCommandHints, type CommandHints } from "@/age
 import { useForgeShorthand } from "@/git/forge-shorthand";
 import { pluginOverviewUrl } from "@getpaseo/protocol/plugin-overview";
 import { openExternalUrl } from "@/utils/open-external-url";
+import { useChatFindAnchorView } from "@/agent-stream/chat-find/anchor";
 import { AttachmentLightbox, type ImageLightboxSource } from "@/components/attachment-lightbox";
 import type { Theme } from "@/styles/theme";
 import { isWeb } from "@/constants/platform";
@@ -22,11 +24,16 @@ import { splitStreamingMarkdown } from "./streaming";
 import { useMarkdownSource, type MarkdownImageContext } from "./images";
 
 import { MermaidFence, MermaidStreamingContext, splitMermaidFences } from "./fence/mermaid";
+import { FindCodeBlock } from "./find";
+import { splitMarkdownForFind, type MarkdownFind } from "./find-split";
 
 const ThemedMarkdown = withUnistyles(EnrichedMarkdownText);
 const MD4C_FLAGS = { latexMath: false, hardSoftBreaks: true, admonitions: true };
 // A README is written for its forge, where the lines of a paragraph join into one.
 const EXTERNAL_MD4C_FLAGS = { ...MD4C_FLAGS, hardSoftBreaks: false };
+// Only a part carrying chat find's mark parses `==`; elsewhere it stays literal text.
+const FIND_MD4C_FLAGS = { ...MD4C_FLAGS, highlight: true };
+const EXTERNAL_FIND_MD4C_FLAGS = { ...EXTERNAL_MD4C_FLAGS, highlight: true };
 
 // Reading the breakpoint here makes Unistyles restyle the text when the layout crosses it.
 const markdownStyle =
@@ -61,6 +68,8 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
    * a paragraph join as they do on its forge.
    */
   external?: boolean;
+  /** Native chat find's selected occurrence; ignored while streaming. */
+  find?: MarkdownFind | null;
 }
 
 /** All Markdown surfaces share the same engine and source adaptation. */
@@ -73,6 +82,7 @@ export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRe
     [completeLines],
   );
   const Part = props.agentCommands ? CommandMarkdownPart : MarkdownPart;
+  if (props.find && !streaming) return <MarkdownFindParts {...props} find={props.find} />;
   if (!streaming || boundary === 0) return <Part {...props} />;
   return (
     <MarkdownBlockStack>
@@ -82,13 +92,36 @@ export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRe
   );
 });
 
-const CommandMarkdownPart = memo(function CommandMarkdownPart(props: MarkdownRendererProps) {
+const CommandMarkdownPart = memo(function CommandMarkdownPart(props: MarkdownRendererProps & { highlight?: boolean }) {
   const commandHints = useAgentCommandHints();
   return <MarkdownPart {...props} commandHints={commandHints} />;
 });
+/**
+ * Draws the block holding chat find's occurrence apart from the rest, so reveal can
+ * measure it: Markdown with the occurrence highlighted, or a code block that marks it.
+ */
+function MarkdownFindParts({ find, ...props }: MarkdownRendererProps & { find: MarkdownFind }) {
+  const Part = props.agentCommands ? CommandMarkdownPart : MarkdownPart;
+  const split = useMemo(() => splitMarkdownForFind(props.text, find.match), [props.text, find]);
+  // A code block measures the occurrence's own line; natively drawn Markdown cannot.
+  const anchorRef = useChatFindAnchorView(split.code ? null : find.anchor, split.fraction);
+  return (
+    <MarkdownBlockStack>
+      {split.head ? <Part {...props} text={split.head} /> : null}
+      <View ref={anchorRef} collapsable={false}>
+        {split.code ? (
+        ) : (
+          <Part {...props} text={split.block} highlight />
+        )}
+      </View>
+      {split.tail ? <Part {...props} text={split.tail} /> : null}
+    </MarkdownBlockStack>
+  );
+}
 
 const MarkdownPart = memo(function MarkdownPart({
   text,
+  highlight = false,
   compact = false,
   muted = false,
   selectable = true,
@@ -97,8 +130,9 @@ const MarkdownPart = memo(function MarkdownPart({
   agentCommands: _agentCommands,
   external = false,
   commandHints = null,
+  find: _find,
   ...imageContext
-}: MarkdownRendererProps & { commandHints?: CommandHints | null }) {
+}: MarkdownRendererProps & { commandHints?: CommandHints | null; highlight?: boolean }) {
   const environment = useAssistantFileLinkEnvironment();
   const actions = useAssistantFileLinkActions();
   const workspaceForgeShorthand = useForgeShorthand();
@@ -166,7 +200,7 @@ const MarkdownPart = memo(function MarkdownPart({
               uniProps={pickMarkdownStyle(compact, muted)}
               flavor="github"
               selectable={selectable}
-              md4cFlags={external ? EXTERNAL_MD4C_FLAGS : MD4C_FLAGS}
+              md4cFlags={external ? (highlight ? EXTERNAL_FIND_MD4C_FLAGS : EXTERNAL_MD4C_FLAGS) : (highlight ? FIND_MD4C_FLAGS : MD4C_FLAGS)}
               linkRecognition={linkRecognition}
               enableTaskListItemToggle={false}
               enableLinkPreview={false}
