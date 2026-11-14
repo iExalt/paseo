@@ -88,6 +88,7 @@ import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { RenderProfile } from "@/utils/render-profiler";
 import { useComposerHeight } from "./height";
 import { ComposerInputPresentation } from "./presentation";
+import { ToolbarSpareWidthProvider, useToolbarSpareWidthMeasure } from "./toolbar-space";
 import { resolveComposerInputMode, type ComposerInputMode } from "@/composer/input-mode";
 import { pasteLinkedClipboardText } from "@/composer/pasted-text";
 import type { NativePastedFile } from "@/composer/native-pasted-image";
@@ -2257,9 +2258,10 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       ],
       [controlSizing, leadingEdge, trailingEdge],
     );
+    const { spareWidth, onGroupLayout, onContentLayout } = useToolbarSpareWidthMeasure();
     const toolbar = useMemo(
       () => (
-        <>
+        <ToolbarSpareWidthProvider value={spareWidth}>
           {!isFullscreen && !showOverlay && dictationStartError ? (
             <Text accessibilityRole="alert" style={styles.dictationStartError}>
               {t(`message.dictation.${dictationStartError}`)}
@@ -2267,19 +2269,27 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           ) : null}
           <View style={isFullscreen ? styles.hiddenToolbar : buttonRowStyle}>
             {/* Toolbar left: attachment button + agent controls */}
-            <View style={styles.leftButtonGroup}>
-              {!isFullscreen && (
-                <AttachmentDropdown
-                  visible={mode.showAttachments}
-                  isConnected={isConnected}
-                  disabled={disabled}
-                  attachButtonStyle={attachButtonStyle}
-                  renderAttachButtonIcon={renderAttachButtonIcon}
-                  attachmentMenuItems={attachmentMenuItems}
-                  addAttachmentLabel={t("composer.input.addAttachment")}
-                />
-              )}
-              {leftContent}
+            <View
+              style={styles.leftButtonGroup}
+              onLayout={isFullscreen ? undefined : onGroupLayout}
+            >
+              <View
+                style={styles.leftButtonContent}
+                onLayout={isFullscreen ? undefined : onContentLayout}
+              >
+                {!isFullscreen && (
+                  <AttachmentDropdown
+                    visible={mode.showAttachments}
+                    isConnected={isConnected}
+                    disabled={disabled}
+                    attachButtonStyle={attachButtonStyle}
+                    renderAttachButtonIcon={renderAttachButtonIcon}
+                    attachmentMenuItems={attachmentMenuItems}
+                    addAttachmentLabel={t("composer.input.addAttachment")}
+                  />
+                )}
+                {leftContent}
+              </View>
             </View>
 
             {/* Right: dictation, then the trailing action (voice mode, send or stop) */}
@@ -2302,11 +2312,14 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
               </View>
             )}
           </View>
-        </>
+        </ToolbarSpareWidthProvider>
       ),
       [
         buttonRowStyle,
         isFullscreen,
+        spareWidth,
+        onGroupLayout,
+        onContentLayout,
         mode.showAttachments,
         isConnected,
         disabled,
@@ -2533,6 +2546,13 @@ const styles = StyleSheet.create((theme: Theme) => ({
     minWidth: 0,
     flexShrink: 1,
     flexGrow: 1,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  // Keeps its natural width until the row runs out of room, so the group can measure the slack.
+  leftButtonContent: {
+    minWidth: 0,
+    flexShrink: 1,
     flexDirection: "row",
     alignItems: "center",
     gap: TOOLBAR_CONTROL_GAP,

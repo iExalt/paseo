@@ -2776,8 +2776,10 @@ const styles = StyleSheet.create((theme: Theme) => ({
     alignItems: "center",
     gap: TOOLBAR_CONTROL_GAP,
   },
+  // Grows to fit the session cost label beside the ring.
   contextWindowMeterSlot: {
-    ...toolbarSlot(),
+    minWidth: TOOLBAR_DISC_SIZE,
+    height: TOOLBAR_DISC_SIZE,
     flexShrink: 0,
     alignItems: "center",
     justifyContent: "center",

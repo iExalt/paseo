@@ -6,6 +6,7 @@ import { UsageOptions } from "./options";
 import { useUsageDisplay, type UsageDisplay } from "./display";
 import { hasHostChoice, type UsageHostSelection } from "./hosts";
 import { useHostUsage } from "./queries";
+import { useRefreshHostSpend } from "./spend";
 import type { UsageView } from "./types";
 
 /**
@@ -63,8 +64,8 @@ const styles = StyleSheet.create((theme) => ({
 }));
 
 /**
- * One host’s usage for the Usage modal, and its title-row controls: null when there is nothing to
- * control, so the header leaves no empty island.
+ * One host’s usage and title-row controls; null leaves no empty header island.
+ * Refresh all refreshes both plan usage and API spend.
  */
 export function useHostUsageWithControls(hostSelection: UsageHostSelection): {
   view: UsageView;
@@ -73,7 +74,12 @@ export function useHostUsageWithControls(hostSelection: UsageHostSelection): {
   controls: ReactElement | null;
   openOptions: () => void;
 } {
-  const { view, refresh } = useHostUsage(hostSelection.serverId);
+  const { view, refresh: refreshReports } = useHostUsage(hostSelection.serverId);
+  const refreshSpend = useRefreshHostSpend(hostSelection.serverId);
+  const refresh = useCallback(() => {
+    refreshReports();
+    refreshSpend();
+  }, [refreshReports, refreshSpend]);
   const { display } = useUsageDisplay(view.kind === "ready" ? view.reports : []);
   const [optionsOpen, setOptionsOpen] = useState(false);
   const openOptions = useCallback(() => setOptionsOpen(true), []);

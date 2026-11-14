@@ -223,6 +223,7 @@ export function createFakeCodexAppServer(
       };
     },
     "thread/read": () => ({ thread: { turns: [] } }),
+    "account/usage/read": () => ({ summary: {}, dailyUsageBuckets: null, threadUsage: null }),
     ...handlers,
   };
   const messages: JsonObject[] = [];
