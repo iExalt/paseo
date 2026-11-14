@@ -55,8 +55,6 @@ import { useSessionStore } from "@/stores/session-store";
 import { settingsStyles } from "@/styles/settings";
 import type { HostConnection, HostProfile } from "@/types/host-connection";
 import { confirmDialog } from "@/utils/confirm-dialog";
-import { isVersionMismatch } from "@/desktop/updates/desktop-updates";
-import { resolveAppVersion } from "@/utils/app-version";
 import { formatConnectionStatus, getConnectionStatusTone } from "@/utils/daemons";
 import { ICON_SIZE } from "@/styles/theme";
 import type { Theme } from "@/styles/theme";
@@ -413,7 +411,7 @@ export function HostDaemonPage({ serverId }: { serverId: string }) {
       <HostStatusBadges serverId={serverId} />
       <HostConnectionError serverId={serverId} />
 
-      {isLocalDaemon ? <LocalDaemonSection /> : null}
+      {isLocalDaemon ? <LocalDaemonSection serverId={serverId} /> : null}
 
       {!isLocalDaemon ? <UpdateDaemonCard key={host.serverId} host={host} /> : null}
 
@@ -594,18 +592,12 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
   const isMountedRef = useRef(true);
   const unsubscribeRef = useRef<(() => void) | null>(null);
 
-  const daemonVersion = useSessionStore(
-    (state) => state.sessions[host.serverId]?.serverInfo?.version ?? null,
-  );
   const supportsSelfUpdate = useSessionStore(
     (state) => state.sessions[host.serverId]?.serverInfo?.features?.daemonSelfUpdate === true,
   );
   const desktopManaged = useSessionStore(
     (state) => state.sessions[host.serverId]?.serverInfo?.desktopManaged === true,
   );
-
-  const appVersion = resolveAppVersion();
-  const hasVersionMismatch = isVersionMismatch(appVersion, daemonVersion);
 
   useEffect(() => {
     return () => {
@@ -718,7 +710,7 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
       });
   }, [daemonClient, host.label, host.serverId, isHostConnected, t]);
 
-  const shouldShowUpdate = hasVersionMismatch && (supportsSelfUpdate || desktopManaged);
+  const shouldShowUpdate = supportsSelfUpdate || desktopManaged;
   if (!shouldShowUpdate && updateState.status !== "complete") {
     return null;
   }
@@ -737,15 +729,17 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
               : t("settings.host.daemon.update.hint")}
           </Text>
         </View>
-        <Button
-          variant="outline"
-          leftIcon={updateIcon}
-          onPress={handleUpdate}
-          disabled={desktopManaged || isUpdating || !daemonClient || !isConnected}
-          testID="host-page-update-button"
-        >
-          {buttonLabel}
-        </Button>
+        {!desktopManaged ? (
+          <Button
+            variant="outline"
+            leftIcon={updateIcon}
+            onPress={handleUpdate}
+            disabled={isUpdating || !daemonClient || !isConnected}
+            testID="host-page-update-button"
+          >
+            {buttonLabel}
+          </Button>
+        ) : null}
       </View>
       {updateState.status === "complete" ? (
         <InlineAlert

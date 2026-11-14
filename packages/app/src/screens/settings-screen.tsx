@@ -3,6 +3,8 @@ import { registerRouteLeaveGuard } from "@/navigation/route-leave-guard";
 import { AppearanceText as Text } from "@/appearance/text";
 import { useAddHost } from "@/hosts/add-host";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useDaemonStatus } from "@/desktop/hooks/use-daemon-status";
+import { daemonUpgradeForHost } from "@/desktop/daemon/daemon-upgrade-status";
 import type { ComponentType, ReactNode } from "react";
 import { Alert, Pressable, ScrollView, View, type PressableStateCallbackType } from "react-native";
 import { useFocusEffect, useNavigation, useRouter } from "expo-router";
@@ -50,7 +52,8 @@ import { getSettingsSidebarInnerStyle } from "@/screens/settings/sidebar/inner-s
 import { SidebarNavSection } from "@/screens/settings/sidebar/sidebar-nav-section";
 import { SendingSection } from "@/screens/settings/general/sending-section";
 import { useAppSettings, type AppSettings } from "@/hooks/use-settings";
-import { useHosts } from "@/runtime/host-runtime";
+import { useHostRuntimeIsConnected, useHosts } from "@/runtime/host-runtime";
+import { useSessionStore } from "@/stores/session-store";
 import {
   orderHostsLocalFirst,
   resolveActiveHostServerId,
@@ -470,6 +473,7 @@ function AboutSection({
         </View>
       </SettingsSection>
       <DiagnosticsSection {...diagnostics} />
+      <ConnectedHostsSection />
       <View style={styles.aboutCommunity}>
         <CommunityLinks />
       </View>
@@ -500,6 +504,90 @@ function WhatsNewRow() {
           />
         </>
       )}
+    </Pressable>
+  );
+}
+
+function normalizeVersion(version: string | null | undefined): string | null {
+  const trimmed = version?.trim();
+  if (!trimmed) return null;
+  return trimmed.replace(/^v/i, "");
+}
+
+function ConnectedHostsSection() {
+  const { t } = useTranslation();
+  const hosts = useHosts();
+  if (hosts.length === 0) {
+    return null;
+  }
+  return (
+    <SettingsSection title={t("settings.about.connectedHosts")}>
+      <View style={settingsStyles.card}>
+        {hosts.map((host, index) => (
+          <HostVersionRow key={host.serverId} host={host} showBorder={index > 0} />
+        ))}
+      </View>
+    </SettingsSection>
+  );
+}
+
+function HostVersionRow({ host, showBorder }: { host: HostProfile; showBorder: boolean }) {
+  const { t } = useTranslation();
+  const router = useRouter();
+  const isCompactLayout = useIsCompactFormFactor();
+  const { theme } = useUnistyles();
+  const openOverview = useCallback(() => {
+    const target = buildSettingsHostSectionRoute(host.serverId, "daemon");
+    if (isCompactLayout) router.push(target);
+    else router.replace(target);
+  }, [router, host.serverId, isCompactLayout]);
+  const { data: localDaemon } = useDaemonStatus();
+  const { settings: desktopSettings } = useDesktopSettings();
+  const upgrade = daemonUpgradeForHost(
+    localDaemon?.status ?? null,
+    host.serverId,
+    desktopSettings.daemon.manageBuiltInDaemon,
+  );
+  const isConnected = useHostRuntimeIsConnected(host.serverId);
+  const daemonVersion = useSessionStore(
+    (state) => state.sessions[host.serverId]?.serverInfo?.version ?? null,
+  );
+
+  const rowStyle = useMemo(
+    () => [settingsStyles.row, showBorder && settingsStyles.rowBorder],
+    [showBorder],
+  );
+
+  const normalizedHost = normalizeVersion(daemonVersion);
+  let valueText: string;
+  if (!isConnected) {
+    valueText = t("settings.about.offline");
+  } else if (normalizedHost) {
+    valueText = formatVersionWithPrefix(normalizedHost);
+  } else {
+    valueText = "—";
+  }
+
+  return (
+    <Pressable
+      style={rowStyle}
+      accessibilityRole="button"
+      accessibilityLabel={host.label}
+      onPress={openOverview}
+      testID={`about-host-${host.serverId}`}
+    >
+      <View style={settingsStyles.rowContent}>
+        <Text style={settingsStyles.rowTitle} numberOfLines={1}>
+          {host.label}
+        </Text>
+        <Text style={settingsStyles.rowHint}>
+          {upgrade
+            ? t(`desktop.daemon.upgrade.${upgrade.phase}`)
+            : t("settings.about.hostOverview")}
+        </Text>
+      </View>
+      <Text style={styles.aboutValue}>{valueText}</Text>
+      <ChevronRight size={16} color={theme.colors.foregroundMuted} />
     </Pressable>
   );
 }

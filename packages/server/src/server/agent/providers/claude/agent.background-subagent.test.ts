@@ -864,6 +864,38 @@ test("Claude session started by a control request without a turn can stop its ru
   }
 });
 
+test.each(["create", "resume"] as const)(
+  "an unlaunched Claude %s session does not block an idle daemon upgrade",
+  async (operation) => {
+    const launch = vi.fn(() => buildQueryMock([]) as unknown as Query);
+    const client = new ClaudeAgentClient({
+      logger: createTestLogger(),
+      queryFactory: launch,
+      resolveBinary: async () => "/test/claude/bin",
+    });
+    const config = { provider: "claude" as const, cwd: process.cwd() };
+    const session =
+      operation === "create"
+        ? await client.createSession(config)
+        : await client.resumeSession({
+            provider: "claude",
+            sessionId: "unlaunched-session",
+            metadata: config,
+          });
+    try {
+      expect(await session.canStopRuntime!()).toBe(true);
+      expect(launch).not.toHaveBeenCalled();
+      // A launched query without a roster must still fail closed, even when
+      // no foreground turn was started (for example, fetching slash commands).
+      await session.listCommands!();
+      expect(launch).toHaveBeenCalledOnce();
+      expect(await session.canStopRuntime!()).toBe(false);
+    } finally {
+      await session.close();
+    }
+  },
+);
+
 /** A Claude session whose SDK stream the test feeds one message at a time. */
 async function createPumpedClaudeSession() {
   let wake: (() => void) | undefined;

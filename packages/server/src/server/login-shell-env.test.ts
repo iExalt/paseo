@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { inheritLoginShellEnv } from "./login-shell-env";
+import { inheritLoginShellEnv, LOGIN_SHELL_ENV_RESOLVED_KEY } from "./login-shell-env";
 
 const zsh = "/bin/zsh";
 const describeIfZsh = existsSync(zsh) ? describe : describe.skip;
@@ -29,6 +29,7 @@ interface RecordedSpawn {
   shell: string;
   args: string[];
   timeoutMs: number | undefined;
+  pathSeenByShell?: string;
 }
 
 interface SpawnResultFields {
@@ -112,6 +113,67 @@ async function createShellHome(): Promise<string> {
 }
 
 describe("login shell env retry behavior", () => {
+  it("skips the login shell when a launcher already resolved the env", () => {
+    const env = { ...createEnv(fakeHome), [LOGIN_SHELL_ENV_RESOLVED_KEY]: "1" };
+    const logger = new RecordingLoginShellLogger();
+    const spawnSync: LoginShellSpawnSync = () => {
+      throw new Error("login shell should not run");
+    };
+
+    inheritLoginShellEnv({ env, logger, platform: "darwin", spawnSync });
+
+    expect(env.PATH).toBe(basePath);
+    expect(logger.infos).toEqual([]);
+  });
+
+  it("lets the launcher's environment win when asked", () => {
+    const env: NodeJS.ProcessEnv = {
+      ...createEnv(fakeHome),
+      PATH: "/launcher/bin:/usr/bin:/bin",
+      AWS_PROFILE: "work",
+      PASEO_HOME: "/srv/paseo",
+    };
+    const logger = new RecordingLoginShellLogger();
+    const calls: RecordedSpawn[] = [];
+    const spawnSync: LoginShellSpawnSync = (shell, args, options) => {
+      const recordedArgs = Array.isArray(args) ? args.map(String) : [];
+      calls.push({
+        argv0: options?.argv0,
+        shell: String(shell),
+        args: recordedArgs,
+        timeoutMs: options?.timeout,
+        pathSeenByShell: options?.env?.PATH,
+      });
+      return successResult(String(recordedArgs.at(-1)), {
+        ...env,
+        PATH: "/home/me/.local/bin:/usr/bin:/bin",
+        AWS_PROFILE: "default",
+        PASEO_HOME: "/home/me/.paseo-dev",
+        LANG: "en_US.UTF-8",
+        PORT: "9999",
+      });
+    };
+
+    inheritLoginShellEnv({
+      env,
+      logger,
+      platform: "linux",
+      spawnSync,
+      timeoutMs: 8_000,
+      preferInherited: true,
+      ignoreKeys: ["PORT"],
+    });
+
+    expect(calls[0]?.pathSeenByShell).toBe("/usr/bin:/bin:/usr/sbin:/sbin");
+    expect(env.PATH).toBe("/launcher/bin:/home/me/.local/bin:/usr/bin:/bin");
+    expect(env.AWS_PROFILE).toBe("work");
+    expect(env.PASEO_HOME).toBe("/srv/paseo");
+    expect(env.LANG).toBe("en_US.UTF-8");
+    expect(env.PORT).toBeUndefined();
+    expect(env[LOGIN_SHELL_ENV_RESOLVED_KEY]).toBe("1");
+    expect(calls[0]?.timeoutMs).toBe(4_000);
+  });
+
   it("applies the interactive env without retrying", () => {
     const env = createEnv(fakeHome);
     const logger = new RecordingLoginShellLogger();
