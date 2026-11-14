@@ -39,6 +39,7 @@ export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
   metadata?: Record<string, JsonValue>;
   background?: boolean;
   callerWorkspaceId?: string;
+  notifications?: "on" | "off";
 }
 
 export interface CreatePaseoWorktreeResult {
@@ -122,6 +123,7 @@ async function createPaseoWorktreeWithPriority(
       worktreeManagerPluginId: createdWorktree.worktree.worktreeManagerPluginId ?? null,
       title: input.title?.trim() || resolveFirstAgentPromptTitle(input.firstAgentContext),
       metadata: input.metadata,
+      notifications: input.notifications,
       expectsInitialAgent: Boolean(input.firstAgentContext),
       background: input.background,
       callerWorkspaceId: input.callerWorkspaceId,

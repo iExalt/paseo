@@ -483,6 +483,7 @@ interface WorkspaceHeaderTitleBarProps {
   isSubtitleDistinct: boolean;
   currentBranchName: string | null;
   normalizedServerId: string;
+  normalizedWorkspaceId: string;
   showWorkspaceSetup: boolean;
   importAgentDisabled: boolean;
   copyPathDisabled: boolean;
@@ -499,6 +500,7 @@ function WorkspaceHeaderTitleBar({
   isSubtitleDistinct,
   currentBranchName,
   normalizedServerId,
+  normalizedWorkspaceId,
   showWorkspaceSetup,
   importAgentDisabled,
   copyPathDisabled,
@@ -527,6 +529,8 @@ function WorkspaceHeaderTitleBar({
       {actionsInBar ? null : (
         <View style={styles.compactHeaderMenuCluster}>
           <WorkspaceHeaderMenuDesktop
+            serverId={normalizedServerId}
+            workspaceId={normalizedWorkspaceId}
             currentBranchName={currentBranchName}
             showWorkspaceSetup={showWorkspaceSetup}
             importAgentDisabled={importAgentDisabled}
@@ -3334,6 +3338,7 @@ function WorkspaceScreenContent({
                 isSubtitleDistinct={isWorkspaceHeaderSubtitleDistinct}
                 currentBranchName={currentBranchName}
                 normalizedServerId={normalizedServerId}
+                normalizedWorkspaceId={normalizedWorkspaceId}
                 showWorkspaceSetup={showWorkspaceSetup}
                 importAgentDisabled={!canOpenImportSheet}
                 copyPathDisabled={!workspaceDirectory}
@@ -3356,6 +3361,7 @@ function WorkspaceScreenContent({
       headerRight,
       isWorkspaceHeaderLoading,
       normalizedServerId,
+      normalizedWorkspaceId,
       openImportSheet,
       showScreenHeader,
       showWorkspaceSetup,
@@ -3449,6 +3455,8 @@ function WorkspaceScreenContent({
           <WorkspaceHeaderMenuMobile
             pane={paneTabs?.actions.pane}
             onExitFocusMode={isFocusModeEnabled ? toggleFocusMode : undefined}
+            serverId={normalizedServerId}
+            workspaceId={normalizedWorkspaceId}
             normalizedServerId={normalizedServerId}
             normalizedWorkspaceId={normalizedWorkspaceId}
             scripts={compactHeaderScripts}
