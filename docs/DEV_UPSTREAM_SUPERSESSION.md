@@ -1,159 +1,200 @@
-# Dev commits superseded by upstream
+# Upstream rebase inputs and supersession ledger
 
-An audit of every fork `dev` commit for work that upstream Paseo now provides,
-so `dev` can be simplified, and what was done about it.
+Target selected at 15:10 UTC on 2026-11-14; refs read back after fresh fetch on the Mac. This source inventory and replay ledger covers the next rebase. No rebase, conflict training, fixup generation or candidate platform
+proof has run. Keep the fork's one-to-one replay contract, including redundant
+and intentionally empty commits. A supersession classification permits removing
+redundant code during later reviewed adaptation; it does not authorize dropping
+or squashing history.
 
-Snapshot as of 2026-10-25 (not current): `origin/dev` 5faba853f,
-`upstream/main` d0fd2e532, merge-base b8bb335c5. Each rebase of `dev` changes commit IDs and may change
-verdicts; recheck an item against current refs before acting on it.
+## Frozen inputs
 
-## Result
+- Fork `dev` (0.28.0): `8c5a2620b92b09ad6db1d8b4b31917bc25c0bc5f`.
+- Target mirror `origin/upstream/main`: `42c7b7f886ff1395d4d292838daaca9ca929cbda`.
+- Actual upstream at target selection: `42c7b7f886ff1395d4d292838daaca9ca929cbda`.
+- Actual upstream at fresh readback: `a730ad1924f1f067889db69193e5c3fdbd964e09`.
+- Merge base / incorporated upstream: `a4f696620b5d248598a882b1a78d82ec5038c74b`.
+- `rebase-resolutions`: `553fea05a0312196bf948570c3d4695fa9967baa`.
 
-Of 478 non-merge `dev` commits, upstream fully replaces 5 and partly overlaps 3 (S1–S3).
-Everything else is fork-only behaviour, fork infrastructure, or code that
-upstream gates off or stubs. Upstream overlap had mostly been absorbed already:
-the rebase empties commits upstream duplicated, and the two `chore(rebase): adapt
-incorporated upstream to the fork` commits (1160b8b74, fab7425bd) removed about
-2,400 lines of 0dfb58612 (#161) while reconciling it with upstream. What is left is
-mostly small and listed below.
+The mirror contains the selected actual-upstream tip. Fresh readback found one
+post-capture commit, `a730ad192`, giving restored runtimes a fresh idle-cleanup
+window in agent-manager.ts and its tests. It is recorded separately in the
+manifest and is outside the frozen target. This preserves the captured target;
+retargeting later requires refreshing the inventory and target-bound evidence.
 
-The audit also found two live bugs on `dev`.
+The incoming range contains 307 non-merge commits, up from the prior 263; the fork range contains 734, up from 696. Both ranges contain zero merges. The unions of paths touched anywhere in
+each history overlap on 408 paths, including paths later deleted. This count is
+neither a net-tree overlap nor a predicted conflict count.
 
-## Status
+[The manifest and full ledger](upstream-rebase-inventory.json) records every
+incoming and fork commit's full SHA, subject and touched paths, the exact refs,
+new docs, patch filenames, tool versions and workflow changes. Its `fork` array
+is the replay ledger in topological order. Every fork commit has a category,
+replay rule, retained behavior and cheapest later proof. `source_paths` and
+`upstream` identify independently inspected overlap candidates; the default keep
+entries preserve history without claiming semantic uniqueness.
 
-| Items                                                           | State                                                                                                      |
-| --------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| S4, S6 bugs, plus a parity check for shadowed platform variants | Fixed in #235. `explorer-pane-placement.spec.ts` fails 3 of 4 on 33cd30b1e and passes 4 of 4 with the fix. |
-| S1, S3, S5, S7, `@expo/cli` patch name                          | Done in #233                                                                                               |
-| S2                                                              | Done in #234, with a new test for a commit that lands during a read                                        |
-| Both out-of-scope findings                                      | Fixed in #237                                                                                              |
-| History drops                                                   | Not done: they change no code. Do them at a manual rebase or leave them.                                   |
-| enriched-markdown patch conflict                                | Resolved by the 2026-10-30 rebase onto a4f696620 (`938101c62`)                                             |
+A changed input invalidates target-bound resolution, fixup and proof data. This
+PR itself adds a docs commit to `dev` after the capture. Later rehearsal must
+record that descendant separately and refresh the fork inventory before replay;
+the 734 rows describe the captured input, not the future branch tip.
 
-## Bugs found
+## Decisions
 
-| ID  | Bug                                                                                                                                                                                                                                                                                                                                                                                                                  | Fix                                                                                                                                                                                                                                                                   |
-| --- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S4  | Dragging a tab onto a pane to split it fails on web and desktop. `components/split-drop-zone.web.tsx` (0dfb58612) shadows upstream's `split-drop-zone.tsx` under web resolution and does not export `resolveSplitDropPosition`, which upstream's `workspace-tab-drag-scope.web.tsx:22,137` (adf27de7d, #7424) calls. TypeScript resolves the `.tsx` file, so typecheck passes; the import is `undefined` at runtime. | Delete the dead E2b leftovers `components/split-dnd.tsx`, `split-dnd.types.ts`, `split-dnd.web.tsx`, `split-drop-zone-position.ts`, `split-drop-zone.web.tsx` and `platform-parity/manifest.ts:58-65`. Add a web-resolution test that the drag scope's import exists. |
-| S6  | Settings → Editor shows on native, though its only setting, Vim keybindings (`settings/editor-section.tsx:13,21`), applies only to the web editor. Upstream has marked the section `webOnly` since ff6424fa4 (`screens/settings-screen.tsx:183-187`); dev's `isSettingsSectionAvailable` gate table has no `editor` entry.                                                                                           | Add a `"web"` gate for `editor` and a case in `section-availability.test.ts`.                                                                                                                                                                                         |
+- keep: commits: 717; meaning: Preserve replay; explicit high-risk comparisons are in the ledger..
+- fully superseded: commits: 2; meaning: Redundant behavior can be removed under the conditions below; retain replay history..
+- partially superseded: commits: 9; meaning: Reconcile the overlapping implementation and retain distinct fork outcomes..
+- empty/history-only: commits: 6; meaning: Four already-empty nonrelease commits and two obsolete implementations; retain replay..
+- unresolved: commits: 0; meaning: No source-unsettleable replay choice is selected. Implementation and runtime proof remain pending..
 
-S4 is proven by source reading, a web-first esbuild bundle that fails with
-`No matching export … resolveSplitDropPosition`, and a vitest probe under web
-resolution where the import is `undefined`. Electron falls back to `.web.*`, so
-desktop is affected too. The browser run in the Status table reproduced the
-drag failure, with Metro reporting the error at `workspace-tab-drag-scope.web.tsx:137`.
+### Fully superseded behavior
 
-## Simplify
+- `f7d0538e0193cc7818a9b2982298503e8b2525ee`:
+  upstream `b280ca53554295b9cf8b60afb08076152c6703bf` retains the explicit
+  `--var PASEO_RELAY_UPSTREAM:` in `packages/relay/src/e2e.test.ts`. Keep the
+  override once and retain local-worker isolation.
+- `c5839fdf40c0b7aa40a50d807f7e1645dae69b9f`:
+  `40b95f70f409b8d636bbbb7cb93002850fb6528d` duplicates the inverted-list
+  wheel correction, then `4f7813d3aafdb5f6cdcf5453d0128c1156f80e60` removes
+  the inverted implementation and its correction/tests in favor of forward
+  LegendList. This verdict requires adopting that noninverted list. If replay
+  keeps any inverted consumer, retain its correction and reopen the verdict.
+  Check `packages/app/modules/paseo-scroll/` for independently used test context
+  before deleting the old test scaffolding. Later Android proof must cover wheel
+  direction, history prepend and reading position.
 
-Line references are at 5faba853f unless they name d0fd2e532.
+### Partial overlap
 
-| ID  | Commit                   | Upstream now provides                                                                                     | Change                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| --- | ------------------------ | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| S1  | 71489f1af                | adf27de7d (#7424) inlines reanimated and worklets (d0fd2e532 `packages/app/vitest.config.ts:112-113`)     | Delete the duplicate entries at `packages/app/vitest.config.ts:116-118`. Keep the commit's test edits in `switch.test.tsx`, `plugins-page.test.tsx` and `markdown-parser.test.ts`: with upstream's versions restored, 11 cases fail under dev's dependency versions.                                                                                                                                                                                                       |
-| S2  | abf561d82                | e0de0fdf6 (#7074) scopes replica-cache read invalidation to the rows being read                           | Replace dev's change-sequence bookkeeping (`runtime/replica-cache/index.ts:936-939,1078-1109,1359-1410`) with upstream's `ReplicaRead`, `activeReads` and `invalidateRowReads`. Keep what upstream lacks: skipping `syncPending` when no requested row is pending, the `MAX_READ_ATTEMPTS` miss result, and `readRowsOrMiss`, which 675361070, f78d1b5df and 70ab80812 build on. Acceptance: abf561d82's cases in `index.test.ts` and `directory-sync/index.test.ts` pass. |
-| S3  | 097c903fc                | 69ef741a7 (#7423) keeps hidden status rings off the shared clock (d0fd2e532 `status-ring/clock.ts:58-72`) | Revert to upstream's names and assignment; keep only the `active` parameter that f35a6af23's reduced-motion change needs. Keep `clock.test.ts` only for dev-owned behaviour. Small saving.                                                                                                                                                                                                                                                                                 |
-| S5  | 0dfb58612 (D1 leftovers) | Upstream originals of `file-panels/source/editor/extensions.web.ts` and `find/model.web.ts`               | Native editing follows upstream and stays off, so restore both files to upstream, delete `editor/visual-theme.ts`, point `readonly/view.web.tsx:7` back at `../editor/extensions.web`, and drop the unused `nativeEditor` i18n key in all nine locales.                                                                                                                                                                                                                    |
-| S7  | 0dfb58612 (C2 leftover)  | none; native file find stays off                                                                          | Delete the unused `file:` find target at `screens/workspace/workspace-tab-menu.ts:180-181`.                                                                                                                                                                                                                                                                                                                                                                                |
+- `e8fb2e6c5`: target evidence: `0a549945b` replaces JS terminal rows with native views and layout caches.; retain and reconcile: Keep fork screen-store subscriptions, latency stages, find/selection overlays and bundled fonts through the new renderer; do not restore deleted JS row abstractions. Native latency parity remains unproven..
+- `5311a29f2`: target evidence: `82d5f6c58` backports root constraints to Unistyles 3.2.4.; retain and reconcile: Keep selected 3.8.1 and CSSOM resize detection/self-check. Existing local 3.8.1 source preserves latest root constraints/context on retry. Confirm it from the locked clean install before choosing C++ hunks; source presence does not prove Android rotation runtime..
+- `b350abca4`: target evidence: `4f7813d3a` pins disclosure trigger edges.; retain and reconcile: Carry content reveal and the active-element stale-trigger guard through `holdRow`; preserve find/outline jumps after an earlier toggle..
+- `6f98ef0e4`, `847a095a3`, `00554122b`: target evidence: `1c4400194`, `9e607a3aa` supply shortcut dispatch and physical arrows.; retain and reconcile: Keep broader terminal key capture, iPad command priorities, app-shortcut priority and Android IME Enter/Backspace pairing. Preserve the explicit unsupported fork iOS build gate..
+- `293034650`, `7f37aa3a7`, `bd0e87cc2`: target evidence: `c6f0c24bf` creates separate summary rows.; retain and reconcile: Carry CLI sends, received-agent input membership, folded message counts and downward expansion into those rows..
 
-S4, S5 and S7 remove leftovers of the native features E2b, D1 and C2 from
-0dfb58612, which `dev` keeps disabled like upstream. S6 restores a gate that
-dev's `section-availability.ts` lost.
+Full SHAs, source paths and the cheapest later invariant checks are on each
+ledger row. These checks are requirements for later adaptation, not results of
+this inventory.
 
-## Drop from history
+### Distinct behavior to keep
 
-These leave no line at the tip, so dropping them cleans history without changing
-the tree.
+- In-place Claude rewind (`2125b9b4f`) keeps helpers alive; `b117e3fb0` adds
+  steered-message anchors. The target resolver is async, so adapt the fork's
+  `trackedRewindLeaf` and other callers rather than losing either behavior.
+- Last-agent workspace archive (`54a8905a1`) and unpublished worktree cleanup
+  (`75b6d946a`) remain distinct from upstream sidebar archive/undo and timestamp
+  restoration (`6c1b48d29`, `83f4ef990`). Preserve lifecycle locks and undo's
+  operation ownership.
+- Fork sliced decryption and native base64 decoding (`53020cd43`, `70f41fb7c`,
+  `ffe45e7e2`) remain alongside chunk framing and routed backpressure
+  (`0be49c062`, `01888dc5d`). Test ordering and close during decrypt later.
+- Plugin API compatibility across the fork's version reset (`005155fd1`) remains
+  separate from options APIs (`28c188513`). `af6ca46ae` already retains the old
+  `timeline: []` hook payload behind a compatibility shim; its breaking-change
+  subject alone does not establish a fork API-version decision.
+- Live skill refresh (`4a3a8be53`) watches edits during sessions; `eab9ac3b0`
+  waits for late initial ACP command batches. Preserve both lifecycles.
+- Terminal process-tree cleanup (`08cb69b07`) snapshots descendants and birth
+  times before signaling; `68fc16b85` authenticates terminal worker ownership
+  without process identity queries. Preserve cleanup without signaling unknown
+  identities.
+- Native favicon unmount/selector invariants (`1aa055cc1`) and retained hidden
+  chat selectors (`3e405115b`) remain distinct from `d426088c3` scalar selectors,
+  demand gating and open-tab subscriptions, and `e79e826e2` field sharing.
+- Retain notification policy/background dismissal, queue/steer, native find,
+  outline and diff selection, MCP-to-CLI transport and the new CLI parity work,
+  fork updater/release behavior and selected toolchain. Shared paths do not
+  establish supersession.
 
-| Commit    | Why                                                                                                                                                             |
-| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 83387d6ca | Upstream e86777393 (#6734) initializes the navigator polyfill in `install-early.ts`; dev's file was deleted by 1160b8b74 and its CI parts by later dev commits. |
-| 0959d34fb | Upstream 6376f2bf4 (#7639) removed the WebView terminal renderer and its source hash; fab7425bd removed all seven lines.                                        |
-| ccd1576fe | Already empty after rebase (upstream made the same change).                                                                                                     |
-| 79336b7f4 | Already empty after rebase.                                                                                                                                     |
-| 4db10f49f | Already empty after rebase.                                                                                                                                     |
+### Old history candidates
 
-Dropping 83387d6ca or 0959d34fb also requires removing the matching deletion
-hunks from the commits that later removed their lines (1160b8b74, 5ee6eaf6a,
-e4fd73d77 and 431665c62 for the first; fab7425bd for the second), then checking
-that the rewritten tip has the same tree. The empty release markers 472b2ca4c
-and 4ebf3e3d5 are intentional and stay.
+The previous audit used commit IDs from before the last rebase. Current mappings:
 
-## Patch upkeep
+- `83387d6ca`: captured fork id: `25758352d3`; current source result: Installer deleted by `7e8941f78`; candidate CI removed by `bc9558156`/`d2ab6e42b`. Target early install calls `polyfillNavigator` before consumers..
+- `0959d34fb`: captured fork id: `6ba169a3fe`; current source result: WebView hash/generated HTML removed by `73d599696` after upstream removes that renderer..
+- `ccd1576fe`: captured fork id: `e637bf2511`; current source result: Tree equals parent; empty nonrelease commit..
+- `79336b7f4`: captured fork id: `07e0cc5566`; current source result: Tree equals parent; empty nonrelease commit..
+- `4db10f49f`: captured fork id: `fe7020e01b`; current source result: Tree equals parent; empty nonrelease commit..
+- `472b2ca4c`: captured fork id: `01624f09ce`; current source result: Intentional empty release marker; keep..
+- `4ebf3e3d5`: captured fork id: `67f10da63d`; current source result: Intentional empty release marker; keep..
 
-Neither is a supersession. The `@expo/cli` rename is done (#233).
+`ae42e1986e` is also empty at the captured fork tip. None is a history-drop
+instruction. Dropping the first two would also require rewriting later deletion
+hunks and same-tip-tree proof, outside this scope. Newly empty picks still stop;
+use the existing reviewed conflict/deletion handling rather than silently skipping.
 
-- `patches/react-native-enriched-markdown+…766fc0e67.patch`: upstream 4845e1da5
-  (#7859) rewrote the md4c autolink hunk that dev also changed. The
-  2026-10-30 rebase onto a4f696620 (`938101c62`) took upstream's version;
-  `git diff origin/upstream/main origin/dev` on the patch no longer shows an
-  autolink hunk. What dev still adds: the `AccessibleMarkdownTextView.kt` focus
-  hunk (#226) and the web `center` image mode.
-- `patches/@expo+cli+57.0.28.patch` applied to the locked 57.0.32 with a
-  patch-package version warning; renamed to `@expo+cli+57.0.32.patch` (#233).
+The old S1–S7 fixes already landed in #233–235 and #237. They are not new savings.
+The current ledger retains their commits and the broad parity commit `3066fa703e`
+(the former `0dfb58612`) rather than treating the historical audit as a new set of
+removals. The watched upstream PR numbers #6466, #4398 and #5756 are not semantic
+proof of equivalence. The fork's current streamed-block handling (`405fe9076c`)
+and platform packaging remain keep unless source establishes a replacement.
 
-## Not superseded
+## Integration constraints for later work
 
-Every other product commit was checked against d0fd2e532 code. The main reasons
-they stay:
+The manifest lists exact patch filenames on both sides. Keep the fork-selected
+versions: Node 26.13.0, Rust 1.99.1, Java 27, Android SDK 23, Unistyles 3.8.1,
+SVG 15.15.5 and WebView 13.16.1. Upstream pins older tools and several older patch
+versions. Reconcile patch contents and `scripts/postinstall-patches.mjs` against
+installed packages; never accept an entire upstream patch/version set wholesale.
+In particular, combine `fc710be1a` linked-badge Markdown changes with the fork's
+`c9e4884f9` preview repair and retained native focus/web image behavior.
 
-- Fork-only features: workspace notification policy and reply rules, queue/steer
-  sends, session cost and API spend, in-place Claude rewind, the MCP-to-CLI
-  migration (c29ae24b9), native chat and terminal find, native outline rail,
-  native diff selection and review, hardware-keyboard terminal keys, the bundled
-  terminal font.
-- Upstream stubs or gates the same surface off on native (chat find, outline,
-  browser pane, keyboard shortcuts, side-by-side diff, selection copy).
-- Fork release, Nix updater, Android update, relay performance and desktop
-  packaging work, none of which upstream has.
-- Dependency patches and toolchain pins: upstream has not bumped or patched the
-  same packages (react-native-svg, unistyles, reanimated, webview, @opencode-ai/sdk).
+Move new upstream top-level docs `agent-stream-disclosure.md`,
+`keyboard-shortcuts.md` and `terminal-rendering.md` into `docs/upstream/` during
+later fixup work, repair links and update the CLAUDE docs table. The new
+`docs/qa-evidence/pi-resumed-subagents/` files need their relative references
+checked without flattening the evidence layout.
 
-Upstream PRs that would supersede fork work if merged: #6466 (Claude streamed
-blocks; 7af3c8fe1), #4398 and #5756 (Linux launcher; 52aef2027 and the RPM
-fixes). Recheck those commits when they land.
+Check platform resolution explicitly: fork `composer/dock/index.native.tsx`
+shadows upstream's generic file. Typecheck alone cannot prove runtime export or
+native behavior parity. Timeline, terminal, keyboard/IME, archive/undo,
+notifications, updater and plugin surfaces need the later platform matrix.
+Incoming iOS changes are inventoried, not proven on a device. No physical device
+or Google Play Services proof was performed here.
 
-151 fork CI/release commits leave no line at the tip because later fork commits
-replaced them. They are squash candidates for history size only and do not bring
-`dev` closer to upstream.
+The resolution snapshot contains 289 IDs / 632 resolution files, five historical
+fixup patches and 50 deletion/keep records across five historical target SHAs.
+It has no fixup or deletion record named for the selected target. These counts
+establish stored data, not conflict coverage. Do not mutate `rebase-resolutions`, generate fixups, train rerere, dispatch
+`rebase-dev`, or publish a rebase as part of this ledger task.
 
-## Out-of-scope findings
+The previously listed browser dependency-optimization, shared timeline-fencing
+and subscription-memory-test risks are now recorded done in the tracker at
+`abefe5e7e8e25d2e1143a516658be4e5f3f238ac`, already an ancestor of captured dev.
+Preserve those fixes instead of reopening the old reports from the earlier
+snapshot. The separate retry/cancellation guard verification task remains parked;
+this inventory does not adopt it or add dependencies. Those are tracker/source
+statuses, not fresh runtime proof.
 
-- Agents on `dev` lost upstream #7343's input-mode-aware terminal keys: c29ae24b9
-  moved agents from the MCP `send_terminal_keys` tool to `paseo terminal
-  send-keys`, which uses the shared client's fixed key table
-  (`packages/client/src/terminals/index.ts:152-182`) and never sees the
-  terminal's input mode. #237 adds a `terminal.keys.send` request that the host
-  encodes with upstream's resolver against the terminal's current mode.
-- `packages/server/src/server/agent/archive-discovery.e2e.test.ts:54` (upstream
-  #7532) connected to `/mcp/agents`, which `dev` no longer serves. Since #237 it
-  uses the requests `paseo agent ls|status|archive` send and passes. Routine CI
-  still does not run it, as upstream's does not.
+## Reproduction and evidence boundary
 
-## Applying the results
+Recompute each list with `git rev-list --reverse --topo-order --no-merges
+BASE..TIP`, its subjects with `git show -s --format=%s SHA`, and its paths with
+`git diff-tree --root --no-commit-id --name-only -r SHA`. Empty means the commit's
+tree equals its parent's tree. The manifest uses full immutable SHAs, not branch
+names, for the captured ranges. No generator or new validation framework is
+required to consume it.
 
-`rebase-dev.mjs` replays commits one-to-one and has no drop list, so the two
-routes differ in cost:
+Source review covered all commit subjects/touched-path inventories and selected
+high-risk comparisons, including the 44 incoming and 38 fork commits added since
+the prior review. It does not claim a line-by-line semantic audit of all 1,041
+commits. Default keep is conservative replay policy; non-keep rows carry source
+evidence. Patch identity and shared paths alone do not establish supersession.
 
-- **Forward fixes (used for S1–S7):** ordinary conventional-commit PRs to
-  `dev`. They shrink the tree's diff from upstream now, carry their own tests,
-  and need no history rewrite.
-- **History drops:** only tidy history. Do them during a manual rebase, with the
-  matching deletion hunks removed and the tip tree compared, or skip them.
-  Revert commits on top would replay both sides on every rebase and add
-  conflicts for no tree change.
+Later replay uses Git >=2.55 and the merge-backend flags in
+[the rebase procedure](upstream/rebase-dev.md). At this captured dev revision,
+`.github/scripts/rebase-dev.mjs` validation invokes
+`mise run --skip-tools ci:routine` against the exact candidate tree, and
+`.github/workflows/rebase-dev.yml` pins Node 26.13.0 / npm 11.20.0 with a 45-minute
+job limit. Failure diagnostics are a bounded step summary. The older procedure's
+narrow validation/artifact wording needs reconciliation in the later mechanics
+work; do not use that wording as the execution contract.
 
-## Method and limits
-
-- Forward `git blame` over `b8bb335c5..5faba853f` attributed every surviving
-  line to its `dev` commit; reverse blame named the commit that removed each
-  lost line. Lines removed by the adapt commits pointed at upstream overlap.
-  Lockfiles and binaries were excluded; forward and reverse blame differ by up
-  to a few dozen lines per commit.
-- Six read-only auditors judged the 121 product commits, seven package-touching
-  CI/docs commits, both adapt commits and the dependency patches against
-  d0fd2e532 code and the 687 upstream commits since 2026-09-20. A peer reviewer
-  checked the non-keep verdicts against source.
-- At publication S5 was only partly checked, S7 not checked, S2's acceptance
-  test not run and S4's runtime failure derived. The apply phase closed all
-  four: S5 and S7 in the #233 review, S2's gate in #234 (plus a race test that
-  fails without per-read invalidation), and S4 in the browser runs above.
+The routine budget is under 300 seconds excluding initial queue and including
+job scheduling; it is separate from the rebase job's hard limit. The existing [captured-dev baseline](https://github.com/iExalt/paseo/actions/runs/43602539783)
+passed eight routine lanes in 210 seconds from plan start to the required check
+(217 seconds from workflow creation to completion). It used Ubuntu 26.04 x86_64
+image `20261111.196.1`, Node 26.13.0 / npm 11.20.0 and a warm installed-dependency
+cache. Compare a future candidate under the same lane, runner and cache
+conditions; a docs-only PR selects fewer checks and cannot establish candidate
+performance parity. No candidate CI, build, replay or platform result is
+implied by publication of this docs PR.
