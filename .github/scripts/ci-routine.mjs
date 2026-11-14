@@ -23,6 +23,7 @@ export const coreTests = [
 ];
 export const helperTests = [
   "packages/desktop/scripts/after-pack.test.mjs",
+  "scripts/agent-adb.test.mjs",
   "scripts/daemon-launch-contract.test.mjs",
   "scripts/is-main-module.test.mjs",
   "scripts/oxlint/paseo-plugin.test.mjs",
@@ -31,6 +32,7 @@ export const helperTests = [
   "scripts/paseo-nix-update-semver.test.mjs",
   "scripts/postinstall-patches-target.test.mjs",
   "scripts/postinstall-patches.test.mjs",
+  "scripts/qa-web.test.mjs",
   "scripts/expo-export-error.test.mjs",
   "scripts/sync-fdroid-changelogs.test.mjs",
   "scripts/sync-release-notes-from-changelog.test.mjs",

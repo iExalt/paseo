@@ -4,6 +4,8 @@ import * as Notifications from "expo-notifications";
 import { AppState, Platform } from "react-native";
 import { z } from "zod";
 import { readValidatedString } from "@/storage/validated-storage";
+import { readAgentSwitch } from "@/diagnostics/agent-switches";
+import { agentLog, describeError } from "@/utils/agent-log";
 import {
   PUSH_CHANNEL_ID,
   provideReregister,
@@ -26,12 +28,35 @@ function getExpoProjectId(): string | null {
   return fromExtra.success ? fromExtra.data : null;
 }
 
+// Repeated here, not imported, so bundles without the flag still fold it away.
+const SWITCHES_ENABLED = process.env.EXPO_PUBLIC_PASEO_AGENT_SWITCHES === "1";
+
 async function ensurePushPermission(prompt: boolean): Promise<boolean> {
   const existing = await Notifications.getPermissionsAsync();
   if (existing.status === Notifications.PermissionStatus.GRANTED) return true;
   if (!prompt || !existing.canAskAgain) return false;
+  if (SWITCHES_ENABLED && readAgentSwitch("notifications") === "skip") {
+    agentLog("push", "prompt", { status: "skipped", reason: "debug-switch" });
+    return false;
+  }
   const requested = await Notifications.requestPermissionsAsync();
   return requested.status === Notifications.PermissionStatus.GRANTED;
+}
+
+let loggedFirebaseMissing = false;
+// Messages from builds with no google-services file. Other Firebase errors are real failures.
+const FIREBASE_NOT_CONFIGURED = /googleServicesFile|Default FirebaseApp is not initialized/;
+
+// Builds without a google-services file (local APKs, the tablet harness) fail on every connect.
+// Say so once per session instead of a warning with a stack each time.
+function logRegistrationFailure(error: unknown): void {
+  if (FIREBASE_NOT_CONFIGURED.test(describeError(error))) {
+    if (loggedFirebaseMissing) return;
+    loggedFirebaseMissing = true;
+    agentLog("push", "register", { status: "unavailable", reason: "firebase-not-configured" });
+    return;
+  }
+  console.warn("[PushNotifications] Failed to register push token", error);
 }
 
 type ResolvedToken = { token: string } | { token: null; reason: "no-permission" | "no-token" };
@@ -90,6 +115,7 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
       })
       .catch((error) => {
         if (!stopped) setPushRegistrationStatus(serverId, "failed");
+        logRegistrationFailure(error);
       });
   };
 

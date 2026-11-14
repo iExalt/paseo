@@ -8,6 +8,7 @@ import { expect, type Page } from "@playwright/test";
 import { buildHostWorkspaceRoute, decodeWorkspaceIdFromPathSegment } from "@/utils/host-routes";
 import type { FormPreferences } from "@/create-agent-preferences/preferences";
 import { metroTest as test } from "../support/fixtures";
+import { getE2EWebBaseURL } from "../support/web-url";
 import { buildSeededHost } from "../support/helpers/daemon-registry";
 import { loadDaemonClientConstructor } from "../support/helpers/daemon-client-loader";
 import {
@@ -410,7 +411,9 @@ test.describe("Workspace model restart regressions", () => {
   }) => {
     test.setTimeout(90_000);
     const seeded = await seedRestartHome();
-    const origin = new URL(baseURL ?? "http://localhost").origin;
+    const origin = new URL(
+      baseURL ?? getE2EWebBaseURL(Number(process.env.E2E_METRO_PORT ?? "8081")),
+    ).origin;
     const daemon = await startRestartDaemon({ paseoHome: seeded.paseoHome, origin });
     const serverId = SERVER_ID;
     const client = await connectRestartDaemonClient(daemon.port);

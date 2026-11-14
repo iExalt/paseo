@@ -1,9 +1,9 @@
 import { defineConfig, devices } from "@playwright/test";
+import { getE2EWebBaseURL } from "./e2e/support/web-url";
 
 // E2E_METRO_PORT is set dynamically by global-setup.ts after finding a free port
 // This allows multiple test runs in parallel across different worktrees
-const baseURL =
-  process.env.E2E_BASE_URL ?? `http://localhost:${process.env.E2E_METRO_PORT ?? "8081"}`;
+const baseURL = getE2EWebBaseURL(Number(process.env.E2E_METRO_PORT ?? "8081"));
 const relayDeploymentSpec = "**/relay-deployment-reconnect.real.spec.ts";
 
 function videoMode(): "on" | "on-first-retry" | "retain-on-failure" {

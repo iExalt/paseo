@@ -11,6 +11,7 @@ import {
   buildHostWorkspaceRoute,
   buildSettingsHostSectionRoute,
 } from "../../src/utils/host-routes";
+import { getE2EWebBaseURL } from "../support/web-url";
 import { getServerId } from "../support/helpers/server-id";
 
 const paseoCli = path.resolve(process.cwd(), "../cli/bin/paseo");
@@ -193,7 +194,12 @@ const osProofBaseTest = baseSupportTest.extend({
     const profilePath = await requireFreshNotificationOsProfile("worker");
     const metroPort = process.env.E2E_METRO_PORT;
     if (!metroPort) throw new Error("E2E_METRO_PORT must be set by Playwright global setup");
+    const baseURL = getE2EWebBaseURL(Number(metroPort));
     const parsedBaseURL = new URL(baseURL);
+    if (
+      !["localhost", "127.0.0.1"].includes(parsedBaseURL.hostname) ||
+      parsedBaseURL.port !== metroPort
+    ) {
       throw new Error("The OS proof browser must use the isolated loopback Metro URL");
     }
 

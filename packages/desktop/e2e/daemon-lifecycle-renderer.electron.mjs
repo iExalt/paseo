@@ -1,15 +1,46 @@
 import { openSync, closeSync } from "node:fs";
 import { warmMetro } from "../../app/e2e/support/metro-warmup.mjs";
-import { spawn, execFileSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import net from "node:net";
 import { _electron as electron, expect } from "playwright/test";
 import { readDaemonInstance } from "@getpaseo/server/daemon-control";
+import {
+  installNotificationReceipts,
+  notificationReceipt,
+  restoreNotificationReceipts,
+} from "./support/notification-receipts.mjs";
 
-// Run under the test's private Xvfb display; native dialog input never targets
-// a user's desktop. All daemon operations still cross the real preload/IPC.
+async function verifyNativeNotificationReceipt(desktop, page) {
+  const supported = await page.evaluate(() => window.paseoDesktop.notification.isSupported());
+  console.log("Native notification support:", supported);
+  if (!supported) return;
+  const id = "paseo-qa-receipt:native";
+  await installNotificationReceipts(desktop, [{ id, mode: "native" }]);
+  try {
+    const sent = await page.evaluate(
+      (payload) => window.paseoDesktop.notification.sendNotification(payload),
+      { id, title: "Native notification receipt" },
+    );
+    const receipt = await notificationReceipt(desktop, id);
+    expect(receipt).toMatchObject({ id, mode: "native" });
+    expect(["show", "failed", "timeout"]).toContain(receipt.outcome);
+    console.log("Native notification receipt:", JSON.stringify(receipt), "returned", sent);
+  } finally {
+    try {
+      await page.evaluate(
+        (wantedId) => window.paseoDesktop.notification.dismissNotifications([wantedId]),
+        id,
+      );
+    } finally {
+      await restoreNotificationReceipts(desktop);
+    }
+  }
+}
+
+// Run under a private Xvfb display. Dialog answers stay in this test process;
+// daemon operations still cross the real preload and IPC.
 export async function verifyAttachedDaemonControls({ repo, root, env, home, port, instance }) {
   if (!process.env.DISPLAY)
     throw new Error("Renderer lifecycle QA requires a private Xvfb display");
@@ -85,64 +116,121 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
       .scrollIntoViewIfNeeded();
     await page.screenshot({ path: path.join(root, "attached-daemon.png") });
 
-    async function respondToNativeDialog(title, artifact, key) {
-      let windowId;
-      await expect
-        .poll(
-          () => {
-            try {
-              windowId = execFileSync("xdotool", ["search", "--onlyvisible", "--name", title], {
-                encoding: "utf8",
-              })
-                .trim()
-                .split("\n")
-                .at(-1);
-              return Boolean(windowId);
-            } catch {
-              return false;
-            }
-          },
-          { timeout: 10_000 },
-        )
-        .toBe(true);
-      const screenshot = await desktop.evaluate(async ({ desktopCapturer }) => {
-        const sources = await desktopCapturer.getSources({
-          types: ["screen"],
-          thumbnailSize: { width: 1280, height: 800 },
-        });
-        return sources[0].thumbnail.toPNG().toString("base64");
+    await desktop.evaluate(({ dialog }) => {
+      globalThis.testDialogs = { original: dialog.showMessageBox, prompts: [], answers: [] };
+      dialog.showMessageBox = async (_window, options) => {
+        globalThis.testDialogs.prompts.push(options);
+        const answer = globalThis.testDialogs.answers.shift();
+        if (!answer) throw new Error("Unexpected native message box");
+        return answer;
+      };
+    });
+
+    async function answerDialog(title, response, action) {
+      await desktop.evaluate((_, answer) => globalThis.testDialogs.answers.push(answer), {
+        response,
+        checkboxChecked: false,
       });
-      await writeFile(path.join(root, artifact), Buffer.from(screenshot, "base64"));
-      // Escape destroys the dialog on key-down. Send through the private display
-      // focus so key-up does not target an already-destroyed X11 window.
-      execFileSync("xdotool", ["windowfocus", "--sync", windowId, "key", key]);
+      await action();
+      await expect
+        .poll(() => desktop.evaluate(() => globalThis.testDialogs.prompts.length))
+        .toBe(1);
+      const prompt = await desktop.evaluate(() => globalThis.testDialogs.prompts.shift());
+      expect(prompt?.title).toBe(title);
+      expect(prompt?.message).toBeTruthy();
+      console.log("Dialog prompt:", JSON.stringify(prompt));
     }
 
-    const management = page.getByRole("switch", { name: "Manage built-in daemon" });
-    await management.click();
-    await respondToNativeDialog(
-      "Pause built-in daemon",
-      "pause-attached-confirmation.png",
-      "Return",
+    // Exercise the checkbox variant through the same renderer bridge.
+    await desktop.evaluate(() =>
+      globalThis.testDialogs.answers.push({ response: 1, checkboxChecked: true }),
     );
+    const checkbox = await page.evaluate(() =>
+      window.paseoDesktop.dialog.askWithCheckbox("Remember this?", {
+        title: "Checkbox test",
+        checkboxLabel: "Remember",
+      }),
+    );
+    expect(checkbox).toEqual({ confirmed: true, dontAskAgain: true });
+    const checkboxPrompt = await desktop.evaluate(() => globalThis.testDialogs.prompts.shift());
+    console.log("Dialog prompt:", JSON.stringify(checkboxPrompt));
+    expect(checkboxPrompt).toMatchObject({
+      title: "Checkbox test",
+      message: "Remember this?",
+      checkboxLabel: "Remember",
+    });
+
+    const management = page.getByRole("switch", { name: "Manage built-in daemon" });
+    await answerDialog("Pause built-in daemon", 1, () => management.click());
     await expect(management).not.toBeChecked();
     expect((await readDaemonInstance(home)).pid).toBe(instance.pid);
 
-    await page.getByRole("button", { name: "Stop daemon", exact: true }).click();
-    await respondToNativeDialog("Stop local daemon", "stop-attached-cancelled.png", "Escape");
+    await answerDialog("Stop local daemon?", 0, () =>
+      page.getByRole("button", { name: "Stop daemon", exact: true }).click(),
+    );
     await expect(page.getByRole("button", { name: "Stop daemon", exact: true })).toBeEnabled();
     expect(await readDaemonInstance(home)).toMatchObject({
       pid: instance.pid,
       startedAt: instance.startedAt,
     });
 
-    await page.getByRole("button", { name: "Stop daemon", exact: true }).click();
-    await respondToNativeDialog("Stop local daemon", "stop-attached-confirmation.png", "Return");
+    await answerDialog("Stop local daemon?", 1, () =>
+      page.getByRole("button", { name: "Stop daemon", exact: true }).click(),
+    );
     await expect.poll(() => readDaemonInstance(home), { timeout: 20_000 }).toBeNull();
     await expect(page.getByRole("button", { name: "Stop daemon", exact: true })).toBeHidden();
     await page.screenshot({ path: path.join(root, "attached-daemon-stopped.png") });
     console.log(
       "PASS: real Desktop renderer pauses management without stopping an attached daemon, then confirms and stops that instance.",
+    const notificationCases = [
+      { id: "paseo-qa-receipt:show", mode: "scripted-show", outcome: "show", expected: true },
+      {
+        id: "paseo-qa-receipt:failed",
+        mode: "scripted-failed",
+        outcome: "failed",
+        expected: false,
+      },
+      {
+        id: "paseo-qa-receipt:timeout",
+        mode: "scripted-timeout",
+        outcome: "timeout",
+        expected: true,
+      },
+    ];
+    await installNotificationReceipts(desktop, notificationCases);
+    try {
+      for (const test of notificationCases) {
+        const title = `Receipt ${test.mode}`;
+        const sent = await page.evaluate(
+          (payload) => window.paseoDesktop.notification.sendNotification(payload),
+          { id: test.id, title },
+        );
+        expect(sent).toBe(test.expected);
+        const receipt = await notificationReceipt(desktop, test.id);
+        expect(receipt).toMatchObject({
+          id: test.id,
+          title,
+          mode: "scripted",
+          outcome: test.outcome,
+        });
+        if (test.outcome === "failed") expect(receipt.error).toBe("injected failure");
+        console.log("Notification receipt:", JSON.stringify(receipt), "returned", sent);
+      }
+    } finally {
+      try {
+        await page.evaluate(
+          (ids) => window.paseoDesktop.notification.dismissNotifications(ids),
+          notificationCases.map((test) => test.id),
+        );
+      } finally {
+        await restoreNotificationReceipts(desktop);
+      }
+    }
+
+    if (process.env.PASEO_ELECTRON_NATIVE_RECEIPT === "1") {
+      await verifyNativeNotificationReceipt(desktop, page);
+    }
+
     );
   } catch (error) {
     if (page) {
@@ -159,7 +247,12 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
   } finally {
     if (desktop) {
       const exited = once(desktop.process(), "exit");
-      await desktop.evaluate(({ app }) => app.exit(0)).catch(() => {});
+      await desktop
+        .evaluate(({ app, dialog }) => {
+          if (globalThis.testDialogs) dialog.showMessageBox = globalThis.testDialogs.original;
+          app.exit(0);
+        })
+        .catch(() => {});
       await exited;
     }
     if (metro.exitCode === null) {
