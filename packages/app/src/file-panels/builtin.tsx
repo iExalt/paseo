@@ -32,8 +32,14 @@ function MarkdownPreview({ text, params, workspaceId, host }: TextFilePreviewPro
   const [rendered, setRendered] = useState(false);
   const handleLayout = useCallback(() => setRendered(true), []);
   return (
+      <ScrollView
+        style={styles.container}
+        showsVerticalScrollIndicator
+        bounces={false}
+        overScrollMode="never"
+        testID="markdown-preview-scroll"
+      >
     <View style={styles.container}>
-      <ScrollView style={styles.container} showsVerticalScrollIndicator>
         <View onLayout={handleLayout}>
           <FileMarkdownPreview
             source={text}
