@@ -102,6 +102,12 @@ function applyWorkspaceSnapshotPage(
   }
 }
 
+/** A whole-directory agent refresh that completed on the connection named by its source. */
+export interface AgentDirectoryRefresh extends DirectorySourceToken {
+  /** Client clock time the refresh was requested; state it returns is at least this new. */
+  requestedAt: number;
+}
+
 export interface DirectoryConnection {
   client: DaemonClient | null;
   status: "online" | "offline";
@@ -168,7 +174,7 @@ export class DirectorySync {
     private readonly callbacks: {
       onAgentStoppedRunning: (agentId: string) => void;
       markAgentLoading: () => void;
-      markAgentReady: () => void;
+      markAgentReady: (refresh?: AgentDirectoryRefresh) => void;
       markAgentError: (error: string) => void;
     },
     private readonly checkpoints?: DirectoryCheckpointStorage,
@@ -502,6 +508,7 @@ export class DirectorySync {
       };
     }
     const { client, source } = onlineConnection;
+    const requestedAt = Date.now();
     const transaction = this.agentTransactions.begin(source, () => ({
       entries: [],
       subscriptionId: null,
@@ -522,7 +529,9 @@ export class DirectorySync {
       const agents = this.commitAgentSnapshot(completion.snapshot, completion.deltas);
       this.persistAgentCursors(completion.snapshot, completion.deltas);
       this.persistCheckpoint();
-      this.callbacks.markAgentReady();
+      // A filtered fetch, or one resumed from a page cursor, leaves the rest as old as it was.
+      const wholeDirectory = !input.filter && !input.page?.cursor;
+      this.callbacks.markAgentReady(wholeDirectory ? { ...source, requestedAt } : undefined);
       return { agents, subscriptionId: completion.snapshot.subscriptionId };
     } catch (error) {
       const deltas = this.agentTransactions.fail(transaction);

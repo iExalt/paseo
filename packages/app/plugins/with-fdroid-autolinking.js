@@ -6,6 +6,8 @@ const { FDROID_ABI_VERSION_CODE_SUFFIXES } = require("../native-release-version"
 const EXCLUDED_ANDROID_MODULES = [
   "expo-camera",
   "expo-notifications",
+  "paseo-notification-lifecycle",
+  "expo-task-manager",
   "expo-dev-client",
   "expo-dev-launcher",
   "expo-dev-menu",

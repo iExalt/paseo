@@ -1,17 +1,26 @@
+import { parseAndroidNotificationLifecycle } from "@getpaseo/protocol/android-notification-lifecycle";
+import type { NotificationEpisode } from "./lifecycle-store.js";
 import type pino from "pino";
+import { randomUUID } from "node:crypto";
+import { encodeAndroidAgentTag } from "@getpaseo/protocol/android-notification-tag";
 
 export interface PushPayload {
   title: string;
   body: string;
   data?: Record<string, unknown>;
+  lifecycle?: NotificationEpisode;
 }
 
 interface ExpoPushMessage {
   to: string;
-  title: string;
-  body: string;
+  title?: string;
+  body?: string;
   data?: Record<string, unknown>;
+  priority?: "normal" | "high";
+  ttl?: number;
+  contentAvailable?: boolean;
   sound?: "default";
+  tag?: string;
 }
 
 interface ExpoPushTicket {
@@ -43,11 +52,25 @@ export class PushService {
     this.revokeToken = revokeToken;
   }
 
-  async sendPush(tokens: string[], payload: PushPayload): Promise<void> {
-    if (tokens.length === 0) {
+  async sendPush(tokens: string[], payload: PushPayload, signal?: AbortSignal): Promise<void> {
+    if (tokens.length === 0 || signal?.aborted) {
       return;
     }
 
+    const data = payload.data;
+    const reason = data?.reason;
+    const tag =
+      typeof data?.serverId === "string" &&
+      typeof data.agentId === "string" &&
+      (reason === "finished" || reason === "error" || reason === "permission")
+        ? encodeAndroidAgentTag({
+            serverId: data.serverId,
+            agentId: data.agentId,
+            reason,
+            nonce: randomUUID(),
+          })
+        : null;
+    const messages = tokens.map((token) => toExpoMessage(token, payload, tag));
 
     // Batch tokens (max 100 per request per Expo limits)
     const batches: ExpoPushMessage[][] = [];
@@ -55,7 +78,63 @@ export class PushService {
       batches.push(messages.slice(i, i + MAX_BATCH_SIZE));
     }
 
-    await Promise.all(batches.map((batch) => this.sendBatch(batch)));
+    await Promise.all(batches.map((batch) => this.sendBatch(batch, signal)));
+  }
+
+  async sendLifecycle(
+    subscriptions: Array<{ token: string; registrationId: string }>,
+    serverId: string,
+    episode: NotificationEpisode,
+    payload?: PushPayload,
+    signal?: AbortSignal,
+  ): Promise<boolean> {
+    if (signal?.aborted) return false;
+    const messages: ExpoPushMessage[] = [];
+    for (const subscription of subscriptions) {
+      const event = parseAndroidNotificationLifecycle(
+        {
+          v: 1,
+          serverId,
+          ...episode,
+          registrationId: subscription.registrationId,
+          operation: payload ? "alert" : "resolve",
+          ...(payload
+            ? {
+                reason: payload.data?.reason,
+                preview: { title: payload.title.slice(0, 220), body: payload.body.slice(0, 1000) },
+                workspaceId: payload.data?.workspaceId,
+              }
+            : {}),
+        },
+        Date.now(),
+      );
+      if (!event) continue;
+      const message: ExpoPushMessage = {
+        to: subscription.token,
+        contentAvailable: true,
+        priority: payload ? "high" : "normal",
+        ttl: payload ? Math.max(1, Math.ceil((episode.expiresAt - Date.now()) / 1000)) : 86_400,
+        data: {
+          paseoLifecycle: event,
+          ...(payload?.data?.preview ? { preview: payload.data.preview } : {}),
+        },
+      };
+      let bounded = boundNotificationPreview(message, 4000);
+      // Nested preview must fit without dropping identity, expiry or tombstones.
+      if (new TextEncoder().encode(JSON.stringify(bounded)).byteLength > 4000) {
+        if (event.operation === "alert")
+          event.preview = { title: "Paseo", body: "Open Paseo to view this update." };
+        bounded = boundNotificationPreview(message, 4000);
+      }
+      if (new TextEncoder().encode(JSON.stringify(bounded)).byteLength > 4000)
+        throw new Error("Notification lifecycle identity exceeds push budget");
+      messages.push(bounded);
+    }
+    for (let i = 0; i < messages.length; i += MAX_BATCH_SIZE) {
+      const batch = messages.slice(i, i + MAX_BATCH_SIZE);
+      if (!(await this.sendBatch(batch, signal))) return false;
+    }
+    return true;
   }
 
   /** Send to one device and report Expo's answer, for a user-requested test. */
@@ -72,10 +151,19 @@ export class PushService {
     };
   }
 
+  private async sendBatch(messages: ExpoPushMessage[], signal?: AbortSignal): Promise<boolean> {
+    if (signal?.aborted) return false;
+    const result = await this.postBatch(messages, signal);
+    if ("error" in result || signal?.aborted) return false;
+    this.handleTickets(messages, result.tickets);
+    return (
+      result.tickets.length === messages.length &&
+      result.tickets.every((ticket) => ticket.status === "ok")
+    );
   }
 
   /** Errors are logged and returned, never thrown. */
-  private async sendBatch(messages: ExpoPushMessage[]): Promise<void> {
+  private async postBatch(messages: ExpoPushMessage[], signal?: AbortSignal): Promise<BatchResult> {
     try {
       const response = await fetch(EXPO_PUSH_URL, {
         method: "POST",
@@ -85,6 +173,9 @@ export class PushService {
         },
         body: JSON.stringify(messages),
         // A hung Expo request must not hold a test request open after the app gave up.
+        signal: signal
+          ? AbortSignal.any([signal, AbortSignal.timeout(EXPO_REQUEST_TIMEOUT_MS)])
+          : AbortSignal.timeout(EXPO_REQUEST_TIMEOUT_MS),
       });
 
       if (!response.ok) {
@@ -126,4 +217,10 @@ export class PushService {
   }
 }
 
+function toExpoMessage(token: string, payload: PushPayload, tag?: string | null): ExpoPushMessage {
+  const ordinary = boundNotificationPreview(
+      sound: "default" as const,
+  if (!tag) return ordinary;
+  const tagged = { ...ordinary, tag };
+  return new TextEncoder().encode(JSON.stringify(tagged)).byteLength <= 4_000 ? tagged : ordinary;
 }

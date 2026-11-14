@@ -183,6 +183,7 @@ const resolveAgentTitle = (title: string | null | undefined): string | null => {
 // isn't running reaches the app with only its title and text.
 const ATTENTION_TITLE_PREFIX = { permission: "❓️ ", error: "❗️ " } as const;
 
+export function resolveAgentAttentionTitle(
   reason: AgentAttentionReason,
   agentTitle: string | null | undefined,
 ): string {

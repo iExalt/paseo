@@ -1,3 +1,4 @@
+import { NotificationDelivery } from "./push/notification-delivery.js";
 import type { FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import {
@@ -618,6 +619,7 @@ export class VoiceAssistantWebSocketServer {
   private readonly applicationSocketLease = new ApplicationSocketLease<WebSocketLike>();
   private eventLoopDelayMonitor: ReturnType<typeof monitorEventLoopDelay> | null = null;
   private unsubscribeSpeechReadiness: (() => void) | null = null;
+  private readonly notificationDelivery: NotificationDelivery;
   private unsubscribeDaemonConfigChange: (() => void) | null = null;
   private unsubscribeTerminalActivity: (() => void) | null = null;
   private readonly browserToolsBroker: BrowserToolsBroker | null;
@@ -809,6 +811,13 @@ export class VoiceAssistantWebSocketServer {
       filePath: join(paseoHome, "push-tokens.json"),
     });
     this.pushNotificationSender = pushNotificationSender ?? this.pushNotifications;
+    this.notificationDelivery = new NotificationDelivery({
+      serverId: this.serverId,
+      storage: this.agentStorage,
+      pushNotifications: this.pushNotifications,
+      sender: this.pushNotificationSender,
+      logger: this.logger,
+    });
 
     this.agentManager.setAgentAttentionCallback((params) => {
       void this.broadcastAgentAttention(params).catch((err) => {
@@ -1132,6 +1141,8 @@ export class VoiceAssistantWebSocketServer {
 
   public prepareForShutdown(): void {
     this.connectionLifecycle = "stopping";
+    this.agentManager.setAgentAttentionCallback(() => {});
+    this.notificationDelivery.prepareForShutdown();
   }
 
   public beginAcceptingConnections(): void {
@@ -1142,6 +1153,7 @@ export class VoiceAssistantWebSocketServer {
 
   public async close(): Promise<void> {
     this.prepareForShutdown();
+    await this.notificationDelivery.close();
     await this.agentMessages.close();
     await this.connectedHosts.close();
     this.unsubscribeSpeechReadiness?.();
@@ -2023,6 +2035,7 @@ export class VoiceAssistantWebSocketServer {
         ...(this.advertiseRelayKeepAwake ? { relayKeepAwake: true } : {}),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
         pushTokenRevocation: true,
+        androidNotificationLifecycle: true,
         // COMPAT(pushTest): added in v0.5.1, remove gate after 2027-04-16.
         pushTest: true,
         // COMPAT(plugins): added in v0.3.0, remove gate after 2027-08-07.
@@ -2886,11 +2899,18 @@ export class VoiceAssistantWebSocketServer {
     reason: "finished" | "error" | "permission";
     completionSubject?: CompletionSubject;
   }): Promise<void> {
+    if (this.notificationDelivery.stopped) return;
     const agent = this.agentManager.getAgent(params.agentId);
     const workspaceId = agent?.workspaceId;
     if (!workspaceId) {
       return;
     }
+    // Capture a durable identity before asynchronous preview/policy work can race a read.
+    const episodes = await this.notificationDelivery.captureSnapshot(agent);
+    if (this.notificationDelivery.stopped) return;
+    const lifecycle = episodes.find(
+      (episode) => episode.lane === (params.reason === "permission" ? "question" : "attention"),
+    );
     const subscriptionAgent = { ...agent, workspaceId };
     const clientEntries = await this.collectAgentAttentionClients(subscriptionAgent);
 
@@ -2922,9 +2942,11 @@ export class VoiceAssistantWebSocketServer {
       nowMs,
     });
 
+    if (this.notificationDelivery.stopped) return;
     if (delivery.push) {
-      void this.pushNotificationSender.send(notification).catch((err) => {
-        this.logger.warn({ err, agentId: params.agentId }, "Failed to send push notification");
+      this.notificationDelivery.sendAttention({
+        notification: { ...notification, ...(lifecycle ? { lifecycle } : {}) },
+        agentId: params.agentId,
       });
     }
 
