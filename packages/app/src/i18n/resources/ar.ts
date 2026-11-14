@@ -812,6 +812,7 @@ export const ar: TranslationResources = {
         importSession: "جلسة الاستيراد",
         copyPath: "نسخ مسار مساحة العمل",
         copyBranchName: "انسخ اسم الفرع",
+        copyProviderSessionId: "نسخ معرف الجلسة",
         showSetup: "إظهار الإعداد",
       },
       toasts: {
@@ -820,6 +821,7 @@ export const ar: TranslationResources = {
         terminalQueued: "تحضير مساحة العمل، وفتح الوحدة الطرفية عندما تكون جاهزة...",
         workspacePathCopiedLabel: "مسار Workspace",
         branchNameCopiedLabel: "اسم الفرع",
+        providerSessionIdCopiedLabel: "معرف الجلسة",
       },
     },
     scripts: {
