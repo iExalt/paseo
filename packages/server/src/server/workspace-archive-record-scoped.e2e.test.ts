@@ -600,3 +600,50 @@ test("keeps the worktree on disk when a sibling workspace still references it", 
   expect(remaining.has(siblingWorkspaceId)).toBe(true);
   expect(existsSync(worktreeDir)).toBe(true);
 }, 60000);
+
+test("CLI archive of the last agent removes a managed worktree with unpublished files", async () => {
+  const repoDir = createGitRepo();
+  const result = await ctx.client.createWorkspace({
+    source: {
+      kind: "worktree",
+      cwd: repoDir,
+      worktreeSlug: "unpublished-agent",
+      baseBranch: "main",
+    },
+  });
+  const workspace = result.workspace;
+  if (!workspace?.workspaceDirectory) throw new Error(result.error ?? "Missing workspace");
+  const cwd = workspace.workspaceDirectory;
+  writeFileSync(path.join(cwd, "committed.txt"), "unpushed");
+  execFileSync("git", ["add", "committed.txt"], { cwd });
+  execFileSync(
+    "git",
+    [
+      "-c",
+      "user.name=Paseo Test",
+      "-c",
+      "user.email=test@getpaseo.local",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-m",
+      "unpublished fixture",
+    ],
+    { cwd, stdio: "pipe" },
+  );
+  writeFileSync(path.join(cwd, "committed.txt"), "dirty");
+  writeFileSync(path.join(cwd, ".gitignore"), "ignored.txt\n");
+  writeFileSync(path.join(cwd, "ignored.txt"), "ignored");
+  writeFileSync(path.join(cwd, "untracked.txt"), "untracked");
+  const agent = await ctx.client.createAgent({
+    ...getFullAccessConfig("codex"),
+    cwd,
+    workspaceId: workspace.id,
+    title: "last agent",
+  });
+  const archived = JSON.parse(await runCli(["agent", "archive", agent.id, "--json"], repoDir));
+  expect(archived).toMatchObject({ agentId: agent.id, status: "archived" });
+  await expect.poll(() => existsSync(cwd), { timeout: 10000, interval: 100 }).toBe(false);
+  expect(await activeWorkspaceIds()).not.toContain(workspace.id);
+  expect(existsSync(repoDir)).toBe(true);
+}, 60000);

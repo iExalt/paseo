@@ -419,25 +419,6 @@ async function archiveTargetRecords(
   return { archivedAgents, archivedWorkspaceIds };
 }
 
-async function unpublishedWorkReason(
-  dependencies: ArchiveDependencies,
-  worktreePath: string,
-): Promise<string | undefined> {
-  try {
-    const snapshot = await dependencies.workspaceGitService.getSnapshot(worktreePath, {
-      force: true,
-      reason: "archive-empty-workspace",
-    });
-    if (snapshot?.git.isDirty !== false) return "uncommitted work or unknown working tree state";
-    if (!snapshot.git.upstreamRef || snapshot.git.aheadOfOrigin === null)
-      return "no upstream or unknown publication state";
-    if (snapshot.git.aheadOfOrigin > 0) return "unpushed commits";
-  } catch {
-    return "unable to verify working tree and publication state";
-  }
-  return undefined;
-}
-
 async function maybeRemoveDirectory(
   dependencies: ArchiveDependencies,
   request: Pick<ArchiveByScopeRequest, "requestId" | "onlyIfEmpty">,
@@ -475,9 +456,6 @@ async function maybeRemoveDirectory(
         .some((agent) => target.workspaceIds.includes(agent.workspaceId ?? ""))
     ) {
       reason = "agent runtime failed to close";
-    }
-    if (!reason) {
-      reason = await unpublishedWorkReason(dependencies, backing.path);
     }
     if (reason) {
       dependencies.sessionLogger?.warn(
