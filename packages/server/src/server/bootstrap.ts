@@ -471,6 +471,8 @@ export interface PaseoDaemonDependencies {
   hubRelationshipClock?: HubRelationshipClock;
   hubRelationshipRetryPolicy?: HubRelationshipRetryPolicy;
   createHubDaemonId?: () => string;
+  /** Start the terminal worker on first use; see StartWorkerTerminalManagerOptions. */
+  deferTerminalWorkerLaunch?: boolean;
   serverFeatureOverrides?: {
     daemonStatusRpc?: boolean;
     relayConfig?: boolean;
@@ -672,6 +674,7 @@ export async function createPaseoDaemon(
     paseoVersion: daemonVersion,
     logger,
     getTerminalActivityUrl: () => createTerminalActivityUrl(boundListenTarget),
+    deferWorkerLaunch: dependencies.deferTerminalWorkerLaunch,
   });
   applyTerminalAgentHookSetting({ store: daemonConfigStore, logger });
 
