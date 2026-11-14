@@ -179,6 +179,7 @@ describe("resolveStartupRoute", () => {
     hasGivenUpWaitingForHost: false,
   };
   const baseHostInput = {
+    initialDiscoverySettled: true,
     route: { kind: "host" as const, serverId: "server-saved" },
     startupBlocker: { kind: "none" as const },
     hostRegistryStatus: "ready" as const,
@@ -295,6 +296,26 @@ describe("resolveStartupRoute", () => {
         hasGivenUpWaitingForHost: true,
       }),
     ).toEqual({ kind: "redirect", href: "/welcome" });
+  });
+
+  it("waits for initial discovery before rejecting an unknown host", () => {
+    expect(resolveStartupRoute({ ...baseHostInput, initialDiscoverySettled: false })).toEqual({
+      kind: "splash",
+    });
+    expect(
+      resolveStartupRoute({
+        ...baseHostInput,
+        initialDiscoverySettled: false,
+        hosts: [{ serverId: "other" }],
+      }),
+    ).toEqual({ kind: "splash" });
+    expect(
+      resolveStartupRoute({
+        ...baseHostInput,
+        initialDiscoverySettled: false,
+        hosts: [{ serverId: "server-saved" }],
+      }),
+    ).toEqual({ kind: "render" });
   });
 
   it("keeps host routes mounted while the host registry is loading", () => {
