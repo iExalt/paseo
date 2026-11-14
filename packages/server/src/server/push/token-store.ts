@@ -11,11 +11,13 @@ import { ensurePrivateFile, writePrivateFileAtomicSync } from "../private-files.
 export interface PushTokenSubscription {
   token: string;
   expiresAt: number;
+  registrationId?: string;
   preferences?: NotificationPreferences;
 }
 
 interface StoredSubscriptionEntry {
   expiresAt: number;
+  registrationId?: string;
   preferences?: NotificationPreferences;
 }
 
@@ -46,6 +48,7 @@ function parsePersistedSubscription(value: unknown): [string, StoredSubscription
     token?: unknown;
     expiresAt?: unknown;
     preferences?: unknown;
+    registrationId?: unknown;
   };
   if (typeof candidate.token !== "string" || typeof candidate.expiresAt !== "string") {
     return null;
@@ -59,10 +62,18 @@ function parsePersistedSubscription(value: unknown): [string, StoredSubscription
     candidate.preferences && typeof candidate.preferences === "object"
       ? normalizeNotificationPreferences(candidate.preferences)
       : undefined;
+  const registrationId =
+    typeof candidate.registrationId === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+      candidate.registrationId,
+    )
+      ? candidate.registrationId
+      : undefined;
   return [
     token,
     {
       expiresAt,
+      ...(registrationId ? { registrationId } : {}),
       ...(preferences !== undefined ? { preferences } : {}),
     },
   ];
@@ -96,11 +107,17 @@ export class PushTokenStore {
     this.loadFromDisk();
   }
 
-  renewToken(token: string, preferences?: NotificationPreferencesInput): void {
+  renewToken(
+    token: string,
+    registrationId?: string | null,
+    preferences?: NotificationPreferencesInput,
+  ): void {
     const normalized = token.trim();
     if (!normalized) return;
     const now = this.now();
     const current = this.subscriptions.get(normalized);
+    const nextRegistration =
+      registrationId === undefined ? current?.registrationId : (registrationId ?? undefined);
     const normalizedPreferences =
       preferences !== undefined ? normalizeNotificationPreferences(preferences) : undefined;
     const nextPreferences = normalizedPreferences ?? current?.preferences;
@@ -111,12 +128,14 @@ export class PushTokenStore {
     if (
       current !== undefined &&
       current.expiresAt - now > this.leaseMs / 2 &&
+      current.registrationId === nextRegistration &&
       !preferencesChanged
     ) {
       return;
     }
     const next = new Map(this.subscriptions);
     next.set(normalized, {
+      ...(nextRegistration ? { registrationId: nextRegistration } : {}),
       expiresAt: now + this.leaseMs,
       ...(nextPreferences !== undefined ? { preferences: nextPreferences } : {}),
     });
@@ -156,6 +175,7 @@ export class PushTokenStore {
     return Array.from(active, ([token, entry]) => ({
       token,
       expiresAt: entry.expiresAt,
+      ...(entry.registrationId ? { registrationId: entry.registrationId } : {}),
       ...(entry.preferences !== undefined ? { preferences: entry.preferences } : {}),
     }));
   }
@@ -193,6 +213,7 @@ export class PushTokenStore {
           if (normalized) {
             const existing = migrated.get(normalized);
             migrated.set(normalized, {
+              ...existing,
               expiresAt,
               ...(existing?.preferences !== undefined ? { preferences: existing.preferences } : {}),
             });
@@ -215,6 +236,7 @@ export class PushTokenStore {
           {
             subscriptions: Array.from(subscriptions, ([token, entry]) => ({
               token,
+              ...(entry.registrationId ? { registrationId: entry.registrationId } : {}),
               expiresAt: new Date(entry.expiresAt).toISOString(),
               ...(entry.preferences !== undefined ? { preferences: entry.preferences } : {}),
             })),

@@ -512,11 +512,14 @@ interface ActiveCompletionSubjectCollector {
   turnId: string;
   collector: CompletionSubjectCollector;
 }
+
 interface HandleStreamEventOptions {
   fromHistory?: boolean;
 }
 
 interface ManagedAgentBase {
+  /** False after an unsuccessful provider pending-state read; never infer resolution from that. */
+  permissionStateKnown?: boolean;
   id: string;
   provider: AgentProvider;
   cwd: string;
@@ -5343,8 +5346,9 @@ export class AgentManager {
     try {
       const pending = agent.session.getPendingPermissions();
       agent.pendingPermissions = new Map(pending.map((request) => [request.id, request]));
+      agent.permissionStateKnown = true;
     } catch {
-      agent.pendingPermissions.clear();
+      agent.permissionStateKnown = false;
     }
 
     this.syncControls(agent);
@@ -6422,6 +6426,9 @@ export class AgentManager {
   }
 
   private enqueueBackgroundPersist(agent: ManagedAgent): void {
+    // Late provider events cannot replace shutdown/restart snapshots. Explicit close persistence
+    // still writes its final closed record through persistSnapshot.
+    if (!this.acceptingAgentRegistrations) return;
     const task = this.persistSnapshot(agent).catch((err) => {
       this.logger.error({ err, agentId: agent.id }, "Failed to persist agent snapshot");
     });

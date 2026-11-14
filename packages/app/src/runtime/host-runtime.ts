@@ -86,7 +86,11 @@ import { dispatchComposerAgentMessage, sendQueuedComposerMessageNow } from "@/co
 import { createMessageSubmissionWriter } from "@/composer/submission/writer";
 import { resolveComposerAttachmentSubmitFormat } from "@/composer/attachments/submit";
 import { encodeImages } from "@/utils/encode-images";
-import { DirectorySync, type RefreshAgentDirectoryResult } from "@/runtime/directory-sync";
+import {
+  DirectorySync,
+  type AgentDirectoryRefresh,
+  type RefreshAgentDirectoryResult,
+} from "@/runtime/directory-sync";
 import { ReplicaCache } from "@/runtime/replica-cache";
 import type { ReplicaRowStore } from "@/runtime/replica-cache/row-store";
 import { createReplicaRowStore } from "@/runtime/replica-cache/row-store-factory";
@@ -156,6 +160,8 @@ export interface HostRuntimeSnapshot {
   agentDirectoryStatus: HostRuntimeAgentDirectoryStatus;
   agentDirectoryError: string | null;
   hasEverLoadedAgentDirectory: boolean;
+  /** Last whole-directory agent refresh; current only while its source matches this snapshot. */
+  agentDirectoryRefresh: AgentDirectoryRefresh | null;
   probeByConnectionId: Map<string, ConnectionProbeState>;
   clientGeneration: number;
   connectionEpoch: number;
@@ -767,6 +773,7 @@ export class HostRuntimeController {
       agentDirectoryStatus: "idle",
       agentDirectoryError: null,
       hasEverLoadedAgentDirectory: false,
+      agentDirectoryRefresh: null,
       probeByConnectionId: new Map(),
       clientGeneration: 0,
     };
@@ -911,11 +918,12 @@ export class HostRuntimeController {
     });
   }
 
-  markAgentDirectorySyncReady(): void {
+  markAgentDirectorySyncReady(refresh?: AgentDirectoryRefresh): void {
     this.updateSnapshot({
       agentDirectoryStatus: "ready",
       agentDirectoryError: null,
       hasEverLoadedAgentDirectory: true,
+      ...(refresh ? { agentDirectoryRefresh: refresh } : {}),
     });
   }
 
@@ -2187,7 +2195,7 @@ export class HostRuntimeStore {
       {
         onAgentStoppedRunning: (agentId) => this.drainQueuedAgentMessage(newServerId, agentId),
         markAgentLoading: () => controller.markAgentDirectorySyncLoading(),
-        markAgentReady: () => controller.markAgentDirectorySyncReady(),
+        markAgentReady: (refresh) => controller.markAgentDirectorySyncReady(refresh),
         markAgentError: (error) => controller.markAgentDirectorySyncError(error),
       },
       this.replicaCache,
@@ -2723,7 +2731,7 @@ export class HostRuntimeStore {
         {
           onAgentStoppedRunning: (agentId) => this.drainQueuedAgentMessage(host.serverId, agentId),
           markAgentLoading: () => controller.markAgentDirectorySyncLoading(),
-          markAgentReady: () => controller.markAgentDirectorySyncReady(),
+          markAgentReady: (refresh) => controller.markAgentDirectorySyncReady(refresh),
           markAgentError: (error) => controller.markAgentDirectorySyncError(error),
         },
         this.replicaCache,

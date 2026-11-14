@@ -1,3 +1,4 @@
+import type { NotificationEpisode } from "./lifecycle-store.js";
 import type pino from "pino";
 import {
   normalizeNotificationPreferences,
@@ -33,11 +34,20 @@ const LEGACY_PUSH_NOTIFICATION_PREFERENCES: NotificationPreferences = {
 };
 
 export interface PushNotifications {
-  renew(token: string, preferences?: NotificationPreferencesInput): void;
+  renew(
+    token: string,
+    registrationId?: string | null,
+    preferences?: NotificationPreferencesInput,
+  ): void;
+  resolveLifecycle?(
+    serverId: string,
+    episode: NotificationEpisode,
+    signal?: AbortSignal,
+  ): Promise<boolean>;
   revoke(token: string): void;
+  send(payload: PushPayload, signal?: AbortSignal, kind?: NotificationKind): Promise<void>;
   /** Send to one registered device and report Expo's answer. */
   sendTest(token: string, payload: PushPayload): Promise<PushDeliveryOutcome>;
-  send(payload: PushPayload, kind?: NotificationKind): Promise<void>;
 }
 
 export type PushNotificationSender = Pick<PushNotifications, "send">;
@@ -46,46 +56,72 @@ export function createPushNotifications(options: {
   logger: pino.Logger;
   filePath: string;
   now?: () => number;
+  deliver?: (tokens: string[], payload: PushPayload, signal?: AbortSignal) => Promise<void>;
   deliverOne?: (token: string, payload: PushPayload) => Promise<PushDeliveryOutcome>;
-  deliver?: (tokens: string[], payload: PushPayload) => Promise<void>;
 }): PushNotifications {
   const now = options.now ?? Date.now;
   const store = new PushTokenStore(options.logger, options.filePath, now, PUSH_TOKEN_LEASE_MS);
   const service = new PushService(options.logger, (token) => store.revokeToken(token));
   const deliver =
     options.deliver ??
-    ((tokens: string[], payload: PushPayload) => service.sendPush(tokens, payload));
+    ((tokens: string[], payload: PushPayload, signal?: AbortSignal) =>
+      service.sendPush(tokens, payload, signal));
   const deliverOne =
     options.deliverOne ??
     ((token: string, payload: PushPayload) => service.sendOne(token, payload));
 
   return {
-    renew(token, preferences) {
-      store.renewToken(token, preferences);
+    renew(token, registrationId, preferences) {
+      store.renewToken(token, registrationId, preferences);
     },
     revoke(token) {
       store.revokeToken(token);
     },
+    async send(payload, signal, kind) {
+      if (signal?.aborted) return;
+      const subscriptions = store.getActiveSubscriptions().filter((entry) => {
+        const preferences =
+          entry.preferences !== undefined
+            ? normalizeNotificationPreferences(entry.preferences)
+            : LEGACY_PUSH_NOTIFICATION_PREFERENCES;
+        return kind ? shouldDeliverNotification(preferences, kind) : preferences.enabled;
+      });
+      // Only explicitly capable Android registrations receive app-owned payloads.
+      const managedKind =
+        typeof payload.data?.serverId === "string" &&
+        typeof payload.data.agentId === "string" &&
+        (payload.data.reason === "finished" || payload.data.reason === "permission");
+      const legacy = subscriptions.filter((sub) => !sub.registrationId || !managedKind);
+      if (legacy.length)
+        await deliver(
+          legacy.map((sub) => sub.token),
+          payload,
+          signal,
+        );
+      if (payload.lifecycle && typeof payload.data?.serverId === "string") {
+        const managed = subscriptions.filter(
+          (sub): sub is typeof sub & { registrationId: string } => !!sub.registrationId,
+        );
+        if (
+          !(await service.sendLifecycle(
+            managed,
+            payload.data.serverId,
+            payload.lifecycle,
+            payload,
+            signal,
+          ))
+        )
+          throw new Error("Expo did not accept managed alert");
+      }
+    },
+    resolveLifecycle(serverId, episode, signal) {
+      const subscriptions = store
+        .getActiveSubscriptions()
+        .filter((sub): sub is typeof sub & { registrationId: string } => !!sub.registrationId);
+      return service.sendLifecycle(subscriptions, serverId, episode, undefined, signal);
+    },
     sendTest(token, payload) {
       return deliverOne(token, payload);
-    },
-    async send(payload, kind) {
-      const subscriptions = store.getActiveSubscriptions();
-      const tokens = subscriptions
-        .filter((entry) => {
-          const preferences =
-            entry.preferences !== undefined
-              ? normalizeNotificationPreferences(entry.preferences)
-              : LEGACY_PUSH_NOTIFICATION_PREFERENCES;
-          return kind ? shouldDeliverNotification(preferences, kind) : preferences.enabled;
-        })
-        .map((entry) => entry.token);
-      options.logger.info(
-        { tokenCount: tokens.length, activeTokenCount: subscriptions.length, kind },
-        "Sending push notification",
-      );
-      if (tokens.length === 0) return;
-      await deliver(tokens, payload);
     },
   };
 }

@@ -4290,8 +4290,25 @@ export class Session {
         await this.handleListCommandsRequest(msg);
         return;
       case "register_push_token":
-        this.handleRegisterPushToken(msg.token, msg.preferences);
+        this.handleRegisterPushToken(
+          msg.token,
+          msg.androidLifecycleRegistrationId ?? null,
+          msg.preferences,
+        );
         return;
+      case "push.lifecycle.sync.request": {
+        await this.agentStorage.flush();
+        this.emit({
+          type: "push.lifecycle.sync.response",
+          payload: {
+            requestId: msg.requestId,
+            activeEpisodeIds: (await this.agentStorage.notificationLifecycle.active()).map(
+              (episode) => episode.episodeId,
+            ),
+          },
+        });
+        return;
+      }
       case "push.unregister.request":
         this.pushNotifications.revoke(msg.token);
         if (this.currentClientMetadata().pushToken?.trim() === msg.token.trim()) {
@@ -6393,10 +6410,11 @@ export class Session {
    */
   private handleRegisterPushToken(
     token: string,
-    preferences?: Parameters<PushNotifications["renew"]>[1],
+    registrationId: string | null,
+    preferences?: Parameters<PushNotifications["renew"]>[2],
   ): void {
     this.currentClientMetadata().pushToken = token;
-    this.pushNotifications.renew(token, preferences);
+    this.pushNotifications.renew(token, registrationId, preferences);
     this.sessionLogger.info("Registered push token");
   }
 
