@@ -1,11 +1,17 @@
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { View, type StyleProp, type ViewStyle } from "react-native";
+import { useWindowDimensions, View, type StyleProp, type ViewStyle } from "react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { PanelLeft } from "lucide-react-native";
+import { usePathname } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { HeaderToggleButton, headerIconSlotStyle } from "./header-toggle-button";
 import { selectIsAgentListOpen, usePanelStore } from "@/stores/panel-store";
 import { useIsCompactFormFactor } from "@/constants/layout";
+import { resolveMenuPressOutcome } from "@/components/desktop-sidebar-layout";
+import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
+import { hideExplorerSidebar, isExplorerSidebarOpen } from "@/workspace-tabs/explorer-sidebar";
+import { parseHostWorkspaceRouteFromPathname } from "@/utils/host-routes";
 import { getShortcutOs } from "@/utils/shortcut-platform";
 import { useHasWindowChromeObstruction, useOwnsWindowChromeCorner } from "@/utils/desktop-window";
 import {
@@ -43,6 +49,46 @@ function MobileMenuIcon({ extraMuted }: { extraMuted: boolean }) {
   );
 }
 
+/**
+ * Shared by the menu button and the toggle-sidebar shortcut: the last press
+ * wins, so an open Explorer that leaves the sidebar no room yields to it.
+ */
+export function useSidebarMenuPress(isCompact: boolean): () => void {
+  const toggleAgentListForLayout = usePanelStore((state) => state.toggleAgentListForLayout);
+  const openAgentListForLayout = usePanelStore((state) => state.openAgentListForLayout);
+  const isWorkspaceRoute = parseHostWorkspaceRouteFromPathname(usePathname()) !== null;
+  const activeWorkspace = useActiveWorkspaceSelection();
+  const workspaceKey = activeWorkspace
+    ? `${activeWorkspace.serverId}:${activeWorkspace.workspaceId}`
+    : null;
+  const { width: windowWidth } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const viewportWidth = windowWidth - insets.left - insets.right;
+
+  return useCallback(() => {
+    const explorerQuery = { isCompact: false, workspaceKey };
+    const outcome = resolveMenuPressOutcome({
+      isCompactLayout: isCompact,
+      explorerOpen: isWorkspaceRoute && isExplorerSidebarOpen(explorerQuery),
+      requestedSidebarWidth: usePanelStore.getState().sidebarWidth,
+      viewportWidth,
+    });
+    if (outcome === "show-sidebar-over-explorer") {
+      hideExplorerSidebar(explorerQuery);
+      openAgentListForLayout({ isCompact: false });
+      return;
+    }
+    toggleAgentListForLayout({ isCompact });
+  }, [
+    toggleAgentListForLayout,
+    openAgentListForLayout,
+    isCompact,
+    isWorkspaceRoute,
+    workspaceKey,
+    viewportWidth,
+  ]);
+}
+
 function SidebarMenuToggleButton({
   isMobile,
   extraMutedIdleIcon = false,
@@ -57,15 +103,12 @@ function SidebarMenuToggleButton({
 }) {
   const { t } = useTranslation();
   const isOpen = usePanelStore((state) => selectIsAgentListOpen(state, { isCompact: isMobile }));
-  const toggleAgentListForLayout = usePanelStore((state) => state.toggleAgentListForLayout);
   const toggleShortcutKeys = useMemo(
     () => (getShortcutOs() === "mac" ? ["mod", "B"] : ["mod", "."]),
     [],
   );
 
-  const handlePress = useCallback(() => {
-    toggleAgentListForLayout({ isCompact: isMobile });
-  }, [toggleAgentListForLayout, isMobile]);
+  const handlePress = useSidebarMenuPress(isMobile);
 
   const accessibilityState = useMemo(() => ({ expanded: isOpen }), [isOpen]);
 
