@@ -70,13 +70,26 @@ interface TestClient {
   }) => Promise<DirectorySuggestionResult>;
 }
 
+const queryClients = new Set<QueryClient>();
+
+afterEach(async () => {
+  cleanup();
+  for (const client of queryClients) {
+    await client.cancelQueries();
+    client.clear();
+  }
+  queryClients.clear();
+});
+
 function createQueryClient(): QueryClient {
-  return new QueryClient({
+  const client = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
     },
   });
+  queryClients.add(client);
+  return client;
 }
 
 function createToast(): ToastApi {
@@ -257,7 +270,10 @@ describe("useFileLink", () => {
     await waitFor(() => {
       expect(getDirectorySuggestions).toHaveBeenCalledTimes(1);
     });
-    deferred.resolve(resolvedSuggestions([{ path: "docs/dumm.md", kind: "file" }]));
+    await act(async () => {
+      deferred.resolve(resolvedSuggestions([{ path: "docs/dumm.md", kind: "file" }]));
+      await deferred.promise;
+    });
     await waitFor(() => {
       expect(result.current.first.target?.path).toBe("/Users/test/project/docs/dumm.md");
       expect(result.current.second.target?.path).toBe("/Users/test/project/docs/dumm.md");
