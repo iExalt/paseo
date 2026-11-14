@@ -117,12 +117,12 @@ The manifest supplies the default installation ID and the supported Paseo versio
 
 Keep `requirements.paseo` correct each time you create or edit a plugin:
 
-- `init` writes `>=` followed by the CLI version.
+- `init` writes `>=` followed by the plugin API version.
 - Raise the minimum when you use an API from a newer release. The reference names the release for each newer API.
 - Add an upper bound when a later release breaks the plugin.
 - A missing `requirements.paseo` means `<0.8.0`. Finish the [migration](https://paseo.sh/docs/plugins/migration.md) before you add `>=0.8.0`.
 
-The daemon and each app check the range separately. Make sure that the daemon and the app both satisfy it.
+The daemon and each app check their plugin API version against the range. Make sure both satisfy it. See [requirements](https://paseo.sh/docs/plugins/reference#requirements).
 
 Each runtime has its own entry. A plugin needs at least one entry.
 
