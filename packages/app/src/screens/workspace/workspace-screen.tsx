@@ -31,10 +31,9 @@ import {
   type ReactNode,
 } from "react";
 import { useStoreWithEqualityFn } from "zustand/traditional";
-import { useIsFocused } from "expo-router/react-navigation";
 import { BackHandler, Text, View } from "react-native";
 import { useQueryClient } from "@tanstack/react-query";
-import { useRouter, type Href } from "expo-router";
+import { useIsFocused, useRouter, type Href } from "expo-router";
 import * as Clipboard from "expo-clipboard";
 import { useTranslation } from "react-i18next";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
