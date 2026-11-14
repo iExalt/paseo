@@ -38,6 +38,7 @@ import { Shortcut } from "@/components/ui/shortcut";
 import { OpenInFileManagerMenuItem } from "@/workspace/open-in-file-manager/menu-item";
 import { resolveSidebarWorkspaceAccessibilityLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { bySizing } from "@/components/ui/control-geometry";
+import { WorkspaceNotificationsMenuItem } from "@/workspace-notifications/menu-item";
 import {
   workspaceServiceLabelKey,
   type WorkspaceServiceSummary,
@@ -242,6 +243,13 @@ function SidebarWorkspaceMenuItems({
         >
           Mark as unread
         </WorkspaceMenuItem>
+      ) : null}
+      {serverId && workspaceId ? (
+        <WorkspaceNotificationsMenuItem
+          serverId={serverId}
+          workspaceId={workspaceId}
+          testID={`sidebar-workspace-menu-notifications-${workspaceKey}`}
+        />
       ) : null}
       {onTogglePin ? (
         <WorkspaceMenuItem

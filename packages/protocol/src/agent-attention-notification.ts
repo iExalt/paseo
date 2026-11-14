@@ -169,6 +169,22 @@ export function findLatestPermissionRequest(
   return latest;
 }
 
+// Push titles carry their reason as a prefix, because an Android push posted while the app
+// isn't running reaches the app with only its title and text.
+const ATTENTION_TITLE_PREFIX = { permission: "❓️ ", error: "❗️ " } as const;
+
+  if (reason === "permission") {
+    return `${ATTENTION_TITLE_PREFIX.permission}${title ?? "Agent needs permission"}`;
+  }
+  if (reason === "error")
+    return `${ATTENTION_TITLE_PREFIX.error}${title ?? "Agent needs attention"}`;
+}
+
+/** The reason a resolveAgentAttentionTitle title was written for. */
+export function parseAgentAttentionTitle(title: string): AgentAttentionReason {
+  if (title.startsWith(ATTENTION_TITLE_PREFIX.permission)) return "permission";
+  if (title.startsWith(ATTENTION_TITLE_PREFIX.error)) return "error";
+  return "finished";
 function resolveAgentAttentionTitle(reason: AgentAttentionReason): string {
   if (reason === "permission") return "Agent needs permission";
   if (reason === "error") return "Agent needs attention";

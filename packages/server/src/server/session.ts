@@ -15,6 +15,7 @@ import type { BrowserToolsBroker } from "./browser-tools/broker.js";
 import { BrowserAutomationHostCapabilitySchema } from "@getpaseo/protocol/browser-automation/capabilities";
 import type {
   SessionEventSubscription,
+  MutableDaemonConfig,
   UsageReportEntry,
   ProviderUsage,
 } from "@getpaseo/protocol/messages";
@@ -288,6 +289,12 @@ import {
 } from "./workspace-archive-operations.js";
 import { WorkspaceSetupRuntime } from "./workspace-setup-runtime.js";
 import { SessionAuthorization, type DaemonPermission } from "./authorization/index.js";
+import {
+  daemonConfigForClient,
+  readReplyRules,
+  setWorkspaceNotifications,
+  writeReplyRules,
+} from "./notification-policy.js";
 
 function resolveWorkspaceSetupRuntime(
   runtime: WorkspaceSetupRuntime | undefined,
@@ -459,6 +466,30 @@ class SessionRequestError extends Error {
   }
 }
 
+type AgentConfigUpdateMessage = Extract<
+  SessionInboundMessage,
+  {
+    type:
+      | "set_agent_mode_request"
+      | "set_agent_model_request"
+      | "set_agent_feature_request"
+      | "set_agent_thinking_request"
+      | "agent.config.apply.request";
+  }
+>;
+
+function isAgentConfigUpdateMessage(
+  message: SessionInboundMessage,
+): message is AgentConfigUpdateMessage {
+  switch (message.type) {
+    case "set_agent_mode_request":
+    case "set_agent_model_request":
+    case "set_agent_feature_request":
+    case "set_agent_thinking_request":
+    case "agent.config.apply.request":
+      return true;
+    default:
+      return false;
 export interface SessionFileSystem {
   isDirectory(path: string): Promise<boolean>;
 }
@@ -2472,6 +2503,12 @@ export class Session {
     return this.authorization.listPermissions();
   }
 
+  private getDaemonConfigForCurrentClient(
+    config: MutableDaemonConfig = this.daemonConfigStore.get(),
+  ): MutableDaemonConfig {
+    return toWireDaemonConfig(daemonConfigForClient(config, this.supports(CLIENT_CAPS.replyRuleNotifications)));
+  }
+
   public allowsInbound(message: SessionInboundMessage): boolean {
     return this.authorization.allowsInbound(message);
   }
@@ -3194,24 +3231,20 @@ export class Session {
   }
 
   private dispatchAgentConfigMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    if (isAgentConfigUpdateMessage(msg)) return this.dispatchAgentConfigUpdateMessage(msg);
+
+    if (
+      msg.type === "daemon.notifications.rules.get.request" ||
+      msg.type === "daemon.notifications.rules.set.request"
+    ) {
+      return this.dispatchDaemonNotificationRulesMessage(msg);
+    }
+
     switch (msg.type) {
-      case "set_agent_mode_request":
-        return this.agentConfigSession.handleSetAgentModeRequest(msg);
-      case "set_agent_model_request":
-        return this.agentConfigSession.handleSetAgentModelRequest(msg);
-      case "set_agent_feature_request":
-        return this.agentConfigSession.handleSetAgentFeatureRequest(msg);
-      case "set_agent_thinking_request":
-        return this.agentConfigSession.handleSetAgentThinkingRequest(msg);
-      case "agent.config.apply.request":
-        return this.agentConfigSession.handleAgentConfigApplyRequest(msg);
       case "get_daemon_config_request":
         this.emit({
           type: "get_daemon_config_response",
-          payload: {
-            requestId: msg.requestId,
-            config: toWireDaemonConfig(this.daemonConfigStore.get()),
-          },
+          payload: { requestId: msg.requestId, config: this.getDaemonConfigForCurrentClient() },
         });
         return undefined;
       case "daemon.get_status.request":
@@ -3235,7 +3268,7 @@ export class Session {
             type: "set_daemon_config_response",
             payload: {
               requestId: msg.requestId,
-              config: toWireDaemonConfig(config),
+              config: this.getDaemonConfigForCurrentClient(config),
             },
           });
         });
@@ -3246,6 +3279,44 @@ export class Session {
       default:
         return undefined;
     }
+  }
+
+  private dispatchAgentConfigUpdateMessage(msg: AgentConfigUpdateMessage): Promise<void> {
+    switch (msg.type) {
+      case "set_agent_mode_request":
+        return this.agentConfigSession.handleSetAgentModeRequest(msg);
+      case "set_agent_model_request":
+        return this.agentConfigSession.handleSetAgentModelRequest(msg);
+      case "set_agent_feature_request":
+        return this.agentConfigSession.handleSetAgentFeatureRequest(msg);
+      case "set_agent_thinking_request":
+        return this.agentConfigSession.handleSetAgentThinkingRequest(msg);
+      case "agent.config.apply.request":
+        return this.agentConfigSession.handleAgentConfigApplyRequest(msg);
+    }
+  }
+
+  private async dispatchDaemonNotificationRulesMessage(
+    msg: Extract<
+      SessionInboundMessage,
+      {
+        type: "daemon.notifications.rules.get.request" | "daemon.notifications.rules.set.request";
+      }
+    >,
+  ): Promise<void> {
+    if (msg.type === "daemon.notifications.rules.set.request") {
+      const replyRules = await writeReplyRules(this.daemonConfigStore, msg.replyRules);
+      this.emit({
+        type: "daemon.notifications.rules.set.response",
+        payload: { requestId: msg.requestId, replyRules },
+      });
+      return;
+    }
+
+    this.emit({
+      type: "daemon.notifications.rules.get.response",
+      payload: { requestId: msg.requestId, replyRules: readReplyRules(this.daemonConfigStore) },
+    });
   }
 
   // eslint-disable-next-line complexity
@@ -3355,6 +3426,12 @@ export class Session {
       case "project.remove.request":
         return this.handleProjectRemoveRequest(msg);
       case "workspace.title.set.request":
+      case "workspace.notifications.set.request":
+        return this.handleWorkspaceNotificationsSetRequest(
+          msg.workspaceId,
+          msg.notifications,
+          msg.requestId,
+        );
         return this.handleWorkspaceTitleSetRequest(msg.workspaceId, msg.title, msg.requestId);
       case "workspace.pin.set.request":
         return this.handleWorkspacePinSetRequest(msg.workspaceId, msg.pinned, msg.requestId);
@@ -4382,6 +4459,53 @@ export class Session {
         },
       });
       emitResponse(false, null, getErrorMessageOr(error, "Failed to pin workspace"));
+    }
+  }
+
+  private async handleWorkspaceNotificationsSetRequest(
+    workspaceId: string,
+    notifications: "on" | "off",
+    requestId: string,
+  ): Promise<void> {
+    const emitResponse = (
+      accepted: boolean,
+      resolvedNotifications: "on" | "off" | null,
+      error: string | null,
+    ) => {
+      this.emit({
+        type: "workspace.notifications.set.response",
+        payload: { requestId, workspaceId, accepted, notifications: resolvedNotifications, error },
+      });
+    };
+
+    let updated: PersistedWorkspaceRecord | null;
+    try {
+      updated = await setWorkspaceNotifications(this.workspaceRegistry, workspaceId, notifications);
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, workspaceId, requestId },
+        "session: workspace.notifications.set.request error",
+      );
+      emitResponse(
+        false,
+        null,
+        getErrorMessageOr(error, "Failed to update workspace notifications"),
+      );
+      return;
+    }
+    if (!updated) {
+      emitResponse(false, null, "Workspace not found");
+      return;
+    }
+
+    emitResponse(true, updated.notifications, null);
+    try {
+      await this.emitWorkspaceUpdatesForWorkspaceIds([workspaceId]);
+    } catch (error) {
+      this.sessionLogger.error(
+        { err: error, workspaceId, requestId },
+        "session: workspace.notifications.set.request committed but descriptor broadcast failed",
+      );
     }
   }
 
@@ -6113,6 +6237,7 @@ export class Session {
       workspaceKind: workspace.kind,
       name: resolveWorkspaceDisplayName(workspace),
       title: workspace.title,
+      notifications: workspace.notifications,
       pinnedAt: workspace.pinnedAt,
       ...(workspace.labels && workspace.labels.length > 0 ? { labels: workspace.labels } : {}),
       metadata: workspace.metadata,
@@ -6213,6 +6338,7 @@ export class Session {
         derivedDisplayName: result.worktree.branchName || result.workspace.displayName,
       }),
       title: result.workspace.title,
+      notifications: result.workspace.notifications,
       pinnedAt: result.workspace.pinnedAt,
       ...(result.workspace.labels && result.workspace.labels.length > 0
         ? { labels: result.workspace.labels }
@@ -7346,6 +7472,7 @@ export class Session {
         workspaceId,
         metadata: request.metadata,
         ...(await this.workspaceBackgroundIntent(request.background, request.callerAgentId)),
+        notifications: request.notifications,
       },
     );
     await this.syncWorkspaceGitObserverForWorkspace(workspace);
@@ -7410,6 +7537,7 @@ export class Session {
         title: request.title,
         metadata: request.metadata,
         ...(await this.workspaceBackgroundIntent(request.background, request.callerAgentId)),
+        notifications: request.notifications,
       },
       source.baseBranch
         ? { resolveDefaultBranch: async () => source.baseBranch as string }

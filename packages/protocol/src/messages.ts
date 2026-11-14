@@ -1077,6 +1077,12 @@ export const WorkspaceTitleSetRequestSchema = z.object({
   workspaceId: z.string(),
   // Null or empty string clears the title and reverts to the derived name.
   title: z.string().nullable(),
+export const WorkspaceNotificationsSchema = z.enum(["on", "off"]);
+
+export const WorkspaceNotificationsSetRequestSchema = z.object({
+  type: z.literal("workspace.notifications.set.request"),
+  workspaceId: z.string(),
+  notifications: WorkspaceNotificationsSchema,
   requestId: z.string(),
 });
 
@@ -1779,6 +1785,15 @@ export const SetDaemonConfigRequestMessageSchema = z.object({
   type: z.literal("set_daemon_config_request"),
   requestId: z.string(),
   config: MutableDaemonConfigPatchSchema,
+export const DaemonNotificationRulesGetRequestSchema = z.object({
+  type: z.literal("daemon.notifications.rules.get.request"),
+  requestId: z.string(),
+});
+
+export const DaemonNotificationRulesSetRequestSchema = z.object({
+  type: z.literal("daemon.notifications.rules.set.request"),
+  requestId: z.string(),
+  replyRules: z.array(ReplyRuleSchema),
 });
 
 export const ReadProjectConfigRequestMessageSchema = z.object({
@@ -2284,6 +2299,15 @@ export const WorkspaceTitleSetResponsePayloadSchema = z.object({
 export const WorkspaceTitleSetResponseSchema = z.object({
   type: z.literal("workspace.title.set.response"),
   payload: WorkspaceTitleSetResponsePayloadSchema,
+export const WorkspaceNotificationsSetResponseSchema = z.object({
+  type: z.literal("workspace.notifications.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    workspaceId: z.string(),
+    accepted: z.boolean(),
+    notifications: WorkspaceNotificationsSchema.nullable(),
+    error: z.string().nullable(),
+  }),
 });
 
 export const AgentMetadataUpdateResponseSchema = z.object({
@@ -2823,6 +2847,7 @@ export const CreatePaseoWorktreeRequestSchema = z.object({
   // checkoutSource shipped in v0.2.0-beta.1. Remove after 2027-01-17 once the
   // supported client floor is >= v0.2.0.
   githubPrNumber: z.number().int().positive().optional(),
+  notifications: WorkspaceNotificationsSchema.optional(),
   requestId: z.string(),
 });
 
@@ -2931,6 +2956,8 @@ export const WorkspaceCreateRequestSchema = z.object({
   // Optional user-set title applied to the created workspace.
   title: z.string().optional(),
   metadata: EntityMetadataSchema.optional(),
+  // COMPAT(workspaceNotifications): old clients omit this and receive the default policy.
+  notifications: WorkspaceNotificationsSchema.optional(),
   // Optional prompt context for workspace-level name/branch generation.
   firstAgentContext: FirstAgentContextSchema.optional(),
   // Retained for wire parsing; public internal creation is no longer supported.
@@ -3532,6 +3559,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceTitleSetRequestSchema,
   AgentMetadataUpdateRequestSchema,
   WorkspaceMetadataUpdateRequestSchema,
+  WorkspaceNotificationsSetRequestSchema,
   WorkspacePinSetRequestSchema,
   WorkspaceBaseBranchSetRequestSchema,
   WorkspaceLabelListRequestSchema,
@@ -3548,6 +3576,8 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   DaemonGetStatusRequestSchema,
   DaemonGetPairingOfferRequestSchema,
   DaemonConfigReloadRequestSchema,
+  DaemonNotificationRulesGetRequestSchema,
+  DaemonNotificationRulesSetRequestSchema,
   HubManagementDaemonConnectRequestSchema,
   HubManagementDaemonGetStatusRequestSchema,
   HubManagementDaemonDisconnectRequestSchema,
@@ -3927,6 +3957,10 @@ export const ServerInfoStatusPayloadSchema = z
         terminalCollection: z.boolean().optional(),
         // COMPAT(workspaceBaseBranch): added after v0.11.2, remove gate after 2027-10-14.
         workspaceBaseBranch: z.boolean().optional(),
+        // COMPAT(workspaceNotifications): added before delivery support; advertise only once
+        // workspace notification suppression is implemented.
+        workspaceNotifications: z.boolean().optional(),
+        replyRuleFiltering: z.boolean().optional(),
         // COMPAT(workspaceSetupRun): added in v0.8.0, remove gate after 2027-09-02.
         workspaceSetupRun: z.boolean().optional(),
         // COMPAT(workspaceTerminals): added in v0.8.0, remove gate after 2027-09-05.
@@ -4441,6 +4475,8 @@ export const WorkspaceDescriptorPayloadSchema = z
     // its input and offer a "reset to branch name" action. Null means the name
     // is derived from the branch/directory.
     title: z.string().nullable().optional(),
+    // COMPAT(workspaceNotifications): added before delivery support; old daemons omit it.
+    notifications: WorkspaceNotificationsSchema.optional(),
     // COMPAT(workspacePinning): added in v0.1.107, remove optional after 2027-01-12.
     pinnedAt: z.string().nullable().optional(),
     // COMPAT(workspaceLabels): added in v0.5.0, remove optional after 2027-08-14.
@@ -5468,6 +5504,22 @@ export const GetDaemonConfigResponseMessageSchema = z.object({
       config: MutableDaemonConfigSchema,
     })
     .passthrough(),
+});
+
+export const DaemonNotificationRulesGetResponseSchema = z.object({
+  type: z.literal("daemon.notifications.rules.get.response"),
+  payload: z.object({
+    requestId: z.string(),
+    replyRules: z.array(ReplyRuleSchema),
+  }),
+});
+
+export const DaemonNotificationRulesSetResponseSchema = z.object({
+  type: z.literal("daemon.notifications.rules.set.response"),
+  payload: z.object({
+    requestId: z.string(),
+    replyRules: z.array(ReplyRuleSchema),
+  }),
 });
 
 export const DaemonGetStatusResponseSchema = z.object({
@@ -7503,6 +7555,8 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   DaemonGetStatusResponseSchema,
   DaemonGetPairingOfferResponseSchema,
   DaemonConfigReloadResponseSchema,
+  DaemonNotificationRulesGetResponseSchema,
+  DaemonNotificationRulesSetResponseSchema,
   HubManagementDaemonConnectResponseSchema,
   HubManagementDaemonGetStatusResponseSchema,
   HubManagementDaemonDisconnectResponseSchema,
@@ -7526,6 +7580,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   WorkspaceTitleSetResponseSchema,
   AgentMetadataUpdateResponseSchema,
   WorkspaceMetadataUpdateResponseSchema,
+  WorkspaceNotificationsSetResponseSchema,
   WorkspacePinSetResponseSchema,
   WorkspaceBaseBranchSetResponseSchema,
   WorkspaceRecoveryInspectResponseSchema,
@@ -7734,6 +7789,9 @@ export type ProjectRenameResponse = z.infer<typeof ProjectRenameResponseSchema>;
 export type ProjectIconSetResponse = z.infer<typeof ProjectIconSetResponseSchema>;
 export type ProjectRemoveResponse = z.infer<typeof ProjectRemoveResponseSchema>;
 export type WorkspaceTitleSetResponse = z.infer<typeof WorkspaceTitleSetResponseSchema>;
+export type WorkspaceNotificationsSetResponse = z.infer<
+  typeof WorkspaceNotificationsSetResponseSchema
+>;
 export type WorkspaceTitleSetResponsePayload = z.infer<
   typeof WorkspaceTitleSetResponsePayloadSchema
 >;
@@ -7898,6 +7956,10 @@ export type ProjectRenameRequest = z.infer<typeof ProjectRenameRequestSchema>;
 export type ProjectIconSetRequest = z.infer<typeof ProjectIconSetRequestSchema>;
 export type ProjectRemoveRequest = z.infer<typeof ProjectRemoveRequestSchema>;
 export type WorkspaceTitleSetRequest = z.infer<typeof WorkspaceTitleSetRequestSchema>;
+export type WorkspaceNotificationsSetRequest = z.infer<
+  typeof WorkspaceNotificationsSetRequestSchema
+>;
+export type WorkspaceNotifications = z.infer<typeof WorkspaceNotificationsSchema>;
 export type WorkspacePinSetRequest = z.infer<typeof WorkspacePinSetRequestSchema>;
 export type AgentMetadataUpdateRequest = z.infer<typeof AgentMetadataUpdateRequestSchema>;
 export type WorkspaceMetadataUpdateRequest = z.infer<typeof WorkspaceMetadataUpdateRequestSchema>;
@@ -8136,6 +8198,7 @@ export const WSHelloMessageSchema = z.object({
     .object({
       voice: z.boolean().optional(),
       [CLIENT_CAPS.helloRejection]: z.boolean().optional(),
+      [CLIENT_CAPS.replyRuleNotifications]: z.boolean().optional(),
       pushNotifications: z.boolean().optional(),
       [CLIENT_CAPS.explicitEventSubscriptions]: z.boolean().optional(),
       [CLIENT_CAPS.allProviders]: z.boolean().optional(),

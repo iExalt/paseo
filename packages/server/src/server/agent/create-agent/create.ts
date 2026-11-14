@@ -31,6 +31,7 @@ import { foldFeatureValues, type LegacyFeatureValues } from "../option-controls.
 
 /** How a workspace this creation makes inherits its creator's visibility. */
 interface McpWorkspaceIntent {
+  notifications?: "on" | "off";
   background?: boolean;
   callerWorkspaceId?: string;
 }
@@ -52,7 +53,7 @@ export interface CreateAgentCommandDependencies {
 export type EnsureWorkspaceForCreate = (
   cwd: string,
   firstAgentContext?: FirstAgentContext,
-  context?: { background?: boolean; callerWorkspaceId?: string },
+  context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
 ) => Promise<string>;
 
 export interface CreateAgentFromSessionInput {
@@ -84,6 +85,7 @@ export interface CreateAgentFromMcpInput {
   config?: Partial<AgentSessionConfig>;
   cwd?: string;
   workspaceId?: string;
+  notifications?: "on" | "off";
   thinking?: string;
   providerOptions?: ProviderOptions;
   labels?: Record<string, string>;
@@ -116,6 +118,7 @@ export interface CreateAgentFromMcpInput {
     refName?: string;
     action?: "branch-off" | "checkout";
     githubPrNumber?: number;
+    notifications?: "on" | "off";
   };
 }
 
@@ -297,6 +300,7 @@ async function resolveMcpCreateAgent(
     : null;
   const cwd = resolveMcpInitialCwd(input, parentAgent);
   const workspaceIntent = {
+    notifications: input.notifications,
     background: inheritWorkspaceBackground(input.background, parentAgent),
     callerWorkspaceId: parentAgent?.workspaceId,
   };
@@ -573,6 +577,7 @@ async function resolveMcpCwd(params: {
       refName: worktree.refName,
       action: worktree.action,
       githubPrNumber: worktree.githubPrNumber,
+      notifications: worktree.notifications,
       firstAgentContext: { prompt: params.initialPrompt },
 
       paseoHome: dependencies.paseoHome,

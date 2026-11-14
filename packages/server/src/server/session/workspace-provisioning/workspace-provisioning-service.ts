@@ -54,6 +54,7 @@ export interface CreateWorktreeWorkspaceInput {
   baseBranch: string | null;
   title: string | null;
   metadata?: Record<string, JsonValue>;
+  notifications?: "on" | "off";
   expectsInitialAgent?: boolean;
   untrustedSource?: UntrustedWorkspaceSource;
   background?: boolean;
@@ -77,6 +78,7 @@ export interface WorkspaceProvisioningService {
       metadata?: Record<string, JsonValue>;
       background?: boolean;
       callerWorkspaceId?: string;
+      notifications?: "on" | "off";
     },
   ): Promise<PersistedWorkspaceRecord>;
   createWorkspaceForWorktree(
@@ -260,6 +262,7 @@ export function createWorkspaceProvisioningService(deps: {
       metadata?: Record<string, JsonValue>;
       background?: boolean;
       callerWorkspaceId?: string;
+      notifications?: "on" | "off";
     },
   ): Promise<PersistedWorkspaceRecord> {
     const normalizedCwd = resolve(cwd);
@@ -324,6 +327,7 @@ export function createWorkspaceProvisioningService(deps: {
       metadata: input.metadata,
       createdAt: timestamp,
       updatedAt: timestamp,
+      notifications: input.notifications,
       ...(input.untrustedSource ? { untrustedSource: input.untrustedSource } : {}),
       ...(await resolveCreationMetadata(input)),
     });
