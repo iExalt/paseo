@@ -70,6 +70,8 @@ test("only fork-owned workflows are installed", () => {
   assert.match(
     workflow.jobs.resolve.steps.at(-1).run,
   );
+});
+
 const gradleResourceWatchPath = fileURLToPath(
   new URL("scripts/gradle-resource-watch.sh", repoRoot),
 );
