@@ -149,6 +149,27 @@ export async function openSubagentsTrack(page: Page): Promise<void> {
     await page.getByTestId("subagents-track-header").click();
   }
   await expect(panel).toBeVisible({ timeout: 30_000 });
+  await showFinishedSubagents(page);
+}
+
+/** The track folds finished children away; most flows act on one, so they reveal them first. */
+export async function showFinishedSubagents(page: Page): Promise<void> {
+  // By test ID rather than inside the panel: on compact the track opens as a sheet.
+  const show = page
+    .getByTestId("subagents-track-show-finished")
+    .filter({ visible: true, hasText: /^Show \d+ finished$/ });
+  if ((await show.count()) > 0) await show.click();
+}
+
+/** A child of `parentId` that stays running for the mock stream's ten seconds. */
+export async function seedRunningSubagent(
+  workspace: Pick<SeededWorkspace, "client" | "repoPath" | "workspaceId">,
+  input: { parentId: string; title: string },
+): Promise<{ id: string }> {
+  const child = await seedSubagent(workspace, input);
+  await workspace.client.sendAgentMessage(child.id, "Keep working.");
+  await workspace.client.waitForAgentUpsert(child.id, (snapshot) => snapshot.status === "running");
+  return { id: child.id };
 }
 
 /**
@@ -162,6 +183,11 @@ export async function openSubagentFromCompactTrack(
 ): Promise<void> {
   await track.getByTestId("subagents-track-header").click();
   const row = page.getByTestId(`subagents-track-row-${childId}`);
+  // The child may be folded behind "Show N finished"; wait for the list before revealing it.
+  await expect(row.or(page.getByTestId("subagents-track-show-finished")).first()).toBeVisible({
+    timeout: 30_000,
+  });
+  await showFinishedSubagents(page);
   // Tap the row once the sheet has brought it on screen, as a finger would. Clicking it while it is
   // still below the fold makes Playwright scroll the sheet host, and every sheet then docks short.
   await expect(row).toBeInViewport();

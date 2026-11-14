@@ -1,14 +1,15 @@
 import type { AgentAddress } from "@getpaseo/protocol/addresses";
 import { useHosts } from "@/runtime/host-runtime";
-import { useCallback, useMemo, type ReactElement, type ReactNode } from "react";
+import { useCallback, useMemo, useState, type ReactElement, type ReactNode } from "react";
 import { Text, View } from "react-native";
 import { useTranslation } from "react-i18next";
-import { Archive, Unlink } from "lucide-react-native";
+import { Archive, ChevronDown, ChevronRight, Unlink } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useProviderIcon } from "@/components/provider-icons";
 import { ComposerTrackActions, ComposerTrackPill, ComposerTrackRow } from "@/composer/tracks";
 import { mutedIconColorMapping } from "@/components/ui/icon-button-chrome";
 import { ToolbarButton, paneContentToolbarIconSize } from "@/components/ui/pane-content-toolbar";
+import { useMenuContext } from "@/components/ui/menu";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isNative } from "@/constants/platform";
 import {
@@ -26,10 +27,14 @@ import {
   buildSubagentPillPresentation,
   buildSubagentRowPresentationData,
   countFinishedSubagents,
+  doneSubagentIds,
+  foldSubagentRows,
 } from "./track-presentation";
 
 const ThemedArchive = withUnistyles(Archive);
 const ThemedUnlink = withUnistyles(Unlink);
+const ThemedChevronDown = withUnistyles(ChevronDown);
+const ThemedChevronRight = withUnistyles(ChevronRight);
 
 const foregroundColorMapping = (theme: Theme) => ({ color: theme.colors.foreground });
 const foregroundMutedColorMapping = (theme: Theme) => ({
@@ -111,18 +116,15 @@ export function SubagentsTrack({
           />
         </ComposerTrackActions>
       ) : null}
-      {rows.map((row, index) => (
-        <SubagentsTrackRow
-          key={row.kind === "paseo" ? `${row.address.serverId}:${row.id}` : row.id}
-          row={row}
-          serverId={serverId}
-          onOpenSubagent={onOpenSubagent}
-          onOpenProviderSubagent={onOpenProviderSubagent}
-          sheetTabId={sheets[index]?.tab.tabId ?? null}
-          onArchiveSubagent={onArchiveSubagent}
-          onDetachSubagent={onDetachSubagent}
-        />
-      ))}
+      <SubagentsTrackRows
+        rows={rows}
+        serverId={serverId}
+        onOpenSubagent={onOpenSubagent}
+        onOpenProviderSubagent={onOpenProviderSubagent}
+        sheetTabFor={sheetTabFor}
+        onArchiveSubagent={onArchiveSubagent}
+        onDetachSubagent={onDetachSubagent}
+      />
     </ComposerTrackPill>
   );
 }
@@ -177,6 +179,96 @@ function ArchiveFinishedRow({
       disabled={disabled}
       // Progress and the retry count land on this row, so the panel is where the result of
       // pressing it shows up. Dismissing would hide the thing the press produces.
+      closeOnSelect={false}
+      onPress={onPress}
+    >
+      {renderRow}
+    </ComposerTrackRow>
+  );
+}
+
+/**
+ * The rows, with the children that were done when the panel opened folded behind a toggle. The
+ * snapshot is retaken each time the panel opens, so the list stays still while it is in use.
+ */
+function SubagentsTrackRows({
+  rows,
+  sheetTabFor,
+  ...rowProps
+}: Omit<SubagentsTrackRowProps, "row" | "sheetTabId"> & {
+  rows: SubagentRow[];
+  sheetTabFor: (row: SubagentRow) => SheetTab | null;
+}): ReactElement {
+  const { open } = useMenuContext("SubagentsTrack");
+  const [foldedIds, setFoldedIds] = useState(() => doneSubagentIds(rows));
+  const [showDone, setShowDone] = useState(false);
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setFoldedIds(doneSubagentIds(rows));
+      setShowDone(false);
+    }
+  }
+  const toggleDone = useCallback(() => setShowDone((shown) => !shown), []);
+  const { live, done } = foldSubagentRows(rows, foldedIds);
+  const renderRow = (row: SubagentRow) => (
+    <SubagentsTrackRow
+      key={row.kind === "paseo" ? `${row.address.serverId}:${row.id}` : row.id}
+      row={row}
+      sheetTabId={sheetTabFor(row)?.tab.tabId ?? null}
+      {...rowProps}
+    />
+  );
+
+  return (
+    <>
+      {live.map(renderRow)}
+      {done.length > 0 ? (
+        <ShowDoneRow count={done.length} shown={showDone} onPress={toggleDone} />
+      ) : null}
+      {showDone ? done.map(renderRow) : null}
+    </>
+  );
+}
+
+/** Reveals the children that are done, which the track folds away so the live ones stay in view. */
+function ShowDoneRow({
+  count,
+  shown,
+  onPress,
+}: {
+  count: number;
+  shown: boolean;
+  onPress: () => void;
+}): ReactElement {
+  const { t } = useTranslation();
+  const label = shown ? t("subagents.hideFinished") : t("subagents.showFinished", { count });
+
+  const renderRow = useCallback(
+    ({ active }: { active: boolean }) => {
+      const uniProps = active ? foregroundColorMapping : foregroundMutedColorMapping;
+      return (
+        <>
+          {shown ? (
+            <ThemedChevronDown size={ROW_ICON_SIZE} uniProps={uniProps} />
+          ) : (
+            <ThemedChevronRight size={ROW_ICON_SIZE} uniProps={uniProps} />
+          )}
+          <Text style={styles.rowLabel} numberOfLines={1}>
+            {label}
+          </Text>
+        </>
+      );
+    },
+    [label, shown],
+  );
+
+  return (
+    <ComposerTrackRow
+      accessibilityLabel={label}
+      testID="subagents-track-show-finished"
+      // The rows it reveals land in this panel, so dismissing would hide them.
       closeOnSelect={false}
       onPress={onPress}
     >
