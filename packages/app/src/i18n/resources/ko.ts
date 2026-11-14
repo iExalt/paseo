@@ -3080,6 +3080,13 @@ export const ko: TranslationResources = {
       },
       pairDevices: {
         rowTitle: "기기 페어링",
+        keepAwake: {
+          title: "릴레이를 위해 이 Mac 깨어 있게 하기",
+          hint: "릴레이가 켜져 있는 동안 전원 연결 시 잠자기를 막아 원격 기기가 이 Mac에 연결할 수 있게 합니다. 전원 연결 중에는 전력 사용과 발열이 늘어납니다.",
+          activeHint: "릴레이가 켜져 있는 동안 전원에 연결되면 이 Mac을 깨어 있게 합니다",
+          waitingHint: "릴레이가 켜져 있을 때 적용됩니다",
+          updateFailed: "깨어 있기 설정을 업데이트할 수 없습니다",
+        },
       },
       skills: {
         ...en.settings.host.skills,

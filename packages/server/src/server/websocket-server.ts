@@ -205,6 +205,8 @@ interface WebSocketServerConfig {
   getHostnames?: () => HostnamesConfig | undefined;
   daemonStatusRpc?: boolean;
   relayConfig?: boolean;
+  /** True when this daemon can hold relay.keepAwake's sleep assertion. */
+  relayKeepAwake?: boolean;
   startPaused?: boolean;
   /** Lets CLI sends and creates with notifyOnFinish register finish callbacks. */
   finishSubscriptions?: () => FinishSubscriptions;
@@ -683,6 +685,7 @@ export class VoiceAssistantWebSocketServer {
   private connectionLifecycle: "starting" | "accepting" | "stopping" = "accepting";
   private readonly advertiseDaemonStatusRpc: boolean;
   private readonly advertiseRelayConfig: boolean;
+  private readonly advertiseRelayKeepAwake: boolean;
   private readonly directorySync = new DirectorySyncService();
   private readonly pluginRuntime: SessionOptions["pluginRuntime"];
   private readonly orchestrationSkills: SessionOptions["orchestrationSkills"];
@@ -760,6 +763,7 @@ export class VoiceAssistantWebSocketServer {
     this.workspaceArchiveOperations = resolveWorkspaceArchiveOperations(workspaceArchiveOperations);
     this.advertiseDaemonStatusRpc = wsConfig.daemonStatusRpc !== false;
     this.advertiseRelayConfig = wsConfig.relayConfig !== false;
+    this.advertiseRelayKeepAwake = wsConfig.relayKeepAwake === true;
     this.connectionLifecycle = wsConfig.startPaused === true ? "starting" : "accepting";
     this.finishSubscriptions = wsConfig.finishSubscriptions;
     this.serverId = serverId;
@@ -2205,6 +2209,8 @@ export class VoiceAssistantWebSocketServer {
         speechSettings: true,
         // COMPAT(relayConfig): added in v0.2.6, remove gate after 2027-01-31.
         ...(this.advertiseRelayConfig ? { relayConfig: true } : {}),
+        // Platform capability (macOS keep-awake controller), not a version gate; keep it.
+        ...(this.advertiseRelayKeepAwake ? { relayKeepAwake: true } : {}),
         // COMPAT(pushTokenRevocation): added in v0.3.2, remove gate after 2027-02-10.
         pushTokenRevocation: true,
         // COMPAT(pushNotificationPreferences): added in v0.18.0, remove gate after 2027-06-01.

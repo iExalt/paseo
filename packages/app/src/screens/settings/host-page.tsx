@@ -67,6 +67,7 @@ import { RestartRecoveryRow } from "./restart-recovery-card";
 import { IdleRuntimeCleanupRow } from "./idle-runtime-cleanup-card";
 import { ReplyRulesSection } from "./reply-rules-section";
 import { restartDaemonFromSettings, updateDaemonFromSettings } from "./daemon-lifecycle";
+import { RelayKeepAwakeCard } from "./relay-keep-awake-card";
 
 const ThemedRestart = withUnistyles(RotateCw);
 const ThemedUpdate = withUnistyles(ArrowUpToLine);
@@ -239,7 +240,12 @@ export function HostDevicesPage({ serverId }: { serverId: string }) {
     return <HostNotFound />;
   }
 
-  return <WaysToConnect serverId={serverId} />;
+  return (
+    <>
+      <WaysToConnect serverId={serverId} />
+      <RelayKeepAwakeCard serverId={serverId} />
+    </>
+  );
 }
 
 export function HostToolsPage({ serverId }: { serverId: string }) {

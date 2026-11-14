@@ -255,6 +255,7 @@ function createServer(options?: {
   speechReadiness?: SpeechReadinessSnapshot | null;
   logger?: ReturnType<typeof createLogger>;
   startPaused?: boolean;
+  relayKeepAwake?: boolean;
   auth?: { password: string; localCredential: () => string | null };
 }) {
   const speechReadiness = options?.speechReadiness ?? null;
@@ -284,7 +285,11 @@ function createServer(options?: {
     createStub<DownloadTokenStore>({}),
     "/tmp/paseo-test",
     createStub<DaemonConfigStore>(daemonConfigStore),
-    { allowedOrigins: new Set(), startPaused: options?.startPaused },
+    {
+      allowedOrigins: new Set(),
+      startPaused: options?.startPaused,
+      relayKeepAwake: options?.relayKeepAwake,
+    },
     createWorkspaceAutoNameStub(),
     createWorkspaceRuntimeStore(),
     options?.auth,
@@ -1169,7 +1174,21 @@ describe("relay external socket reconnect behavior", () => {
     expect(serverInfo.features?.["terminal-size-ownership"]).toBe(true);
     expect(serverInfo.features?.["terminal-grapheme-widths"]).toBe(true);
     expect(serverInfo.features?.agentTurnIdentity).toBeUndefined();
+    expect(serverInfo.features?.relayKeepAwake).toBeUndefined();
     expect(serverInfo.permissions).toEqual(DAEMON_PERMISSIONS);
+    await server.close();
+  });
+
+  test("advertises relay keep-awake only when the daemon can hold the assertion", async () => {
+    const server = createServer({ relayKeepAwake: true });
+
+    const serverInfo = await attachRelayAndHello({
+      server,
+      socket: new MockSocket(),
+      clientId: "cid-relay-keep-awake",
+    });
+
+    expect(serverInfo.features?.relayKeepAwake).toBe(true);
     await server.close();
   });
 
