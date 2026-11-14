@@ -1386,6 +1386,23 @@ export class AgentManager {
     return this.timelineStore.fetch(id, options);
   }
 
+  getNotificationPreview(id: string) {
+    if (!this.timelineStore.has(id)) return undefined;
+    const page = this.fetchTimeline(id, { direction: "tail", limit: 40 });
+    const row = page.rows.findLast((entry) => entry.item.type === "assistant_message");
+    if (!row || row.item.type !== "assistant_message" || !row.item.text) return undefined;
+    return {
+      v: 1 as const,
+      kind: "assistant" as const,
+      epoch: page.epoch,
+      seqStart: row.seqStart,
+      seqEnd: row.seqEnd,
+      timestamp: row.timestamp,
+      text: row.item.text,
+      truncated: false,
+    };
+  }
+
   listProviderSubagents(parentAgentId: string): ProviderSubagentDescriptor[] {
     this.requirePublicAgent(parentAgentId);
     return this.providerSubagents.list(parentAgentId);

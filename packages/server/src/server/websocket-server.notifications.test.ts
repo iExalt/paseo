@@ -111,6 +111,7 @@ function createServer(
     setAgentAttentionCallback: vi.fn(),
     getAgent: vi.fn(() => ({ workspaceId: WORKSPACE_ID, pendingPermissions: new Map() })),
     getLastAssistantMessage: vi.fn(async () => null),
+    getNotificationPreview: vi.fn(() => undefined),
     getMetricsSnapshot: vi.fn(() => ({
       total: 0,
       byLifecycle: {},

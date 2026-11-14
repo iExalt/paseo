@@ -21,6 +21,10 @@ export const en = {
       "Clears cookies and site data for every web view in Paseo, including browser tabs.",
   },
   nativeNotifications: {
+    preview: {
+      label: "From notification",
+      truncated: "Preview only. The full conversation will appear when the host connects.",
+    },
     sound: "Sound and alerts",
     soundHint: "Choose how Paseo notifications sound and appear",
     open: "Open",

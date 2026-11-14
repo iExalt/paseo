@@ -3,6 +3,7 @@ import type { NotificationEpisode } from "./lifecycle-store.js";
 import type pino from "pino";
 import { randomUUID } from "node:crypto";
 import { encodeAndroidAgentTag } from "@getpaseo/protocol/android-notification-tag";
+import { boundNotificationPreview } from "@getpaseo/protocol/notification-preview";
 
 export interface PushPayload {
   title: string;
@@ -219,7 +220,15 @@ export class PushService {
 
 function toExpoMessage(token: string, payload: PushPayload, tag?: string | null): ExpoPushMessage {
   const ordinary = boundNotificationPreview(
+    {
+      to: token,
+      title: payload.title,
+      body: payload.body,
+      data: payload.data,
       sound: "default" as const,
+    },
+    4_000,
+  );
   if (!tag) return ordinary;
   const tagged = { ...ordinary, tag };
   return new TextEncoder().encode(JSON.stringify(tagged)).byteLength <= 4_000 ? tagged : ordinary;

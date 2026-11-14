@@ -4,7 +4,7 @@ import type { BottomAnchorTransportBehavior } from "./strategy";
 export type BottomAnchorMode = "sticky-bottom" | "detached";
 
 export interface BottomAnchorRouteRequest {
-  reason: "initial-entry" | "resume";
+  reason: "initial-entry" | "resume" | "notification-entry";
   agentId: string;
   requestKey: string;
 }
@@ -228,7 +228,11 @@ function shouldRequireRouteRequestConfirmation(input: {
   if (!input.request) {
     return false;
   }
-  if (input.request.reason !== "initial-entry" && input.request.reason !== "resume") {
+  if (
+    input.request.reason !== "initial-entry" &&
+    input.request.reason !== "resume" &&
+    input.request.reason !== "notification-entry"
+  ) {
     return false;
   }
   if (input.measurementState.containerKey !== "web-partial-virtualized") {
