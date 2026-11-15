@@ -5409,7 +5409,13 @@
       "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.\nOriginal author, message and intentional replay mapping.",
       "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.\nCompare original/replayed metadata and mapping in later replay; no history drop authorized.",
       "upstream": [],
-      "source_paths": []
+      "source_paths": [],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "1f458329cf00dad1af1e2bca7fd241334e7542a6",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "da644bb88666da5cba54cc6a47d42d0fda14642c",
@@ -5425,7 +5431,13 @@
       "retain": "Original author, message and intentional replay mapping.\nPreserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.",
       "cheapest_later_proof": "Compare original/replayed metadata and mapping in later replay; no history drop authorized.\nExisting affected invariant tests during later exact-tree verification; no runtime proof in this inventory.",
       "upstream": [],
-      "source_paths": []
+      "source_paths": [],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "a8f81e48a11d6fd4121a0f510766fae7774ad4bd",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "7d8916bfd005de1546497b1bdab192ddb85399e3",
@@ -5488,9 +5500,9 @@
       "source_paths": []
     },
     {
-      "sha": "afdfd2947f87efdf0953d18d41f5584487074a4f",
+      "sha": "124587781cccc6cdedcae67c370cf5d2bdfc1178",
       "subject": "ci(rebase): synchronize upstream and replay reviewed resolutions",
-      "patch_id": "8d8b07eb6124bf3aee8337eb5917a89228698d94",
+      "patch_id": "0467a97e037e1b6e2cb7e9ab6f8990bc5a3c97ec",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -5771,7 +5783,13 @@
         "packages/app/src/panels/agent-panel.tsx",
         "packages/app/src/stores/session-store-hooks/use-retained-session-selector.ts",
         "packages/app/src/workspace-tabs/agent-visibility.test.ts"
-      ]
+      ],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "5c9c827c05bba7fcd4667426e151059a1591be95",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "cb8e1efdf6f6712995050a924e188d0aca4807c4",
@@ -5913,7 +5931,13 @@
       "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.\nKeep one-to-one history, including removal commits; no old WebView renderer resurrection.",
       "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.\nInspect deleted files and removal witness 73d599696; later exact-tree comparison and terminal path checks.",
       "upstream": ["6376f2bf409405b9857c03262381655433a6d0ee"],
-      "source_paths": ["packages/app/src/terminal"]
+      "source_paths": ["packages/app/src/terminal"],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "95319dad1b05bf2fa3d870cee52d0dfd83a70d08",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "b22de935e31b25b06bfdbf17d5f22edfb1ad452c",
@@ -6146,7 +6170,13 @@
         "packages/app/modules/paseo-hardware-keyboard",
         "packages/app/src/terminal/native-renderer/hardware-terminal-keys.ts",
         "packages/app/src/terminal/native-renderer/terminal-input.native.tsx"
-      ]
+      ],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "9ee7b6f3a2c3babffa86a870b7fa140b0c3fe1a0",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "bb4edf6b792ec10f8c01746292d58ff19208f420",
@@ -6256,7 +6286,13 @@
         "packages/app/modules/paseo-terminal",
         "packages/app/src/components/terminal-emulator-native-grid.native.tsx",
         "packages/app/src/terminal/native-renderer/terminal-row-model.ts"
-      ]
+      ],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "d521612febc3586eacb2d65dea776a7cb47acc26",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "5588838ec16ab23d678b1258f0939bb62feb15c2",
@@ -7005,7 +7041,13 @@
         "packages/app/src/agent-stream/presentation.ts",
         "packages/app/src/agent-stream/turn-collapse/model.ts",
         "packages/app/src/tool-calls/paseo-send.ts"
-      ]
+      ],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "6b4c9b28a74f8de2a87b8823135d6f095e1b9a2e",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "d95a50df2bd354ca6574bb7409d2c773ce59845b",
@@ -7207,7 +7249,13 @@
         "packages/app/e2e/browser/explorer-resize-performance.spec.ts",
         "packages/app/package.json",
         "patches/react-native-unistyles+3.8.1.patch"
-      ]
+      ],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "3e86701cc9496248793e89d10019bdc885b1bc04",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "9755b49042b84359b0679a9951ed28c20c67f263",
@@ -7277,7 +7325,13 @@
         "packages/app/src/agent-stream/reading-anchor.ts",
         "packages/app/src/agent-stream/strategy-web.tsx",
         "packages/app/src/tool-calls/expansion.ts"
-      ]
+      ],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "c7b1e70f39249a42d1b4027b4cb24e22ea35fe60",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "fff14240619cd393ba1b09d9e1ee85908ccfffed",
@@ -7325,7 +7379,7 @@
       "source_paths": []
     },
     {
-      "sha": "5d4634bad5a25d3dbc1f90eacf14c73a05b1c0cb",
+      "sha": "193005d38e50ea8fc39ae955d303ffdb2fd627c0",
       "subject": "chore(release): capture 0.28.0 packaging, dependencies and changelog",
       "patch_id": "01893a2af8753fcf39b87265a8b6f3f9a56a0e8d",
       "category": "partially superseded",
@@ -7342,7 +7396,13 @@
         "packages/app/e2e/browser/explorer-resize-performance.spec.ts",
         "packages/app/package.json",
         "patches/react-native-unistyles+3.8.1.patch"
-      ]
+      ],
+      "review_receipt": {
+        "upstream": "c1d7d56b71960bca17ce86f8d358445b6135b809",
+        "patch_id": "01893a2af8753fcf39b87265a8b6f3f9a56a0e8d",
+        "decision": "retain",
+        "evidence": "https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218"
+      }
     },
     {
       "sha": "a6adbed92f132f7c865e563f829f6c9342ada58f",
@@ -7358,9 +7418,9 @@
       "source_paths": []
     },
     {
-      "sha": "cb6ccc43a5983d24d30af819a7ec6c6fa6a85557",
+      "sha": "f989bfa3d71aaa3f78a951dcb42b9c8cc9f86d09",
       "subject": "chore(release): bound release-please to curated 0.28.0 history",
-      "patch_id": "0fa2875587f6db6bf0077fc41f2cc6175c868fd3",
+      "patch_id": "8ec2a0b2b80ed361a947427337f84850eeff256a",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {},
