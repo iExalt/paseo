@@ -8,7 +8,7 @@ const message: StreamItem = {
   text: "First\n\nSecond",
   timestamp: new Date(0),
 };
-const prompt: StreamItem = {
+const userPrompt: StreamItem = {
   kind: "user_message",
   id: "p",
   text: "Fix it",
@@ -40,10 +40,10 @@ describe("whole-message spacing", () => {
     expect(getGapBetweenStreamItems(message, { ...message, id: "next" })).toBeGreaterThan(0);
   });
   it("sets a prompt the same distance above whatever answers it", () => {
-    const belowPrompt = getGapBetweenStreamItems(prompt, thought);
+    const belowPrompt = getGapBetweenStreamItems(userPrompt, thought);
     expect(belowPrompt).toBeGreaterThan(0);
-    expect(getGapBetweenStreamItems(prompt, message)).toBe(belowPrompt);
-    expect(getGapBetweenStreamItems(prompt, summary)).toBe(belowPrompt);
+    expect(getGapBetweenStreamItems(userPrompt, message)).toBe(belowPrompt);
+    expect(getGapBetweenStreamItems(userPrompt, summary)).toBe(belowPrompt);
   });
   it("spaces a turn's summary row like the work rows it stands for", () => {
     expect(getGapBetweenStreamItems(summary, message)).toBe(
@@ -82,14 +82,14 @@ describe("received message spacing", () => {
       },
     },
   } as StreamItem;
-  const prompt: StreamItem = { kind: "user_message", id: "prompt", text: "Go", timestamp: at };
+  const turnPrompt: StreamItem = { kind: "user_message", id: "prompt", text: "Go", timestamp: at };
 
   it("keeps a turn's gap above the row and stays close to the rest of its turn", () => {
     expect(getGapBetweenStreamItems(message, received("r1", "t1"))).toBe(16);
-    expect(getGapBetweenStreamItems(prompt, received("r1", "t1"))).toBe(16);
+    expect(getGapBetweenStreamItems(turnPrompt, received("r1", "t1"))).toBe(16);
     expect(getGapBetweenStreamItems(received("r1", "t1"), work)).toBe(4);
     expect(getGapBetweenStreamItems(received("r1", "t1"), received("r2", "t1"))).toBe(4);
     expect(getGapBetweenStreamItems(received("r1", "t0"), received("r2", "t1"))).toBe(16);
-    expect(getGapBetweenStreamItems(prompt, work)).toBe(16);
+    expect(getGapBetweenStreamItems(turnPrompt, work)).toBe(16);
   });
 });

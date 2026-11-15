@@ -86,7 +86,7 @@ export interface TerminalViewportState {
   firstRow: number;
   oldestRow: number;
   newestRow: number;
-  grid: TerminalCell[][];
+  grid: TerminalCellRow[];
   cursor: TerminalState["cursor"];
 }
 

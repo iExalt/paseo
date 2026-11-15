@@ -501,7 +501,9 @@ describe("toAgentPayload", () => {
     );
 
     expect(record.totalCostUsd).toBe(2.5);
-    expect(buildStoredAgentPayload(record, ["codex"]).lastUsage).toEqual({ totalCostUsd: 2.5 });
+    expect(buildStoredAgentPayload(record, ["codex"], ownOptionsOnly).lastUsage).toEqual({
+      totalCostUsd: 2.5,
+    });
   });
 
   it("omits lastUsage when not available", () => {

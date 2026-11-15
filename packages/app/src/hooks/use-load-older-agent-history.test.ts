@@ -185,6 +185,7 @@ describe("loadOlderAgentHistory", () => {
         projection: "projected",
         wholeTurns: true,
         mergeWindow: true,
+        timeout: 10_000,
       },
     ]);
   });

@@ -28,6 +28,8 @@ export class V2Harness {
   readonly prompts: string[] = [];
   readonly environments: Array<{ sessionID: string; variables: Record<string, string> }> = [];
   readonly mcpAdds: string[] = [];
+  readonly instructions: Array<Parameters<V2Api["session"]["instructions"]["entry"]["put"]>[0]> =
+    [];
   releases = 0;
   active = false;
   activeReads = 0;
@@ -153,7 +155,15 @@ export class V2Harness {
       environment: async (input) => {
         this.environments.push(input);
       },
-      instructions: { entry: { list: unexpected, put: unexpected, remove: unexpected } },
+      instructions: {
+        entry: {
+          list: unexpected,
+          put: async (input) => {
+            this.instructions.push(input);
+          },
+          remove: unexpected,
+        },
+      },
       prompt: async (input, options) => {
         const before = this.executions.length;
         await this.prompt(input, options);
