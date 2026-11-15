@@ -1329,8 +1329,14 @@ test("ledger drops exact stable identities and preserves retained signatures and
     {
       sha: kept,
       ...(await commitIdentity(seed, kept)),
-      category: "keep",
+      category: "partially superseded",
       reason: "Release boundary remains.",
+      review_receipt: {
+        upstream: fixture.upstreamSha,
+        patch_id: (await commitIdentity(seed, kept)).patch_id,
+        decision: "retain",
+        evidence: "https://example.invalid/review/immutable-snapshot",
+      },
     },
   ];
   mkdirSync(join(seed, "docs"), { recursive: true });
@@ -1414,6 +1420,30 @@ test("ledger fails closed before replay for partial, mismatched, ambiguous and s
       fixture.upstreamSha,
       /review required.*Inherited evidence/,
     ],
+    ...[
+      ["wrong target", { upstream: fixture.devSha }],
+      ["wrong patch", { patch_id: "1".repeat(40) }],
+      ["null patch", { patch_id: null }],
+      ["wrong decision", { decision: "drop" }],
+      ["missing evidence", { evidence: " " }],
+    ].map(([name, override]) => [
+      name,
+      [
+        {
+          ...row,
+          category: "partially superseded",
+          review_receipt: {
+            upstream: fixture.upstreamSha,
+            patch_id: identity.patch_id,
+            decision: "retain",
+            evidence: "https://example.invalid/review/immutable-snapshot",
+            ...override,
+          },
+        },
+      ],
+      fixture.upstreamSha,
+      /review required/,
+    ]),
     ["patch mismatch", [{ ...row, patch_id: "1".repeat(40) }], fixture.upstreamSha, /key mismatch/],
     [
       "subject mismatch",
