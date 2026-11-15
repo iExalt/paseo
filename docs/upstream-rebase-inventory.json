@@ -5888,9 +5888,9 @@
       "source_paths": []
     },
     {
-      "sha": "9371e7a9d22932922d6e48d1145c69a48dacec20",
+      "sha": "84d8270fab19410c9e399499bd5d71914ce9d3e8",
       "subject": "ci: release from release-please-action tags",
-      "patch_id": "912e7a0278d722d8d7837e1c2ebf5fa8e61587e6",
+      "patch_id": "8c65b072d495f76f20a748ecfad9108fdfa81302",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
