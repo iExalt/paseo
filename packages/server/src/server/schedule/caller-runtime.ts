@@ -96,7 +96,6 @@ function buildScheduleConfig(
   if (callerAgent?.provider === provider && callerAgent.config.providerOptions) {
     config.providerOptions = callerAgent.config.providerOptions;
   }
-  if (callerAgent?.config.featureValues) config.featureValues = callerAgent.config.featureValues;
   if (callerAgent?.config.systemPrompt) config.systemPrompt = callerAgent.config.systemPrompt;
   if (callerAgent?.config.mcpServers) config.mcpServers = callerAgent.config.mcpServers;
   return config;

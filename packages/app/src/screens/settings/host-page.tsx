@@ -477,7 +477,6 @@ function ConnectionsSection({ host }: { host: HostProfile }) {
           <View style={styles.confirmActions}>
             <Button
               variant="secondary"
-              size="sm"
               style={FLEX_1_STYLE}
               onPress={handleCancelConfirm}
               disabled={isRemovingConnection}
@@ -486,7 +485,6 @@ function ConnectionsSection({ host }: { host: HostProfile }) {
             </Button>
             <Button
               variant="destructive"
-              size="sm"
               style={FLEX_1_STYLE}
               onPress={handleConfirmRemove}
               disabled={isRemovingConnection}
@@ -553,12 +551,7 @@ function ConnectionRow({
         </Text>
       </View>
       <Text style={latencyTextStyle}>{latencyText}</Text>
-      <Button
-        variant="ghost"
-        size="sm"
-        textStyle={destructiveTextStyle}
-        onPress={handlePressRemove}
-      >
+      <Button variant="ghost" textStyle={destructiveTextStyle} onPress={handlePressRemove}>
         {t("settings.host.connections.removeAction")}
       </Button>
     </View>
@@ -676,7 +669,6 @@ function RestartDaemonCard({ host }: { host: HostProfile }) {
         </View>
         <Button
           variant="outline"
-          size="sm"
           leftIcon={restartIcon}
           onPress={handleRestart}
           disabled={isRestarting || !daemonClient || !isConnected}
@@ -696,7 +688,6 @@ function RestartDaemonCard({ host }: { host: HostProfile }) {
           </View>
           <Button
             variant="outline"
-            size="sm"
             onPress={handleRestartAndCloseTerminals}
             disabled={isRestarting || !daemonClient || !isConnected}
             testID="host-page-restart-close-terminals-button"
@@ -875,7 +866,6 @@ function UpdateDaemonCard({ host }: { host: HostProfile }) {
         {!desktopManaged ? (
           <Button
             variant="outline"
-            size="sm"
             leftIcon={updateIcon}
             onPress={handleUpdate}
             disabled={isUpdating || !daemonClient || !isConnected}
@@ -1052,7 +1042,6 @@ function AppendSystemPromptCard({ serverId }: { serverId: string }) {
           </View>
           <Button
             variant="outline"
-            size="sm"
             onPress={handleOpen}
             testID="host-page-append-system-prompt-edit"
           >
@@ -1079,7 +1068,6 @@ function AppendSystemPromptCard({ serverId }: { serverId: string }) {
           <View style={styles.appendPromptActions}>
             <Button
               variant="ghost"
-              size="sm"
               onPress={handleReset}
               disabled={!hasChanges || isSaving}
               testID="host-page-append-system-prompt-reset"
@@ -1088,7 +1076,6 @@ function AppendSystemPromptCard({ serverId }: { serverId: string }) {
             </Button>
             <Button
               variant="default"
-              size="sm"
               onPress={handleSave}
               disabled={!hasChanges || isSaving}
               testID="host-page-append-system-prompt-save"
@@ -1269,7 +1256,6 @@ function RemoveHostSection({
           </View>
           <Button
             variant="outline"
-            size="sm"
             leftIcon={removeIcon}
             textStyle={destructiveTextStyle}
             onPress={handleOpenConfirm}
@@ -1295,7 +1281,6 @@ function RemoveHostSection({
           <View style={styles.confirmActions}>
             <Button
               variant="secondary"
-              size="sm"
               style={FLEX_1_STYLE}
               onPress={handleCancel}
               disabled={isRemoving}
@@ -1304,7 +1289,6 @@ function RemoveHostSection({
             </Button>
             <Button
               variant="destructive"
-              size="sm"
               style={FLEX_1_STYLE}
               onPress={handleConfirmRemove}
               disabled={isRemoving}
@@ -1400,7 +1384,6 @@ function TerminalProfileRow({
       <View style={terminalProfileStyles.rowActions}>
         <Button
           variant="ghost"
-          size="sm"
           leftIcon={moveUpIcon}
           onPress={handleMoveUp}
           disabled={isFirst}
@@ -1409,7 +1392,6 @@ function TerminalProfileRow({
         />
         <Button
           variant="ghost"
-          size="sm"
           leftIcon={moveDownIcon}
           onPress={handleMoveDown}
           disabled={isLast}
@@ -1418,7 +1400,6 @@ function TerminalProfileRow({
         />
         <Button
           variant="ghost"
-          size="sm"
           leftIcon={editProfileIcon}
           onPress={handleEdit}
           accessibilityLabel={t("settings.host.terminalProfiles.editProfile")}
@@ -1426,7 +1407,6 @@ function TerminalProfileRow({
         />
         <Button
           variant="ghost"
-          size="sm"
           leftIcon={removeProfileIcon}
           onPress={handleRemove}
           accessibilityLabel={t("settings.host.terminalProfiles.remove")}
@@ -1592,7 +1572,6 @@ function TerminalProfilesSection({ serverId }: { serverId: string }) {
     () => (
       <Button
         variant="ghost"
-        size="sm"
         leftIcon={addProfileIcon}
         onPress={handleAddOpen}
         disabled={!isConnected || !profiles}

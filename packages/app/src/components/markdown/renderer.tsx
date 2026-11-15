@@ -7,6 +7,9 @@ import {
   useAssistantFileLinkEnvironment,
 } from "@/assistant-file-links";
 import { useStableEvent } from "@/hooks/use-stable-event";
+import { matchCommandLink, useAgentCommandHints, type CommandHints } from "@/agent-commands";
+import { useForgeShorthand } from "@/git/forge-shorthand";
+import { openExternalUrl } from "@/utils/open-external-url";
 import { useChatFindAnchorView } from "@/agent-stream/chat-find/anchor";
 import { useAttachmentLightbox } from "@/components/attachment-lightbox-context";
 import type { Theme } from "@/styles/theme";
@@ -62,6 +65,7 @@ export interface MarkdownRendererProps extends MarkdownImageContext {
   selectable?: boolean;
   streaming?: boolean;
   onLinkPress?: (url: string) => unknown;
+  agentCommands?: boolean;
   /** Native chat find's selected occurrence; ignored while streaming. */
   find?: MarkdownFind | null;
 }
@@ -75,35 +79,43 @@ export const MarkdownRenderer = memo(function MarkdownRenderer(props: MarkdownRe
     () => splitStreamingMarkdown(completeLines, true).head.length,
     [completeLines],
   );
+  const Part = props.agentCommands ? CommandMarkdownPart : MarkdownPart;
   if (props.find && !streaming) return <MarkdownFindParts {...props} find={props.find} />;
-  if (!streaming || boundary === 0) return <MarkdownPart {...props} />;
+  if (!streaming || boundary === 0) return <Part {...props} />;
   return (
     <MarkdownBlockStack>
-      <MarkdownPart {...props} text={props.text.slice(0, boundary)} />
-      <MarkdownPart {...props} text={props.text.slice(boundary)} />
+      <Part {...props} text={props.text.slice(0, boundary)} />
+      <Part {...props} text={props.text.slice(boundary)} />
     </MarkdownBlockStack>
   );
 });
 
+const CommandMarkdownPart = memo(function CommandMarkdownPart(
+  props: MarkdownRendererProps & { highlight?: boolean },
+) {
+  const commandHints = useAgentCommandHints();
+  return <MarkdownPart {...props} commandHints={commandHints} />;
+});
 /**
  * Draws the block holding chat find's occurrence apart from the rest, so reveal can
  * measure it: Markdown with the occurrence highlighted, or a code block that marks it.
  */
 function MarkdownFindParts({ find, ...props }: MarkdownRendererProps & { find: MarkdownFind }) {
+  const Part = props.agentCommands ? CommandMarkdownPart : MarkdownPart;
   const split = useMemo(() => splitMarkdownForFind(props.text, find.match), [props.text, find]);
   // A code block measures the occurrence's own line; natively drawn Markdown cannot.
   const anchorRef = useChatFindAnchorView(split.code ? null : find.anchor, split.fraction);
   return (
     <MarkdownBlockStack>
-      {split.head ? <MarkdownPart {...props} text={split.head} /> : null}
+      {split.head ? <Part {...props} text={split.head} /> : null}
       <View ref={anchorRef} collapsable={false}>
         {split.code ? (
           <FindCodeBlock {...split.code} anchor={find.anchor} compact={props.compact} />
         ) : (
-          <MarkdownPart {...props} text={split.block} highlight />
+          <Part {...props} text={split.block} highlight />
         )}
       </View>
-      {split.tail ? <MarkdownPart {...props} text={split.tail} /> : null}
+      {split.tail ? <Part {...props} text={split.tail} /> : null}
     </MarkdownBlockStack>
   );
 }
@@ -117,25 +129,42 @@ const MarkdownPart = memo(function MarkdownPart({
   selectable = true,
   streaming = false,
   onLinkPress,
+  agentCommands: _agentCommands,
+  commandHints = null,
   find: _find,
   ...imageContext
-}: MarkdownRendererProps & { highlight?: boolean }) {
+}: MarkdownRendererProps & { commandHints?: CommandHints | null; highlight?: boolean }) {
   const environment = useAssistantFileLinkEnvironment();
   const actions = useAssistantFileLinkActions();
+  const forgeShorthand = useForgeShorthand();
   const client =
     imageContext.client ??
     (environment.client?.readFile
       ? { readFile: environment.client.readFile.bind(environment.client) }
       : undefined);
   const { markdown, imageSources, imageAttachments, linkRecognition, linkSource } =
-    useMarkdownSource(text, {
-      workspaceRoot: environment.workspaceRoot,
-      serverId: environment.serverId,
-      ...imageContext,
-      client,
-    });
+    useMarkdownSource(
+      text,
+      {
+        workspaceRoot: environment.workspaceRoot,
+        serverId: environment.serverId,
+        ...imageContext,
+        client,
+      },
+      { commandNames: commandHints?.names, forgeReferencePattern: forgeShorthand?.pattern },
+    );
   const { open: openLightbox, localLightbox } = useAttachmentLightbox();
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
+    const command = commandHints && matchCommandLink(url, sourceType, commandHints.names);
+    if (command) {
+      commandHints.insert(command);
+      return;
+    }
+    const forgeUrl = sourceType === "text" ? forgeShorthand?.resolve(url) : null;
+    if (forgeUrl) {
+      void openExternalUrl(forgeUrl);
+      return;
+    }
     const source = linkSource(url, sourceType);
     if (onLinkPress && !actions.canResolveFile(source)) onLinkPress(url);
     else actions.open(source, "preferred");

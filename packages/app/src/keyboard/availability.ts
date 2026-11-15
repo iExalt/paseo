@@ -1,6 +1,12 @@
-import { useIsCompactFormFactor } from "@/constants/layout";
-import { isNative } from "@/constants/platform";
-import { useHasHardwareKeyboard } from "@/native/hardware-keyboard";
+import { useSyncExternalStore } from "react";
+import { hardwareKeyboardPresence } from "./internal/presence";
+export function useHardwareKeyboardPresent(): boolean {
+  return useSyncExternalStore(
+    hardwareKeyboardPresence.subscribe,
+    hardwareKeyboardPresence.getSnapshot,
+    () => false,
+  );
+}
 
 interface KeyboardShortcutEnvironment {
   isNative: boolean;
@@ -17,8 +23,4 @@ export function keyboardShortcutsAvailable({
   return !isCompact && (!native || hasHardwareKeyboard);
 }
 
-export function useKeyboardShortcutsAvailable(): boolean {
-  const isCompact = useIsCompactFormFactor();
-  const hasHardwareKeyboard = useHasHardwareKeyboard();
-  return keyboardShortcutsAvailable({ isNative, isCompact, hasHardwareKeyboard });
-}
+export const useKeyboardShortcutsAvailable = useHardwareKeyboardPresent;

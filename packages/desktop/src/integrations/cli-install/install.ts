@@ -25,27 +25,41 @@ async function pathOrSymlinkExists(p: string): Promise<boolean> {
   }
 }
 
-export async function installCli(): Promise<InstallStatus> {
-  const targetPath = getCliTargetPath();
-  const shimPath = getBundledCliShimPath();
-  const installSourcePath = resolveCliInstallSourcePath({
+function resolveInstallSourcePath(shimPath: string): string {
+  return resolveCliInstallSourcePath({
     platform: process.platform,
     isPackaged: app.isPackaged,
     executablePath: app.getPath("exe"),
     shimPath,
     appImagePath: process.env.APPIMAGE,
   });
+}
+
+// A thin .cmd trampoline that delegates to the bundled shim. Only the app install path is baked
+// in — internal details (asar layout, entrypoint scripts) live in the bundled shim and update with
+// the app.
+function buildCmdTrampoline(shimPath: string): string {
+  return [
+    "@echo off",
+    `set "BUNDLED_CLI=${shimPath}"`,
+    `if not exist "%BUNDLED_CLI%" (`,
+    `  echo Paseo CLI not found at %BUNDLED_CLI% — is Paseo installed? 1>&2`,
+    `  exit /b 1`,
+    `)`,
+    `call "%BUNDLED_CLI%" %*`,
+    `exit /b %errorlevel%`,
+  ].join("\r\n");
+}
+
+export async function installCli(): Promise<InstallStatus> {
+  const targetPath = getCliTargetPath();
+  const shimPath = getBundledCliShimPath();
+  const installSourcePath = resolveInstallSourcePath(shimPath);
   const binDir = getLocalBinDir();
   const installation =
     process.platform === "linux" ? resolveDesktopInstallation(process.resourcesPath) : null;
   if (installation?.mode === "nix") {
-    const stateRoot = path.join(
-      process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"),
-      "paseo",
-      "nix-update",
-    );
-    if (!path.isAbsolute(stateRoot)) throw new Error("XDG state path must be absolute.");
-    const profile = path.join(stateRoot, "profile");
+    const profile = getNixUpdateProfilePath();
     await installLinuxNixCli({
       installation,
       activeInstallation: resolveLinuxDesktopInstallation(
@@ -88,6 +102,53 @@ export async function installCli(): Promise<InstallStatus> {
   }
 
   return getCliInstallStatus();
+}
+
+/**
+ * Removes the CLI only when the file at the target is the one this app installs, so a `paseo` the
+ * user put there some other way survives. The shell rc PATH line stays: it is harmless and other
+ * tools in ~/.local/bin rely on it.
+ */
+export async function uninstallCli(): Promise<InstallStatus> {
+  const targetPath = getCliTargetPath();
+  if (await isOwnInstall(targetPath)) {
+    await fs.unlink(targetPath);
+  } else if (await pathOrSymlinkExists(targetPath)) {
+    log.warn("[integrations] Left a paseo CLI this app did not install", { targetPath });
+  }
+  return getCliInstallStatus();
+}
+
+function getNixUpdateProfilePath(): string {
+  const stateRoot = path.join(
+    process.env.XDG_STATE_HOME || path.join(os.homedir(), ".local", "state"),
+    "paseo",
+    "nix-update",
+  );
+  if (!path.isAbsolute(stateRoot)) throw new Error("XDG state path must be absolute.");
+  return path.join(stateRoot, "profile");
+}
+
+async function isOwnInstall(targetPath: string): Promise<boolean> {
+  const shimPath = getBundledCliShimPath();
+  try {
+    if (process.platform === "win32") {
+      return (await fs.readFile(targetPath, "utf-8")) === buildCmdTrampoline(shimPath);
+    }
+    const linkedSource = await fs.readlink(targetPath);
+    const installation =
+      process.platform === "linux" ? resolveDesktopInstallation(process.resourcesPath) : null;
+    if (installation?.mode === "nix") {
+      const suffix = ["share", "paseo-desktop", "packages", "cli", "bin", "paseo"];
+      return [
+        path.join(installation.outputPath, ...suffix),
+        path.join(getNixUpdateProfilePath(), ...suffix),
+      ].includes(linkedSource);
+    }
+    return linkedSource === resolveInstallSourcePath(shimPath);
+  } catch {
+    return false;
+  }
 }
 
 export async function getCliInstallStatus(): Promise<InstallStatus> {

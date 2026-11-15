@@ -19,6 +19,11 @@ const harness = vi.hoisted(() => ({
 }));
 
 vi.mock("react-native", () => ({
+  Platform: {
+    OS: "android",
+    select: (options: Record<string, unknown>) =>
+      options.android ?? options.native ?? options.default,
+  },
   View: ({
     children,
     onLayout,

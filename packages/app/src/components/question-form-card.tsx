@@ -433,12 +433,8 @@ export function QuestionFormCard({
         });
         otherInputRef.current?.replaceText("");
       }
-
-      if (!multiSelect && next.size > 0 && qIndex === activeQuestionIndex && questions) {
-        setActiveQuestionIndex(Math.min(qIndex + 1, questions.length - 1));
-      }
     },
-    [activeQuestionIndex, otherTexts, questions, selections],
+    [otherTexts, selections],
   );
 
   const setOtherText = useCallback(
