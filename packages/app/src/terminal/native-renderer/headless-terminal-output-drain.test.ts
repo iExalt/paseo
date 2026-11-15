@@ -161,6 +161,7 @@ describe("native terminal output drain", () => {
         return nextFrame;
       },
       cancelFrame: (frame) => frames.delete(frame),
+      restoreSize: () => {},
       idlePaintMs: 16,
       now: () => clock,
     });

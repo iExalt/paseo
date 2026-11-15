@@ -514,6 +514,7 @@ export function createViewedTimelineOwner(input: {
         serverId: input.serverId,
         payload: buildCurrentTimelinePage(agentId, cursor),
         cachedCursor: input.replica.readRange(agentId),
+        onReplacement: (id) => incarnations.set(id, (incarnations.get(id) ?? 0) + 1),
         recoverGap: (id, gapCursor) => sync.recoverGap(id, gapCursor),
         drainQueuedAgentMessage: input.drainQueuedAgentMessage,
       });

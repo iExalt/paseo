@@ -279,16 +279,9 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
 
   const query = idOrName.toLowerCase();
 
-  // A complete agent UUID is an exact identity, never a name search fallback.
-  if (FULL_AGENT_UUID_PATTERN.test(idOrName)) {
-    return agents.find((a) => a.id.toLowerCase() === query)?.id ?? null;
-  }
-
-  // Try exact ID match first
-  const exactMatch = agents.find((a) => a.id === idOrName);
-  if (exactMatch) {
-    return exactMatch.id;
-  }
+  // Daemon identity wins over a matching provider session ID.
+  const exactMatch = agents.find((a) => a.id.toLowerCase() === query);
+  if (exactMatch) return exactMatch.id;
 
   const sessionId = idOrName.trim();
   const sessionMatches = findAgentsByProviderSessionId(agents, sessionId);
@@ -301,6 +294,9 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
       message: formatAmbiguousProviderSessionIdError(sessionId, sessionMatches),
     } satisfies CommandError;
   }
+
+  // An unmatched full UUID must not select a title or an ID prefix.
+  if (FULL_AGENT_UUID_PATTERN.test(idOrName)) return null;
 
   // Try ID prefix match
   const prefixMatches = agents.filter((a) => a.id.toLowerCase().startsWith(query));

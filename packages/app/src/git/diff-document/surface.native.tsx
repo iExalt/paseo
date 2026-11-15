@@ -29,7 +29,7 @@ import { useBackClosesFind } from "@/pane-find/use-back-closes-find";
 import { getInlineReviewThreadState, InlineReviewThread } from "@/review";
 import { useBackCancelsReviewEditor } from "@/review/use-back-cancels-review-editor";
 import { copyToClipboard } from "@/utils/copy-to-clipboard";
-import { useKeyboardShift, useSettledKeyboardShift } from "@/keyboard/shift";
+import { useKeyboardShift } from "@/keyboard/shift";
 import { ReviewEditorRevealContext, resolveRevealScrollTop } from "@/review/reveal";
 import { inlineUnistylesStyle } from "@/styles/unistyles-inline-style";
 import { DocumentFileHeader } from "./document-file-header";
@@ -160,10 +160,9 @@ export function DiffSurface(props: DiffSurfaceProps) {
   const scrollTop = useSharedValue(0);
   const lastAccessibilitySample = useSharedValue(0);
   const [accessibilityTop, setAccessibilityTop] = useState(0);
-  const { bottomInset } = useKeyboardShift();
+  const { bottomInset, layoutShift } = useKeyboardShift();
   const rootRef = useRef<View>(null);
   const focusedEditorRef = useRef<View | null>(null);
-  const settledKeyboardShift = useSettledKeyboardShift();
   // Edge to edge the window height includes the keyboard area; RN's can be off on Android.
   const { height: windowHeight } = useKeyboardWindowDimensions();
   // How much of the diff's bottom the keyboard and navigation bar cover. The content grows by
@@ -176,7 +175,7 @@ export function DiffSurface(props: DiffSurfaceProps) {
     if (!root) return;
     root.measureInWindow((_rootX, rootTop, _rootWidth, rootHeight) => {
       // The root can extend under the navigation bar, which the shift leaves out.
-      const keyboardTop = windowHeight - (settledKeyboardShift + bottomInset.value);
+      const keyboardTop = windowHeight - (layoutShift.value + bottomInset.value);
       const visibleBottom = Math.min(rootTop + rootHeight, keyboardTop);
       setHiddenBottom(Math.max(0, rootTop + rootHeight - visibleBottom));
       const editor = focusedEditorRef.current;
@@ -194,10 +193,17 @@ export function DiffSurface(props: DiffSurfaceProps) {
       });
     });
   });
+  useAnimatedReaction(
+    () => layoutShift.value,
+    (current, previous) => {
+      if (current !== previous) scheduleOnRN(revealFocusedEditor);
+    },
+    [layoutShift, revealFocusedEditor],
+  );
   // Runs again once the content has grown by a new hidden strip.
   useEffect(() => {
     revealFocusedEditor();
-  }, [settledKeyboardShift, hiddenBottom, viewport.height, revealFocusedEditor]);
+  }, [layoutShift, hiddenBottom, viewport.height, revealFocusedEditor]);
   const revealHost = useMemo(
     () => ({
       focusEditor: (element: View) => {

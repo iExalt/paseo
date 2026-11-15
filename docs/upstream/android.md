@@ -254,7 +254,6 @@ REACT_NATIVE_PACKAGER_HOSTNAME=localhost \
 
 This is the Android counterpart of the iOS local-simulator flow in [development.md](development.md): on iOS the simulator shares the Mac's loopback so `localhost:<port>` works directly; on Android you need `10.0.2.2` or `adb reverse`.
 
-
 Android focus and selection visibility requests must not reposition inverted timelines. The
 `modules/paseo-scroll` package keeps React Native's scroll manager interface and returns zero for
 child-reveal scroll calculations when the view's transform matrix inverts the vertical axis. React

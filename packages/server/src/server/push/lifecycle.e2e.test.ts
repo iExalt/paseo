@@ -68,7 +68,10 @@ test("actual daemon RPCs keep question and attention episodes independent across
     const beforeError = sent.length;
     await other.sendMessage(agent.id, "Emit a turn failure");
     await other.waitForFinish(agent.id, 15000);
-    expect(await device.syncNotificationLifecycle()).toEqual([b]);
+    const afterError = await device.syncNotificationLifecycle();
+    expect(afterError).toHaveLength(1);
+    expect(afterError[0]).toEqual(expect.any(String));
+    expect(afterError).not.toContain(b);
     expect(sent.length).toBe(beforeError);
     await other.clearAgentAttention(agent.id);
     expect(await device.syncNotificationLifecycle()).toEqual([]);

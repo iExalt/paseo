@@ -427,6 +427,13 @@ export class AgentStorage {
     const attention = { ...agent.attention };
     const pendingPermissions =
       agent.permissionStateKnown === false ? undefined : [...agent.pendingPermissions.keys()];
+    const persistedAttention = {
+      requiresAttention: attention.requiresAttention,
+      attentionReason: attention.requiresAttention ? attention.attentionReason : null,
+      attentionTimestamp: attention.requiresAttention
+        ? attention.attentionTimestamp.toISOString()
+        : null,
+    };
     await this.load();
     const hasTitleOverride =
       options !== undefined && Object.prototype.hasOwnProperty.call(options, "title");
@@ -447,11 +454,7 @@ export class AgentStorage {
       }
       // Background is fixed at creation; a runtime opened without it cannot clear it.
       if (existing?.background) record.background = true;
-      record.requiresAttention = attention.requiresAttention;
-      record.attentionReason = attention.requiresAttention ? attention.attentionReason : null;
-      record.attentionTimestamp = attention.requiresAttention
-        ? attention.attentionTimestamp.toISOString()
-        : null;
+      Object.assign(record, persistedAttention);
       record.notificationPendingPermissions =
         pendingPermissions ?? existing?.notificationPendingPermissions;
       record.resumeOnStartup =
