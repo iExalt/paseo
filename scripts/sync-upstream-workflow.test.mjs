@@ -12,7 +12,15 @@ const [tokenStep, syncStep] = workflow.jobs.sync.steps;
 const script = syncStep.with.script;
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
-function makeGithub({ destinationSha, sourceSha, comparisonStatus, failures = {} }) {
+function makeGithub({
+  destinationSha,
+  sourceSha,
+  comparisonStatus,
+  requestedRef,
+  resolvedSha,
+  membershipStatus = "ahead",
+  failures = {},
+}) {
   const calls = [];
   const github = {
     rest: {
@@ -23,10 +31,17 @@ function makeGithub({ destinationSha, sourceSha, comparisonStatus, failures = {}
           const sha = args.owner === "getpaseo" ? sourceSha : destinationSha;
           return { data: { commit: { sha } } };
         },
+        async getCommit(args) {
+          calls.push(["getCommit", args]);
+          if (failures.getCommit) throw new Error("commit lookup failed");
+          return { data: { sha: resolvedSha } };
+        },
         async compareCommitsWithBasehead(args) {
           calls.push(["compareCommitsWithBasehead", args]);
           if (failures.compareCommitsWithBasehead) throw new Error("comparison failed");
-          return { data: { status: comparisonStatus } };
+          return {
+            data: { status: args.owner === "getpaseo" ? membershipStatus : comparisonStatus },
+          };
         },
       },
       git: {
@@ -45,7 +60,14 @@ function makeGithub({ destinationSha, sourceSha, comparisonStatus, failures = {}
     },
   };
 
-  return { calls, errors, run: () => new AsyncFunction("github", "core", script)(github, core) };
+  return {
+    calls,
+    errors,
+    run: () =>
+      new AsyncFunction("github", "core", "process", script)(github, core, {
+        env: { UPSTREAM_REF: requestedRef },
+      }),
+  };
 }
 
 test("workflow is scheduled at 07:23 UTC and guarded to the fork dev branch", () => {
@@ -157,4 +179,86 @@ test("branch lookup, comparison, and ref update failures are reported", async (c
         assert.equal(mock.calls.filter(([call]) => call === "updateRef").length, 0);
     });
   }
+});
+
+for (const requestedRef of [
+  "c".repeat(40),
+  "refs/tags/reviewed",
+  "'; throw new Error('injected'); //",
+]) {
+  test(`pinned ref resolves once as data and updates the exact ancestor: ${requestedRef}`, async () => {
+    const resolvedSha = "c".repeat(40);
+    const mock = makeGithub({
+      destinationSha: "a".repeat(40),
+      sourceSha: "b".repeat(40),
+      requestedRef,
+      resolvedSha,
+      comparisonStatus: "ahead",
+    });
+    await mock.run();
+    assert.deepEqual(mock.errors, []);
+    assert.deepEqual(
+      mock.calls.filter(([name]) => name === "getCommit"),
+      [["getCommit", { owner: "getpaseo", repo: "paseo", ref: requestedRef }]],
+    );
+    assert.deepEqual(
+      mock.calls
+        .filter(([name]) => name === "compareCommitsWithBasehead")
+        .map(([, args]) => args.basehead),
+      [`${resolvedSha}...${"b".repeat(40)}`, `iExalt:${"a".repeat(40)}...getpaseo:${resolvedSha}`],
+    );
+    assert.equal(mock.calls.find(([name]) => name === "updateRef")[1].sha, resolvedSha);
+  });
+}
+for (const membershipStatus of ["behind", "diverged"]) {
+  test(`pin outside captured main refuses: ${membershipStatus}`, async () => {
+    const mock = makeGithub({
+      destinationSha: "a".repeat(40),
+      sourceSha: "b".repeat(40),
+      requestedRef: "topic",
+      resolvedSha: "c".repeat(40),
+      membershipStatus,
+    });
+    await mock.run();
+    assert.match(mock.errors[0], /not on main/);
+    assert.equal(
+      mock.calls.some(([name]) => name === "updateRef"),
+      false,
+    );
+  });
+}
+test("pinned no-op still proves membership; invalid resolution and lookup fail closed", async () => {
+  const sha = "a".repeat(40);
+  const mock = makeGithub({
+    destinationSha: sha,
+    sourceSha: "b".repeat(40),
+    requestedRef: "pin",
+    resolvedSha: sha,
+  });
+  await mock.run();
+  assert.deepEqual(mock.errors, []);
+  assert.equal(mock.calls.filter(([name]) => name === "compareCommitsWithBasehead").length, 1);
+  assert.equal(
+    mock.calls.some(([name]) => name === "updateRef"),
+    false,
+  );
+  for (const extra of [{ resolvedSha: "bad" }, { failures: { getCommit: true } }]) {
+    const failed = makeGithub({
+      destinationSha: sha,
+      sourceSha: "b".repeat(40),
+      requestedRef: "pin",
+      ...extra,
+    });
+    await failed.run();
+    assert.equal(failed.errors.length, 1);
+    assert.equal(
+      failed.calls.some(([name]) => name === "updateRef"),
+      false,
+    );
+  }
+});
+test("dispatch pin is passed through environment, never interpolated into script", () => {
+  assert.equal(workflow.on.workflow_dispatch.inputs.ref.required, false);
+  assert.equal(syncStep.env.UPSTREAM_REF, "${{ inputs.ref }}");
+  assert.doesNotMatch(script, /\$\{\{.*inputs/);
 });

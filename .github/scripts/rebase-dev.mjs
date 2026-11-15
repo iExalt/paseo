@@ -569,6 +569,18 @@ function ledgerIdentities(rows) {
   return { identities, hints, subjects };
 }
 
+function hasReviewedRetainReceipt(row, identity, upstream) {
+  const receipt = row.review_receipt;
+  return (
+    receipt?.upstream === upstream &&
+    /^[0-9a-f]{40}$/.test(receipt?.patch_id ?? "") &&
+    receipt.patch_id === identity.patch_id &&
+    receipt.decision === "retain" &&
+    typeof receipt.evidence === "string" &&
+    receipt.evidence.trim().length > 0
+  );
+}
+
 async function replayPlan(repositoryPath, snapshots, originalCommits, boundaries) {
   const blob = await gitChecked(repositoryPath, ["ls-tree", snapshots.dev, "--", LEDGER_PATH]);
   if (!blob) return { retained: originalCommits, drops: [] };
@@ -608,9 +620,12 @@ async function replayPlan(repositoryPath, snapshots, originalCommits, boundaries
     }
     if (matched.has(key)) throw new Error(`Ambiguous supersession ledger match for ${sha}`);
     matched.add(key);
-    if (row.category === "partially superseded")
+    if (
+      row.category === "partially superseded" &&
+      !hasReviewedRetainReceipt(row, identity, snapshots.upstream)
+    )
       throw new Error(`Supersession review required for ${sha}: ${row.reason}`);
-    if (row.category === "keep") {
+    if (row.category === "keep" || row.category === "partially superseded") {
       retained.push(sha);
       continue;
     }
