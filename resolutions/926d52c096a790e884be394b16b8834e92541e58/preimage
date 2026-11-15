@@ -1,0 +1,535 @@
+import ExpoModulesCore
+import GameController
+import UIKit
+import GameController
+
+private let hardwareSubmitEventName = "onHardwareKeyboardSubmit"
+<<<<<<<
+private let hardwareShortcutEventName = "onHardwareKeyboardShortcut"
+=======
+private let shortcutKeyEventName = "onShortcutKey"
+private let hardwareKeyboardChangeEventName = "onHardwareKeyboardChange"
+>>>>>>>
+
+private weak var activeModule: PaseoHardwareKeyboardModule?
+// Main-thread state, read by the root view controller's key commands.
+private var isHardwareSubmitEnabled = false
+<<<<<<<
+private var overlayKeys: Set<String> = []
+private var claimedShortcuts: [ClaimedShortcut] = []
+=======
+private var shortcutCommands: [UIKeyCommand] = []
+private var shortcutEntries: [String: ShortcutEntry] = [:]
+>>>>>>>
+
+/// UIKit spells non-character keys as sentinel input strings rather than as the
+/// character they would type. JS sends the DOM `code` and the mapping lives
+/// here, so the constants stay in the one place that owns UIKit vocabulary.
+private let namedKeyInputs: [String: String] = [
+  "Escape": UIKeyCommand.inputEscape,
+  "ArrowUp": UIKeyCommand.inputUpArrow,
+  "ArrowDown": UIKeyCommand.inputDownArrow,
+  "Enter": "\r",
+]
+
+/// A shortcut the window takes from the focused text control: Shift+Tab would
+/// otherwise insert a tab, and Option+Shift+[ would type a quote.
+private struct ClaimedShortcut {
+  let input: String
+  let modifierFlags: UIKeyModifierFlags
+}
+
+struct ClaimedShortcutRecord: Record {
+  @Field var code: String = ""
+  @Field var shift: Bool = false
+  @Field var alt: Bool = false
+}
+
+private let claimableKeyInputs: [String: String] = [
+  "Tab": "\t", "Space": " ", "Enter": "\r", "Escape": UIKeyCommand.inputEscape,
+  "ArrowUp": UIKeyCommand.inputUpArrow, "ArrowDown": UIKeyCommand.inputDownArrow,
+  "ArrowLeft": UIKeyCommand.inputLeftArrow, "ArrowRight": UIKeyCommand.inputRightArrow,
+  "Minus": "-", "Equal": "=", "BracketLeft": "[", "BracketRight": "]", "Backslash": "\\",
+  "Semicolon": ";", "Quote": "'", "Backquote": "`", "Comma": ",", "Period": ".", "Slash": "/",
+]
+
+/// UIKit matches a key command against the unmodified character, so
+/// Option+Shift+[ is registered as "[" with both modifier flags.
+private func claimedShortcut(_ record: ClaimedShortcutRecord) -> ClaimedShortcut? {
+  let code = record.code
+  let input: String?
+  if code.count == 4 && code.hasPrefix("Key") { input = code.suffix(1).lowercased() }
+  else if code.count == 6 && code.hasPrefix("Digit") { input = String(code.suffix(1)) }
+  else { input = claimableKeyInputs[code] }
+  guard let input else { return nil }
+  var modifierFlags: UIKeyModifierFlags = []
+  if record.shift { modifierFlags.insert(.shift) }
+  if record.alt { modifierFlags.insert(.alternate) }
+  return ClaimedShortcut(input: input, modifierFlags: modifierFlags)
+}
+
+/// Whether the first responder is mid-IME-composition.
+///
+/// A committing key has to stay out of the way while a CJK candidate is being
+/// chosen: Enter confirms the candidate, and consuming it as a key command
+/// would submit the half-composed text instead.
+private func isComposingText() -> Bool {
+  guard let responder = UIResponder.paseoCurrentFirstResponder as? UITextInput else {
+    return false
+  }
+  return responder.markedTextRange != nil
+}
+
+public class PaseoHardwareKeyboardModule: Module {
+  private var keyboardObservers: [NSObjectProtocol] = []
+<<<<<<<
+
+  public func definition() -> ModuleDefinition {
+    Name("PaseoHardwareKeyboard")
+
+
+    OnCreate {
+      activeModule = self
+      let center = NotificationCenter.default
+      let module = self
+      self.keyboardObservers = [Notification.Name.GCKeyboardDidConnect, .GCKeyboardDidDisconnect].map {
+        center.addObserver(forName: $0, object: nil, queue: .main) { [weak module] _ in
+          module?.sendEvent(hardwareKeyboardChangeEventName, ["present": GCKeyboard.coalesced != nil])
+        }
+=======
+  public func definition() -> ModuleDefinition {
+    Name("PaseoHardwareKeyboard")
+
+    Events(hardwareSubmitEventName, hardwareShortcutEventName, "onHardwareKeyboardPresenceChanged")
+
+    OnCreate {
+      activeModule = self
+      for name in [Notification.Name.GCKeyboardDidConnect, Notification.Name.GCKeyboardDidDisconnect] {
+        self.keyboardObservers.append(NotificationCenter.default.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+          self?.sendEvent("onHardwareKeyboardPresenceChanged", [:])
+        })
+>>>>>>>
+      }
+    }
+
+    Function("getHardwareKeyboardPresent") { GCKeyboard.coalesced != nil }
+
+    Function("setHardwareKeyboardSubmitEnabled") { (enabled: Bool) in
+      DispatchQueue.main.async {
+        isHardwareSubmitEnabled = enabled
+      }
+    }
+
+<<<<<<<
+    Function("setOverlayKeys") { (keys: [String]) in
+      DispatchQueue.main.async {
+        overlayKeys = Set(keys).intersection(["Enter", "ArrowUp", "ArrowDown"])
+        UIMenuSystem.main.setNeedsRebuild()
+      }
+    }
+
+    Function("setClaimedShortcuts") { (shortcuts: [ClaimedShortcutRecord]) in
+      let claimed = shortcuts.compactMap(claimedShortcut)
+      DispatchQueue.main.async {
+        claimedShortcuts = claimed
+        UIMenuSystem.main.setNeedsRebuild()
+      }
+    }
+
+    OnDestroy {
+      self.keyboardObservers.forEach(NotificationCenter.default.removeObserver)
+=======
+    Function("setShortcutPolicy") { (policyJson: String) in
+      let entries = parseShortcutPolicy(policyJson)
+      DispatchQueue.main.async {
+        installShortcutEntries(entries)
+      }
+    }
+
+    // GameController discovers keyboards asynchronously, so this can read false at
+    // launch; GCKeyboardDidConnect then reports the keyboard through the change event.
+    Function("hasHardwareKeyboard") { () -> Bool in
+      return GCKeyboard.coalesced != nil
+    }
+
+    OnDestroy {
+      self.keyboardObservers.forEach { NotificationCenter.default.removeObserver($0) }
+>>>>>>>
+      self.keyboardObservers = []
+      if activeModule === self {
+        activeModule = nil
+        isHardwareSubmitEnabled = false
+        overlayKeys = []
+        claimedShortcuts = []
+      }
+<<<<<<<
+=======
+      DispatchQueue.main.async {
+        isHardwareSubmitEnabled = false
+        installShortcutEntries([])
+      }
+>>>>>>>
+    }
+  }
+
+  fileprivate func emitHardwareKeyboardSubmit() {
+    sendEvent(hardwareSubmitEventName, [:])
+  }
+
+<<<<<<<
+  fileprivate func emitHardwareKeyboardPress(_ press: UIPress, isRepeat: Bool) {
+    guard let key = press.key else { return }
+    let code = hardwareKeyCode(key)
+    let characters = key.characters
+    let named = namedKeyInputs.first { $0.value == characters }?.key
+    let keyName: String
+    if code.hasPrefix("Meta") { keyName = "Meta" }
+    else if code.hasPrefix("Control") { keyName = "Control" }
+    else if code.hasPrefix("Shift") { keyName = "Shift" }
+    else if code.hasPrefix("Alt") { keyName = "Alt" }
+    else { keyName = named ?? (characters.isEmpty ? code : characters) }
+    guard !code.isEmpty else { return }
+    sendEvent(hardwareShortcutEventName, [
+      "key": keyName,
+      "code": code,
+      "altKey": key.modifierFlags.contains(.alternate),
+      "ctrlKey": key.modifierFlags.contains(.control),
+      "metaKey": key.modifierFlags.contains(.command),
+      "shiftKey": key.modifierFlags.contains(.shift),
+      "repeat": isRepeat,
+      "isComposing": isComposingText(),
+      "phase": press.phase == .ended || press.phase == .cancelled ? "up" : "down",
+=======
+  fileprivate func emitShortcutKey(_ entry: ShortcutEntry, typing: Bool) {
+    sendEvent(shortcutKeyEventName, [
+      "key": entry.key,
+      "code": entry.code,
+      "altKey": entry.modifiers.contains(.alternate),
+      "ctrlKey": entry.modifiers.contains(.control),
+      "metaKey": entry.modifiers.contains(.command),
+      "shiftKey": entry.modifiers.contains(.shift),
+      "repeat": false,
+      "typing": typing,
+>>>>>>>
+    ])
+  }
+}
+
+<<<<<<<
+/** One UIKeyCommand built from a combo in the policy JS publishes (native-shortcut-policy.ts). */
+private struct ShortcutEntry {
+  let input: String
+  let modifiers: UIKeyModifierFlags
+  /** DOM `key` and `code` reported to JS. */
+  let key: String
+  let code: String
+  /** Listed in `always`: allowed while a text input has focus. */
+  let whileTyping: Bool
+  /** Swallow the key. iOS cannot report a key and still deliver it, so a combo that
+   * must stay deliverable is only handled while nothing is being typed into. */
+  let consume: Bool
+
+  var id: String { shortcutEntryId(input: input, modifiers: modifiers) }
+}
+
+private func shortcutEntryId(input: String, modifiers: UIKeyModifierFlags) -> String {
+  return "\(input)|\(modifiers.rawValue)"
+}
+
+private let namedKeyInputs: [String: (input: String, key: String)] = {
+  var map: [String: (input: String, key: String)] = [
+    "Escape": (UIKeyCommand.inputEscape, "Escape"),
+    "ArrowUp": (UIKeyCommand.inputUpArrow, "ArrowUp"),
+    "ArrowDown": (UIKeyCommand.inputDownArrow, "ArrowDown"),
+    "ArrowLeft": (UIKeyCommand.inputLeftArrow, "ArrowLeft"),
+    "ArrowRight": (UIKeyCommand.inputRightArrow, "ArrowRight"),
+    "Home": (UIKeyCommand.inputHome, "Home"),
+    "End": (UIKeyCommand.inputEnd, "End"),
+    "PageUp": (UIKeyCommand.inputPageUp, "PageUp"),
+    "PageDown": (UIKeyCommand.inputPageDown, "PageDown"),
+    "Delete": (UIKeyCommand.inputDelete, "Delete"),
+    "Tab": ("\t", "Tab"),
+    "Enter": ("\r", "Enter"),
+    "Backspace": ("\u{8}", "Backspace"),
+    "Space": (" ", " "),
+  ]
+  let functionKeys = [
+    UIKeyCommand.f1, UIKeyCommand.f2, UIKeyCommand.f3, UIKeyCommand.f4,
+    UIKeyCommand.f5, UIKeyCommand.f6, UIKeyCommand.f7, UIKeyCommand.f8,
+    UIKeyCommand.f9, UIKeyCommand.f10, UIKeyCommand.f11, UIKeyCommand.f12,
+  ]
+  for (index, input) in functionKeys.enumerated() {
+    map["F\(index + 1)"] = (input, "F\(index + 1)")
+  }
+  return map
+}()
+
+private func parseShortcutPolicy(_ json: String) -> [ShortcutEntry] {
+  guard
+    let data = json.data(using: .utf8),
+    let policy = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+  else {
+    return []
+  }
+  let always = (policy["always"] as? [[String: Any]]) ?? []
+  let whenNotTyping = (policy["whenNotTyping"] as? [[String: Any]]) ?? []
+  return always.flatMap { makeShortcutEntries(from: $0, whileTyping: true) }
+    + whenNotTyping.flatMap { makeShortcutEntries(from: $0, whileTyping: false) }
+}
+
+private func makeShortcutEntries(from combo: [String: Any], whileTyping: Bool) -> [ShortcutEntry] {
+  guard let code = combo["code"] as? String else { return [] }
+  var modifiers: UIKeyModifierFlags = []
+  if combo["meta"] as? Bool == true { modifiers.insert(.command) }
+  if combo["ctrl"] as? Bool == true { modifiers.insert(.control) }
+  if combo["alt"] as? Bool == true { modifiers.insert(.alternate) }
+  if combo["shift"] as? Bool == true { modifiers.insert(.shift) }
+  let consume = combo["consume"] as? Bool ?? true
+
+  func entry(input: String, key: String, code: String) -> ShortcutEntry {
+    return ShortcutEntry(
+      input: input, modifiers: modifiers, key: key, code: code,
+      whileTyping: whileTyping, consume: consume
+    )
+  }
+
+  if code == "Digit" {
+    return (1...9).map { entry(input: "\($0)", key: "\($0)", code: "Digit\($0)") }
+  }
+  if let named = namedKeyInputs[code] {
+    return [entry(input: named.input, key: named.key, code: code)]
+  }
+  guard let key = combo["key"] as? String, key.count == 1 else { return [] }
+  var entries = [entry(input: key, key: key, code: code)]
+  // Shift+/ may arrive as "?" or as "/" with Shift; register both spellings.
+  if let shiftedKey = combo["shiftedKey"] as? String, modifiers.contains(.shift), shiftedKey.count == 1 {
+    entries.append(entry(input: shiftedKey, key: shiftedKey, code: code))
+  }
+  return entries
+}
+
+private func installShortcutEntries(_ entries: [ShortcutEntry]) {
+  var byId: [String: ShortcutEntry] = [:]
+  for entry in entries where byId[entry.id] == nil {
+    byId[entry.id] = entry
+  }
+  shortcutEntries = byId
+  shortcutCommands = byId.values.map { entry in
+=======
+public final class PaseoHardwareKeyboardWindow: UIWindow {
+  private var pressedCodes: Set<Int> = []
+  public static func observing(_ original: UIWindow) -> UIWindow {
+    if original is PaseoHardwareKeyboardWindow { return original }
+    guard let scene = original.windowScene else { return original }
+    let observed = PaseoHardwareKeyboardWindow(windowScene: scene)
+    observed.windowLevel = original.windowLevel
+    observed.backgroundColor = original.backgroundColor
+    let controller = original.rootViewController
+    original.rootViewController = nil
+    original.isHidden = true
+    observed.rootViewController = controller
+    observed.makeKeyAndVisible()
+    return observed
+  }
+
+  public override func sendEvent(_ event: UIEvent) {
+    if let event = event as? UIPressesEvent {
+      for press in event.allPresses where press.phase == .began || press.phase == .ended || press.phase == .cancelled {
+        guard let key = press.key else { continue }
+        let raw = Int(key.keyCode.rawValue)
+        let isRepeat = press.phase == .began && pressedCodes.contains(raw)
+        if press.phase == .began { pressedCodes.insert(raw) }
+        else { pressedCodes.remove(raw) }
+        activeModule?.emitHardwareKeyboardPress(press, isRepeat: isRepeat)
+      }
+    }
+    super.sendEvent(event)
+  }
+  public override var keyCommands: [UIKeyCommand]? {
+    var commands = super.keyCommands ?? []
+    if isHardwareSubmitEnabled && !isPlainReturnClaimed && !isComposingText()
+      && UIDevice.current.userInterfaceIdiom == .pad
+    {
+      commands.append(makeSubmitCommand())
+    }
+    if !isComposingText() {
+      commands.append(contentsOf: overlayKeys.compactMap(makeShortcutCommand))
+      commands.append(contentsOf: claimedShortcuts.map(makeClaimedCommand))
+    }
+    return commands
+  }
+
+  /// Whether something registered has already asked for an unmodified Return.
+  ///
+  /// The submit command is registered for as long as the composer holds focus,
+  /// which includes while a picker is open over it. Registering both would put
+  /// two commands on one press, and the composer would win a press the picker
+  /// asked for — Enter would create the workspace instead of choosing a project.
+  private var isPlainReturnClaimed: Bool {
+    overlayKeys.contains("Enter")
+  }
+
+  private func makeSubmitCommand() -> UIKeyCommand {
+>>>>>>>
+    let command = UIKeyCommand(
+      input: entry.input,
+      modifierFlags: entry.modifiers,
+      action: #selector(PaseoHardwareKeyboardRootViewController.handleShortcut(_:))
+    )
+    if #available(iOS 15.0, *) {
+      command.wantsPriorityOverSystemBehavior = true
+    }
+    return command
+  }
+<<<<<<<
+
+  private func makeShortcutCommand(_ key: String) -> UIKeyCommand? {
+    guard let input = namedKeyInputs[key] else { return nil }
+    let command = UIKeyCommand(input: input, modifierFlags: [], action: #selector(handleHardwareKeyboardShortcut(_:)))
+    if #available(iOS 15.0, *) { command.wantsPriorityOverSystemBehavior = true }
+    return command
+  }
+
+  /// The window's press stream still emits the shortcut; the command only keeps
+  /// the key away from the text control.
+  private func makeClaimedCommand(_ shortcut: ClaimedShortcut) -> UIKeyCommand {
+    let command = UIKeyCommand(
+      input: shortcut.input,
+      modifierFlags: shortcut.modifierFlags,
+      action: #selector(handleHardwareKeyboardShortcut(_:))
+    )
+    if #available(iOS 15.0, *) { command.wantsPriorityOverSystemBehavior = true }
+    return command
+=======
+}
+
+private final class PaseoHardwareKeyboardRootViewController: UIViewController {
+  private static let submitCommandId = shortcutEntryId(input: "\r", modifiers: [])
+
+  private var isSubmitCommandActive: Bool {
+    return isHardwareSubmitEnabled && UIDevice.current.userInterfaceIdiom == .pad
+  }
+
+  override var keyCommands: [UIKeyCommand]? {
+    var commands = super.keyCommands ?? []
+    if isSubmitCommandActive {
+      let command = UIKeyCommand(
+        input: "\r",
+        modifierFlags: [],
+        action: #selector(handleHardwareKeyboardSubmit(_:))
+      )
+      if #available(iOS 15.0, *) {
+        command.wantsPriorityOverSystemBehavior = true
+      }
+      commands.append(command)
+    }
+    for command in shortcutCommands {
+      let id = shortcutEntryId(input: command.input ?? "", modifiers: command.modifierFlags)
+      // Enter-to-submit owns plain Enter while it is active.
+      if isSubmitCommandActive && id == Self.submitCommandId { continue }
+      commands.append(command)
+    }
+    return commands
+  }
+
+  // UIKit asks before running a key command. Declining lets the key continue to the
+  // focused view, which is how a combo bound only outside text fields passes through.
+  override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {
+    if action == #selector(handleShortcut(_:)) {
+      guard let entry = shortcutEntry(for: sender) else { return false }
+      return isShortcutAllowed(entry, typing: isTyping())
+    }
+    return super.canPerformAction(action, withSender: sender)
+  }
+
+  @objc
+  fileprivate func handleShortcut(_ sender: UIKeyCommand) {
+    guard let entry = shortcutEntry(for: sender) else { return }
+    let typing = isTyping()
+    guard isShortcutAllowed(entry, typing: typing) else { return }
+    activeModule?.emitShortcutKey(entry, typing: typing)
+>>>>>>>
+  }
+
+  @objc
+  private func handleHardwareKeyboardSubmit(_ sender: UIKeyCommand) {
+    guard canSubmitCurrentTextInput() else {
+      return
+    }
+    activeModule?.emitHardwareKeyboardSubmit()
+  }
+
+<<<<<<<
+  @objc
+  private func handleHardwareKeyboardShortcut(_ sender: UIKeyCommand) {}
+=======
+  private func shortcutEntry(for sender: Any?) -> ShortcutEntry? {
+    guard let command = sender as? UIKeyCommand, let input = command.input else { return nil }
+    return shortcutEntries[shortcutEntryId(input: input, modifiers: command.modifierFlags)]
+  }
+
+  private func isShortcutAllowed(_ entry: ShortcutEntry, typing: Bool) -> Bool {
+    if !typing { return true }
+    guard entry.whileTyping && entry.consume else { return false }
+    // Leave keys to an IME that is composing.
+    let textInput = UIResponder.paseoCurrentFirstResponder as? UITextInput
+    return textInput?.markedTextRange == nil
+  }
+
+  private func isTyping() -> Bool {
+    return UIResponder.paseoCurrentFirstResponder is UITextInput
+  }
+>>>>>>>
+
+  private func canSubmitCurrentTextInput() -> Bool {
+    guard let responder = UIResponder.paseoCurrentFirstResponder else {
+      return false
+    }
+    guard let textInput = responder as? UITextInput else {
+      return false
+    }
+    return textInput.markedTextRange == nil
+  }
+}
+
+private extension UIResponder {
+  private static weak var currentFirstResponder: UIResponder?
+
+  static var paseoCurrentFirstResponder: UIResponder? {
+    currentFirstResponder = nil
+    UIApplication.shared.sendAction(
+      #selector(captureCurrentFirstResponder(_:)),
+      to: nil,
+      from: nil,
+      for: nil
+    )
+    return currentFirstResponder
+  }
+
+  @objc
+  private func captureCurrentFirstResponder(_ sender: Any?) {
+    UIResponder.currentFirstResponder = self
+  }
+}
+
+
+private func hardwareKeyCode(_ key: UIKey) -> String {
+  let raw = key.keyCode.rawValue
+  if raw >= 4 && raw <= 29 {
+    let letter = UnicodeScalar(Int(raw) + 61)!
+    return "Key" + String(letter)
+  }
+  if raw >= 30 && raw <= 38 { return "Digit" + String(raw - 29) }
+  if raw == 39 { return "Digit0" }
+  let codes: [Int: String] = [
+    40: "Enter", 41: "Escape", 42: "Backspace", 43: "Tab", 44: "Space",
+    45: "Minus", 46: "Equal", 47: "BracketLeft", 48: "BracketRight",
+    49: "Backslash", 51: "Semicolon", 52: "Quote", 53: "Backquote",
+    54: "Comma", 55: "Period", 56: "Slash", 76: "Delete", 79: "ArrowRight",
+    80: "ArrowLeft", 81: "ArrowDown", 82: "ArrowUp", 224: "ControlLeft",
+    225: "ShiftLeft", 226: "AltLeft", 227: "MetaLeft", 228: "ControlRight",
+    229: "ShiftRight", 230: "AltRight", 231: "MetaRight",
+  ]
+  if raw >= 58 && raw <= 69 { return "F" + String(raw - 57) }
+  return codes[Int(raw)] ?? ""
+}

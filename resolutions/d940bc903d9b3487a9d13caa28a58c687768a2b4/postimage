@@ -1,0 +1,29 @@
+
+on:
+  push:
+
+concurrency:
+
+jobs:
+      - uses: ./.github/actions/setup-ci-tools
+    timeout-minutes: 7
+      - uses: ./.github/actions/setup-ci-tools
+          actionlint: "true"
+          test "$(node --version)" = v26.13.0
+    permissions:
+      contents: read
+    outputs:
+    steps:
+        with:
+          fetch-depth: 0
+
+        with:
+
+    steps:
+        run: |
+        with:
+          fetch-depth: 0
+
+    steps:
+        run: |
+        env:

@@ -1,0 +1,67 @@
+
+on:
+  push:
+
+concurrency:
+
+jobs:
+      - uses: ./.github/actions/setup-ci-tools
+    timeout-minutes: 7
+      - uses: ./.github/actions/setup-ci-tools
+          actionlint: "true"
+          test "$(node --version)" = v26.13.0
+    permissions:
+      contents: read
+    outputs:
+    steps:
+        with:
+          fetch-depth: 0
+
+        with:
+
+<<<<<<<
+=======
+      - name: Detect affected CI contracts
+        id: filter
+        with:
+          filters: .github/ci-paths.yml
+
+      - name: Validate CI contracts
+        run: node --test scripts/ci-workflow.test.mjs scripts/daemon-launch-contract.test.mjs scripts/changelog-utils.test.mjs scripts/sync-fdroid-changelogs.test.mjs scripts/sync-release-notes-from-changelog.test.mjs scripts/upload-release-assets.test.mjs
+
+    needs: changes
+    runs-on: ubuntu-latest
+>>>>>>>
+    steps:
+        run: |
+        with:
+          fetch-depth: 0
+
+    steps:
+<<<<<<<
+=======
+
+  # native-recursive.ts serves darwin and win32, but windows-latest above is the only
+  # runner that exercises it. macOS — the platform the reported watcher bug was on —
+  # otherwise has no server-test coverage. Scoped to the observer/watcher suites to
+  # bound runtime.
+  server-tests-macos:
+    name: server-tests (macos-latest, file observation)
+    needs: changes
+    if: ${{ !cancelled() && (needs.changes.outputs.full != 'false' || needs.changes.outputs.server != 'false') }}
+    runs-on: macos-latest
+    steps:
+
+        with:
+          cache: "npm"
+
+      - name: Install dependencies
+        run: node scripts/npm-retry.mjs ci
+
+      - name: Build server dependencies
+        run: npm run build:server-deps
+
+      - name: Run file observation tests
+>>>>>>>
+        run: |
+        env:
