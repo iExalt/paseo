@@ -60,11 +60,13 @@ Pass `background: true` to hide a workspace from default discovery. Its agents a
 remain durable, with ordinary history, lifecycle hooks, archive, and exact-ID access. The app's
 sidebar offers **Show background** without dropping replicated state.
 
-At creation, omitting `background` defaults to false; when `callerAgentId` identifies an agent
-creating a new workspace, omission inherits its workspace's value. Explicit false or true overrides
-inheritance. Agent creation with `workspaceId` rejects explicit background creation intent; configure
-visibility on the workspace instead. SDK/RPC implicit agent creation also accepts `background`
-as workspace creation intent, never as an agent property.
+The agent’s `background` flag is creation-only. Change workspace visibility explicitly with workspace
+settings updates; selecting an existing workspace does not change it. At creation, omission defaults
+to false. When `callerAgentId` identifies an agent creating a workspace, omission inherits the
+caller’s effective visibility: true when its agent or workspace is background. Explicit false or true
+overrides inheritance. Agent creation that creates its workspace applies `background` to both the
+workspace and the agent. To hide one agent in an existing workspace, see
+[background agents](./agents.md#run-a-helper-as-a-background-agent).
 
 Creation and inclusive discovery require `features.backgroundWorkspaces`; the client rejects an
 unsupported host with an update-host message.
@@ -156,8 +158,8 @@ do {
 
 Background workspaces are left out unless `filter.includeBackground` is true. Use
 `client.workspaces.list({ filter: { includeBackground: true } })` or
-`client.agents.list({ filter: { includeBackground: true } })`. Workspace descriptors carry
-`background`; agents derive visibility from their workspace and have no separate setting.
+`client.agents.list({ filter: { includeBackground: true } })`. Workspace and agent snapshots carry
+`background`. An agent is hidden when it or its workspace is background.
 
 ## Refresh and archive a handle
 

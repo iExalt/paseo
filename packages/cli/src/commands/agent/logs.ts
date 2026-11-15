@@ -82,6 +82,35 @@ export function formatAgentActivityTranscript(
   );
 }
 
+/**
+ * Picks the items `--tail` keeps, the same way the transcript does: the last n
+ * timeline items, before any of them are dropped from the curated view.
+ */
+function selectTailItems(
+  timelineItems: AgentTimelineItem[],
+  tailCount?: number,
+): AgentTimelineItem[] {
+  if (tailCount === undefined) {
+    return timelineItems;
+  }
+  if (tailCount === 0) {
+    return [];
+  }
+  return timelineItems.slice(-tailCount);
+}
+
+function formatAgentLogsJson(
+  agentId: string,
+  timelineItems: AgentTimelineItem[],
+  tailCount?: number,
+): string {
+  return JSON.stringify({ agentId, items: selectTailItems(timelineItems, tailCount) }, null, 2);
+}
+
+function usesJsonOutput(options: AgentLogsOptions): boolean {
+  return options.json === true || options.format?.trim().toLowerCase() === "json";
+}
+
 type StreamingTextType = "assistant_message" | "reasoning";
 
 const THOUGHT_PREFIX = "[Thought] ";
@@ -210,6 +239,21 @@ export function createFollowTranscriptWriter(
   };
 }
 
+/** Follow mode with `--json`: one JSON timeline item per line (NDJSON). */
+export function createFollowJsonWriter(
+  filter?: string,
+  write: (chunk: string) => void = (chunk) => void process.stdout.write(chunk),
+): FollowTranscriptWriter {
+  return {
+    push(item) {
+      if (matchesFilter(item, filter)) {
+        write(`${JSON.stringify(item)}\n`);
+      }
+    },
+    end() {},
+  };
+}
+
 function parseTailCount(raw: string | undefined): number | undefined {
   if (raw === undefined) return undefined;
   const parsed = Number.parseInt(raw, 10);
@@ -334,6 +378,12 @@ async function printTimelinePage(
   else console.log(formatAgentActivityTranscript(entries.map((entry) => entry.item)));
 }
 
+function requestsTimelinePage(options: AgentLogsOptions, json: boolean): boolean {
+  return Boolean(
+    json || options.full || options.limit !== undefined || options.before !== undefined,
+  );
+}
+
 export async function runLogsCommand(
   id: string,
   options: AgentLogsOptions,
@@ -362,12 +412,7 @@ export async function runLogsCommand(
       console.log(pageOptions.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
       return;
     }
-    if (
-      pageOptions.json ||
-      options.full ||
-      options.limit !== undefined ||
-      options.before !== undefined
-    ) {
+    if (requestsTimelinePage(options, pageOptions.json)) {
       await printTimelinePage(client, resolvedId, options, pageOptions, sinceTimestampMs);
       return;
     }
@@ -409,6 +454,11 @@ export async function runLogsCommand(
 
     await client.close();
 
+    if (usesJsonOutput(options)) {
+      console.log(formatAgentLogsJson(resolvedId, timelineItems, tailCount));
+      return;
+    }
+
     // Use curateAgentActivity to format the transcript
     if (tailCount === 0) {
       return;
@@ -435,80 +485,106 @@ async function runFollowMode({
   options,
   sinceTimestampMs,
 }: FollowModeInput): Promise<void> {
-  const DEFAULT_FOLLOW_TAIL = 10;
-  const tailCount = parseTailCount(options.tail) ?? DEFAULT_FOLLOW_TAIL;
-
-  // First, get existing timeline.
-  let existingItems: AgentTimelineItem[] = [];
+  // Observe shutdown before history writes can encounter a closed reader.
+  // Keep an early stop resolved while subscription setup is in flight.
+  const stopController = new AbortController();
+  const stopped = waitForStop(stopController.signal);
+  let unsubscribe: (() => void) | undefined;
+  const json = usesJsonOutput(options);
+  const writer = json
+    ? createFollowJsonWriter(options.filter)
+    : createFollowTranscriptWriter(undefined, options.filter);
   try {
-    existingItems = await fetchAgentTimelineItems(client, agentId, {
-      timeoutMs: LIVE_HISTORY_FETCH_TIMEOUT_MS,
-      sinceTimestampMs,
-    });
-  } catch (error) {
-    console.warn("Warning: failed to fetch existing timeline", error);
-  }
+    const DEFAULT_FOLLOW_TAIL = 10;
+    const tailCount = parseTailCount(options.tail) ?? DEFAULT_FOLLOW_TAIL;
 
-  // Apply filter to existing items
-  if (options.filter) {
-    existingItems = existingItems.filter((item) => matchesFilter(item, options.filter));
-  }
-
-  // Print existing transcript (tail-like behavior)
-  if (tailCount > 0) {
-    const existingTranscript = formatAgentActivityTranscript(existingItems, tailCount);
-    if (existingTranscript !== NO_ACTIVITY_MESSAGE) {
-      console.log(existingTranscript);
-    }
-  }
-
-  // Subscribe to new events
-  const tailLabel =
-    tailCount === 0 ? "no history" : `last ${tailCount} entr${tailCount === 1 ? "y" : "ies"}`;
-
-  const writer = createFollowTranscriptWriter(undefined, options.filter);
-
-  const unsubscribe = client.subscribeAgentTimeline(agentId, (message) => {
-    if (message.type === "agent.timeline.replacement") {
-      writer.end();
-      console.log("\n[Timeline replaced; earlier output is no longer current]");
-      return;
+    // First, get existing timeline.
+    let existingItems: AgentTimelineItem[] = [];
+    try {
+      const history = await Promise.race([
+        fetchAgentTimelineItems(client, agentId, {
+          timeoutMs: LIVE_HISTORY_FETCH_TIMEOUT_MS,
+          sinceTimestampMs,
+        }),
+        stopped,
+      ]);
+      if (!history) return;
+      existingItems = history;
+    } catch (error) {
+      console.warn("Warning: failed to fetch existing timeline", error);
     }
 
-    if (message.type === "agent.timeline.error") {
-      writer.end();
-      console.error(`Timeline observation stopped: ${message.payload.error}`);
-      return;
+    // Apply filter to existing items
+    if (options.filter) {
+      existingItems = existingItems.filter((item) => matchesFilter(item, options.filter));
     }
-    if (message.type === "agent.timeline.subscription_restored") {
-      writer.end();
-      console.log("\n[Reconnected; live output resumed. Events may have been missed.]");
-      return;
+
+    // Print existing transcript (tail-like behavior)
+    if (json) {
+      for (const item of selectTailItems(existingItems, tailCount)) {
+        console.log(JSON.stringify(item));
+      }
+    } else if (tailCount > 0) {
+      const existingTranscript = formatAgentActivityTranscript(existingItems, tailCount);
+      if (existingTranscript !== NO_ACTIVITY_MESSAGE) {
+        console.log(existingTranscript);
+      }
     }
-    if (message.payload.event.type === "timeline") {
-      const matchesSince =
-        sinceTimestampMs === undefined || Date.parse(message.payload.timestamp) >= sinceTimestampMs;
-      if (!matchesSince) {
+
+    // Subscribe to new events
+    const tailLabel =
+      tailCount === 0 ? "no history" : `last ${tailCount} entr${tailCount === 1 ? "y" : "ies"}`;
+
+    // Keep stdout parseable in JSON mode: one timeline item per line, notices on stderr.
+    const notice = json ? console.error : console.log;
+
+    const subscription = client.subscribeAgentTimeline(agentId, (message) => {
+      if (message.type === "agent.timeline.replacement") {
+        writer.end();
+        notice("\n[Timeline replaced; earlier output is no longer current]");
         return;
       }
-      const item = message.payload.event.item;
-      writer.push(item, message.payload.event.turnId);
-    } else if (
-      message.payload.event.type === "turn_completed" ||
-      message.payload.event.type === "turn_failed" ||
-      message.payload.event.type === "turn_canceled"
-    ) {
-      writer.end();
-    }
-  });
 
-  await unsubscribe.ready;
-  console.log(`\n--- Following logs (${tailLabel}; Ctrl+C to stop) ---\n`);
+      if (message.type === "agent.timeline.error") {
+        writer.end();
+        console.error(`Timeline observation stopped: ${message.payload.error}`);
+        return;
+      }
+      if (message.type === "agent.timeline.subscription_restored") {
+        writer.end();
+        notice("\n[Reconnected; live output resumed. Events may have been missed.]");
+        return;
+      }
+      if (message.payload.event.type === "timeline") {
+        const matchesSince =
+          sinceTimestampMs === undefined ||
+          Date.parse(message.payload.timestamp) >= sinceTimestampMs;
+        if (!matchesSince) {
+          return;
+        }
+        const item = message.payload.event.item;
+        writer.push(item, message.payload.event.turnId);
+      } else if (
+        message.payload.event.type === "turn_completed" ||
+        message.payload.event.type === "turn_failed" ||
+        message.payload.event.type === "turn_canceled"
+      ) {
+        writer.end();
+      }
+    });
 
-  await waitForStop();
-  writer.end();
-  unsubscribe();
-  await client.close();
+    unsubscribe = subscription;
+    const ready = await Promise.race([subscription.ready.then(() => true), stopped]);
+    if (!ready) return;
+    notice(`\n--- Following logs (${tailLabel}; Ctrl+C to stop) ---\n`);
+
+    await stopped;
+  } finally {
+    stopController.abort();
+    writer.end();
+    unsubscribe?.();
+    await client.close();
+  }
 }
 
 export async function runPromptsCommand(id: string, options: CommandOptions): Promise<void> {

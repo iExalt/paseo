@@ -146,7 +146,7 @@ buildNpmPackage {
         # The Nix output is not a distributable DMG: skip Developer ID signing
         # and the hardened runtime that requires it. postFixup signs ad hoc.
         CSC_IDENTITY_AUTO_DISCOVERY=false \
-          ../../node_modules/.bin/electron-builder \
+          npm exec --offline -- electron-builder \
             --config electron-builder.yml \
             --dir \
             --mac \

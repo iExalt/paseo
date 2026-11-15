@@ -48,6 +48,7 @@ import {
   type ArchiveDependencies,
 } from "../../workspace-archive-service.js";
 import { createAgentCommand } from "../create-agent/create.js";
+import { inheritWorkspaceBackground } from "../create-agent/intent.js";
 import type { VoiceCallerContext, VoiceSpeakHandler } from "../../voice-types.js";
 import { speakWithHandler } from "../speak-service.js";
 import type { FirstAgentContext } from "../../messages.js";
@@ -153,7 +154,7 @@ export interface PaseoToolHostDependencies {
   listActiveWorkspaces?: ArchiveDependencies["listActiveWorkspaces"];
   archiveWorkspaceRecord?: ArchiveDependencies["archiveWorkspaceRecord"];
   emitWorkspaceUpdatesForWorkspaceIds?: ArchiveDependencies["emitWorkspaceUpdatesForWorkspaceIds"];
-  workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "list" | "upsert">;
+  workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "listActive" | "upsert">;
   updateWorkspaceNotifications?: (
     workspaceId: string,
     notifications: "on" | "off",
@@ -175,7 +176,7 @@ export interface PaseoToolHostDependencies {
   ensureWorkspaceForCreate?: (
     cwd: string,
     firstAgentContext?: FirstAgentContext,
-    context?: { callerWorkspaceId?: string; notifications?: "on" | "off" },
+    context?: { background?: boolean; callerWorkspaceId?: string; notifications?: "on" | "off" },
   ) => Promise<string>;
   browserToolsEnabled?: boolean;
   browserToolsBroker?: BrowserToolsBroker | null;
@@ -209,6 +210,7 @@ interface ProviderSummary {
 }
 
 const WorkspaceAutomationSummarySchema = z.object({
+  parentWorkspaceId: z.string().optional(),
   workspaceId: z.string(),
   projectId: z.string(),
   cwd: z.string(),
@@ -228,6 +230,7 @@ function toWorkspaceAutomationSummary(workspace: PersistedWorkspaceRecord) {
     kind: workspace.kind,
     title: workspace.title,
     background: workspace.background,
+    parentWorkspaceId: workspace.parentWorkspaceId,
     notifications: workspace.notifications,
   };
 }
@@ -715,6 +718,7 @@ function createToolCatalog(
   const hostResolver = createHostResolver({
     serverId: options.serverId ?? "self",
     callerAgentId,
+    caller: () => resolveCallerAgent(),
     lockedCwd: callerContext?.lockedCwd,
     hosts: () => {
       if (!options.hosts) throw new Error("Connected hosts are not configured");
@@ -857,6 +861,14 @@ function createToolCatalog(
       throw new PaseoToolInputError(`Parent agent ${callerAgentId} not found`);
     }
     return parentAgent;
+  };
+
+  const workspaceBackgroundIntent = (background: boolean | undefined) => {
+    const caller = resolveCallerAgent();
+    return {
+      background: inheritWorkspaceBackground(background, caller),
+      callerWorkspaceId: caller?.workspaceId,
+    };
   };
 
   const resolveInheritedProviderConfig = (
@@ -1095,6 +1107,12 @@ function createToolCatalog(
       .trim()
       .min(1, "initialPrompt is required")
       .describe("Required first task to run immediately after creation."),
+    background: z
+      .boolean()
+      .optional()
+      .describe(
+        "True creates a background agent: hidden from tabs, default lists, your subagent track and notifications. You still get its finish notification and can address it by id. Omit to inherit your own value (false without a caller); use it for helpers the user does not need to watch.",
+      ),
   };
   const legacyCreateAgentPlacementFields = {
     relationship: AgentRelationshipInputSchema.describe(
@@ -1172,7 +1190,7 @@ function createToolCatalog(
     .strict();
   const commonSendAgentPromptInputSchema = {
     activeTurnBehavior: ActiveTurnBehaviorSchema.optional().describe(
-      'How to send into a running turn: "steer" joins it, falling back to interrupt when unavailable; "interrupt" replaces it. Defaults to steer for agent callers and interrupt otherwise.',
+      'How to send into a running turn: "steer" joins it when supported, otherwise waits behind it; "interrupt" replaces it. Defaults to steer for every caller.',
     ),
     agentId: z.string(),
     prompt: z.string(),
@@ -1301,7 +1319,7 @@ function createToolCatalog(
           .boolean()
           .optional()
           .describe(
-            "True hides the workspace from default lists and the sidebar while its contents remain durable and accessible; omit background to inherit your current workspace’s value (false without a caller), and override it only when the user explicitly asks.",
+            "True hides the workspace from default lists and the sidebar while its contents remain durable and accessible; omit background to inherit your own visibility (true when you or your current workspace are background, false without a caller), and override it only when the user explicitly asks.",
           ),
         notifications: WorkspaceNotificationsSchema.optional(),
         mode: z
@@ -1378,9 +1396,8 @@ function createToolCatalog(
           throw new Error("Workspace provisioning is not configured");
         }
         workspace = await options.createDirectoryWorkspace(cwd, title, projectId, {
-          background,
+          ...workspaceBackgroundIntent(background),
           notifications,
-          callerWorkspaceId: resolveCallerAgent()?.workspaceId,
         });
       } else {
         let cwd =
@@ -1412,8 +1429,7 @@ function createToolCatalog(
             ...(worktreeSlug ? { worktreeSlug } : {}),
             ...worktreeTarget,
             ...(title ? { title } : {}),
-            background,
-            callerWorkspaceId: resolveCallerAgent()?.workspaceId,
+            ...workspaceBackgroundIntent(background),
             ...(notifications ? { notifications } : {}),
           },
         );
@@ -1442,7 +1458,7 @@ function createToolCatalog(
       if (!options.workspaceRegistry) {
         throw new Error("Workspace registry is not configured");
       }
-      const workspaces = (await options.workspaceRegistry.list())
+      const workspaces = (await options.workspaceRegistry.listActive())
         .filter(
           (workspace) => !workspace.archivedAt && (includeBackground || !workspace.background),
         )
@@ -1593,7 +1609,7 @@ function createToolCatalog(
     {
       title: "Create agent",
       description:
-        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. Do not guess; call list_providers and list_models first if uncertain.",
+        "Create an agent. Agent-scoped creation defaults to your workspace and creates your subagent. Top-level creation without workspaceId creates a new local workspace. Requires provider/model (for example codex/gpt-5.4) and an initial prompt. For a different provider, set settings.modeId from inspect_provider; omission is accepted for targets with no modes and for unattended execution supported by the target. Do not guess; call list_providers and list_models first if uncertain.",
       inputSchema: createAgentInputSchema,
       outputSchema: {
         agentId: z.string(),
@@ -1644,7 +1660,7 @@ function createToolCatalog(
           cwd: resolvedArgs.cwd,
           workspaceId: resolvedArgs.workspaceId,
           thinking: parsedArgs.settings?.thinkingOptionId,
-          features: parsedArgs.settings?.features,
+          providerOptions: parsedArgs.settings?.features,
           labels: {
             ...parsedArgs.labels,
             ...(callerAgentId && !resolvedArgs.detached && options.serverId
@@ -1654,6 +1670,7 @@ function createToolCatalog(
           mode: parsedArgs.settings?.modeId,
           promptFailure: "throw",
           notifyOnFinish,
+          background: parsedArgs.background,
           detached: resolvedArgs.detached,
           notifications: resolvedArgs.notifications,
           callerAgentId,
@@ -1868,7 +1885,7 @@ function createToolCatalog(
       return {
         cwd,
         workspaceId: await options.ensureWorkspaceForCreate(cwd, firstAgentContext, {
-          callerWorkspaceId: resolveCallerAgent()?.workspaceId,
+          ...workspaceBackgroundIntent(undefined),
           notifications,
         }),
       };
@@ -1975,7 +1992,7 @@ function createToolCatalog(
       return {
         cwd,
         workspaceId: await options.ensureWorkspaceForCreate(cwd, firstAgentContext, {
-          callerWorkspaceId: resolveCallerAgent()?.workspaceId,
+          ...workspaceBackgroundIntent(undefined),
           notifications: workspace.notifications,
         }),
       };
@@ -2325,9 +2342,7 @@ function createToolCatalog(
         await agentManager.setAgentThinkingOption(agentId, settings.thinkingOptionId);
       }
       if (settings?.features) {
-        for (const [featureId, value] of Object.entries(settings.features)) {
-          await agentManager.setAgentFeature(agentId, featureId, value);
-        }
+        await agentManager.setAgentOptions(agentId, settings.features);
       }
 
       await updateAgentCommand({ agentManager }, { agentId, name, labels });
@@ -3108,8 +3123,8 @@ function createToolCatalog(
         "List agent profiles: named provider/model/mode bundles a human configured for specific " +
         "kinds of work. Read each profile's `notes` to pick the one that fits the task you're " +
         "delegating, then copy its `provider`, `model`, `modeId`, `thinkingOptionId`, and " +
-        "`featureValues` into create_agent (there is no `profile` parameter). Returns an empty " +
-        "list if none are configured.",
+        "`options` into create_agent as `settings.features` (there is no `profile` parameter). " +
+        "Returns an empty list if none are configured.",
       inputSchema: {},
       outputSchema: {
         profiles: z.array(AgentProfileSchema),

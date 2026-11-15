@@ -13,6 +13,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { useDismissibleOverlay } from "@/components/ui/overlay-dismissal";
 import type { ElementRef, ReactNode } from "react";
 import { View } from "react-native";
 import { systemBackPress } from "./back-press";
@@ -205,6 +206,7 @@ export function useIsolatedBottomSheetVisibility({
   useEffect(() => {
     tracker.syncDesired({ visible, isEnabled });
   }, [isEnabled, tracker, visible]);
+  useDismissibleOverlay(visible && isEnabled !== false, onClose);
 
   return {
     sheetRef: setSheetRef,

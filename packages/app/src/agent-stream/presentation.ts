@@ -51,6 +51,7 @@ const NO_COLLAPSED_TURNS: StreamPresentation["turns"] = collapseTurns({
   isLatestTurnOpen: false,
   expandedHostIds: new Set(),
   getGroupedCalls: () => undefined,
+  previousSummaryRowsByHostId: new Map(),
 });
 // Shared by every presentation instance. Rows are a function of their source item, and a chat
 // view mounts fresh on Android whenever it leaves the small retained set, so per-instance caches
@@ -173,6 +174,8 @@ export function createStreamPresentation() {
         isLatestTurnOpen,
         expandedHostIds: input.expandedTurnHostIds,
         getGroupedCalls: (itemId) => projection.groupsByHostId.get(itemId)?.run.calls,
+        previousSummaryRowsByHostId:
+          collapsed?.summaryRowsByHostId ?? NO_COLLAPSED_TURNS.summaryRowsByHostId,
       });
       collapsedSource = projection.tail;
       collapsedIsLatestTurnOpen = isLatestTurnOpen;

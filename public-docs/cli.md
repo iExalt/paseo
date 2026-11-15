@@ -221,6 +221,8 @@ paseo workspace rename <workspace-id> --reset   # back to the branch or director
 paseo workspace archive <workspace-id>
 ```
 
+Inside an agent session, `PASEO_WORKSPACE_ID` holds the agent's own workspace ID, so an agent can run `paseo workspace rename "$PASEO_WORKSPACE_ID" "Auth rework"` or `paseo workspace archive "$PASEO_WORKSPACE_ID"` even when other workspaces share its directory.
+
 Explicit workspace archive deletes a Paseo-owned worktree, including dirty, untracked,
 and ignored files. External directories not owned by Paseo are preserved.
 
@@ -334,10 +336,10 @@ behavior.
 
 ```bash
 paseo ls                    # Non-archived agents in active workspaces
-paseo ls -a                 # Also include archived agents
+paseo ls -a                 # Also include archived and background agents, with a BACKGROUND column
 paseo ls -g                 # Non-archived agents across all workspaces
 paseo ls -a -g --json       # All agents, including archived, as JSON
-paseo ls --background       # Also include agents in background workspaces
+paseo ls --background       # Also include background agents and agents in background workspaces
 ```
 
 Use `agent query` for directory descendants, status sets, limits, and archived activity age, with independent archive/background inclusion:

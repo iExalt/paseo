@@ -245,6 +245,19 @@ function timeline(text = "Cached") {
   };
 }
 
+it("keeps the unsettled turn with the cached messages", async () => {
+  const storage = new MemoryStorage();
+  const writer = createCache(storage);
+  const cached = {
+    ...timeline(),
+    unsettledTurn: { startedAt: new Date("2026-08-26T09:59:00.000Z"), turnId: "turn-1" },
+  };
+  writer.commitTimeline(SERVER_ID, "agent-1", cached);
+  await writer.flush();
+
+  expect(await createCache(storage).readTimeline(SERVER_ID, "agent-1")).toEqual(cached);
+});
+
 function commitDirectory(
   cache: ReplicaCache,
   serverId: string,
@@ -311,15 +324,17 @@ async function expectLegacyWorkspaceRefresh({
   reader,
 }: Awaited<ReturnType<typeof cacheWithoutBackgroundVisibility>>): Promise<void> {
   const restored = await readCachedDirectory(reader);
-  expect(restored.workspaces.size).toBe(0);
-  expect(restored.checkpoint).toEqual({
+  expect(restored?.workspaces.size).toBe(0);
+  expect(restored?.checkpoint).toEqual({
     agents: baseline.checkpoint.agents,
     projects: baseline.checkpoint.projects,
   });
-  expect(restored.agents).toEqual(baseline.agents);
+  expect(restored?.agents).toEqual(baseline.agents);
   expect(restored.projects).toEqual(baseline.projects);
   expect(await reader.readTimeline(SERVER_ID, "agent-1")).toEqual(timeline());
-  expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual(restored.checkpoint);
+  expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual(
+    restored?.checkpoint,
+  );
 
   baseline.workspaces.set(
     "workspace-1",
@@ -346,6 +361,41 @@ describe("ReplicaCache", () => {
     const restored = await createCache(storage).readTimeline(SERVER_ID, "agent-1");
     expect(restored?.items.map((item) => item.id)).toEqual(items.map((item) => item.id));
     expect(restored?.range).toBeNull();
+  });
+
+  it("preserves workspace parentage and its checkpoint across cache reopen", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const baseline = directory({ workspaces: { generation: "g", afterSeq: 8 } });
+    const workspace = normalizeWorkspaceDescriptor({
+      ...workspacePayload(),
+      parentWorkspaceId: "parent",
+    });
+    baseline.workspaces.set(workspace.id, workspace);
+    commitDirectory(writer, SERVER_ID, baseline);
+    await writer.flush();
+    const reader = createCache(storage);
+    const restored = await reader.readDirectory(SERVER_ID);
+    expect(restored?.checkpoint).toEqual(baseline.checkpoint);
+    expect(restored?.workspaces.get(workspace.id)?.parentWorkspaceId).toBe("parent");
+    expect((await reader.readWorkspace(SERVER_ID, workspace.id))?.workspace.parentWorkspaceId).toBe(
+      "parent",
+    );
+  });
+
+  it("preserves where the workspace's forge is on the web across cache reopen", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const baseline = directory({ workspaces: { generation: "g", afterSeq: 8 } });
+    const forgeWeb = { host: "github.com", referenceRepository: "main-owner/repo" };
+    const workspace = normalizeWorkspaceDescriptor({ ...workspacePayload(), forgeWeb });
+    baseline.workspaces.set(workspace.id, workspace);
+    commitDirectory(writer, SERVER_ID, baseline);
+    await writer.flush();
+
+    const restored = await createCache(storage).readDirectory(SERVER_ID);
+
+    expect(restored?.workspaces.get(workspace.id)?.forgeWeb).toEqual(forgeWeb);
   });
 
   it("preserves workspace sorting timestamps across cache reopen", async () => {
@@ -436,7 +486,7 @@ describe("ReplicaCache", () => {
 
     const reader = createCache(storage);
     const restored = await readCachedDirectory(reader);
-    expect(restored.checkpoint).toBeUndefined();
+    expect(restored?.checkpoint).toBeUndefined();
     expect([...restored.workspaces.keys()]).toEqual([...baseline.workspaces.keys()]);
     expect([...restored.projects.keys()]).toEqual([...baseline.projects.keys()]);
     expect([...restored.agents.keys()]).toEqual([...baseline.agents.keys()]);
@@ -540,6 +590,23 @@ describe("ReplicaCache", () => {
     expect(storage.changes[0]?.deletes).toEqual([]);
   });
 
+  it("keeps a background agent background across cache reopen", async () => {
+    const storage = new MemoryStorage();
+    const writer = createCache(storage);
+    const helper = { ...agent("helper"), background: true };
+    const visible = agent("visible");
+    writer.commitDirectoryMutations(SERVER_ID, [
+      { kind: "agent", type: "upsert", id: helper.id, value: helper },
+      { kind: "agent", type: "upsert", id: visible.id, value: visible },
+    ]);
+    await writer.flush();
+
+    const restored = await createCache(storage).readDirectory(SERVER_ID);
+
+    expect(restored?.agents.get("helper")?.background).toBe(true);
+    expect(restored?.agents.get("visible")?.background).toBe(false);
+  });
+
   it("round-trips identified and anonymous open turns without changing protocol status", async () => {
     const storage = new MemoryStorage();
     const writer = createCache(storage);
@@ -565,7 +632,7 @@ describe("ReplicaCache", () => {
 
     const restored = await readCachedDirectory(createCache(storage));
 
-    expect(restored.agents.get("identified")).toMatchObject({
+    expect(restored?.agents.get("identified")).toMatchObject({
       status: "idle",
       turn: {
         phase: "open",
@@ -574,7 +641,7 @@ describe("ReplicaCache", () => {
         cancellationRequestId: null,
       },
     });
-    expect(restored.agents.get("anonymous")).toMatchObject({
+    expect(restored?.agents.get("anonymous")).toMatchObject({
       status: "idle",
       turn: {
         phase: "open",
@@ -951,7 +1018,7 @@ describe("ReplicaCache", () => {
 
     const restored = await readCachedDirectory(cache);
 
-    expect(restored.agents.size).toBe(0);
+    expect(restored?.agents.size).toBe(0);
     expect(restored.projects.get("project-1")?.projectDisplayName).toBe("Paseo");
     expect(storage.rows.has(`${SERVER_ID}:agent:agent-1`)).toBe(false);
     expect(storage.rows.has(`${SERVER_ID}:project:project-1`)).toBe(true);
@@ -1039,7 +1106,7 @@ describe("ReplicaCache", () => {
 
     const restored = await readCachedDirectory(createCache(storage));
 
-    expect(restored.checkpoint).toEqual({
+    expect(restored?.checkpoint).toEqual({
       projects: { generation: "g", afterSeq: 4 },
     });
     expect(storage.changes.at(-1)).toMatchObject({

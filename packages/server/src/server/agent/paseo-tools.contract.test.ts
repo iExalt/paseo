@@ -264,15 +264,19 @@ interface TestDeps {
 function buildAgentManagerSpies() {
   return {
     createAgent: vi.fn(),
-    waitForAgentEvent: vi.fn().mockResolvedValue({
-      status: "idle",
-      permission: null,
-      lastMessage: null,
-    }),
+    waitForAgentEvent: vi.fn(
+      (_agentId: string, { signal }: { signal?: AbortSignal }) =>
+        new Promise((resolve) => {
+          const finish = () => resolve({ status: "idle", permission: null, lastMessage: null });
+          if (signal?.aborted) finish();
+          else signal?.addEventListener("abort", finish, { once: true });
+        }),
+    ),
+    getLastAssistantMessage: vi.fn().mockResolvedValue(null),
     setAgentMode: vi.fn().mockResolvedValue(undefined),
     setAgentModel: vi.fn().mockResolvedValue(undefined),
     setAgentThinkingOption: vi.fn().mockResolvedValue(undefined),
-    setAgentFeature: vi.fn().mockResolvedValue(undefined),
+    setAgentOptions: vi.fn().mockResolvedValue(undefined),
     setLabels: vi.fn().mockResolvedValue(undefined),
     setTitle: vi.fn().mockResolvedValue(undefined),
     updateAgentMetadata: vi.fn().mockResolvedValue(undefined),
@@ -298,7 +302,8 @@ function buildAgentManagerSpies() {
     cancelAgentRun: vi.fn(),
     getPendingPermissions: vi.fn(),
     getRegisteredProviderIds: vi.fn().mockReturnValue(["claude"]),
-    listDraftFeatures: vi.fn(),
+    listDraftControls: vi.fn(),
+    effectiveOptionsFor: (_provider: string, own?: Record<string, unknown>) => own ?? {},
   };
 }
 
@@ -308,7 +313,7 @@ function buildAgentStorageSpies() {
     setTitle: vi.fn().mockResolvedValue(undefined),
     upsert: vi.fn().mockResolvedValue(undefined),
     applySnapshot: vi.fn(),
-    list: vi.fn().mockResolvedValue([]),
+    listActive: vi.fn().mockResolvedValue([]),
     remove: vi.fn(),
   };
 }
@@ -488,9 +493,9 @@ function configureOpenCodeProviderStub(
     const opts = input as {
       provider: AgentProvider;
       requestedMode: string | undefined;
-      featureValues: Record<string, unknown> | undefined;
+      providerOptions: Record<string, unknown> | undefined;
     };
-    return { modeId: opts.requestedMode, featureValues: opts.featureValues };
+    return { modeId: opts.requestedMode, providerOptions: opts.providerOptions };
   });
 }
 
@@ -578,6 +583,7 @@ function createManagedAgent(overrides: Partial<ManagedAgent> = {}): ManagedAgent
     pendingPermissions: new Map(),
     persistence: null,
     labels: {},
+    metadata: {},
     attention: { requiresAttention: false },
     ...overrides,
   } as ManagedAgent;
@@ -655,7 +661,7 @@ class BoundaryAgentManagerFake {
 }
 
 class BoundaryAgentStorageFake {
-  public async list(): Promise<StoredAgentRecord[]> {
+  public async listActive(): Promise<StoredAgentRecord[]> {
     return [];
   }
 }
@@ -794,7 +800,8 @@ function createPaseoWorktreeForMcpTest(options: {
     initialize: async () => {},
     existsOnDisk: async () => true,
     get: async (workspaceId: string) => workspaces.get(workspaceId) ?? null,
-    list: async () => Array.from(workspaces.values()),
+    listActive: async () => Array.from(workspaces.values()).filter((record) => !record.archivedAt),
+    listAll: async () => Array.from(workspaces.values()),
     update: async (workspaceId, updater) => {
       const workspace = workspaces.get(workspaceId);
       if (!workspace) return null;
@@ -918,7 +925,11 @@ function createAgentToolCatalog(
   const server = createPaseoToolCatalog({
     agentMessages: () => messages,
     finishSubscriptions: () => subscriptions,
-    workspaceRegistry: { get: async () => null, list: async () => [], upsert: async () => {} },
+    workspaceRegistry: {
+      get: async () => null,
+      listActive: async () => [],
+      upsert: async () => {},
+    },
     ...options,
   });
   serverSubscriptionRecords.set(server, records);
@@ -1531,16 +1542,18 @@ describe("create_agent native tool", () => {
 
   it("applies a notification policy when top-level create_agent mints its workspace", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "top-level-agent",
-      provider: "codex",
-      cwd: existingCwd,
-      workspaceId: "workspace-created",
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "New workspace agent" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "top-level-agent",
+        provider: "codex",
+        cwd: existingCwd,
+        workspaceId: "workspace-created",
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "New workspace agent" },
+      }),
+    );
     const persistWorkspaceForCreate = vi.fn(async () => "workspace-created");
     const server = await createAgentToolCatalog({
       agentManager,
@@ -1594,16 +1607,18 @@ describe("create_agent native tool", () => {
 
   it("creates a fresh local workspace for canonical top-level creation", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "top-level-agent",
-      provider: "codex",
-      cwd: existingCwd,
-      workspaceId: "workspace-created",
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Top-level agent" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "top-level-agent",
+        provider: "codex",
+        cwd: existingCwd,
+        workspaceId: "workspace-created",
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Top-level agent" },
+      }),
+    );
     const ensureWorkspace = vi.fn(async () => "workspace-created");
     const server = await createAgentToolCatalog({
       agentManager,
@@ -1617,6 +1632,7 @@ describe("create_agent native tool", () => {
       title: "Top-level agent",
       provider: "codex/gpt-5.4",
       initialPrompt: "Do work",
+      background: true,
     });
 
     expect(ensureWorkspace).toHaveBeenCalledWith(
@@ -1627,11 +1643,11 @@ describe("create_agent native tool", () => {
     expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ cwd: existingCwd }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { background: true, env: undefined, owner: undefined, workspaceId: "workspace-created" },
     );
   });
 
-  it("rejects public internal helpers and the old top-level execution background option", async () => {
+  it("rejects public internal helpers", async () => {
     const workdir = await mkdtemp(join(tmpdir(), "mcp-public-helper-removal-"));
     const storage = new AgentStorage(join(workdir, "agents"), logger);
     const agentManager = new AgentManager({
@@ -1649,9 +1665,6 @@ describe("create_agent native tool", () => {
       const tool = registeredTool(server, "create_agent");
       const input = { title: "Helper", provider: "codex/gpt-5.4", initialPrompt: "Summarize" };
       await expect(tool.handler({ ...input, internal: true })).rejects.toThrow(/Unrecognized key/);
-      await expect(tool.handler({ ...input, background: true })).rejects.toThrow(
-        /Unrecognized key/,
-      );
     } finally {
       await removeAgentStateDir(agentManager, storage, workdir);
     }
@@ -1712,13 +1725,15 @@ describe("create_agent native tool", () => {
 
   it("requires a caller workspace for current workspace intent", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "parent-agent",
-      config: {},
-      cwd: existingCwd,
-      provider: "codex",
-      currentModeId: "full-access",
-    } as ManagedAgent);
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "parent-agent",
+        config: {},
+        cwd: existingCwd,
+        provider: "codex",
+        currentModeId: "full-access",
+      }),
+    );
     const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
@@ -1740,15 +1755,17 @@ describe("create_agent native tool", () => {
 
   it("attaches create_agent to an existing workspace id", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "existing-workspace-agent",
-      cwd: existingCwd,
-      workspaceId: "wks_existing",
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Existing workspace" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "existing-workspace-agent",
+        cwd: existingCwd,
+        workspaceId: "wks_existing",
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Existing workspace" },
+      }),
+    );
     const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
@@ -1773,7 +1790,7 @@ describe("create_agent native tool", () => {
         cwd: existingCwd,
       }),
       undefined,
-      { workspaceId: "wks_existing" },
+      { background: false, env: undefined, owner: undefined, workspaceId: "wks_existing" },
     );
   });
 
@@ -1902,14 +1919,16 @@ describe("create_agent native tool", () => {
 
   it("accepts provider features and passes them through createAgent", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "feature-agent",
-      cwd: REPO_CWD,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Feature test", featureValues: { fast_mode: true } },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "feature-agent",
+        cwd: REPO_CWD,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Feature test", providerOptions: { fast_mode: true } },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -1937,32 +1956,34 @@ describe("create_agent native tool", () => {
       expect.objectContaining({
         provider: "codex",
         model: "gpt-5.4",
-        featureValues: { fast_mode: true },
+        providerOptions: { fast_mode: true },
       }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { background: false, env: undefined, owner: undefined, workspaceId: "workspace-created" },
     );
   });
 
   it("returns create_agent structured content with full provider modes", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "mode-agent",
-      provider: "codex",
-      cwd: REPO_CWD,
-      lifecycle: "idle",
-      currentModeId: "build",
-      availableModes: [
-        {
-          id: "build",
-          label: "Build",
-          description: null,
-          icon: "hammer",
-          colorTier: "dangerous",
-        },
-      ],
-      config: { title: "Mode test" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "mode-agent",
+        provider: "codex",
+        cwd: REPO_CWD,
+        lifecycle: "idle",
+        currentModeId: "build",
+        availableModes: [
+          {
+            id: "build",
+            label: "Build",
+            description: null,
+            icon: "hammer",
+            colorTier: "dangerous",
+          },
+        ],
+        config: { title: "Mode test" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -2106,14 +2127,16 @@ describe("create_agent native tool", () => {
 
   it("passes caller-provided titles directly into createAgent", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "agent-123",
-      cwd: REPO_CWD,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Fix auth bug" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "agent-123",
+        cwd: REPO_CWD,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Fix auth bug" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -2136,20 +2159,22 @@ describe("create_agent native tool", () => {
         title: "Fix auth bug",
       }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { background: false, env: undefined, owner: undefined, workspaceId: "workspace-created" },
     );
   });
 
   it("trims caller-provided titles before createAgent", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "agent-456",
-      cwd: REPO_CWD,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Fix auth" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "agent-456",
+        cwd: REPO_CWD,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Fix auth" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -2171,20 +2196,22 @@ describe("create_agent native tool", () => {
         title: "Fix auth",
       }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { background: false, env: undefined, owner: undefined, workspaceId: "workspace-created" },
     );
   });
 
   it("requires provider/model and passes thinking and labels through createAgent", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "agent-789",
-      cwd: REPO_CWD,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Config test", model: "claude-sonnet-4-20250514" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "agent-789",
+        cwd: REPO_CWD,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Config test", model: "claude-sonnet-4-20250514" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -2213,6 +2240,9 @@ describe("create_agent native tool", () => {
       }),
       undefined,
       {
+        background: false,
+        env: undefined,
+        owner: undefined,
         labels: { source: "mcp" },
         workspaceId: "workspace-created",
       },
@@ -2318,7 +2348,12 @@ describe("create_agent native tool", () => {
           title: "Directory agent",
         }),
         undefined,
-        { workspaceId: "workspace-directory-auto-title" },
+        {
+          background: false,
+          env: undefined,
+          owner: undefined,
+          workspaceId: "workspace-directory-auto-title",
+        },
       );
       expect(workspaceRecords.get("workspace-directory-auto-title")).toMatchObject({
         title: "Directory Workspace Title",
@@ -2678,7 +2713,10 @@ describe("create_agent native tool", () => {
         force: true,
         reason: "archive-worktree",
       });
-      expect(archiveWorkspaceRecord).toHaveBeenCalledWith("ws-archive-tool-worktree");
+      expect(archiveWorkspaceRecord).toHaveBeenCalledWith(
+        "ws-archive-tool-worktree",
+        expect.stringMatching(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/),
+      );
       expect(markWorkspaceArchiving).toHaveBeenCalledWith(
         ["ws-archive-tool-worktree"],
         expect.any(String),
@@ -2867,7 +2905,7 @@ describe("create_agent native tool", () => {
       providerSnapshotManager: createOpenCodeManager().manager,
       workspaceRegistry: {
         get: vi.fn(async () => workspace),
-        list: vi.fn(async () => [workspace]),
+        listActive: vi.fn(async () => [workspace]),
         upsert: vi.fn(async () => undefined),
       },
       logger,
@@ -2904,7 +2942,7 @@ describe("create_agent native tool", () => {
       providerSnapshotManager: createOpenCodeManager().manager,
       workspaceRegistry: {
         get: vi.fn(async () => backgroundWorkspace),
-        list: vi.fn(async () => [backgroundWorkspace]),
+        listActive: vi.fn(async () => [backgroundWorkspace]),
         upsert: vi.fn(async () => undefined),
       },
       createDirectoryWorkspace: async (cwd, _title, _projectId, context) => {
@@ -2945,7 +2983,7 @@ describe("create_agent native tool", () => {
       providerSnapshotManager: createOpenCodeManager().manager,
       workspaceRegistry: {
         get: async (workspaceId) => (workspaceId === current.workspaceId ? current : null),
-        list: async () => [current],
+        listActive: async () => [current],
         upsert: async () => undefined,
       },
       updateWorkspaceNotifications: async (workspaceId, notifications) => {
@@ -3143,22 +3181,26 @@ describe("create_agent native tool", () => {
     const baseDir = await mkdtemp(join(tmpdir(), "paseo-mcp-test-"));
     const subdir = join(baseDir, "subdir");
     await mkdir(subdir, { recursive: true });
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "voice-agent",
-      config: { title: "Voice" },
-      cwd: baseDir,
-      workspaceId: "wks_voice",
-      provider: "codex",
-      currentModeId: "full-access",
-    } as ManagedAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "child-agent",
-      cwd: subdir,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Child" },
-    } as ManagedAgent);
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "voice-agent",
+        config: { title: "Voice" },
+        cwd: baseDir,
+        workspaceId: "wks_voice",
+        provider: "codex",
+        currentModeId: "full-access",
+      }),
+    );
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "child-agent",
+        cwd: subdir,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Child" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -3186,6 +3228,9 @@ describe("create_agent native tool", () => {
       }),
       undefined,
       {
+        background: false,
+        env: undefined,
+        owner: undefined,
         labels: {
           [PARENT_AGENT_ID_LABEL]: "voice-agent",
           source: "voice",
@@ -3196,71 +3241,76 @@ describe("create_agent native tool", () => {
     await rm(baseDir, { recursive: true, force: true });
   });
 
-  it("rejects background from caller agents and defaults notify-on-finish on", async () => {
+  it("inherits background from callers, accepts explicit false and defaults notify-on-finish on", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
+    const parent = createManagedAgent({
       id: "parent-agent",
-      config: {},
       cwd: existingCwd,
       workspaceId: "wks_parent",
       provider: "codex",
       currentModeId: "full-access",
-    } as ManagedAgent);
-
+      background: true,
+    });
+    const child = createManagedAgent({
+      id: "child-agent",
+      cwd: existingCwd,
+      workspaceId: "wks_parent",
+      provider: "codex",
+    });
+    spies.agentManager.getAgent.mockImplementation((id: string) =>
+      id === parent.id ? parent : child,
+    );
+    spies.agentManager.createAgent.mockResolvedValue(child);
     const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
       providerSnapshotManager: createOpenCodeManager().manager,
-      callerAgentId: "parent-agent",
+      callerAgentId: parent.id,
       logger,
     });
-
     const tool = registeredTool(server, "create_agent");
-    await expect(
-      tool.handler({
-        ...subagentCurrentWorkspace(),
-        title: "Child",
-        provider: "codex/gpt-5.4",
-        initialPrompt: "Do work",
-        background: false,
-      }),
-    ).rejects.toThrow(/Unrecognized key/);
-
-    const parsed = await tool.inputSchema.safeParseAsync({
+    const input = {
       ...subagentCurrentWorkspace(),
       title: "Child",
       provider: "codex/gpt-5.4",
       initialPrompt: "Do work",
-    });
+    };
+    const parsed = await tool.inputSchema.safeParseAsync(input);
     expect(parsed.success).toBe(true);
-    if (!parsed.success) {
-      throw new Error("Expected caller create_agent input to parse");
-    }
+    if (!parsed.success) throw new Error("Expected caller input to parse");
     expect(parsed.data).toMatchObject({
       relationship: { kind: "subagent" },
       workspace: { kind: "current" },
       notifyOnFinish: true,
     });
+    await tool.handler(input);
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[2]).toMatchObject({
+      background: true,
+    });
+    await tool.handler({ ...input, background: false });
+    expect(spies.agentManager.createAgent.mock.calls.at(-1)?.[2]).toMatchObject({
+      background: false,
+    });
   });
 
   it("returns notify-on-finish guidance for caller-created agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    const parentAgent = {
+    const parentAgent = createManagedAgent({
       id: "parent-agent",
       config: {},
       cwd: existingCwd,
       workspaceId: "wks_parent",
       provider: "codex",
       currentModeId: "full-access",
-    } as ManagedAgent;
-    const childAgent = {
+    });
+    const childAgent = createManagedAgent({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "idle",
       currentModeId: null,
       availableModes: [],
       config: { title: "Child" },
-    } as ManagedAgent;
+    });
     spies.agentManager.getAgent.mockImplementation((agentId: string) => {
       if (agentId === "parent-agent") return parentAgent;
       if (agentId === "child-agent") return childAgent;
@@ -3335,22 +3385,26 @@ describe("create_agent native tool", () => {
 
   it("creates detached caller agents without a parent label", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "parent-agent",
-      config: {},
-      cwd: existingCwd,
-      workspaceId: "wks_parent",
-      provider: "codex",
-      currentModeId: "full-access",
-    } as ManagedAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "detached-agent",
-      cwd: existingCwd,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Detached" },
-    } as ManagedAgent);
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "parent-agent",
+        config: {},
+        cwd: existingCwd,
+        workspaceId: "wks_parent",
+        provider: "codex",
+        currentModeId: "full-access",
+      }),
+    );
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "detached-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Detached" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -3378,6 +3432,9 @@ describe("create_agent native tool", () => {
       }),
       undefined,
       {
+        background: false,
+        env: undefined,
+        owner: undefined,
         labels: {
           source: "handoff",
         },
@@ -3388,26 +3445,30 @@ describe("create_agent native tool", () => {
 
   it("accepts provider features from caller agents and passes them through createAgent", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "parent-agent",
-      config: {},
-      cwd: existingCwd,
-      workspaceId: "wks_parent",
-      provider: "claude",
-      currentModeId: "bypassPermissions",
-    } as ManagedAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "child-agent",
-      cwd: existingCwd,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Child", featureValues: { fast_mode: true } },
-    } as ManagedAgent);
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "parent-agent",
+        config: {},
+        cwd: existingCwd,
+        workspaceId: "wks_parent",
+        provider: "claude",
+        currentModeId: "bypassPermissions",
+      }),
+    );
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "child-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Child", providerOptions: { fast_mode: true } },
+      }),
+    );
     const providerSnapshot = createOpenCodeManager();
     providerSnapshot.stub.resolveCreateConfig.mockImplementation(async (input) => {
-      const opts = input as { featureValues: Record<string, unknown> | undefined };
-      return { modeId: undefined, featureValues: opts.featureValues };
+      const opts = input as { providerOptions: Record<string, unknown> | undefined };
+      return { modeId: undefined, providerOptions: opts.providerOptions };
     });
 
     const server = await createAgentToolCatalog({
@@ -3435,10 +3496,13 @@ describe("create_agent native tool", () => {
       expect.objectContaining({
         provider: "codex",
         model: "gpt-5.4",
-        featureValues: { fast_mode: true },
+        providerOptions: { fast_mode: true },
       }),
       undefined,
       {
+        background: false,
+        env: undefined,
+        owner: undefined,
         labels: {
           [PARENT_AGENT_ID_LABEL]: "parent-agent",
         },
@@ -3449,7 +3513,7 @@ describe("create_agent native tool", () => {
 
   it("inherits provider options only when the child uses the caller provider", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    const parentAgent = {
+    const parentAgent = createManagedAgent({
       id: "parent-agent",
       cwd: existingCwd,
       workspaceId: "wks_parent",
@@ -3461,16 +3525,18 @@ describe("create_agent native tool", () => {
           sandbox_workspace_write: { writable_roots: ["/tmp/shared"] },
         },
       },
-    } as ManagedAgent;
+    });
     spies.agentManager.getAgent.mockReturnValue(parentAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "child-agent",
-      cwd: existingCwd,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Child" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "child-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Child" },
+      }),
+    );
     const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
@@ -3518,7 +3584,7 @@ describe("create_agent native tool", () => {
       const parent = await agentManager.createAgent(
         { provider: "codex", cwd: existingCwd },
         undefined,
-        { workspaceId: "wks_parent" },
+        { background: false, env: undefined, owner: undefined, workspaceId: "wks_parent" },
       );
 
       const server = await createAgentToolCatalog({
@@ -3547,14 +3613,16 @@ describe("create_agent native tool", () => {
 
   it("delegates native tool setup to AgentManager and passes through an undefined agent ID", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "agent-injected-123",
-      cwd: REPO_CWD,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Injected config test" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "agent-injected-123",
+        cwd: REPO_CWD,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Injected config test" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -3581,6 +3649,9 @@ describe("create_agent native tool", () => {
     expect(agentIdArg).toBeUndefined();
     expect(optionsArg).toEqual({
       workspaceId: "workspace-created",
+      background: false,
+      env: undefined,
+      owner: undefined,
     });
   });
 
@@ -3613,14 +3684,16 @@ describe("create_agent native tool", () => {
 
   it("validates create_agent modes against the shared provider snapshot", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "child-agent",
-      cwd: existingCwd,
-      lifecycle: "idle",
-      currentModeId: "dynamic",
-      availableModes: [],
-      config: { title: "Child" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "child-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: "dynamic",
+        availableModes: [],
+        config: { title: "Child" },
+      }),
+    );
     const dynamicModes: AgentMode[] = [
       { id: "dynamic", label: "Dynamic", description: "Runtime mode" },
     ];
@@ -3636,7 +3709,7 @@ describe("create_agent native tool", () => {
     provStub.resolveCreateConfig.mockImplementation(async (input) => {
       const opts = input as { requestedMode: string | undefined };
       expect(opts.requestedMode).toBe("dynamic");
-      return { modeId: "dynamic", featureValues: undefined };
+      return { modeId: "dynamic", providerOptions: undefined };
     });
     const server = await createAgentToolCatalog({
       agentManager,
@@ -3658,24 +3731,26 @@ describe("create_agent native tool", () => {
     expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({ modeId: "dynamic" }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { background: false, env: undefined, owner: undefined, workspaceId: "workspace-created" },
     );
   });
 
   it("passes resolver-returned mode and features into createAgent", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "child-agent",
-      cwd: existingCwd,
-      lifecycle: "idle",
-      currentModeId: "build",
-      availableModes: [],
-      config: { title: "Child", featureValues: { auto_accept: true } },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "child-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: "build",
+        availableModes: [],
+        config: { title: "Child", providerOptions: { auto_accept: true } },
+      }),
+    );
     const providerSnapshot = createOpenCodeManager();
     providerSnapshot.stub.resolveCreateConfig.mockResolvedValue({
       modeId: "build",
-      featureValues: { auto_accept: true },
+      providerOptions: { auto_accept: true },
     });
     const server = await createAgentToolCatalog({
       agentManager,
@@ -3695,35 +3770,37 @@ describe("create_agent native tool", () => {
     });
 
     expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
-      expect.objectContaining({ modeId: "build", featureValues: { auto_accept: true } }),
+      expect.objectContaining({ modeId: "build", providerOptions: { auto_accept: true } }),
       undefined,
-      { workspaceId: "workspace-created" },
+      { background: false, env: undefined, owner: undefined, workspaceId: "workspace-created" },
     );
   });
 
   it("passes the real parent agent and explicit unattended intent to the resolver", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    const parentAgent = {
+    const parentAgent = createManagedAgent({
       id: "parent-agent",
       config: {},
       cwd: existingCwd,
       workspaceId: "wks_parent",
       provider: "claude",
       currentModeId: "bypassPermissions",
-    } as ManagedAgent;
+    });
     spies.agentManager.getAgent.mockReturnValue(parentAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "child-agent",
-      cwd: existingCwd,
-      lifecycle: "idle",
-      currentModeId: "resolver-mode",
-      availableModes: [],
-      config: { title: "Child" },
-    } as ManagedAgent);
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "child-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: "resolver-mode",
+        availableModes: [],
+        config: { title: "Child" },
+      }),
+    );
     const providerSnapshot = createOpenCodeManager();
     providerSnapshot.stub.resolveCreateConfig.mockResolvedValue({
       modeId: "resolver-mode",
-      featureValues: { resolver_feature: true },
+      providerOptions: { resolver_feature: true },
     });
 
     const server = await createAgentToolCatalog({
@@ -3747,7 +3824,7 @@ describe("create_agent native tool", () => {
     expect(spies.agentManager.createAgent).toHaveBeenCalledWith(
       expect.objectContaining({
         modeId: "resolver-mode",
-        featureValues: { resolver_feature: true },
+        providerOptions: { resolver_feature: true },
       }),
       undefined,
       expect.any(Object),
@@ -3756,22 +3833,26 @@ describe("create_agent native tool", () => {
 
   it("accepts an explicit valid mode across providers", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "parent-agent",
-      config: {},
-      cwd: existingCwd,
-      workspaceId: "wks_parent",
-      provider: "claude",
-      currentModeId: "bypassPermissions",
-    } as ManagedAgent);
-    spies.agentManager.createAgent.mockResolvedValue({
-      id: "child-agent",
-      cwd: existingCwd,
-      lifecycle: "idle",
-      currentModeId: "build",
-      availableModes: [],
-      config: { title: "Child" },
-    } as ManagedAgent);
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "parent-agent",
+        config: {},
+        cwd: existingCwd,
+        workspaceId: "wks_parent",
+        provider: "claude",
+        currentModeId: "bypassPermissions",
+      }),
+    );
+    spies.agentManager.createAgent.mockResolvedValue(
+      createManagedAgent({
+        id: "child-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: "build",
+        availableModes: [],
+        config: { title: "Child" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -4049,7 +4130,7 @@ describe("send_agent_prompt native tool", () => {
         const parent = await manager.createAgent(
           { provider: "codex", cwd: existingCwd },
           undefined,
-          { workspaceId: "wks_parent" },
+          { background: false, env: undefined, owner: undefined, workspaceId: "wks_parent" },
         );
         const child = await manager.createAgent(
           { provider: "codex", cwd: existingCwd },
@@ -4319,22 +4400,22 @@ describe("send_agent_prompt native tool", () => {
 
   it("defaults agent-scoped prompts to background finish notifications", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    const parentAgent = {
+    const parentAgent = createManagedAgent({
       id: "parent-agent",
       config: {},
       cwd: existingCwd,
       workspaceId: "wks_parent",
       provider: "codex",
       currentModeId: "full-access",
-    } as ManagedAgent;
-    const childAgent = {
+    });
+    const childAgent = createManagedAgent({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "running",
       currentModeId: null,
       availableModes: [],
       config: { title: "Child" },
-    } as ManagedAgent;
+    });
     spies.agentManager.getAgent.mockImplementation((agentId: string) => {
       if (agentId === "parent-agent") return parentAgent;
       if (agentId === "child-agent") return childAgent;
@@ -4370,6 +4451,7 @@ describe("send_agent_prompt native tool", () => {
     await serverDeliveries
       .get(server)!
       .waitForDispatch("child-agent", new AbortController().signal);
+    await vi.waitFor(() => expect(spies.agentManager.subscribe).toHaveBeenCalledTimes(1));
     expect(serverSubscriptionRecords.get(server)!.size).toBe(1);
     expect(spies.agentManager.steerOrDeferBehindActiveTurn).toHaveBeenCalledTimes(1);
     expect(response.structuredContent.guidance).toContain("You will get notified");
@@ -4377,14 +4459,16 @@ describe("send_agent_prompt native tool", () => {
 
   it("acknowledges top-level prompts without a completion wait", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "child-agent",
-      cwd: existingCwd,
-      lifecycle: "idle",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Child" },
-    } as ManagedAgent);
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "child-agent",
+        cwd: existingCwd,
+        lifecycle: "idle",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Child" },
+      }),
+    );
 
     const server = await createAgentToolCatalog({
       agentManager,
@@ -4414,22 +4498,22 @@ describe("send_agent_prompt native tool", () => {
 
   it("allows agent-scoped callers to opt out of finish notifications", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    const parentAgent = {
+    const parentAgent = createManagedAgent({
       id: "parent-agent",
       config: {},
       cwd: existingCwd,
       workspaceId: "wks_parent",
       provider: "codex",
       currentModeId: "full-access",
-    } as ManagedAgent;
-    const childAgent = {
+    });
+    const childAgent = createManagedAgent({
       id: "child-agent",
       cwd: existingCwd,
       lifecycle: "idle",
       currentModeId: null,
       availableModes: [],
       config: { title: "Child" },
-    } as ManagedAgent;
+    });
     spies.agentManager.getAgent.mockImplementation((agentId: string) => {
       if (agentId === "parent-agent") return parentAgent;
       if (agentId === "child-agent") return childAgent;
@@ -5177,7 +5261,7 @@ describe("update_agent native tool", () => {
     expect(spies.agentManager.setAgentMode).toHaveBeenCalledWith("agent-1", "full-access");
     expect(spies.agentManager.setAgentModel).toHaveBeenCalledWith("agent-1", "gpt-5.4");
     expect(spies.agentManager.setAgentThinkingOption).toHaveBeenCalledWith("agent-1", "high");
-    expect(spies.agentManager.setAgentFeature).toHaveBeenCalledWith("agent-1", "fast_mode", true);
+    expect(spies.agentManager.setAgentOptions).toHaveBeenCalledWith("agent-1", { fast_mode: true });
     expect(spies.agentManager.updateAgentMetadata).toHaveBeenCalledWith("agent-1", {
       title: "Updated agent",
       labels: { role: "worker" },
@@ -5202,12 +5286,12 @@ describe("update_agent native tool", () => {
     expect(spies.agentManager.setAgentMode).not.toHaveBeenCalled();
     expect(spies.agentManager.setAgentModel).not.toHaveBeenCalled();
     expect(spies.agentManager.setAgentThinkingOption).not.toHaveBeenCalled();
-    expect(spies.agentManager.setAgentFeature).not.toHaveBeenCalled();
+    expect(spies.agentManager.setAgentOptions).not.toHaveBeenCalled();
   });
 
   it("does not update metadata when runtime settings fail", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.setAgentFeature.mockRejectedValue(new Error("unsupported feature"));
+    spies.agentManager.setAgentOptions.mockRejectedValue(new Error("unsupported feature"));
     const server = await createAgentToolCatalog({
       agentManager,
       agentStorage,
@@ -5515,19 +5599,21 @@ describe("create_schedule native tool", () => {
 
   it("inherits the caller provider, model, and features when provider is omitted", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "parent-agent",
-      provider: "opencode",
-      cwd: REPO_CWD,
-      lifecycle: "idle",
-      currentModeId: "build",
-      availableModes: [],
-      config: {
-        title: "Parent agent",
-        model: "openai/gpt-5.5",
-        featureValues: { auto_accept: true },
-      },
-    } as ManagedAgent);
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "parent-agent",
+        provider: "opencode",
+        cwd: REPO_CWD,
+        lifecycle: "idle",
+        currentModeId: "build",
+        availableModes: [],
+        config: {
+          title: "Parent agent",
+          model: "openai/gpt-5.5",
+          providerOptions: { auto_accept: true },
+        },
+      }),
+    );
     const createOrReplace = vi.fn(async (input: CreateScheduleInput) =>
       createStoredSchedule(input),
     );
@@ -5553,7 +5639,7 @@ describe("create_schedule native tool", () => {
         cwd: REPO_CWD,
         modeId: "build",
         model: "openai/gpt-5.5",
-        featureValues: { auto_accept: true },
+        providerOptions: { auto_accept: true },
       },
     });
   });
@@ -5664,15 +5750,17 @@ describe("create_heartbeat native tool", () => {
 
   it("creates a self-targeted cron heartbeat", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.getAgent.mockReturnValue({
-      id: "parent-agent",
-      provider: "codex",
-      cwd: REPO_CWD,
-      lifecycle: "idle",
-      currentModeId: "build",
-      availableModes: [],
-      config: { title: "Parent agent" },
-    } as ManagedAgent);
+    spies.agentManager.getAgent.mockReturnValue(
+      createManagedAgent({
+        id: "parent-agent",
+        provider: "codex",
+        cwd: REPO_CWD,
+        lifecycle: "idle",
+        currentModeId: "build",
+        availableModes: [],
+        config: { title: "Parent agent" },
+      }),
+    );
     const createOrReplace = vi.fn(async (input: CreateScheduleInput) =>
       createStoredSchedule(input),
     );
@@ -6323,7 +6411,7 @@ describe("agent profile listing native tool", () => {
         model: "claude-test-model",
         modeId: "bypassPermissions",
         thinkingOptionId: "high",
-        featureValues: { fast_mode: true },
+        providerOptions: { fast_mode: true },
         notes: "Use for UI work: components, layout, design tokens. Not for backend.",
       },
     ];
@@ -6390,14 +6478,10 @@ describe("provider native tool catalog", () => {
 
   it("inspects provider features for a draft agent configuration", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
-    spies.agentManager.listDraftFeatures.mockResolvedValue([
-      {
-        type: "toggle",
-        id: "fast_mode",
-        label: "Fast mode",
-        value: false,
-      },
-    ]);
+    spies.agentManager.listDraftControls.mockResolvedValue({
+      controls: [{ type: "toggle", key: "fast_mode", label: "Fast mode" }],
+      options: { fast_mode: false },
+    });
     const provStub = createProviderSnapshotManagerStub();
     provStub.listRegisteredProviderIds.mockReturnValue(["codex"]);
     const codexEntry = buildSnapshotEntry({
@@ -6430,13 +6514,13 @@ describe("provider native tool catalog", () => {
 
     const response = await tool.handler(input);
 
-    expect(spies.agentManager.listDraftFeatures).toHaveBeenCalledWith({
+    expect(spies.agentManager.listDraftControls).toHaveBeenCalledWith({
       provider: "codex",
       cwd: expect.stringContaining("repo"),
       modeId: "full-access",
       model: "gpt-5.4",
       thinkingOptionId: "high",
-      featureValues: { fast_mode: true },
+      providerOptions: { fast_mode: true },
     });
     expect(response.structuredContent).toEqual({
       provider: "codex",
@@ -6667,14 +6751,8 @@ describe("agent snapshot tool result projection", () => {
             description: "Default coding mode",
           },
         ],
-        features: [
-          {
-            type: "toggle",
-            id: "web-search",
-            label: "Web search",
-            value: true,
-          },
-        ],
+        controls: [{ type: "toggle", key: "web-search", label: "Web search" }],
+        effectiveOptions: { "web-search": true },
         pendingPermissions: new Map(),
         persistence: {
           provider: "codex",
@@ -6790,7 +6868,7 @@ describe("agent snapshot tool result projection", () => {
       createManagedAgent({ id: "in-child-cwd", cwd: "/tmp/workspace/packages/server" }),
       createManagedAgent({ id: "other-cwd", cwd: "/tmp/other" }),
     ]);
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       createStoredRecord({
         id: "stored-in-cwd",
         cwd: "/tmp/workspace",
@@ -6849,7 +6927,7 @@ describe("agent snapshot tool result projection", () => {
         updatedAt: new Date(old),
       }),
     ]);
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       createStoredRecord({ id: "recent-archived", cwd: TARGET_CWD, archivedAt: recent }),
       createStoredRecord({ id: "old-archived", cwd: TARGET_CWD, archivedAt: old }),
       createStoredRecord({
@@ -6890,7 +6968,7 @@ describe("agent snapshot tool result projection", () => {
         archivedAt: new Date(now - index * 60 * 1000).toISOString(),
       }),
     );
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       ...recentArchivedRecords,
       createStoredRecord({
         id: "old-archived",
@@ -6921,7 +6999,7 @@ describe("agent snapshot tool result projection", () => {
   it("returns compact list items for stored archived agents", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const now = new Date().toISOString();
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       createStoredRecord({
         id: "stored-archived-compact",
         cwd: REPO_CWD,
@@ -7040,7 +7118,7 @@ describe("agent snapshot tool result projection", () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
     const now = new Date().toISOString();
     spies.agentManager.listAgents.mockReturnValue([createManagedAgent()]);
-    spies.agentStorage.list.mockResolvedValue([
+    spies.agentStorage.listActive.mockResolvedValue([
       createStoredRecord({
         id: "stored-non-archived",
         updatedAt: now,

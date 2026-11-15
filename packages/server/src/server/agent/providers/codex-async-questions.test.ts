@@ -252,9 +252,11 @@ test("cold startup exposes saved questions without a runtime; failed and concurr
     // No startup-resume intent: this idle agent must not receive "Resume working".
     const record = (await storage.get(agent.id))!;
     expect(record.resumeOnStartup).not.toBe(true);
-    expect(buildStoredAgentPayload(record, ["codex"]).pendingPermissions).toMatchObject([
-      { id: "permission-async-question-1", kind: "question" },
-    ]);
+    expect(
+      buildStoredAgentPayload(record, ["codex"], (provider, own) =>
+        manager.effectiveOptionsFor(provider, own),
+      ).pendingPermissions,
+    ).toMatchObject([{ id: "permission-async-question-1", kind: "question" }]);
     replacement = new AgentManager({
       registry: storage,
       logger: createTestLogger(),
@@ -293,7 +295,9 @@ test("cold startup exposes saved questions without a runtime; failed and concurr
     expect(resolutions).toEqual([]);
     expect(resumed!.getPendingPermissions()).toHaveLength(1);
     expect(
-      buildStoredAgentPayload((await storage.get(agent.id))!, ["codex"]).pendingPermissions,
+      buildStoredAgentPayload((await storage.get(agent.id))!, ["codex"], (provider, own) =>
+        manager.effectiveOptionsFor(provider, own),
+      ).pendingPermissions,
     ).toHaveLength(1);
     rejectStart = false;
     const results = await Promise.allSettled([respond(), respond()]);
@@ -310,7 +314,9 @@ test("cold startup exposes saved questions without a runtime; failed and concurr
     await replacement.closeAgent(agent.id);
     await storage.flush();
     expect(
-      buildStoredAgentPayload((await storage.get(agent.id))!, ["codex"]).pendingPermissions,
+      buildStoredAgentPayload((await storage.get(agent.id))!, ["codex"], (provider, own) =>
+        manager.effectiveOptionsFor(provider, own),
+      ).pendingPermissions,
     ).toEqual([]);
   } finally {
     if (replacement?.getAgent(agent.id)) await replacement.closeAgent(agent.id);

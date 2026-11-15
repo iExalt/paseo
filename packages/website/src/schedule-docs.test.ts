@@ -4,8 +4,7 @@ import { expect, it } from "vitest";
 
 const docsRoot = path.resolve(import.meta.dirname, "../../../public-docs");
 
-// The fork moved schedule operations from mcp.md to schedules-cli.md, which mcp.md links.
-it.each(["schedules.md", "schedules-cli.md", "worktrees.md"])(
+it.each(["schedules.md", "schedules-cli.md", "worktrees/index.md"])(
   "%s makes schedule run retention discoverable",
   async (file) => {
     const markdown = await readFile(path.join(docsRoot, file), "utf8");

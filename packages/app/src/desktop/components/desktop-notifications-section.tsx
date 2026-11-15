@@ -59,7 +59,6 @@ export function DesktopNotificationsSection() {
     () => (
       <Button
         variant="ghost"
-        size="sm"
         leftIcon={refreshIcon}
         onPress={handleRefreshPress}
         disabled={isPermissionBusy}
@@ -120,7 +119,6 @@ export function DesktopNotificationsSection() {
           </View>
           <Button
             variant="outline"
-            size="sm"
             onPress={handleSendTestNotification}
             disabled={!notificationsGranted || isPermissionBusy || isSendingTestNotification}
           >
