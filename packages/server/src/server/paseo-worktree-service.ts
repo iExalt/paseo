@@ -1,3 +1,4 @@
+import type { JsonValue } from "@getpaseo/protocol/agent-types";
 import type { PluginLifecycle } from "./plugins/lifecycle/index.js";
 import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -34,6 +35,7 @@ export interface CreatePaseoWorktreeInput extends CreateWorktreeCoreInput {
   workspaceId?: string;
   projectId?: string;
   title?: string;
+  metadata?: Record<string, JsonValue>;
   background?: boolean;
   callerWorkspaceId?: string;
   notifications?: "on" | "off";
@@ -89,7 +91,7 @@ async function createPaseoWorktreeWithPriority(
         },
       });
     }
-    await maybeMarkFirstAgentBranchAutoNameEligible({ createdWorktree });
+    await maybeMarkFirstAgentBranchAutoNameEligible({ createdWorktree, input });
     const workspaceCwd = mapWorkspaceRelativeCwdToWorktree({
       relativeWorkspaceCwd: workspaceCwdPlan.relativeWorkspaceCwd,
       targetWorktreePath: createdWorktree.worktree.worktreePath,
@@ -114,6 +116,7 @@ async function createPaseoWorktreeWithPriority(
       branch: createdWorktree.worktree.branchName || null,
       baseBranch: createdWorktree.worktree.comparisonBaseRef,
       title: input.title?.trim() || resolveFirstAgentPromptTitle(input.firstAgentContext),
+      metadata: input.metadata,
       notifications: input.notifications,
       expectsInitialAgent: Boolean(input.firstAgentContext),
       background: input.background,
@@ -279,9 +282,14 @@ async function findAvailableBranchName(options: {
 
 async function maybeMarkFirstAgentBranchAutoNameEligible(options: {
   createdWorktree: Awaited<ReturnType<typeof createWorktreeCore>>;
+  input: Pick<CreatePaseoWorktreeInput, "branchName">;
 }): Promise<void> {
-  const { createdWorktree } = options;
+  const { createdWorktree, input } = options;
   if (!createdWorktree.created || createdWorktree.intent.kind !== "branch-off") {
+    return;
+  }
+  // A branch the caller named is their choice; only a placeholder slug is replaced.
+  if (input.branchName !== undefined) {
     return;
   }
 

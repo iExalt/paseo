@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
+import { render } from "../../output/index.js";
 import { Command } from "commander";
 import { PARENT_AGENT_ID_LABEL } from "@getpaseo/protocol/agent-labels";
 import { acknowledgeAgents, addAckOptions } from "./ack.js";
 import { agentQuerySchema } from "./query.js";
 import { inspectAgent } from "./inspect.js";
+import { resolveAgentId } from "../../utils/client.js";
 import { buildAgentLsFetchOptions, listAgents } from "./ls.js";
 
 const daemonTarget = { kind: "endpoint" as const, host: "example.test:12345" };
@@ -143,6 +145,28 @@ describe("runLsCommand", () => {
     );
 
     expect(result.data.map((item) => item.name)).toEqual(["agent 3", "agent 2", "agent 1"]);
+  });
+
+  it("marks background agents in a BACKGROUND column only for inclusive listings", async () => {
+    const client = createPagingClient();
+    const fetchAgents: typeof client.fetchAgents = async (options) => {
+      const page = await client.fetchAgents(options);
+      return {
+        ...page,
+        entries: page.entries.map(({ agent }) => ({
+          agent: agent.title === "agent 2" ? { ...agent, background: true } : agent,
+        })),
+      };
+    };
+    const connect = async () => ({ ...client, fetchAgents });
+
+    const inclusive = await listAgents({ daemonTarget, all: true, global: true }, connect);
+    const rows = render(inclusive, { noColor: true }).split("\n");
+    expect(rows[0]).toMatch(/BACKGROUND\s*$/);
+    expect(rows.slice(1).map((row) => row.trim().split(/\s+/).at(-1))).toEqual(["-", "yes", "-"]);
+
+    const ordinary = await listAgents({ daemonTarget, global: true }, connect);
+    expect(render(ordinary, { noColor: true })).not.toContain("BACKGROUND");
   });
 });
 
@@ -344,4 +368,25 @@ describe("parent lookup failures", () => {
     ).rejects.toMatchObject(expected);
     expect(closed).toBe(true);
   });
+});
+
+describe("agent identifier UUID safety", () => {
+  const exactId = "9eac296c-4d60-4189-a0b5-ae71dd9c6ad9";
+  const collision = { id: "c9a97e5d-4a92-4646-a016-53032146d0a1", title: `worker ${exactId}` };
+  it("resolves a full UUID exactly and case-insensitively before titles", () => {
+    expect(
+      resolveAgentId(exactId.toUpperCase(), [{ id: exactId, title: "target" }, collision]),
+    ).toBe(exactId);
+  });
+  it("does not resolve a missing full UUID through another agent's title", () => {
+    expect(resolveAgentId(exactId, [collision])).toBeNull();
+  });
+});
+
+it("resolves a provider session UUID before applying missing-daemon-UUID safety", () => {
+  const sessionId = "9eac296c-4d60-4189-a0b5-ae71dd9c6ad9";
+  const holder = { id: "daemon-agent", persistence: { provider: "codex", sessionId } };
+  expect(resolveAgentId(sessionId, [holder])).toBe(holder.id);
+  expect(resolveAgentId(sessionId, [holder, { id: sessionId }])).toBe(sessionId);
+  expect(() => resolveAgentId(sessionId, [holder, { ...holder, id: "second" }])).toThrowError();
 });

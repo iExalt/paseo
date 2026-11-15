@@ -8,238 +8,39 @@ import {
 } from "./terminal-input.native";
 import {
   createNativeTerminalKeyEvent,
+  resolveHardwareTerminalKey,
   forwardNativeTerminalKey,
   type NativeTerminalKeyEvent,
 } from "./terminal-key-events";
 
-function inputData(change: { data: string; shouldClear: boolean }): string {
-  return change.data;
-}
+describe("native terminal typed input", () => {
+  function inputData(change: { data: string; shouldClear: boolean }): string {
+    return change.data;
+  }
 
-describe.each(["keyThenDiff", "diff"] as const)(
-  "native terminal typed input (%s)",
-  (printableSource) => {
-    it("dispatches appended text once and ignores reset clears", () => {
-      const input = createTerminalTextInputState({ printableSource });
+  it("dispatches appended text once and ignores reset clears", () => {
+    const input = createTerminalTextInputState();
 
-      expect(inputData(input.receiveTextChange("h"))).toEqual("h");
-      expect(inputData(input.receiveTextChange("hi"))).toEqual("i");
+    expect(inputData(input.receiveTextChange("h"))).toEqual("h");
+    expect(inputData(input.receiveTextChange("hi"))).toEqual("i");
 
-      input.reset();
+    input.reset();
 
-      expect(input.receiveTextChange("")).toEqual({ data: "", shouldClear: false });
-      expect(inputData(input.receiveTextChange(" there"))).toEqual(" there");
+    expect(input.receiveTextChange("")).toEqual({ data: "", shouldClear: false });
+    expect(inputData(input.receiveTextChange(" there"))).toEqual(" there");
+  });
+
+  it("dispatches single-line multi-character inserts as one text payload", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("npm run typecheck")).toEqual({
+      data: "npm run typecheck",
+      shouldClear: false,
     });
-
-    it("dispatches single-line multi-character inserts as one text payload", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("npm run typecheck")).toEqual({
-        data: "npm run typecheck",
-        shouldClear: false,
-      });
-    });
-
-    it("does not dispatch raw multiline hidden-input paste", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("printf one\nprintf two")).toEqual({
-        data: "",
-        shouldClear: true,
-      });
-    });
-
-    it("does not dispatch raw carriage-return hidden-input paste", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("printf one\rprintf two")).toEqual({
-        data: "",
-        shouldClear: true,
-      });
-    });
-
-    it("does not translate replacement edits into terminal text", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(inputData(input.receiveTextChange("abc"))).toEqual("abc");
-      expect(input.receiveTextChange("aXc")).toEqual({ data: "", shouldClear: false });
-    });
-
-    it("accepts the same long keyboard clipboard item twice", () => {
-      const input = createTerminalTextInputState({ printableSource });
-      const longText = "x".repeat(512);
-
-      expect(input.receiveTextChange(longText)).toEqual({ data: longText, shouldClear: false });
-
-      input.reset();
-
-      expect(input.receiveTextChange(longText)).toEqual({ data: longText, shouldClear: false });
-    });
-
-    it("accepts the same keyboard clipboard item after terminal focus synchronization", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("echo clipboard item")).toEqual({
-        data: "echo clipboard item",
-        shouldClear: false,
-      });
-
-      input.reset();
-
-      expect(input.receiveTextChange("echo clipboard item")).toEqual({
-        data: "echo clipboard item",
-        shouldClear: false,
-      });
-    });
-
-    it("does not replay a stale IME suggestion when the native clear leaves composing text behind", () => {
-      const input = createTerminalTextInputState({ printableSource });
-      let typed = "";
-
-      for (const key of "resta") {
-        typed += key;
-        input.receiveKeyPress(key);
-        input.receiveTextChange(typed);
-      }
-
-      expect(input.receiveTextChange("restaurant ")).toEqual({
-        data: "urant ",
-        shouldClear: false,
-      });
-
-      expect(input.receiveTextChange("restaurant x")).toEqual({
-        data: "x",
-        shouldClear: false,
-      });
-    });
-
-    it("types Hangul by rubbing out the syllable the IME rewrites in place", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      // 한글: the composing syllable is rewritten on every jamo, never appended.
-      expect(input.receiveTextChange("ㅎ")).toEqual({ data: "ㅎ", shouldClear: false });
-      expect(input.receiveTextChange("하")).toEqual({ data: "\x7f하", shouldClear: false });
-      expect(input.receiveTextChange("한")).toEqual({ data: "\x7f한", shouldClear: false });
-      expect(input.receiveTextChange("한ㄱ")).toEqual({ data: "ㄱ", shouldClear: false });
-      expect(input.receiveTextChange("한그")).toEqual({ data: "\x7f그", shouldClear: false });
-      expect(input.receiveTextChange("한글")).toEqual({ data: "\x7f글", shouldClear: false });
-    });
-
-    it("types Hangul when a final consonant migrates into the next syllable", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("안")).toEqual({ data: "안", shouldClear: false });
-      // Typing ㅣ moves ㄴ off 안 and onto the new syllable: 안 → 아니.
-      expect(input.receiveTextChange("아니")).toEqual({ data: "\x7f아니", shouldClear: false });
-    });
-
-    it("commits a Chinese pinyin reading as Han characters", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("n")).toEqual({ data: "n", shouldClear: false });
-      expect(input.receiveTextChange("ni")).toEqual({ data: "i", shouldClear: false });
-      expect(input.receiveTextChange("nih")).toEqual({ data: "h", shouldClear: false });
-      expect(input.receiveTextChange("niha")).toEqual({ data: "a", shouldClear: false });
-      expect(input.receiveTextChange("nihao")).toEqual({ data: "o", shouldClear: false });
-      expect(input.receiveTextChange("你好")).toEqual({
-        data: "\x7f\x7f\x7f\x7f\x7f你好",
-        shouldClear: false,
-      });
-    });
-
-    it("updates a multi-character Chinese candidate", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("nihao")).toEqual({ data: "nihao", shouldClear: false });
-      expect(input.receiveTextChange("你好")).toEqual({
-        data: "\x7f\x7f\x7f\x7f\x7f你好",
-        shouldClear: false,
-      });
-      expect(input.receiveTextChange("拟好")).toEqual({
-        data: "\x7f\x7f拟好",
-        shouldClear: false,
-      });
-    });
-
-    it("commits and converts a Japanese reading", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("nihongo")).toEqual({ data: "nihongo", shouldClear: false });
-      expect(input.receiveTextChange("にほんご")).toEqual({
-        data: "\x7f\x7f\x7f\x7f\x7f\x7f\x7fにほんご",
-        shouldClear: false,
-      });
-      expect(input.receiveTextChange("日本語")).toEqual({
-        data: "\x7f\x7f\x7f\x7f日本語",
-        shouldClear: false,
-      });
-    });
-
-    it("does not dispatch Hangul through the keypress path", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      // The IME reports the jamo it is composing; the text change reports the
-      // syllable. Dispatching both would put two conflicting characters on the wire.
-      expect(input.receiveKeyPress("ㅎ")).toEqual({ data: "", shouldClear: false });
-      expect(input.receiveTextChange("ㅎ")).toEqual({ data: "ㅎ", shouldClear: false });
-      expect(input.receiveKeyPress("ㅏ")).toEqual({ data: "", shouldClear: false });
-      expect(input.receiveTextChange("하")).toEqual({ data: "\x7f하", shouldClear: false });
-    });
-
-    it("still swallows non-CJK replacement edits", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
-      expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
-    });
-
-    it("does not treat a non-Hangul trailing edit as composition", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("ls -a")).toEqual({ data: "ls -a", shouldClear: false });
-      expect(input.receiveTextChange("ls -l")).toEqual({ data: "", shouldClear: false });
-    });
-
-    it("stops rubbing out once a swallowed replacement leaves the terminal ahead", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
-      // Swallowed: the terminal still holds teh while the buffer moved to the.
-      expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
-      // A composition rewrite here would delete text from an already-desynced terminal.
-      expect(input.receiveTextChange("他们")).toEqual({ data: "", shouldClear: false });
-    });
-
-    it("resumes composition once the line is cleared", () => {
-      const input = createTerminalTextInputState({ printableSource });
-
-      expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
-      expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
-
-      input.reset();
-
-      expect(input.receiveTextChange("nihao")).toEqual({ data: "nihao", shouldClear: false });
-      expect(input.receiveTextChange("你好")).toEqual({
-        data: "\x7f\x7f\x7f\x7f\x7f你好",
-        shouldClear: false,
-      });
-    });
-  },
-);
-
-describe("native terminal typed input, key then diff (iOS)", () => {
-  it("translates software keyboard terminal control keys", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
-
-    expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
-    expect(input.receiveKeyPress("Enter")).toEqual({ data: "\r", shouldClear: true });
-    expect(input.receiveKeyPress("Return")).toEqual({ data: "\r", shouldClear: true });
-    expect(input.receiveKeyPress("return")).toEqual({ data: "\r", shouldClear: true });
-    expect(input.receiveTextChange("hello\n")).toEqual({ data: "", shouldClear: true });
   });
 
   it("dispatches printable keypresses when focused input does not report text changes", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
+    const input = createTerminalTextInputState();
 
     expect(input.receiveKeyPress("p")).toEqual({ data: "p", shouldClear: false });
     expect(input.receiveKeyPress("w")).toEqual({ data: "w", shouldClear: false });
@@ -248,7 +49,7 @@ describe("native terminal typed input, key then diff (iOS)", () => {
   });
 
   it("does not duplicate printable keypresses when the native text change also arrives", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
+    const input = createTerminalTextInputState();
 
     expect(input.receiveKeyPress("p")).toEqual({ data: "p", shouldClear: false });
     expect(input.receiveTextChange("p")).toEqual({ data: "", shouldClear: false });
@@ -259,7 +60,7 @@ describe("native terminal typed input, key then diff (iOS)", () => {
   });
 
   it("keeps anticipated text aligned after software keyboard Backspace", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
+    const input = createTerminalTextInputState();
 
     expect(input.receiveKeyPress("a")).toEqual({ data: "a", shouldClear: false });
     expect(input.receiveKeyPress("b")).toEqual({ data: "b", shouldClear: false });
@@ -270,8 +71,33 @@ describe("native terminal typed input, key then diff (iOS)", () => {
     expect(input.receiveTextChange("abX")).toEqual({ data: "", shouldClear: false });
   });
 
+  it("does not dispatch raw multiline hidden-input paste", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("printf one\nprintf two")).toEqual({
+      data: "",
+      shouldClear: true,
+    });
+  });
+
+  it("does not dispatch raw carriage-return hidden-input paste", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("printf one\rprintf two")).toEqual({
+      data: "",
+      shouldClear: true,
+    });
+  });
+
+  it("does not translate replacement edits into terminal text", () => {
+    const input = createTerminalTextInputState();
+
+    expect(inputData(input.receiveTextChange("abc"))).toEqual("abc");
+    expect(input.receiveTextChange("aXc")).toEqual({ data: "", shouldClear: false });
+  });
+
   it("clears accumulated hidden input text after terminal submit", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
+    const input = createTerminalTextInputState();
 
     for (const key of "echo hello") {
       input.receiveKeyPress(key);
@@ -285,7 +111,7 @@ describe("native terminal typed input, key then diff (iOS)", () => {
   });
 
   it("ignores late newline text change after Return keypress submits", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
+    const input = createTerminalTextInputState();
 
     for (const key of "echo hello") {
       input.receiveKeyPress(key);
@@ -297,56 +123,27 @@ describe("native terminal typed input, key then diff (iOS)", () => {
     expect(input.receiveTextChange("echo hello\n")).toEqual({ data: "", shouldClear: false });
   });
 
-  it("keeps anticipated text aligned when Backspace decomposes a syllable", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
+  it("accepts the same long keyboard clipboard item twice", () => {
+    const input = createTerminalTextInputState();
+    const longText = "x".repeat(512);
 
-    expect(input.receiveTextChange("한")).toEqual({ data: "한", shouldClear: false });
-    // The rubout already removed the whole syllable, so the redraw is a plain append.
+    expect(input.receiveTextChange(longText)).toEqual({ data: longText, shouldClear: false });
+
+    input.reset();
+
+    expect(input.receiveTextChange(longText)).toEqual({ data: longText, shouldClear: false });
+  });
+
+  it("translates software keyboard terminal control keys", () => {
+    const input = createTerminalTextInputState();
+
     expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
-    expect(input.receiveTextChange("하")).toEqual({ data: "하", shouldClear: false });
+    expect(input.receiveKeyPress("Enter")).toEqual({ data: "\r", shouldClear: true });
+    expect(input.receiveKeyPress("Return")).toEqual({ data: "\r", shouldClear: true });
+    expect(input.receiveKeyPress("return")).toEqual({ data: "\r", shouldClear: true });
+    expect(input.receiveTextChange("hello\n")).toEqual({ data: "", shouldClear: true });
   });
 
-  it("keeps CJK composition enabled after Backspace removes an emoji", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
-
-    expect(input.receiveTextChange("😀")).toEqual({ data: "😀", shouldClear: false });
-    expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
-
-    expect(input.receiveTextChange("nihao")).toEqual({ data: "nihao", shouldClear: false });
-    expect(input.receiveTextChange("你好")).toEqual({
-      data: "\x7f\x7f\x7f\x7f\x7f你好",
-      shouldClear: false,
-    });
-  });
-
-  it("does not backspace terminal content after a swallowed replacement", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
-
-    expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
-    expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
-    expect(input.receiveKeyPress("Backspace")).toEqual({ data: "", shouldClear: false });
-    expect(input.receiveTextChange("th")).toEqual({ data: "", shouldClear: false });
-  });
-
-  it("keeps replacement desync protection after Backspace empties the hidden input", () => {
-    const input = createTerminalTextInputState({ printableSource: "keyThenDiff" });
-
-    expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
-    // Autocorrect changes the buffer but cannot rewrite the terminal.
-    expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
-
-    for (const text of ["th", "t", ""]) {
-      expect(input.receiveKeyPress("Backspace")).toEqual({ data: "", shouldClear: false });
-      expect(input.receiveTextChange(text)).toEqual({ data: "", shouldClear: false });
-    }
-
-    expect(input.receiveTextChange("nihao")).toEqual({ data: "nihao", shouldClear: false });
-    // The terminal still contains `teh`, so this must not rub it out.
-    expect(input.receiveTextChange("你好")).toEqual({ data: "", shouldClear: false });
-  });
-});
-
-describe("native terminal input keys and focus", () => {
   it("emits semantic terminal key events for native arrow keypresses", () => {
     const input = createTerminalTextInputState();
 
@@ -357,25 +154,18 @@ describe("native terminal input keys and focus", () => {
     });
   });
 
-  it("forwards native arrow key events to the terminal key path", () => {
-    const events: NativeTerminalKeyEvent[] = [];
-
-    forwardNativeTerminalKey({
-      event: createNativeTerminalKeyEvent("ArrowUp"),
-      onTerminalKey: (event) => {
-        events.push(event);
-      },
+  it("identifies hardware arrows by code and keeps their modifiers", () => {
+    // UIKit leaves `key` as a sentinel for Left/Right, so the code leads.
+    expect(resolveHardwareTerminalKey({ key: "\uF702", code: "ArrowLeft" })).toBe("ArrowLeft");
+    expect(resolveHardwareTerminalKey({ key: "ArrowUp", code: "" })).toBe("ArrowUp");
+    expect(resolveHardwareTerminalKey({ key: "a", code: "KeyA" })).toBeNull();
+    expect(createNativeTerminalKeyEvent("ArrowDown", { shift: true, alt: true })).toEqual({
+      key: "ArrowDown",
+      ctrl: false,
+      shift: true,
+      alt: true,
+      meta: false,
     });
-
-    expect(events).toEqual([
-      {
-        key: "ArrowUp",
-        ctrl: false,
-        shift: false,
-        alt: false,
-        meta: false,
-      },
-    ]);
   });
 
   it("keeps the hidden input from owning terminal long-press selection", () => {
@@ -399,18 +189,233 @@ describe("native terminal input keys and focus", () => {
       resolveTerminalInputFocusRequest({ isInputFocused: false, isKeyboardVisible: false }),
     ).toEqual("focus");
   });
+
+  // Keyboard's, both traced on devices.
+  it("accepts the same keyboard clipboard item after terminal focus synchronization", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("echo clipboard item")).toEqual({
+      data: "echo clipboard item",
+      shouldClear: false,
+    });
+
+    input.reset();
+
+    expect(input.receiveTextChange("echo clipboard item")).toEqual({
+      data: "echo clipboard item",
+      shouldClear: false,
+    });
+  });
+
+  it("does not replay a stale IME suggestion when the native clear leaves composing text behind", () => {
+    const input = createTerminalTextInputState();
+    let typed = "";
+
+    for (const key of "resta") {
+      typed += key;
+      input.receiveKeyPress(key);
+      input.receiveTextChange(typed);
+    }
+
+    expect(input.receiveTextChange("restaurant ")).toEqual({
+      data: "urant ",
+      shouldClear: false,
+    });
+
+    expect(input.receiveTextChange("restaurant x")).toEqual({
+      data: "x",
+      shouldClear: false,
+    });
+  });
+
+  it("types Hangul by rubbing out the syllable the IME rewrites in place", () => {
+    const input = createTerminalTextInputState();
+
+    // 한글: the composing syllable is rewritten on every jamo, never appended.
+    expect(input.receiveTextChange("ㅎ")).toEqual({ data: "ㅎ", shouldClear: false });
+    expect(input.receiveTextChange("하")).toEqual({ data: "\x7f하", shouldClear: false });
+    expect(input.receiveTextChange("한")).toEqual({ data: "\x7f한", shouldClear: false });
+    expect(input.receiveTextChange("한ㄱ")).toEqual({ data: "ㄱ", shouldClear: false });
+    expect(input.receiveTextChange("한그")).toEqual({ data: "\x7f그", shouldClear: false });
+    expect(input.receiveTextChange("한글")).toEqual({ data: "\x7f글", shouldClear: false });
+  });
+
+  it("types Hangul when a final consonant migrates into the next syllable", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("안")).toEqual({ data: "안", shouldClear: false });
+    // Typing ㅣ moves ㄴ off 안 and onto the new syllable: 안 → 아니.
+    expect(input.receiveTextChange("아니")).toEqual({ data: "\x7f아니", shouldClear: false });
+  });
+
+  it("commits a Chinese pinyin reading as Han characters", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("n")).toEqual({ data: "n", shouldClear: false });
+    expect(input.receiveTextChange("ni")).toEqual({ data: "i", shouldClear: false });
+    expect(input.receiveTextChange("nih")).toEqual({ data: "h", shouldClear: false });
+    expect(input.receiveTextChange("niha")).toEqual({ data: "a", shouldClear: false });
+    expect(input.receiveTextChange("nihao")).toEqual({ data: "o", shouldClear: false });
+    expect(input.receiveTextChange("你好")).toEqual({
+      data: "\x7f\x7f\x7f\x7f\x7f你好",
+      shouldClear: false,
+    });
+  });
+
+  it("updates a multi-character Chinese candidate", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("nihao")).toEqual({ data: "nihao", shouldClear: false });
+    expect(input.receiveTextChange("你好")).toEqual({
+      data: "\x7f\x7f\x7f\x7f\x7f你好",
+      shouldClear: false,
+    });
+    expect(input.receiveTextChange("拟好")).toEqual({
+      data: "\x7f\x7f拟好",
+      shouldClear: false,
+    });
+  });
+
+  it("commits and converts a Japanese reading", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("nihongo")).toEqual({ data: "nihongo", shouldClear: false });
+    expect(input.receiveTextChange("にほんご")).toEqual({
+      data: "\x7f\x7f\x7f\x7f\x7f\x7f\x7fにほんご",
+      shouldClear: false,
+    });
+    expect(input.receiveTextChange("日本語")).toEqual({
+      data: "\x7f\x7f\x7f\x7f日本語",
+      shouldClear: false,
+    });
+  });
+
+  it("does not dispatch Hangul through the keypress path", () => {
+    const input = createTerminalTextInputState();
+
+    // The IME reports the jamo it is composing; the text change reports the
+    // syllable. Dispatching both would put two conflicting characters on the wire.
+    expect(input.receiveKeyPress("ㅎ")).toEqual({ data: "", shouldClear: false });
+    expect(input.receiveTextChange("ㅎ")).toEqual({ data: "ㅎ", shouldClear: false });
+    expect(input.receiveKeyPress("ㅏ")).toEqual({ data: "", shouldClear: false });
+    expect(input.receiveTextChange("하")).toEqual({ data: "\x7f하", shouldClear: false });
+  });
+
+  it("still swallows non-CJK replacement edits", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
+    expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
+  });
+
+  it("does not treat a non-Hangul trailing edit as composition", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("ls -a")).toEqual({ data: "ls -a", shouldClear: false });
+    expect(input.receiveTextChange("ls -l")).toEqual({ data: "", shouldClear: false });
+  });
+
+  it("keeps anticipated text aligned when Backspace decomposes a syllable", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("한")).toEqual({ data: "한", shouldClear: false });
+    // The rubout already removed the whole syllable, so the redraw is a plain append.
+    expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
+    expect(input.receiveTextChange("하")).toEqual({ data: "하", shouldClear: false });
+  });
+
+  it("keeps CJK composition enabled after Backspace removes an emoji", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("😀")).toEqual({ data: "😀", shouldClear: false });
+    expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
+
+    expect(input.receiveTextChange("nihao")).toEqual({ data: "nihao", shouldClear: false });
+    expect(input.receiveTextChange("你好")).toEqual({
+      data: "\x7f\x7f\x7f\x7f\x7f你好",
+      shouldClear: false,
+    });
+  });
+
+  it("stops rubbing out once a swallowed replacement leaves the terminal ahead", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
+    // Swallowed: the terminal still holds teh while the buffer moved to the.
+    expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
+    // A composition rewrite here would delete text from an already-desynced terminal.
+    expect(input.receiveTextChange("他们")).toEqual({ data: "", shouldClear: false });
+  });
+
+  it("does not backspace terminal content after a swallowed replacement", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
+    expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
+    expect(input.receiveKeyPress("Backspace")).toEqual({ data: "", shouldClear: false });
+    expect(input.receiveTextChange("th")).toEqual({ data: "", shouldClear: false });
+  });
+
+  it("keeps replacement desync protection after Backspace empties the hidden input", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
+    // Autocorrect changes the buffer but cannot rewrite the terminal.
+    expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
+
+    for (const text of ["th", "t", ""]) {
+      expect(input.receiveKeyPress("Backspace")).toEqual({ data: "", shouldClear: false });
+      expect(input.receiveTextChange(text)).toEqual({ data: "", shouldClear: false });
+    }
+
+    expect(input.receiveTextChange("nihao")).toEqual({ data: "nihao", shouldClear: false });
+    // The terminal still contains `teh`, so this must not rub it out.
+    expect(input.receiveTextChange("你好")).toEqual({ data: "", shouldClear: false });
+  });
+
+  it("resumes composition once the line is cleared", () => {
+    const input = createTerminalTextInputState();
+
+    expect(input.receiveTextChange("teh")).toEqual({ data: "teh", shouldClear: false });
+    expect(input.receiveTextChange("the")).toEqual({ data: "", shouldClear: false });
+
+    input.reset();
+
+    expect(input.receiveTextChange("nihao")).toEqual({ data: "nihao", shouldClear: false });
+    expect(input.receiveTextChange("你好")).toEqual({
+      data: "\x7f\x7f\x7f\x7f\x7f你好",
+      shouldClear: false,
+    });
+  });
+});
+
+it("forwards native arrow key events to the terminal key path", () => {
+  const events: NativeTerminalKeyEvent[] = [];
+
+  forwardNativeTerminalKey({
+    event: createNativeTerminalKeyEvent("ArrowUp"),
+    onTerminalKey: (event) => {
+      events.push(event);
+    },
+  });
+
+  expect(events).toEqual([
+    {
+      key: "ArrowUp",
+      ctrl: false,
+      shift: false,
+      alt: false,
+      meta: false,
+    },
+  ]);
 });
 
 // Android: printable text comes only from the text diff. Events are written as
-// `c` (text change), `k` (keypress), `hook` (a captured hardware key clearing
-// the field), `reset` (focus, blur or show-keyboard) and `at` (clock, ms).
+// `c` (text change), `k` (keypress), `reset` (focus, blur or show-keyboard)
+// and `at` (clock, ms).
 // "AOSP" rows follow the AOSP keyboard's order and "Samsung" rows Samsung
 // Keyboard's, both traced on devices.
-type InputEvent =
-  | readonly ["c" | "k", string]
-  | readonly ["at", number]
-  | readonly ["hook"]
-  | readonly ["reset"];
+type InputEvent = readonly ["c" | "k", string] | readonly ["at", number] | readonly ["reset"];
 
 function createDiffInput() {
   let clock = 0;
@@ -419,7 +424,6 @@ function createDiffInput() {
     let sent = "";
     for (const event of events) {
       if (event[0] === "at") clock = event[1];
-      else if (event[0] === "hook") input.noteHardwareClear();
       else if (event[0] === "reset") input.reset();
       else if (event[0] === "c") sent += input.receiveTextChange(event[1]).data;
       else sent += input.receiveKeyPress(event[1]).data;
@@ -668,12 +672,6 @@ describe("native terminal typed input, diff (Android)", () => {
       expect(sent).toBe(line);
     });
 
-    it("keeps the stuck-clear marker across a hardware clear", () => {
-      const { play } = createDiffInput();
-      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"], ["hook"]);
-      expect(play(["c", "ls\nx"])).toBe("x");
-    });
-
     it.each([
       [
         "AOSP",
@@ -840,34 +838,6 @@ describe("native terminal typed input, diff (Android)", () => {
     it("sends a deletion with no Backspace key at the next event", () => {
       const { play } = createDiffInput();
       expect(play(["c", "a"], ["c", ""], ["c", "b"])).toBe("a\x7fb");
-    });
-  });
-
-  describe("hardware keys (#206)", () => {
-    it("sends nothing for the field clear when the hook comes first", () => {
-      const { play } = createDiffInput();
-      play(["c", "abc"]);
-      expect(play(["hook"], ["c", ""])).toBe("");
-      expect(play(["k", "Backspace"])).toBe("\x7f");
-    });
-
-    it("sends nothing for the field clear when the change comes first", () => {
-      const { play } = createDiffInput();
-      play(["c", "abc"]);
-      expect(play(["c", ""], ["hook"])).toBe("");
-      expect(play(["k", "Backspace"])).toBe("\x7f");
-    });
-
-    it("does not pair a stale Backspace key with a later hardware clear", () => {
-      const { play } = createDiffInput();
-      play(["c", "abc"]);
-      expect(play(["at", 0], ["k", "Backspace"], ["at", 150], ["c", ""], ["hook"])).toBe("");
-    });
-
-    it("keeps the replacement desync across a hardware clear", () => {
-      const { play } = createDiffInput();
-      play(["c", "teh"], ["c", "the"], ["hook"], ["c", ""]);
-      expect(play(["c", "nihao"], ["c", "你好"])).toBe("nihao");
     });
   });
 });

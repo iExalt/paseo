@@ -11,39 +11,20 @@ import {
   EditingTextInput as TextInput,
   type EditingTextInputHandle,
 } from "@/components/ui/text-input";
+import { hasActiveOverlay, subscribeHardwareKeyboard } from "@/keyboard";
+import { nativeTerminalPerformanceNow } from "./terminal-performance";
 import {
   createNativeTerminalKeyEvent,
+  resolveHardwareTerminalKey,
   resolveNativeTerminalKey,
   type NativeTerminalKey,
   type NativeTerminalKeyEvent,
 } from "./terminal-key-events";
-import { createHardwareTerminalKeyRouter } from "./hardware-terminal-keys";
-import { claimNativeTypingScope } from "@/keyboard/native-typing-scope";
-import {
-  addNativeTerminalKeyListener,
-  setNativeTerminalKeyCaptureActive,
-} from "@/native/hardware-keyboard";
-import { useStableEvent } from "@/hooks/use-stable-event";
-import { nativeTerminalPerformanceNow } from "./terminal-performance";
-import {
-  traceTerminalInput,
-  traceTerminalReset,
-  type TerminalInputResetReason,
-} from "./terminal-input-trace";
 
 export const TERMINAL_INPUT_CONTEXT_MENU_HIDDEN = true;
 export const TERMINAL_INPUT_HITBOX_SIZE = 1;
-// Android's PaseoHardwareKeyboardModule.kt captures hardware terminal keys
-// (Enter, Backspace, arrows, Ctrl and Alt chords) only while the focused view
-// carries this nativeID. Keep the two in sync. iOS has no such view match (the
-// first responder is an inner text view); it captures while the router has
-// switched capture on.
-export const TERMINAL_INPUT_NATIVE_ID = "paseo-native-terminal-input";
-
-const hardwareTerminalKeys = createHardwareTerminalKeyRouter({
-  addListener: addNativeTerminalKeyListener,
-  setCaptureActive: setNativeTerminalKeyCaptureActive,
-});
+/** Matched by the Android hardware keyboard module to claim arrow keys for this input. */
+export const TERMINAL_INPUT_NATIVE_ID = "paseo-terminal-input";
 
 export interface TerminalTextInputChange {
   data: string;
@@ -54,26 +35,12 @@ export interface TerminalTextInputChange {
 export interface TerminalTextInputState {
   receiveKeyPress: (key: string) => TerminalTextInputChange;
   receiveTextChange: (text: string) => TerminalTextInputChange;
-  /** A captured hardware key is about to clear the native field; that clear must send nothing. */
-  noteHardwareClear: () => void;
   reset: () => void;
 }
 
-/**
- * Where printable text comes from.
- *
- * - `keyThenDiff` sends printable keypresses and the part of each text change
- *   the key did not already cover. It assumes the key arrives first.
- * - `diff` sends printable text only from the text change and ignores
- *   printable keypresses. Android needs it: React Native's keypress emulation
- *   delivers the text change before the key for composing text and batched
- *   commits, so `keyThenDiff` sends the first character twice there.
- */
-export type TerminalPrintableSource = "keyThenDiff" | "diff";
-
+/** Android IMEs deliver composing text before printable keypress echoes. */
 export interface TerminalTextInputStateOptions {
-  printableSource?: TerminalPrintableSource;
-  /** Milliseconds; injected by tests to step past the Backspace pairing window. */
+  printableSource?: "keyThenDiff" | "diff";
   now?: () => number;
 }
 
@@ -140,10 +107,6 @@ function resolveCompositionEdit(previousText: string, text: string): string {
     return "";
   }
   return `${"\x7f".repeat(removed.length)}${inserted}`;
-}
-
-function hasLineBreak(text: string): boolean {
-  return text.includes("\n") || text.includes("\r");
 }
 
 export function resolveTerminalInputFocusRequest(input: {
@@ -213,7 +176,7 @@ function createKeyThenDiffTerminalTextInputState(): TerminalTextInputState {
         return { data: "", shouldClear: false };
       }
 
-      if (hasLineBreak(text)) {
+      if (text.includes("\n") || text.includes("\r")) {
         previousText = "";
         replacementDesynced = false;
         return { data: "", shouldClear: true };
@@ -238,12 +201,15 @@ function createKeyThenDiffTerminalTextInputState(): TerminalTextInputState {
         shouldClear: false,
       };
     },
-    noteHardwareClear(): void {},
     reset(): void {
       previousText = "";
       replacementDesynced = false;
     },
   };
+}
+
+function hasLineBreak(text: string): boolean {
+  return text.includes("\n") || text.includes("\r");
 }
 
 // Both halves of a Backspace (its key and its shrinking text change) come
@@ -259,7 +225,7 @@ const BACKSPACE_PAIR_WINDOW_MS = 100;
  * - `keyOnMarker`: a Backspace key on an empty field while a stuck-clear
  *   marker is set; the change that follows may be a Backspace into that line.
  * - `emptied`: a change emptied the field. A Backspace key next sends the
- *   deletion; anything else sends it first. The hardware-key hook drops it.
+ *   deletion; anything else sends it first.
  * - `newlineChange`: a change already sent Enter; an Enter key next is its
  *   echo.
  * - `enterKey`: an Enter key arrived first. A newline change next sends the
@@ -488,12 +454,6 @@ function createDiffTerminalTextInputState(now: () => number): TerminalTextInputS
       }
       return receiveReplacement(text, entry, owed);
     },
-    noteHardwareClear(): void {
-      previousText = "";
-      if (pending?.kind !== "enterKey") {
-        pending = null;
-      }
-    },
     reset(): void {
       previousText = "";
       replacementDesynced = false;
@@ -510,6 +470,8 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     const inputRef = useRef<EditingTextInputHandle>(null);
     const isFocusedRef = useRef(false);
     const pendingFocusFrameRef = useRef<number | null>(null);
+    const onTerminalKeyRef = useRef(onTerminalKey);
+    onTerminalKeyRef.current = onTerminalKey;
     const inputState = useMemo(
       () =>
         createTerminalTextInputState({
@@ -527,14 +489,10 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       pendingFocusFrameRef.current = null;
     }, []);
 
-    const resetNativeInput = useCallback(
-      (reason: TerminalInputResetReason) => {
-        traceTerminalReset(reason);
-        inputState.reset();
-        inputRef.current?.replaceText("");
-      },
-      [inputState],
-    );
+    const resetNativeInput = useCallback(() => {
+      inputState.reset();
+      inputRef.current?.replaceText("");
+    }, [inputState]);
 
     const showNativeKeyboard = useCallback(() => {
       clearPendingFocus();
@@ -546,7 +504,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       // Keep the native IME buffer aligned with the terminal. Some keyboards
       // do not emit a text change when a clipboard item replaces identical
       // stale input, so clear the buffer even when focus is already correct.
-      resetNativeInput("show-keyboard");
+      resetNativeInput();
 
       const focusRequest = resolveTerminalInputFocusRequest({
         isInputFocused: isFocusedRef.current || input.isFocused(),
@@ -574,7 +532,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       clearPendingFocus();
       inputRef.current?.blur();
       isFocusedRef.current = false;
-      resetNativeInput("blur");
+      resetNativeInput();
     }, [clearPendingFocus, resetNativeInput]);
 
     const focusNativeInput = useCallback(() => {
@@ -582,6 +540,27 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     }, [showNativeKeyboard]);
 
     useEffect(() => clearPendingFocus, [clearPendingFocus]);
+
+    useEffect(() => {
+      // Physical arrows arrive through the native key stream, never through
+      // TextInput.onKeyPress (RN builds that event from the IME connection).
+      // The native module claims them for this input so the hidden buffer
+      // cannot move its caret, then re-emits them here for the PTY.
+      if (Platform.OS !== "android") return;
+      return subscribeHardwareKeyboard((event) => {
+        if (!isFocusedRef.current || event.phase !== "down" || event.isComposing) return;
+        if (hasActiveOverlay()) return;
+        const key = resolveHardwareTerminalKey(event);
+        if (!key) return;
+        onTerminalKeyRef.current?.({
+          key,
+          ctrl: event.ctrlKey,
+          shift: event.shiftKey,
+          alt: event.altKey,
+          meta: event.metaKey,
+        });
+      });
+    }, []);
 
     useImperativeHandle(
       ref,
@@ -599,52 +578,24 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
       [blurNativeInput, focusNativeInput, showNativeKeyboard],
     );
 
-    const releaseTypingScopeRef = useRef<(() => void) | null>(null);
-    const releaseHardwareKeysRef = useRef<(() => void) | null>(null);
-    const handleHardwareTerminalKey = useStableEvent((event: NativeTerminalKeyEvent) => {
-      traceTerminalInput(
-        "hwkey",
-        `${event.ctrl ? "C-" : ""}${event.alt ? "A-" : ""}${event.meta ? "M-" : ""}${event.key}`,
-        "",
-      );
-      inputState.noteHardwareClear();
-      onTerminalKey?.(event);
-    });
-    useEffect(
-      () => () => {
-        releaseTypingScopeRef.current?.();
-        releaseHardwareKeysRef.current?.();
-      },
-      [],
-    );
-
     const handleFocus = useCallback(() => {
       isFocusedRef.current = true;
-      releaseTypingScopeRef.current?.();
-      releaseTypingScopeRef.current = claimNativeTypingScope("terminal");
-      releaseHardwareKeysRef.current?.();
-      releaseHardwareKeysRef.current = hardwareTerminalKeys.claim(handleHardwareTerminalKey);
       onFocus?.();
-    }, [handleHardwareTerminalKey, onFocus]);
+    }, [onFocus]);
 
     const handleBlur = useCallback(() => {
       isFocusedRef.current = false;
-      releaseTypingScopeRef.current?.();
-      releaseTypingScopeRef.current = null;
-      releaseHardwareKeysRef.current?.();
-      releaseHardwareKeysRef.current = null;
-      resetNativeInput("blurred");
+      resetNativeInput();
     }, [resetNativeInput]);
 
     const handleChangeText = useCallback(
       (text: string) => {
         const change = inputState.receiveTextChange(text);
-        traceTerminalInput("change", text, change.data);
         if (change.data.length > 0) {
           onInput?.(change.data);
         }
         if (change.shouldClear) {
-          resetNativeInput("enter");
+          resetNativeInput();
         }
       },
       [inputState, onInput, resetNativeInput],
@@ -653,7 +604,6 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
     const handleKeyPress = useCallback(
       (event: NativeSyntheticEvent<TextInputKeyPressEventData>) => {
         const change = inputState.receiveKeyPress(event.nativeEvent.key);
-        traceTerminalInput("key", event.nativeEvent.key, change.data);
         if (change.key) {
           onTerminalKey?.(createNativeTerminalKeyEvent(change.key));
         }
@@ -661,7 +611,7 @@ export const TerminalInput = forwardRef<TerminalInputHandle, TerminalInputProps>
           onInput?.(change.data);
         }
         if (change.shouldClear) {
-          resetNativeInput("key-enter");
+          resetNativeInput();
         }
       },
       [inputState, onInput, onTerminalKey, resetNativeInput],

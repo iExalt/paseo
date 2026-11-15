@@ -259,6 +259,8 @@ interface AgentLike extends ProviderSessionIdSource {
   title?: string | null;
 }
 
+const FULL_AGENT_UUID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
 /**
  * Resolve an agent ID from a partial ID or name.
  * Supports, in order:
@@ -277,11 +279,9 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
 
   const query = idOrName.toLowerCase();
 
-  // Try exact ID match first
-  const exactMatch = agents.find((a) => a.id === idOrName);
-  if (exactMatch) {
-    return exactMatch.id;
-  }
+  // Daemon identity wins over a matching provider session ID.
+  const exactMatch = agents.find((a) => a.id.toLowerCase() === query);
+  if (exactMatch) return exactMatch.id;
 
   const sessionId = idOrName.trim();
   const sessionMatches = findAgentsByProviderSessionId(agents, sessionId);
@@ -294,6 +294,9 @@ export function resolveAgentId(idOrName: string, agents: AgentLike[]): string | 
       message: formatAmbiguousProviderSessionIdError(sessionId, sessionMatches),
     } satisfies CommandError;
   }
+
+  // An unmatched full UUID must not select a title or an ID prefix.
+  if (FULL_AGENT_UUID_PATTERN.test(idOrName)) return null;
 
   // Try ID prefix match
   const prefixMatches = agents.filter((a) => a.id.toLowerCase().startsWith(query));

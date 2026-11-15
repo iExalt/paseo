@@ -1,4 +1,6 @@
 export const CLIENT_CAPS = {
+  terminalChunkedReplay: "terminal_chunked_replay",
+  binaryChunkingV1: "binary_chunking_v1",
   // COMPAT(agentCommandUpdates): added in v0.23.2, remove gate after 2027-05-06.
   agentCommandUpdates: "agent_command_updates",
   helloRejection: "hello_rejection",
@@ -47,8 +49,15 @@ export const CLIENT_CAPS = {
   // COMPAT(pluginTimelineItems): added in v0.8.0, remove after 2027-03-07 once client floor >= v0.8.0.
   pluginTimelineItems: "plugin_timeline_items",
   workspaceSetupObservation: "workspace_setup_observation",
+  // COMPAT(pluginBinaryPayloads): added in v0.15.0, remove after 2027-05-02 once client floor >= v0.15.0.
+  // The daemon sends plugin RPC outputs as binary opcode 0x21 only to clients that decode it.
+  pluginBinaryPayloads: "plugin_binary_payloads",
   // COMPAT(workspaceSetupBlocked): added in v0.8.0, remove after 2027-03-07 once client floor >= v0.8.0.
   workspaceSetupBlocked: "workspace_setup_blocked",
+  // COMPAT(backgroundAgents): added in v0.15.0, remove after 2027-05-03 once client floor >= v0.15.0.
+  // Sources without it never receive agent-level background agents in inclusive lists or
+  // update subscriptions, because older apps auto-open a tab for every replicated root agent.
+  backgroundAgents: "background_agents",
   browserHost: "browser_host",
 } as const;
 

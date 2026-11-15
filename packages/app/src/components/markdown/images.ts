@@ -36,8 +36,13 @@ export interface MarkdownImageContext {
   filePath?: string;
 }
 
-export function useMarkdownSource(text: string, context: MarkdownImageContext) {
+export function useMarkdownSource(
+  text: string,
+  context: MarkdownImageContext,
+  links: { commandNames?: ReadonlySet<string>; forgeReferencePattern?: string } = {},
+) {
   const occurrenceKey = useId();
+  const { commandNames, forgeReferencePattern } = links;
   const { t } = useTranslation();
   const imageLabel = t("panels.file.filePanels.builtin.image");
   const imageUnavailableLabel = t("message.attachments.imageUnavailable");
@@ -45,10 +50,19 @@ export function useMarkdownSource(text: string, context: MarkdownImageContext) {
     () =>
       prepareMarkdownSource(text, context.workspaceRoot, {
         supportsSvg: isWeb,
+        commandNames,
+        forgeReferencePattern,
         imageLabel,
         imageUnavailableLabel,
       }),
-    [text, context.workspaceRoot, imageLabel, imageUnavailableLabel],
+    [
+      text,
+      context.workspaceRoot,
+      commandNames,
+      forgeReferencePattern,
+      imageLabel,
+      imageUnavailableLabel,
+    ],
   );
   const sources = [...new Set(prepared.images.map((image) => image.source))];
   const acquisitions = sources.map((source) => {

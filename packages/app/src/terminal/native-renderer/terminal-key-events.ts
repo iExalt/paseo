@@ -25,13 +25,27 @@ export function resolveNativeTerminalKey(key: string): NativeTerminalKey | null 
   }
 }
 
-export function createNativeTerminalKeyEvent(key: NativeTerminalKey): NativeTerminalKeyEvent {
+/**
+ * Physical keyboards report the DOM `code`. UIKit leaves `key` as a sentinel
+ * for Left/Right, so the code is the only reliable identifier there.
+ */
+export function resolveHardwareTerminalKey(input: {
+  key?: string;
+  code?: string;
+}): NativeTerminalKey | null {
+  return resolveNativeTerminalKey(input.code ?? "") ?? resolveNativeTerminalKey(input.key ?? "");
+}
+
+export function createNativeTerminalKeyEvent(
+  key: NativeTerminalKey,
+  modifiers: { ctrl?: boolean; shift?: boolean; alt?: boolean; meta?: boolean } = {},
+): NativeTerminalKeyEvent {
   return {
     key,
-    ctrl: false,
-    shift: false,
-    alt: false,
-    meta: false,
+    ctrl: modifiers.ctrl ?? false,
+    shift: modifiers.shift ?? false,
+    alt: modifiers.alt ?? false,
+    meta: modifiers.meta ?? false,
   };
 }
 

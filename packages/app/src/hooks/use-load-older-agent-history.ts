@@ -18,6 +18,7 @@ export interface LoadOlderAgentHistoryClient {
       cursor: { epoch: string; seq: number };
       limit: number;
       projection: "projected";
+      timeout: number;
       mergeWindow?: true;
     },
   ) => Promise<unknown>;
@@ -45,7 +46,7 @@ export async function loadOlderAgentHistory(
   const { client, cursor, hasOlder, isLoadingOlder, setInFlight, toast, logger, failedMessage } =
     deps;
   if (isLoadingOlder) {
-    return true;
+    return false;
   }
   if (!client || !cursor || !hasOlder) {
     return false;
@@ -53,18 +54,18 @@ export async function loadOlderAgentHistory(
 
   setInFlight(true);
   try {
-    const plan = planTimelineOlderFetch({ epoch: cursor.epoch, seq: getEarliestLoadedSeq(cursor) });
-    // A jump window sits apart from the tail, so its page merges as a window too.
-    await client.fetchAgentTimeline(
-      agentId,
-      cursor.retainedRanges?.length ? { ...plan, mergeWindow: true } : plan,
-    );
+    await client.fetchAgentTimeline(agentId, {
+      ...planTimelineOlderFetch({ epoch: cursor.epoch, seq: getEarliestLoadedSeq(cursor) }),
+      ...(cursor.retainedRanges?.length ? { mergeWindow: true as const } : {}),
+      timeout: 10_000,
+    });
   } catch (error) {
     (logger ?? console).warn("[Timeline] failed to load older agent history", agentId, error);
     toast?.show(failedMessage ?? i18n.t("loadOlderHistory.failed"), {
       durationMs: 2200,
       testID: "agent-load-older-history-toast",
     });
+    return false;
   } finally {
     setInFlight(false);
   }
@@ -92,7 +93,7 @@ export function useLoadOlderAgentHistory({
   const progressKey = useSessionStore((state) => {
     const timeline = selectAgentTimelineState(state.sessions[serverId], agentId);
     const cursor = timeline.status === "synced" ? timeline.range : null;
-    return cursor ? `${cursor.epoch}:${getEarliestLoadedSeq(cursor)}` : null;
+    return cursor ? `${cursor.epoch}:${cursor.startSeq}` : null;
   });
   const setOlderFetchInFlight = useSessionStore(
     (state) => state.setAgentTimelineOlderFetchInFlight,
