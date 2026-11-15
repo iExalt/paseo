@@ -357,3 +357,16 @@ describe("fork build platform boundary", () => {
     }
   }, 30_000);
 });
+
+it("registers the hardware keyboard plugin once", () => {
+  const pluginPath = "./modules/paseo-hardware-keyboard/app.plugin";
+  const plugin = require(pluginPath);
+  const { getDynamicConfig } = requireFromExpoCli("@expo/config/build/getConfig");
+  const { config } = getDynamicConfig(`${__dirname}/app.config.js`, {
+    projectRoot: __dirname,
+    config: {},
+  });
+  expect(
+    config.plugins.filter((entry: unknown) => entry === pluginPath || entry === plugin),
+  ).toHaveLength(1);
+});

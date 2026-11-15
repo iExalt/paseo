@@ -28,7 +28,13 @@ function setup(initialProps: Props) {
         client,
         attentionReason: "finished",
         isScreenFocused: true,
+        focusRequest: null,
+        onError: (error) => {
+          throw error;
+        },
         ...props,
+        isAgentDataReady: props.requiresAttention !== undefined,
+        requiresAttention: props.requiresAttention ?? false,
       }),
     { initialProps },
   );

@@ -38,9 +38,13 @@ describe("createHeadlessTerminal", () => {
     const moduleUrl = new URL("./headless-terminal.ts", import.meta.url).href;
     const script = `
       Buffer.poolSize = 8 * 1024 * 1024;
-      const occupied = Buffer.from(new Uint8Array(3 * 1024 * 1024));
-      if (occupied.byteOffset !== 0 || occupied.buffer.byteLength !== Buffer.poolSize) {
-        throw new Error("expected a fresh shared pool");
+      Buffer.allocUnsafe(Buffer.poolSize / 2 - 8);
+      Buffer.allocUnsafe(Buffer.poolSize / 2 - 8);
+      const occupied = Buffer.allocUnsafe(3 * 1024 * 1024);
+      new Uint8Array(occupied.buffer).fill(0);
+      const marker = Buffer.from([0]);
+      if (occupied.buffer.byteLength < Buffer.poolSize || marker.buffer !== occupied.buffer || marker.byteOffset === 0) {
+        throw new Error("expected a non-zero offset in the forced shared pool");
       }
       const { createHeadlessTerminal } = await import(${JSON.stringify(moduleUrl)});
       const terminal = createHeadlessTerminal({ rows: 2, cols: 40 });

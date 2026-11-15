@@ -10,8 +10,7 @@ const caller = {
   config: {
     model: "gpt-5.4",
     thinkingOptionId: "high",
-    providerOptions: { approvalPolicy: "never" },
-    featureValues: { search: true },
+    providerOptions: { approvalPolicy: "never", search: true },
     systemPrompt: "Use the project rules.",
     mcpServers: { review: { command: "review" } },
   },
@@ -38,8 +37,7 @@ describe("resolveNewAgentScheduleTarget", () => {
         modeId: "plan",
         thinkingOptionId: "high",
         isolation: "worktree",
-        providerOptions: { approvalPolicy: "never" },
-        featureValues: { search: true },
+        providerOptions: { approvalPolicy: "never", search: true },
         systemPrompt: "Use the project rules.",
         mcpServers: { review: { command: "review" } },
       },
@@ -57,7 +55,6 @@ describe("resolveNewAgentScheduleTarget", () => {
       model: "sonnet",
       modeId: "plan",
       thinkingOptionId: "high",
-      featureValues: { search: true },
       systemPrompt: "Use the project rules.",
       mcpServers: { review: { command: "review" } },
     });

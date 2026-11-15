@@ -999,7 +999,7 @@ export async function createPaseoDaemon(
     paseoHome: config.paseoHome,
     logger,
     seed: async () =>
-      (await agentStorage.list()).flatMap((record) =>
+      (await agentStorage.listAll()).flatMap((record) =>
         record.totalCostUsd
           ? [
               {

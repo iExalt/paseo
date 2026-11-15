@@ -113,10 +113,9 @@ describe("ScheduleSession", () => {
       config: {
         model: "gpt-5.4",
         thinkingOptionId: "high",
-        featureValues: { search: true },
         systemPrompt: "caller prompt",
         mcpServers: { review: { command: "review" } },
-        providerOptions: { approvalPolicy: "never" },
+        providerOptions: { approvalPolicy: "never", search: true },
       },
       currentModeId: "plan",
     };
@@ -135,7 +134,6 @@ describe("ScheduleSession", () => {
           modeId: "bypassPermissions",
           thinkingOptionId: "high",
           isolation: "worktree" as const,
-          featureValues: { search: true },
           systemPrompt: "caller prompt",
           mcpServers: { review: { command: "review" } },
         },
@@ -191,11 +189,14 @@ describe("ScheduleSession", () => {
         modeId: "bypassPermissions",
         thinkingOptionId: "high",
         isolation: "worktree",
-        featureValues: { search: true },
         systemPrompt: "caller prompt",
         mcpServers: { review: { command: "review" } },
       },
     });
+    expect(received?.target).toHaveProperty("config");
+    expect(
+      received?.target && "config" in received.target ? received.target.config : {},
+    ).not.toHaveProperty("providerOptions");
     expect(received?.expiresAt).toBe("2026-01-01T01:00:00.000Z");
     expect(findByType(emitted, "schedule/create/response")?.payload.error).toBeNull();
   });
