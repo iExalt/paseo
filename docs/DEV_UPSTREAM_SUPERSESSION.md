@@ -1,6 +1,6 @@
 # Upstream rebase inputs and supersession ledger
 
-The version 2 ledger carries the 2026-11-14 source review onto the curated `dev` series. Exact fully superseded and empty/history-only matches are drop instructions; partial decisions stop for review. Retained curated commits keep one-to-one replay. [The rebase procedure](upstream/rebase-dev.md#carry-supersession-decisions-forward) owns matching, target and release-boundary safeguards.
+The version 2 ledger carries the 2026-11-14 source review onto the curated `dev` series. Exact fully superseded and empty/history-only matches are drop instructions; partial decisions require target-bound reviewed replay receipts. Retained curated commits keep one-to-one replay. [The rebase procedure](upstream/rebase-dev.md#carry-supersession-decisions-forward) owns matching, target and release-boundary safeguards.
 
 No production rebase, conflict training, fixup generation or candidate platform proof was run for this ledger change. Source classifications do not establish runtime parity.
 
@@ -23,18 +23,20 @@ The incoming capture contains 307 non-merge commits. The curated fork capture co
 
 [The manifest and ledger](upstream-rebase-inventory.json) retains the incoming inventory and target evidence. Its `fork` array now keys curated commits by subject plus `git patch-id --stable`, with the curated SHA as a hint. Direct old-to-curated mappings and shared-file hunk contributors both participate in aggregation. Reasons, upstream evidence and retained outcomes survive aggregation. The archive branch [`archive/dev-2026-11-14`](https://github.com/iExalt/paseo/tree/archive/dev-2026-11-14) at `b037344126bf21c118a1e6d6ab4a15436600f930` retains old source commits. The [pre-migration inventory](https://github.com/iExalt/paseo/blob/cb6ccc43a5983d24d30af819a7ec6c6fa6a85557/docs/upstream-rebase-inventory.json) retains the SHA-keyed classifications. These are historical provenance, not additional replay inputs.
 
+The ledger refreshes the three scrubbed identities against the signed curated series: the rebase engine, the 0.28.0 release metadata and its release-please boundary. The ten partial rows carry reviewed retain receipts for `c1d7d56b71960bca17ce86f8d358445b6135b809`, grounded in the [reviewed rehearsal](https://github.com/iExalt/paseo/commit/744f502c5a8d7ad8297d10e59c0fbb5e37cfd218). Integration and platform gates remain separate.
+
 The ledger covers the captured curated series. New descendants retain by default. A changed patch on a known subject or SHA requires reviewed reclassification; target-bound conflict, fixup and platform proof still needs refreshing when its inputs change.
 
 ## Decisions
 
-| Category             | Curated commits | Replay                                                               |
-| -------------------- | --------------: | -------------------------------------------------------------------- |
-| keep                 |             116 | Retain one-to-one.                                                   |
-| fully superseded     |               2 | Drop exact matches against the reviewed target or a descendant.      |
-| partially superseded |              10 | Stop for review; preserve constituent reasons and distinct outcomes. |
-| empty/history-only   |               0 | No standalone empty entry survives curation.                         |
+| Category             | Curated commits | Replay                                                                                          |
+| -------------------- | --------------: | ----------------------------------------------------------------------------------------------- |
+| keep                 |             116 | Retain one-to-one.                                                                              |
+| fully superseded     |               2 | Drop exact matches against the reviewed target or a descendant.                                 |
+| partially superseded |              10 | Retain with an exact-target review receipt; preserve constituent reasons and distinct outcomes. |
+| empty/history-only   |               0 | No standalone empty entry survives curation.                                                    |
 
-The six old empty/history-only entries became four mixed curated commits and two omitted source commits. The mixed commits are partial; the omitted commits have no curated patch to replay. The curated release-metadata commit also inherits a partial shared-file contributor, so it remains a review stop. Curation is not evidence that an overlapping outcome is dispensable.
+The six old empty/history-only entries became four mixed curated commits and two omitted source commits. The mixed commits are partial; the omitted commits have no curated patch to replay. The curated release-metadata commit also inherits a partial shared-file contributor, so it requires a reviewed retain receipt for each target. Curation is not evidence that an overlapping outcome is dispensable.
 
 ### Fully superseded behavior
 

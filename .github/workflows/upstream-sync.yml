@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: "23 7 * * *"
   workflow_dispatch:
+    inputs:
+      ref:
+        description: Upstream ref or SHA to mirror (must be on upstream main)
+        required: false
+        type: string
 
 permissions: {}
 
@@ -29,6 +34,8 @@ jobs:
           permission-workflows: write
       - name: Fast-forward upstream mirror
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        env:
+          UPSTREAM_REF: ${{ inputs.ref }}
         with:
           github-token: ${{ steps.token.outputs.token }}
           script: |
@@ -49,7 +56,24 @@ jobs:
               });
 
               const destinationSha = destinationBranch.commit.sha;
-              const sourceSha = sourceBranch.commit.sha;
+              const mainSha = sourceBranch.commit.sha;
+              const requestedRef = process.env.UPSTREAM_REF?.trim();
+              const sourceSha = requestedRef
+                ? (await github.rest.repos.getCommit({
+                    owner: 'getpaseo', repo, ref: requestedRef,
+                  })).data.sha
+                : mainSha;
+              if (!/^[0-9a-f]{40}$/.test(sourceSha)) {
+                throw new Error('Upstream commit did not resolve to a full SHA');
+              }
+              if (requestedRef) {
+                const { data: membership } = await github.rest.repos.compareCommitsWithBasehead({
+                  owner: 'getpaseo', repo, basehead: `${sourceSha}...${mainSha}`,
+                });
+                if (!['ahead', 'identical'].includes(membership.status)) {
+                  throw new Error(`Requested upstream commit is not on main: ${membership.status}`);
+                }
+              }
 
               if (destinationSha === sourceSha) {
                 core.info(`upstream/main already matches getpaseo/paseo:main at ${sourceSha}`);
