@@ -1261,6 +1261,19 @@ export function assertGitVersion(versionText) {
   }
 }
 
+// Share the exact ledger gate with preparation; no checkout, index or rebase changes.
+export async function planRebase({ repositoryPath, remote = "origin" } = {}) {
+  const snapshots = await snapshotRefs(repositoryPath, remote);
+  const originalCommits = await replayCommitIds(repositoryPath, snapshots.upstream, snapshots.dev);
+  const boundaries = await releaseTagCommits(repositoryPath, remote);
+  const config = JSON.parse(
+    await gitChecked(repositoryPath, ["show", `${snapshots.dev}:release-please-config.json`]),
+  );
+  boundaries.add(config["last-release-sha"]);
+  const plan = await replayPlan(repositoryPath, snapshots, originalCommits, boundaries);
+  return { ...snapshots, ...plan };
+}
+
 export async function rebaseDev({
   repositoryPath,
   remote = "origin",
@@ -1502,7 +1515,20 @@ function runRoutine(repositoryPath) {
   });
 }
 
-export async function validateRebase({ repositoryPath, runChecks = runRoutine }) {
+export async function validateRebase({ repositoryPath, runChecks = runRoutine, reportInputs }) {
+  if (reportInputs) {
+    const inputs = {};
+    for (const name of ["dev", "upstream", "resolutions"]) {
+      inputs[name] = (
+        await gitChecked(repositoryPath, [
+          "rev-parse",
+          "--verify",
+          `refs/codex/snapshot/${name}^{commit}`,
+        ])
+      ).trim();
+    }
+    reportInputs(inputs);
+  }
   const testedSha = await checkedTree(repositoryPath);
   await runChecks(repositoryPath);
   await checkedTree(repositoryPath, testedSha);
@@ -1576,7 +1602,10 @@ async function main() {
     return;
   }
   if (process.argv[2] === "validate") {
-    const testedSha = await validateRebase({ repositoryPath });
+    const testedSha = await validateRebase({
+      repositoryPath,
+      reportInputs: (inputs) => console.log(`Captured inputs: ${JSON.stringify(inputs)}`),
+    });
     if (process.env.GITHUB_OUTPUT)
       await appendFile(process.env.GITHUB_OUTPUT, `tested-sha=${testedSha}\n`);
     if (process.env.GITHUB_STEP_SUMMARY) {
@@ -1607,6 +1636,9 @@ async function main() {
       `dev-sha=${snapshots.dev}\nupstream-sha=${snapshots.upstream}\nresolutions-sha=${snapshots.resolutions}\n`,
     );
   }
+  console.log(
+    `Captured inputs: ${JSON.stringify({ dev: snapshots.dev, upstream: snapshots.upstream, resolutions: snapshots.resolutions })}`,
+  );
   console.log(`Rebase complete from upstream ${snapshots.upstream}; captured dev ${snapshots.dev}`);
 }
 
