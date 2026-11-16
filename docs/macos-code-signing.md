@@ -1,6 +1,6 @@
 # macOS code signing for the Nix-installed app
 
-macOS stores each privacy grant (Screen Recording, Device Control and Data Access, Full Disk Access, Developer Tools, App Management) with the designated requirement of the app it was granted to, and checks it again every time the app asks. tccd resolves the requesting process to `/Applications/Paseo.app`, so that copy's signature is the one that matters.
+macOS stores each privacy grant (Screen & System Audio Recording, Device Control and Data Access, Full Disk Access, Developer Tools, App Management) with the designated requirement of the app it was granted to, and checks it again every time the app asks. For Paseo's processes, including the daemon that runs from the Nix store, the tccd log reads the static code at `/Applications/Paseo.app`, so that copy's signature is the one that matters.
 
 The Nix build (`nix/desktop-package.nix`) is signed ad hoc because the build sandbox cannot reach a keychain. An ad hoc requirement is the build's `cdhash`, which changes with every release, so every update made the grants fail with `Failed to match existing code requirement` in the tccd log while System Settings still showed them enabled.
 
@@ -31,12 +31,13 @@ The Nix build itself, and the store copy the daemon runs from, stay ad hoc.
 Each Mac needs the identity in its login keychain once:
 
 ```sh
-git clone https://github.com/iExalt/keychain.git ~/keychain-tmp
+gh repo clone iExalt/keychain ~/keychain-tmp
 cd ~/keychain-tmp
-pw=$(openssl rand -hex 16)
-openssl pkcs12 -export -inkey paseo-macos-codesign.key -in paseo-macos-codesign.pem \
+pw=$(/usr/bin/openssl rand -hex 16)
+/usr/bin/openssl pkcs12 -export -inkey paseo-macos-codesign.key -in paseo-macos-codesign.pem \
   -name "Paseo Local Code Signing (iExalt)" -out paseo.p12 -passout "pass:$pw"
 security import paseo.p12 -k ~/Library/Keychains/login.keychain-db -P "$pw" -T /usr/bin/codesign
+# Use the system LibreSSL: an OpenSSL 3 p12 can be refused by `security import`.
 # Asks for the login keychain password. Without it, codesign prompts, and the
 # headless updater times out and installs the ad hoc build.
 security set-key-partition-list -S apple-tool:,apple: -s \
@@ -46,7 +47,7 @@ cd ~ && rm -r ~/keychain-tmp
 
 Leave the certificate untrusted: `security find-identity -p codesigning` lists it as `CSSMERR_TP_NOT_TRUSTED`, and `codesign` signs with it anyway. Don't add it as a trusted root.
 
-Then quit Paseo and install a signed copy of the active release:
+Then quit Paseo and install a signed copy of the release named in the installed copy (if `paseo-nix-update status` reports a newer active release, run that release's `install-app` instead):
 
 ```sh
 "$(jq -r .outputPath /Applications/Paseo.app/Contents/Resources/paseo-nix-managed.json)/bin/paseo-nix-update" install-app
@@ -55,7 +56,7 @@ Then quit Paseo and install a signed copy of the active release:
 ## Limits
 
 - The updater that installs a release is the one from the release you were running. The first update into a signing-aware release, and any update, rollback or downgrade performed by an older updater, installs an ad hoc copy. Run `install-app` from the new release as above, or the grants break until the next signing-aware install.
-- Reset and approve the grants once after the first signed install, since the existing ones name an ad hoc `cdhash`: `tccutil reset All sh.paseo.desktop`, then enable Paseo again in System Settings → Privacy & Security.
+- Reset and approve the grants once after the first signed install, since the existing ones name an ad hoc `cdhash`: `tccutil reset All sh.paseo.desktop`, then enable Paseo again in System Settings → Privacy & Security. Full Disk Access and Screen & System Audio Recording are switched on there by hand; macOS doesn't prompt for them.
 
 ## Check it
 
