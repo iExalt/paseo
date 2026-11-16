@@ -214,3 +214,65 @@ jobs:
             echo "::warning::Routine critical path ${elapsed}s exceeds the advisory budget (<300s)."
             exit 1
           fi
+
+  rebase-preflight:
+    if: github.repository == 'iExalt/paseo' && github.event.pull_request.head.ref == 'rebase-candidate/preflight-4-2026-11-15'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      LEFTHOOK: "0"
+      MISE_TASK_RUN_AUTO_INSTALL: "false"
+      npm_config_audit: "false"
+      npm_config_fund: "false"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: "2026.10.3"
+          install_args: node@26.13.0 actionlint@1.7.12
+          cache: false
+
+      - name: Bind the authorized workflow-only harness
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD^1)" = "15bef0fdeae468f4fa652cb06d9157f6408edfd2"
+          test "$(git rev-parse HEAD^2)" = "d5c1fcfd071ec5de90048ce91cd9948df15c4b05"
+          test "$(git diff --name-only HEAD^1 HEAD)" = ".github/workflows/ci.yml"
+          git diff --exit-code d5c1fcfd071ec5de90048ce91cd9948df15c4b05 HEAD -- .github/scripts/rebase-dev.mjs scripts/fork-release-config.mjs scripts/fork-version.mjs packages/protocol/src/fork-version.ts
+          git show -s --format='%H %T %P' HEAD
+          git status --porcelain=v1 -uall
+
+      - name: Configure pinned npm installation
+        run: |
+          test "$(node --version)" = v26.13.0
+          test "$(npm --version)" = 11.20.0
+          echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+
+      - name: Install locked dependencies once
+        run: time npm ci --prefer-offline
+
+      - name: Validate with the complete production engine
+        id: validate
+        run: node .github/scripts/rebase-dev.mjs validate
+
+      - name: Confirm the tested head
+        env:
+          EXPECTED_HEAD: ${{ github.event.pull_request.head.sha }}
+          TESTED_SHA: ${{ steps.validate.outputs.tested-sha }}
+        run: |
+          test "$TESTED_SHA" = "$EXPECTED_HEAD"
+          test "$(git rev-parse HEAD)" = "$EXPECTED_HEAD"
+          test -z "$(git status --porcelain=v1 -uall)"
+          git show -s --format='%H %T %P' HEAD
+
+      - name: Print dirty paths on failure
+        if: failure()
+        run: git status --porcelain=v1 -uall
