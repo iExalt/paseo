@@ -67,9 +67,11 @@ function observe(
   recursive: boolean,
   callback: () => void,
   onError: (error: unknown) => void,
+  identity: string,
   filter?: string,
 ): SkillWatch {
-  const key = JSON.stringify([directory, recursive]);
+  // A directory recreated at the same path must not reuse the deleted one's watcher.
+  const key = JSON.stringify([directory, recursive, identity]);
   let entry = watches.get(key);
   if (!entry) {
     const callbacks = new Set<(filename: string | null) => void>();
@@ -151,13 +153,17 @@ export function watchSkillChanges(
     const readiness: Promise<void>[] = [];
     const observed = new Set<string>();
     const visited = new Set<string>();
-    const add = (directory: string, recursive: boolean, filter?: string) => {
+    const add = async (directory: string, recursive: boolean, filter?: string) => {
       if (closed) return;
       const key = JSON.stringify([directory, recursive, filter]);
       if (observed.has(key)) return;
       observed.add(key);
       try {
-        const observation = observe(directory, recursive, change, onError, filter);
+        // Filesystems reuse a deleted directory's inode at once; birth time tells them apart.
+        const { dev, ino, birthtimeNs } = await stat(directory, { bigint: true });
+        if (closed) return;
+        const identity = `${dev}:${ino}:${birthtimeNs}`;
+        const observation = observe(directory, recursive, change, onError, identity, filter);
         next.push(observation.close);
         readiness.push(observation.ready);
       } catch (error) {
@@ -173,7 +179,7 @@ export function watchSkillChanges(
         if (ancestor === parent) break;
         parent = ancestor;
       }
-      add(parent, false, child);
+      await add(parent, false, child);
     };
     // Watch physical directories directly: recursive fs.watch can report target canaries as symlink aliases.
     const links = async (directory: string): Promise<void> => {
@@ -182,7 +188,7 @@ export function watchSkillChanges(
       visited.add(target);
       await parentWatch(target);
       const walk = async (dir: string): Promise<void> => {
-        add(dir, false);
+        await add(dir, false);
         for (const entry of await readdir(dir, { withFileTypes: true })) {
           const child = join(dir, entry.name);
           if (entry.isSymbolicLink()) {
