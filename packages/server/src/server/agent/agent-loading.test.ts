@@ -454,6 +454,7 @@ test.each(["mode", "thinking", "rewind"])(
       expect(runtime.latestSession().prompts).toEqual([
         expect.objectContaining({ message: "continue" }),
       ]);
+      runtime.latestSession().beginTurn();
       runtime.latestSession().finishTurn();
       await manager.waitForAgentEvent(agentId);
       await manager.archiveAgent(agentId);

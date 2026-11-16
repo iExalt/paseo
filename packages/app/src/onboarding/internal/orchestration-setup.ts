@@ -60,7 +60,7 @@ export function useOrchestrationSetup(serverId: string): OrchestrationSetupContr
 
   // What the host and this computer have now, or null while it is still being read. A choice is
   // skipped only when it is known to match; an unknown state is always written.
-  const toolsOn = config ? config.mcp.injectIntoAgents !== false : null;
+  const toolsOn = config ? config.mcp?.injectIntoAgents !== false : null;
   const skillsInstalled = skills.status ? areSkillsInstalled(skills.status) : null;
   const cliInstalled = cli.status ? cli.status.installed : null;
   const { reconcile, uninstall } = skills;

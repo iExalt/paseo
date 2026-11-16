@@ -48,6 +48,54 @@ describe("ACP catalog startup failures", () => {
     expect(diagnostic).not.toContain("initialize timed out");
   });
 
+  test.each(["catalog", "session"] as const)(
+    "%s preserves an ordinary initialize rejection while the transport stays open",
+    async (operation) => {
+      const client = new GenericACPAgentClient({
+        logger: createTestLogger(),
+        command: [
+          process.execPath,
+          "-e",
+          `
+          require('node:readline').createInterface({ input: process.stdin }).on('line', (line) => {
+            const request = JSON.parse(line);
+            process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id,
+              error: { code: -32602, message: 'fixture initialize rejected' } }) + '\\n');
+          });
+        `,
+        ],
+      });
+      const request =
+        operation === "catalog"
+          ? client.fetchCatalog({ scope: "workspace", cwd: process.cwd(), force: true })
+          : client.createSession({ provider: "acp", cwd: process.cwd() });
+      await expect(request).rejects.toThrow("fixture initialize rejected");
+    },
+  );
+
+  test.each(["catalog", "session"] as const)(
+    "%s bounds EOF settlement when the process stays alive",
+    async (operation) => {
+      const client = new GenericACPAgentClient({
+        logger: createTestLogger(),
+        command: [
+          process.execPath,
+          "-e",
+          `
+          process.stdin.once('data', () => { process.stdout.end(); });
+          setInterval(() => {}, 1000);
+        `,
+        ],
+      });
+      const request =
+        operation === "catalog"
+          ? client.fetchCatalog({ scope: "workspace", cwd: process.cwd(), force: true })
+          : client.createSession({ provider: "acp", cwd: process.cwd() });
+      await expect(request).rejects.toThrow("ACP connection closed");
+    },
+    5_000,
+  );
+
   test("invalid provider options reject without crashing the host process", async () => {
     const clientModule = new URL("./generic-acp-agent.ts", import.meta.url).href;
     const loggerModule = new URL("../../../test-utils/test-logger.ts", import.meta.url).href;

@@ -8,8 +8,10 @@ import type {
 import type { V2Api } from "../v2/api.js";
 import type { V2Connection } from "../v2/runtime.js";
 
-function unexpected(): never {
-  throw new Error("Unexpected OpenCode v2 test operation");
+function unexpected(operation: string): (...args: unknown[]) => never {
+  return () => {
+    throw new Error(`Unexpected OpenCode v2 test operation: ${operation}`);
+  };
 }
 
 export class V2Harness {
@@ -28,6 +30,8 @@ export class V2Harness {
   readonly prompts: string[] = [];
   readonly environments: Array<{ sessionID: string; variables: Record<string, string> }> = [];
   readonly mcpAdds: string[] = [];
+  readonly instructions: Array<Parameters<V2Api["session"]["instructions"]["entry"]["put"]>[0]> =
+    [];
   releases = 0;
   active = false;
   activeReads = 0;
@@ -89,9 +93,9 @@ export class V2Harness {
   }
 
   readonly api: V2Api = {
-    server: { info: unexpected },
+    server: { info: unexpected("info") },
     shell: {
-      remove: unexpected,
+      remove: unexpected("remove"),
       list: async () => ({ location: { directory: this.info.location.directory }, data: [] }),
     },
     plugin: {
@@ -111,10 +115,10 @@ export class V2Harness {
         data: [],
       }),
     },
-    model: { list: unexpected, default: unexpected },
-    provider: { list: unexpected },
-    command: { list: unexpected },
-    skill: { list: unexpected },
+    model: { list: unexpected("list"), default: unexpected("default") },
+    provider: { list: unexpected("list") },
+    command: { list: unexpected("list") },
+    skill: { list: unexpected("list") },
     mcp: {
       add: async (input) => {
         this.mcpAdds.push(input.server);
@@ -133,10 +137,10 @@ export class V2Harness {
         return { data: [...this.history], cursor: {} };
       },
     },
-    permission: { list: async () => [], reply: unexpected },
+    permission: { list: async () => [], reply: unexpected("reply") },
     session: {
       inbox: { list: async () => [] },
-      form: { list: async () => [], reply: unexpected, cancel: unexpected },
+      form: { list: async () => [], reply: unexpected("reply"), cancel: unexpected("cancel") },
       create: async (input = {}) => {
         this.creates.push(input);
         return this.info;
@@ -148,12 +152,22 @@ export class V2Harness {
         return this.active ? { [this.info.id]: { type: "running" as const } } : {};
       },
       remove: async () => undefined,
-      switchAgent: unexpected,
-      switchModel: unexpected,
+      switchAgent: async ({ agent }) => {
+        this.info.agent = agent;
+      },
+      switchModel: unexpected("switchModel"),
       environment: async (input) => {
         this.environments.push(input);
       },
-      instructions: { entry: { list: unexpected, put: unexpected, remove: unexpected } },
+      instructions: {
+        entry: {
+          list: unexpected("list"),
+          put: async (input) => {
+            this.instructions.push(input);
+          },
+          remove: unexpected("remove"),
+        },
+      },
       prompt: async (input, options) => {
         const before = this.executions.length;
         await this.prompt(input, options);
@@ -165,9 +179,13 @@ export class V2Harness {
           this.finishExecution();
       },
       interrupt: (input, options) => this.interrupt(input, options),
-      command: unexpected,
-      compact: unexpected,
-      revert: { stage: unexpected, clear: unexpected, commit: unexpected },
+      command: unexpected("command"),
+      compact: unexpected("compact"),
+      revert: {
+        stage: unexpected("stage"),
+        clear: unexpected("clear"),
+        commit: unexpected("commit"),
+      },
       log: (input) => this.executionLog(input.after),
     },
     event: { subscribe: (options) => this.events(options?.signal) },

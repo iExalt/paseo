@@ -370,14 +370,23 @@ describe("parent lookup failures", () => {
   });
 });
 
-
 describe("agent identifier UUID safety", () => {
   const exactId = "9eac296c-4d60-4189-a0b5-ae71dd9c6ad9";
   const collision = { id: "c9a97e5d-4a92-4646-a016-53032146d0a1", title: `worker ${exactId}` };
   it("resolves a full UUID exactly and case-insensitively before titles", () => {
-    expect(resolveAgentId(exactId.toUpperCase(), [{ id: exactId, title: "target" }, collision])).toBe(exactId);
+    expect(
+      resolveAgentId(exactId.toUpperCase(), [{ id: exactId, title: "target" }, collision]),
+    ).toBe(exactId);
   });
   it("does not resolve a missing full UUID through another agent's title", () => {
     expect(resolveAgentId(exactId, [collision])).toBeNull();
   });
+});
+
+it("resolves a provider session UUID before applying missing-daemon-UUID safety", () => {
+  const sessionId = "9eac296c-4d60-4189-a0b5-ae71dd9c6ad9";
+  const holder = { id: "daemon-agent", persistence: { provider: "codex", sessionId } };
+  expect(resolveAgentId(sessionId, [holder])).toBe(holder.id);
+  expect(resolveAgentId(sessionId, [holder, { id: sessionId }])).toBe(sessionId);
+  expect(() => resolveAgentId(sessionId, [holder, { ...holder, id: "second" }])).toThrowError();
 });

@@ -3541,7 +3541,6 @@ function WorkspaceScreenContent({
       isFocusModeEnabled,
       toggleFocusMode,
       activeAgentId,
-      activeTabKey,
       canOpenImportSheet,
       compactHeaderScripts,
       createTerminalDisabled,

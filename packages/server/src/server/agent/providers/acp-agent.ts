@@ -185,6 +185,23 @@ function rejectOnProcessFailure(child: ChildProcess, stderrChunks: string[]): Pr
   });
 }
 
+// SDK 1.7 rejects initialize on EOF before the child closes and stderr drains.
+async function preferACPProcessFailure(
+  requestError: unknown,
+  connection: ClientSideConnection,
+  processError: Promise<never>,
+): Promise<never> {
+  if (connection.signal.aborted) {
+    const failure = await withTimeout(
+      processError.catch((processFailure: unknown) => processFailure),
+      ACP_DISCONNECT_EXIT_GRACE_MS,
+      "ACP process did not close after disconnect",
+    ).catch(() => requestError);
+    throw failure;
+  }
+  throw requestError;
+}
+
 function describeACPDisconnect(child: ChildProcess | null): string {
   if (child?.signalCode) {
     return `ACP agent disconnected (signal ${child.signalCode})`;
@@ -1642,7 +1659,9 @@ export class ACPAgentClient implements AgentClient {
           }),
           transport.processError,
           ...(initializeTimeoutPromise ? [initializeTimeoutPromise] : []),
-        ]),
+        ]).catch((error) =>
+          preferACPProcessFailure(error, transport.connection, transport.processError),
+        ),
       );
     } finally {
       if (timeout) {
@@ -2174,6 +2193,9 @@ export class ACPAgentSession implements AgentSession, ACPClient {
         return;
       })
       .catch((error) => {
+        if (connection.signal.aborted) {
+          return this.failDisconnectedTurn(turnId, child);
+        }
         const summary = summarizeACPRequestError(error);
         this.finishTurn({
           type: "turn_failed",
@@ -2189,8 +2211,8 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     return { turnId };
   }
 
-  // The SDK aborts the connection without rejecting the pending prompt, and before the child's
-  // exit event, so wait for the exit status before failing the turn.
+  // The SDK aborts and rejects pending requests before the child's exit event.
+  // Let the process owner retain its exit status before failing the turn.
   private async failDisconnectedTurn(turnId: string, child: ChildProcess | null): Promise<void> {
     await setImmediate();
     if (child && child.exitCode === null && child.signalCode === null) {
@@ -3222,7 +3244,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
           clientInfo: { name: "Paseo", version: "dev" },
         }),
         processError,
-      ]),
+      ]).catch((error) => preferACPProcessFailure(error, connection, processError)),
     );
 
     return { child, connection, initialize };
