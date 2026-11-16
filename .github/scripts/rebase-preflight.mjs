@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { assertGitVersion, planRebase } from "./rebase-dev.mjs";
+import { assertGitVersion, planRebase, validateRebase } from "./rebase-dev.mjs";
 
 export function command(file, args, options = {}) {
   const result = spawnSync(file, args, {
@@ -119,6 +120,68 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
   return { ok: checks.every((entry) => entry.ok), upstream, checks };
 }
 
+const ROUTINE_COMMAND = ["mise", "run", "--skip-tools", "ci:routine"];
+
+export async function runLocalRoutine({
+  repositoryPath,
+  receiptPath,
+  validate = validateRebase,
+  run = command,
+}) {
+  const receipt = { repositoryPath: resolve(repositoryPath), command: ROUTINE_COMMAND };
+  try {
+    for (const name of ["dev", "upstream", "resolutions"])
+      receipt[name] = run(
+        "git",
+        ["rev-parse", "--verify", `refs/codex/snapshot/${name}^{commit}`],
+        { cwd: receipt.repositoryPath },
+      ).trim();
+    receipt.testedSha = await validate({ repositoryPath: receipt.repositoryPath });
+    receipt.testedTree = run("git", ["rev-parse", `${receipt.testedSha}^{tree}`], {
+      cwd: receipt.repositoryPath,
+    }).trim();
+    receipt.exitCode = 0;
+  } catch (error) {
+    receipt.exitCode = 1;
+    receipt.error = error.message;
+  }
+  writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + "\n");
+  return receipt;
+}
+
+export function assertRoutineReceipt({ routineReceipt, run = command, ...inputs }) {
+  assert.ok(routineReceipt, "Run the full routine plan on the clean replay and pass its receipt");
+  const receipt = JSON.parse(readFileSync(routineReceipt, "utf8"));
+  assert.equal(receipt.exitCode, 0, "Local routine plan did not pass");
+  assert.deepEqual(receipt.command, ROUTINE_COMMAND, "Receipt used a different test plan");
+  assert.ok(isAbsolute(receipt.repositoryPath ?? ""), "Receipt must identify the replay checkout");
+  for (const name of ["dev", "upstream", "resolutions"])
+    assert.equal(
+      receipt[name],
+      inputs[name],
+      `Routine receipt ${name} differs from the frozen input`,
+    );
+  for (const name of ["testedSha", "testedTree"])
+    assert.match(receipt[name] ?? "", /^[a-f0-9]{40}$/, `Missing routine ${name}`);
+  const git = (...args) => run("git", args, { cwd: receipt.repositoryPath }).trim();
+  assert.equal(
+    git("rev-parse", "HEAD"),
+    receipt.testedSha,
+    "Replay HEAD moved since routine validation",
+  );
+  assert.equal(
+    git("rev-parse", "HEAD^{tree}"),
+    receipt.testedTree,
+    "Replay tree differs from the routine receipt",
+  );
+  assert.equal(
+    git("status", "--porcelain", "--untracked-files=all"),
+    "",
+    "Replay is dirty after routine validation",
+  );
+  return receipt.testedSha;
+}
+
 export async function runPreflight(options = {}, plan = planRebase) {
   for (const name of ["dev", "resolutions"])
     assert.match(options[name] ?? "", /^[a-f0-9]{40}$/, `Pass the frozen ${name} SHA`);
@@ -148,19 +211,37 @@ export async function runPreflight(options = {}, plan = planRebase) {
   } catch (error) {
     result.checks.push({ name: "replayPlan ledger", ok: false, detail: error.message });
   }
+  result.mode = options.environmentOnly ? "environment-only" : "dispatch";
+  if (!options.environmentOnly) {
+    try {
+      result.checks.push({
+        name: "local routine plan",
+        ok: true,
+        detail: assertRoutineReceipt(options),
+      });
+    } catch (error) {
+      result.checks.push({ name: "local routine plan", ok: false, detail: error.message });
+    }
+  }
   result.ok = result.checks.every((entry) => entry.ok);
+  result.readyForDispatch = !options.environmentOnly && result.ok;
   return result;
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const result = await runPreflight({
-      upstream: process.argv[2],
-      dev: process.argv[3],
-      resolutions: process.argv[4],
-    });
+    const result =
+      process.argv[2] === "routine"
+        ? await runLocalRoutine({ repositoryPath: process.argv[3], receiptPath: process.argv[4] })
+        : await runPreflight({
+            upstream: process.argv[2],
+            dev: process.argv[3],
+            resolutions: process.argv[4],
+            environmentOnly: process.argv[5] === "--environment-only",
+            routineReceipt: process.argv[5] === "--environment-only" ? undefined : process.argv[5],
+          });
     console.log(JSON.stringify(result, null, 2));
-    if (!result.ok) process.exitCode = 1;
+    if (result.exitCode === 1 || result.ok === false) process.exitCode = 1;
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

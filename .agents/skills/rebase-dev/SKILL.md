@@ -57,7 +57,7 @@ point at GitHub iExalt/paseo, before switching rehearsal to a frozen local origi
 In the instance's exact shell/tool environment, run:
 
 ```sh
-mise exec -- node .github/scripts/rebase-preflight.mjs "$UPSTREAM_SHA" "$DEV_SHA" "$RESOLUTIONS_SHA"
+mise exec -- node .github/scripts/rebase-preflight.mjs "$UPSTREAM_SHA" "$DEV_SHA" "$RESOLUTIONS_SHA" --environment-only
 ```
 
 It reports all environment problems together: GitHub origin binding, paused/idle workflows, mirror pin,
@@ -104,10 +104,34 @@ docs, inherited workflows, toolchain changes and generated output paths. The
 routine workflow's filename inventory rejects temporary workflow files; use the
 existing validate-only dispatch instead of adding a proof workflow.
 
+Run the entire routine plan locally on the clean fresh replay before any hosted
+dispatch, including inventory and contract gates. Targeted tests alone missed an
+indirect CLI mock and two new platform splits in the first trial. List the plan
+with `mise run --skip-tools ci:routine --plan`; install every declared prerequisite,
+including the Electron binary and Linux libraries. Keep logs and receipts outside
+the replay checkout:
+
+```sh
+mise exec -- node .github/scripts/rebase-preflight.mjs routine "$REPLAY_PATH" "$ROUTINE_RECEIPT"
+```
+
+The routine subcommand uses `validateRebase()`, including its before/after clean-tree
+and HEAD checks. Full preflight requires that successful receipt to match the
+frozen tuple and the replay's current SHA, tree and clean state. Environment-only
+preflight cannot authorize dispatch. Batch every failure found by the whole-plan
+walk before replaying and validating again. A changed resolution SHA or replay
+invalidates the receipt.
+
 If updates are authorized, publish only the accepted resolution diff as a normal
 signed descendant of the frozen resolutions SHA. Read back its SHA and tree.
 Retain the old SHA for a separately approved rollback. Update the frozen resolutions
-SHA to the accepted pushed commit, then rerun preflight on that intentional new tuple. Run validate-only once even when resolutions did not change, and after **every**
+SHA to the accepted pushed commit, then run full preflight on that intentional new tuple:
+
+```sh
+mise exec -- node .github/scripts/rebase-preflight.mjs "$UPSTREAM_SHA" "$DEV_SHA" "$RESOLUTIONS_SHA" "$ROUTINE_RECEIPT"
+```
+
+Run validate-only once even when resolutions did not change, and after **every**
 resolutions change:
 
 ```sh

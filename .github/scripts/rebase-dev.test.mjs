@@ -1,4 +1,11 @@
-import { preflight, command, runPreflight, assertGitHubOrigin } from "./rebase-preflight.mjs";
+import {
+  preflight,
+  command,
+  runPreflight as runFullPreflight,
+  assertRoutineReceipt,
+  runLocalRoutine,
+  assertGitHubOrigin,
+} from "./rebase-preflight.mjs";
 import { comparePublication, verifyPublication } from "./rebase-verify.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -34,6 +41,8 @@ import {
   validateRebase,
 } from "./rebase-dev.mjs";
 
+const runPreflight = (options, plan) =>
+  runFullPreflight({ environmentOnly: true, ...options }, plan);
 const yaml = createRequire(import.meta.url)("js-yaml");
 // Detached auto-maintenance runs rerere-gc, which takes MERGE_RR.lock and races the
 // fixture's own rebase picks.
@@ -2031,4 +2040,55 @@ test("validation reports actual snapshot refs before checks fail and refuses mis
   git(repositoryPath, "update-ref", "-d", "refs/codex/snapshot/resolutions");
   await assert.rejects(validateRebase(options));
   assert.deepEqual(events, []);
+});
+
+test("routine receipts bind the full plan to the current clean replay and frozen inputs", async () => {
+  const repositoryPath = join(root, "routine-receipt");
+  initRepo(repositoryPath);
+  writeFileSync(join(repositoryPath, "tracked"), "source");
+  commit(repositoryPath, "routine receipt fixture");
+  const sha = git(repositoryPath, "rev-parse", "HEAD");
+  const inputs = { dev: sha, upstream: sha, resolutions: sha };
+  for (const name of Object.keys(inputs))
+    git(repositoryPath, "update-ref", `refs/codex/snapshot/${name}`, sha);
+  const receiptPath = join(root, "routine-proof.json");
+  await runLocalRoutine({
+    repositoryPath,
+    receiptPath,
+    validate: async () => {
+      assert.equal(existsSync(receiptPath), false);
+      return sha;
+    },
+  });
+  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+  assert.equal(assertRoutineReceipt({ ...inputs, routineReceipt: receiptPath }), sha);
+  for (const delta of [
+    { exitCode: 1 },
+    { command: ["echo", "checks"] },
+    { dev: "a".repeat(40) },
+    { upstream: "a".repeat(40) },
+    { resolutions: "a".repeat(40) },
+    { testedSha: "a".repeat(40) },
+    { testedTree: "a".repeat(40) },
+  ]) {
+    writeFileSync(receiptPath, JSON.stringify({ ...receipt, ...delta }));
+    assert.throws(() => assertRoutineReceipt({ ...inputs, routineReceipt: receiptPath }));
+  }
+  writeFileSync(receiptPath, JSON.stringify(receipt));
+  writeFileSync(join(repositoryPath, "untracked"), "leftover");
+  assert.throws(() => assertRoutineReceipt({ ...inputs, routineReceipt: receiptPath }), /dirty/);
+  unlinkSync(join(repositoryPath, "untracked"));
+  await runLocalRoutine({
+    repositoryPath,
+    receiptPath,
+    validate: async () => {
+      throw new Error("routine failed");
+    },
+  });
+  assert.equal(JSON.parse(readFileSync(receiptPath, "utf8")).exitCode, 1);
+  assert.throws(
+    () => assertRoutineReceipt({ ...inputs, routineReceipt: receiptPath }),
+    /did not pass/,
+  );
+  assert.throws(() => assertRoutineReceipt(inputs), /full routine plan/);
 });
