@@ -20,7 +20,7 @@ private const val MATCH_TOLERANCE = 0.01f
 
 @RunWith(AndroidJUnit4::class)
 class TerminalRowLayoutTest {
-  private val font = TerminalFont("monospace", 40f, 1f)
+  private val font = TerminalFont("monospace", 40f, 1f, null)
   private val paints = TerminalPaints()
 
   /**
