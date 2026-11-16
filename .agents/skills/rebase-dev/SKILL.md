@@ -70,6 +70,8 @@ Use Git 2.55 or newer and install declared tools/dependencies. If platform proof
 are in scope, resolve Playwright from the selected runner package and check OS
 support; on Linux run `ldd` on Electron and its bundled libraries before launch.
 Those checks are conditional on the requested proof, not extra platform scope.
+Inspect test scripts before adding file arguments: an existing `src` selector
+still runs the whole tree. Use an invocation with only the intended test paths.
 
 Exit: frozen SHAs, preflight JSON, tool versions and evidence path are recorded.
 
