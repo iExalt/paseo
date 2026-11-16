@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.29.0](https://github.com/iExalt/paseo/compare/paseo-v0.28.0...paseo-v0.29.0) (2026-11-16)
+
+
+### Features
+
+* **rebase:** add staged skill and publication verification ([#502](https://github.com/iExalt/paseo/issues/502)) ([f47ea8f](https://github.com/iExalt/paseo/commit/f47ea8ff19c8b274044231c86a9480f2db2fd28a))
+* **rebase:** add validate-only dispatch mode ([#494](https://github.com/iExalt/paseo/issues/494)) ([fcad105](https://github.com/iExalt/paseo/commit/fcad105bcf58a2e67e548f7d1953cf6c6888d68b))
+
+
+### Bug Fixes
+
+* **app:** refocus the terminal input when it returns with the keyboard up ([#505](https://github.com/iExalt/paseo/issues/505)) ([20adec0](https://github.com/iExalt/paseo/commit/20adec047cc19b3025709aa100a83237cbac94f3))
+* **ci:** sign Nix hash refresh commits through GitHub ([#487](https://github.com/iExalt/paseo/issues/487)) ([6abe404](https://github.com/iExalt/paseo/commit/6abe4041ced9576467ba03d0bf1474aa19831263))
+* **desktop:** read settings regression results from the returned object in browser-tabs e2e ([#501](https://github.com/iExalt/paseo/issues/501)) ([c9b1468](https://github.com/iExalt/paseo/commit/c9b1468dfa15e7494a9a15376ab8d96ffa6b286e))
+* **rebase:** admit reviewed partials and pin upstream sync ([#488](https://github.com/iExalt/paseo/issues/488)) ([3d276a4](https://github.com/iExalt/paseo/commit/3d276a4e67984ad9f9d9b467855c1421bfdae5be))
+* **rebase:** carry curated supersession decisions across rewrites ([#484](https://github.com/iExalt/paseo/issues/484)) ([cfa3982](https://github.com/iExalt/paseo/commit/cfa3982edc1b0bcf690f8feaab4fe8902faa2f4c))
+* **rebase:** carry the ledger onto published history ([#498](https://github.com/iExalt/paseo/issues/498)) ([2b79a8a](https://github.com/iExalt/paseo/commit/2b79a8a5c14d4f75a76ff1a687ad858b60df7d68))
+* **rebase:** name dirty paths when validation refuses the tree ([#497](https://github.com/iExalt/paseo/issues/497)) ([0c887ac](https://github.com/iExalt/paseo/commit/0c887ac3ff545b8512262a3464845f9e9a02c388))
+* **rebase:** refresh the scrubbed release trigger identity ([#489](https://github.com/iExalt/paseo/issues/489)) ([5c867e2](https://github.com/iExalt/paseo/commit/5c867e2c60249063a3e25bba6cfdb97359f747e3))
+* **server:** avoid skill watcher canary reloads through symlinks ([#499](https://github.com/iExalt/paseo/issues/499)) ([0f80f9c](https://github.com/iExalt/paseo/commit/0f80f9cfe0cd5f40ac7347e48f3bd064b442652d))
+* **server:** watch a skill directory recreated at the same path ([#507](https://github.com/iExalt/paseo/issues/507)) ([4c424d8](https://github.com/iExalt/paseo/commit/4c424d879be084dc9a826720e772318d17dad374))
+
 ## [0.28.0](https://github.com/iExalt/paseo/compare/paseo-v0.27.0...paseo-v0.28.0) (2026-11-14)
 
 
