@@ -13,9 +13,9 @@ async function fixture() {
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   return root;
 }
-function observe(roots: string[], changed = vi.fn()) {
+function observe(roots: string[], changed = vi.fn(), debounceMs = 10) {
   const errors: unknown[] = [];
-  const watch = watchSkillChanges(roots, changed, (err) => errors.push(err), 10);
+  const watch = watchSkillChanges(roots, changed, (err) => errors.push(err), debounceMs);
   cleanups.push(() => watch.close());
   return { watch, changed, errors };
 }
@@ -41,6 +41,21 @@ test("watches creation, content edits, atomic saves, removal and recreated roots
   await mutation(observer, () => rename(join(skills, "test", "replacement"), file));
   await mutation(observer, () => rm(skills, { recursive: true }));
   await mutation(observer, () => mkdir(skills));
+  await mutation(observer, () => writeFile(join(skills, "SKILL.md"), "recreated"));
+});
+
+test("watches a directory recreated within one debounce window", async () => {
+  const root = await fixture();
+  const skills = join(root, "skills");
+  await mkdir(skills);
+  const changed = vi.fn();
+  // One wide debounce window holds the removal and the recreation, so one reconcile sees both.
+  const observer = observe([skills], changed, 200);
+  await observer.watch.ready;
+  const before = changed.mock.calls.length;
+  await rm(skills, { recursive: true });
+  await mkdir(skills);
+  await expect.poll(() => changed.mock.calls.length, { timeout: 3000 }).toBeGreaterThan(before);
   await mutation(observer, () => writeFile(join(skills, "SKILL.md"), "recreated"));
 });
 
