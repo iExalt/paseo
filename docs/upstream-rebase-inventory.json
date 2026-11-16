@@ -643,7 +643,7 @@
   ],
   "fork": [
     {
-      "sha": "d00eff651d6086703c9d23b7ac1be01de76d4731",
+      "sha": "fba9a3727182c29672bfe24c1d0c57f3129ea3ca",
       "subject": "feat(notifications): configure workspace delivery and daemon reply rules",
       "patch_id": "a48e7c9aa8fe770ef7357d1c937f09dbd3963c38",
       "category": "keep",
@@ -658,9 +658,9 @@
       "source_paths": []
     },
     {
-      "sha": "79147dc6afe2d73923811cc2452efb45d1582b01",
+      "sha": "4fb05a031439887d0192a74a874009ad314a2944",
       "subject": "docs: organize fork guidance and remove completed campaign plans",
-      "patch_id": "e20390931591f316fed824c86a1615bbc8b2c3fd",
+      "patch_id": "7c8e21d9513c4b1493d158a43333673bf5cf1e3c",
       "category": "partially superseded",
       "replay": "review",
       "constituent_counts": {
@@ -674,15 +674,15 @@
       "source_paths": [],
       "review_receipt": {
         "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
-        "patch_id": "e20390931591f316fed824c86a1615bbc8b2c3fd",
+        "patch_id": "7c8e21d9513c4b1493d158a43333673bf5cf1e3c",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate. Carried to the published patch identity after the reviewed resolution snapshot 307f2300ce7786e06b74b6d40f2344738c9f479d and publication run https://github.com/iExalt/paseo/actions/runs/43810387905; the patch changed only through those reviewed conflict resolutions."
       }
     },
     {
-      "sha": "6bb70ca298f4702593990d8f787af94d4440e2a7",
+      "sha": "65f5fa8de60462c99f6e6c383431955e5d74cb78",
       "subject": "build: align fork toolchains and packaged dependencies",
-      "patch_id": "205bb1b1eeec3b5cce156e90a019ca44cdbc6de9",
+      "patch_id": "6b44a93ffc56c8a4e4c443462c3ea5234e9c2e68",
       "category": "partially superseded",
       "replay": "review",
       "constituent_counts": {
@@ -696,13 +696,13 @@
       "source_paths": [],
       "review_receipt": {
         "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
-        "patch_id": "205bb1b1eeec3b5cce156e90a019ca44cdbc6de9",
+        "patch_id": "6b44a93ffc56c8a4e4c443462c3ea5234e9c2e68",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate. Carried to the published patch identity after the reviewed resolution snapshot 307f2300ce7786e06b74b6d40f2344738c9f479d and publication run https://github.com/iExalt/paseo/actions/runs/43810387905; the patch changed only through those reviewed conflict resolutions."
       }
     },
     {
-      "sha": "6766677d980c8598efe2d2fa719a47b602ea479c",
+      "sha": "eb73a5f7710e37e40c57b625002a6938977b6cd4",
       "subject": "fix(app): use Expo Router contexts for navigation and compact sheets",
       "patch_id": "92104085686ac8224d8c0527ce611f67b715a48a",
       "category": "keep",
@@ -717,9 +717,9 @@
       "source_paths": []
     },
     {
-      "sha": "95b211643769cff8bfe7820cc0d2cdab1a0404b8",
+      "sha": "edcc08bf9ca0379a6eed3e6a8cc65fb46c2f077b",
       "subject": "feat(updates): deliver signed fork updates across desktop and Android",
-      "patch_id": "440c607ed218932941d92eb3bae8a4bf98c044ec",
+      "patch_id": "046175f1276fcbc4ffd4258c4ce765c435da25bf",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -732,9 +732,9 @@
       "source_paths": []
     },
     {
-      "sha": "65be9b34c82937861f97e592bb752647c72fb141",
+      "sha": "09068947d97f601585a157a25c5bdb1c10d27463",
       "subject": "ci(release): build and publish signed fork releases",
-      "patch_id": "cd5bb08aa46054abc27d0a3632372baaf8058b39",
+      "patch_id": "86883e23637b96c03daf125456f92d5d9f9193cc",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -747,7 +747,7 @@
       "source_paths": []
     },
     {
-      "sha": "033b883935cee862d6dd6d0d9f42f9aa28dd8ed9",
+      "sha": "cc4f3264488ddfee51852cb3033c08589d640fa8",
       "subject": "chore: preserve Firebase credentials with SOPS",
       "patch_id": "33b12f31b2682fc1bbb7d281a690c2c98191ea3f",
       "category": "keep",
@@ -762,9 +762,9 @@
       "source_paths": []
     },
     {
-      "sha": "8de82674b48800288dfb2e638ede0b23276d842b",
+      "sha": "52be8444d8a33729b76d822d8910b1b03ec5e953",
       "subject": "ci(rebase): synchronize upstream and replay reviewed resolutions",
-      "patch_id": "f5d0421596c9b17dd3547cef63158da782e0b6aa",
+      "patch_id": "f0931906f738b3f4789b8ecd9c8d6acd2cac7316",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -777,9 +777,9 @@
       "source_paths": []
     },
     {
-      "sha": "ab531a61913231a82827f38030a4de29aa813a70",
+      "sha": "903a56666a2516a725c155b03a9a93d8a6ddb300",
       "subject": "fix(app): repair test compatibility and remeasure virtual rows",
-      "patch_id": "449f1d7763851d927a952868e2257580b6adaa5d",
+      "patch_id": "40bd47ac85492ce6f046909240faef94b99090a0",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -792,9 +792,9 @@
       "source_paths": []
     },
     {
-      "sha": "01e706fa7060b5aaf5966f0702aef3c8a23932c1",
+      "sha": "b8bd8d0a6e608c8cb3516898e65cc6ee3dd5a57b",
       "subject": "feat(cli): expose daemon operations through dedicated commands",
-      "patch_id": "3ac1b127d2a6522d4518d2a0e47b5e37334b7895",
+      "patch_id": "f918b44021e5dce9d385b2b2371c7c726f6bbc6d",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -807,9 +807,9 @@
       "source_paths": []
     },
     {
-      "sha": "76badb5c4b373d72cd752828faff499de0b07116",
+      "sha": "815fb6ff63220536e685386fc735800052e5a642",
       "subject": "ci: verify fork changes with bounded routine and native checks",
-      "patch_id": "c7a22ecc33bd7be8de807be6f71da241dc9695a6",
+      "patch_id": "a2031ee2a3357395205a679d52b072c669bbce59",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -822,7 +822,7 @@
       "source_paths": []
     },
     {
-      "sha": "598264ec14585e860386347f16f6806546c40258",
+      "sha": "c303f27db6b3a260d8bbf131e1a180cebc5ba595",
       "subject": "fix(desktop): give AppImage CLI supervisors independent mounts and routing",
       "patch_id": "1ef8fd3813476720cc2ee8a22e736bb2aa11db22",
       "category": "keep",
@@ -837,7 +837,7 @@
       "source_paths": []
     },
     {
-      "sha": "03f40a5acb21de5a57b9a8dc05500880eabe7ba1",
+      "sha": "3083d71a56de5ba0620e4bb7352fcb85285e7709",
       "subject": "fix(desktop): preserve RPM integration and install ownership",
       "patch_id": "824f6070f52012043867756d06e6b92c3b71fbf8",
       "category": "keep",
@@ -852,7 +852,7 @@
       "source_paths": []
     },
     {
-      "sha": "cd78a3b66b4c43aa44a3193693f3f3e282d9a47e",
+      "sha": "79fe607ca0b2357b66fddf013205ccd22b4e83c2",
       "subject": "test: advertise orchestration support in CLI fixture",
       "patch_id": "d2879c223598a0c220d8be6de555baaf6ceec15c",
       "category": "keep",
@@ -867,7 +867,7 @@
       "source_paths": []
     },
     {
-      "sha": "d5a65223e662fdaa9e03e81d71681631bead8315",
+      "sha": "42f0ecf568c4258f99a24a82b549b3d89412b9d7",
       "subject": "fix(plugins): retain API compatibility independently of fork versions",
       "patch_id": "78c968b72703024e85bb6323609eeff28708378b",
       "category": "keep",
@@ -888,7 +888,7 @@
       ]
     },
     {
-      "sha": "87930950d3eba03a7f76987a6d959c4b64342503",
+      "sha": "c33b83ac6687b823e486e7ff3718ebede2bddbbe",
       "subject": "feat(ci): admit product receipts from trusted artifact transfers",
       "patch_id": "c65d08d604f2cf4b63d97aa5c46c19a3172f2c0b",
       "category": "keep",
@@ -903,7 +903,7 @@
       "source_paths": []
     },
     {
-      "sha": "d3e83cd620e3b5062690c9078ca65afe7e15bade",
+      "sha": "e0dc7bfc74193a81f07be86ea33c110d24a9bd4d",
       "subject": "feat(ci): admit paired native receipts after signing and runtime proof",
       "patch_id": "e115e80ca8ba0c900040335fe64ad43a08d5e258",
       "category": "keep",
@@ -918,7 +918,7 @@
       "source_paths": []
     },
     {
-      "sha": "b50a34e0761b7775ebf924b773262a35af39a94b",
+      "sha": "fd31e8a7eb79e3d463619152aa79062a6a1dfad1",
       "subject": "fix(server): cover new directories before enumerating their files",
       "patch_id": "dd891848dba87cce46f7b33364768d485499dcd9",
       "category": "keep",
@@ -933,7 +933,7 @@
       "source_paths": []
     },
     {
-      "sha": "560f9bc11c0e0e35d5f26b9ee8deb29012ae69bd",
+      "sha": "ad5259506d2861f0803139acc728f4e1e189317b",
       "subject": "fix(build): preserve fatal Expo export diagnostics",
       "patch_id": "47a5ba78de974b126763586bfcdec6b79a0ffc5f",
       "category": "keep",
@@ -948,7 +948,7 @@
       "source_paths": []
     },
     {
-      "sha": "cab5936d9871552e709041abb21e6f52fc82ebed",
+      "sha": "50ba1c7b20a5722d917044f4e627cc3da06764e3",
       "subject": "feat(app): default first-use send to queue and tool calls to summary",
       "patch_id": "3d5c4eadd4fdbe4f9dfcc26ad64c5d0fb9d57e88",
       "category": "keep",
@@ -963,7 +963,7 @@
       "source_paths": []
     },
     {
-      "sha": "6ed40e02a40d7ba3af5067c64cd135f708467c9f",
+      "sha": "b9629f86097d67aaf966ced2599cdadaa9620122",
       "subject": "chore(desktop): drop the fork's dead Windows and Linux launch-test code",
       "patch_id": "a944e176ce861fcc9601a84781789dcc6601a26b",
       "category": "keep",
@@ -978,7 +978,7 @@
       "source_paths": []
     },
     {
-      "sha": "4dc10fb04e2f4d88ea7cccfb493b18eedba2194e",
+      "sha": "cad713e9ff1fa07162d0e266963da73ae2fee810",
       "subject": "fix(app): hide decorative SVGs from accessibility with web-safe props",
       "patch_id": "19280077fae64bb5539aed1eb7ab6704614e1818",
       "category": "keep",
@@ -993,7 +993,7 @@
       "source_paths": []
     },
     {
-      "sha": "3e8dcc992bdc3b740a8c831d6cf87e250f67fd97",
+      "sha": "188361c0b256a22d67a184df8e240ceef55aa8b3",
       "subject": "fix(app): stop showing the worktree setup callout",
       "patch_id": "742a691852131e0685ec700148712ddbd0042174",
       "category": "keep",
@@ -1008,7 +1008,7 @@
       "source_paths": []
     },
     {
-      "sha": "36430349a4d1a14a3f147c6b0cfc3001780b1fc6",
+      "sha": "77e33bba322dc78fbe6b194a38fa68d6e135bd81",
       "subject": "fix(app): style Transfer preferences like the other About rows",
       "patch_id": "eb8daa703717e9524da292a9afccd1d2ef42cca8",
       "category": "keep",
@@ -1023,7 +1023,7 @@
       "source_paths": []
     },
     {
-      "sha": "35e709958cf0b3298190905c98bad7efef1c1eb8",
+      "sha": "c549008562a3781dd7401f3bcf69241ce7e30c83",
       "subject": "perf(app): reduce streamed history and replica rendering work",
       "patch_id": "d6a37ee5a4e109649b1178b5a592c8930af00f89",
       "category": "partially superseded",
@@ -1054,7 +1054,7 @@
       }
     },
     {
-      "sha": "d9d9194819b93704f3a0b08b73d648fd599355b8",
+      "sha": "a8fb5e9732379a1b4d69b0cd508ec0a15b171787",
       "subject": "perf(relay): decrypt large frames without blocking the event loop",
       "patch_id": "66d7c1e9c32f459838ac87e55ae5dc1e66f48f07",
       "category": "keep",
@@ -1075,7 +1075,7 @@
       ]
     },
     {
-      "sha": "81f0440f38ea054ecec1a6e418cce177fb4fbfeb",
+      "sha": "f3284cf5682c109467937c89c5663db89d049ec7",
       "subject": "perf(app): apply non-layout animated props without a shadow-tree commit on Android",
       "patch_id": "2c00055ab892108ff8f55b044665912eadb27c8b",
       "category": "keep",
@@ -1090,7 +1090,7 @@
       "source_paths": []
     },
     {
-      "sha": "fa9f722b8bfa04b8338cd4196b4ae44e322967bc",
+      "sha": "3758e68e6523c92ea3458424cdc2e9ed2869113e",
       "subject": "fix(desktop): offer a newer release over a stale staged download",
       "patch_id": "9efa4a92380ac83b016bf002433591db0755f2e1",
       "category": "keep",
@@ -1105,7 +1105,7 @@
       "source_paths": []
     },
     {
-      "sha": "3d6f347c5249362f9a72bc7417aad0f2dfb6caef",
+      "sha": "7d6e4714937e7688d5846e52933c44081865fbe8",
       "subject": "fix(app): preserve native outline reading position and history jumps",
       "patch_id": "06585a6b2d81cb8589e5bf97c86fa4773c66578d",
       "category": "keep",
@@ -1120,7 +1120,7 @@
       "source_paths": []
     },
     {
-      "sha": "abc8f80c9a0550c60c393e679825955faf77c680",
+      "sha": "defc19bbbc1145e4fef060cda350321d25b4db10",
       "subject": "perf(app): skip Reanimated work for events no worklet handles on Android",
       "patch_id": "4facb82692807a14f3603d200c16c87507224896",
       "category": "keep",
@@ -1135,7 +1135,7 @@
       "source_paths": []
     },
     {
-      "sha": "8cbf14e272a877e61c95dabdc8c030df88673779",
+      "sha": "aac11833d7139f9bfce3cbbc4417d6c7aafe16ed",
       "subject": "perf(app): draw plain SVG icons straight to the hardware canvas on Android",
       "patch_id": "d13d4e268593368ec7feb4752ca8285b4db7f227",
       "category": "keep",
@@ -1150,7 +1150,7 @@
       "source_paths": []
     },
     {
-      "sha": "576dfe8109f21dc6469a622a43f12c5b1f38ddc4",
+      "sha": "86e4145ba31970adaa00c52291cb596dbb46b7f2",
       "subject": "ci: release from release-please-action tags",
       "patch_id": "8c65b072d495f76f20a748ecfad9108fdfa81302",
       "category": "keep",
@@ -1165,7 +1165,7 @@
       "source_paths": []
     },
     {
-      "sha": "f4ec7fc4f8cac103f6419d910317bcea841d469d",
+      "sha": "9e811f58fe100beeb3a852e99c5dce8b8b22ba16",
       "subject": "fix(server): defer a steer the provider cannot take instead of interrupting",
       "patch_id": "40d15f6e05815bb498821c81bb5072dea0905377",
       "category": "keep",
@@ -1180,7 +1180,7 @@
       "source_paths": []
     },
     {
-      "sha": "6e4c81ecd7990ed7b0e94f83763efdf9a844776e",
+      "sha": "dcbb54a6ed8096f9fa0e3ba73a2b9d6b9d2b64c6",
       "subject": "feat(app): provide native terminal, diff and file viewer parity",
       "patch_id": "6b65bf8d32feca12078e47633f0f2113fdfb124d",
       "category": "partially superseded",
@@ -1202,7 +1202,7 @@
       }
     },
     {
-      "sha": "43bea90e70ea92a8ff19668fe5fda560f6874855",
+      "sha": "58d1a55d21dac3567083a8e457a868edc0f92e2d",
       "subject": "fix(ci): allow runner swap on release tag pushes",
       "patch_id": "1d21a7118a409745a3102c8af4bee071c0cc602e",
       "category": "keep",
@@ -1217,7 +1217,7 @@
       "source_paths": []
     },
     {
-      "sha": "591c7b95cae95b0311d9fddc570f84be6131447e",
+      "sha": "3faffbf872369615143a58455f4a111121c5c07c",
       "subject": "fix(server): rewind Claude conversations in place instead of forking",
       "patch_id": "4ea1da0b7fc4c24589ecfbc8d958447e23cb78bc",
       "category": "keep",
@@ -1232,7 +1232,7 @@
       "source_paths": ["packages/server/src/server/agent/providers/claude/agent.ts"]
     },
     {
-      "sha": "3515c289ecdfa2514415a7590d9dd987b78fc2da",
+      "sha": "8bcdd86ff0a6911945a33db713a2514bbfb2ef95",
       "subject": "fix(app): steer instead of interrupting when a send skips the queue",
       "patch_id": "0000f0c9b4748daaf574af394d1e3feaa541970f",
       "category": "keep",
@@ -1247,7 +1247,7 @@
       "source_paths": []
     },
     {
-      "sha": "c9dc76439ed10e257aeab4611973b58dedf07d1b",
+      "sha": "74487d80585c54a0b5fb2f75c32fda143795f669",
       "subject": "feat(app): fold finished subagents out of the subagents track",
       "patch_id": "426185dfe6c8ed6ad38a67ca1771016dfd2984db",
       "category": "keep",
@@ -1262,7 +1262,7 @@
       "source_paths": []
     },
     {
-      "sha": "1c1076d579c6cd3aee0d9c850ced4087e6c8169f",
+      "sha": "e924d643c81fcd364763aedbfa2fdb9505775ba4",
       "subject": "feat(app): copy session ID from workspace menus",
       "patch_id": "a803be8232254344edab5cad76f85c0739f03857",
       "category": "keep",
@@ -1277,7 +1277,7 @@
       "source_paths": []
     },
     {
-      "sha": "60c5ab55ecf7778ec071620b630e808265cdc37c",
+      "sha": "8bb410a995530c23f5e86115e9b6542ae2a4dff7",
       "subject": "fix(app): let the Android soft keyboard Return insert a newline",
       "patch_id": "d54f76b543bd59e302455cbfa23b0841f08538bb",
       "category": "keep",
@@ -1292,9 +1292,9 @@
       "source_paths": []
     },
     {
-      "sha": "d6245b8fffe678df047af6eba75fcad7dad6ff9e",
+      "sha": "95eee5afcb93ce96165af06d46349cc1a8ec2705",
       "subject": "fix(app): fire the first tap in Android bottom sheets",
-      "patch_id": "99fc76654263383fe0d16b441a5ae83dbddbc9e8",
+      "patch_id": "098e85586460eecb2cec017a293fa567473f7ada",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -1307,9 +1307,9 @@
       "source_paths": []
     },
     {
-      "sha": "81009db0c9712c873c9806ee113336dac9159ce3",
+      "sha": "428c61976c2a7d45b2b08c940767e7b0a74dd4c6",
       "subject": "fix(app): stop the settings icon flash on Android",
-      "patch_id": "0b5862b807a6e8f070ef6efd931edc197b2cdc7a",
+      "patch_id": "43e944717c21b2d4c07c9dce04a62e564a9c8d11",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -1322,7 +1322,7 @@
       "source_paths": []
     },
     {
-      "sha": "47e6f5efe6c13065dde184814ab78fb1e2012eea",
+      "sha": "177b79bca1d22ca26672976cd38c3ac7c4795f9a",
       "subject": "fix(app): keep the find code block unwrapped so marking a match does not shift it",
       "patch_id": "c3c046361b5e0eacaf490d19037951a5c4abf05b",
       "category": "keep",
@@ -1337,9 +1337,9 @@
       "source_paths": []
     },
     {
-      "sha": "994ce9ba1f4563b8a1b04ef4ec01af053ff58569",
+      "sha": "7fa7ffd6207d32782347b215bdaddb3d6e103f22",
       "subject": "feat(usage): show agent costs and provider API spend",
-      "patch_id": "b5330a255c76ea65727dc5f07c1a0046b1426832",
+      "patch_id": "944706a79cf9d5ff9c7e9acee3809f6c592e5718",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -1352,7 +1352,7 @@
       "source_paths": []
     },
     {
-      "sha": "23ae1972702d701d426886982ff472ce57fd37ad",
+      "sha": "705d3d62dc22aa2fb11a89bb2d4f1b16f2525aa0",
       "subject": "fix(ci): run releases on dev so the next one reads their Android caches",
       "patch_id": "1f4b7f4f6e7585c0077aa1c25ab2a26bfda2fbad",
       "category": "keep",
@@ -1367,7 +1367,7 @@
       "source_paths": []
     },
     {
-      "sha": "1e9d846110eb15c6085a50f0976fcc24a908bdfb",
+      "sha": "b9de3db9e812c9a6c76858a946425248b1d61d60",
       "subject": "fix(app): match tab close confirmations to mobile layout",
       "patch_id": "26c432d3239b6516e392761513f9d313010916ba",
       "category": "keep",
@@ -1382,7 +1382,7 @@
       "source_paths": []
     },
     {
-      "sha": "079055d0d44fa070cb156704cb27cb8530de8cf0",
+      "sha": "78f9bf3e9acb2b2e19b657be7473ea1098d8a1f4",
       "subject": "fix(server): notify on a held send's own turn, not the turn it waited behind",
       "patch_id": "2394c0c0b6a410c61467732d039635fc4bad4b7b",
       "category": "keep",
@@ -1397,7 +1397,7 @@
       "source_paths": []
     },
     {
-      "sha": "8bdc09cb2b2d40ecdbe831769ee88bfb59bee75a",
+      "sha": "70943f018518f9c6b83c56d510484dbc45449d52",
       "subject": "fix(app): keep the settings sidebar above the bottom system inset",
       "patch_id": "dd69609f875fcc0e982514ca74e277228e689a01",
       "category": "keep",
@@ -1412,7 +1412,7 @@
       "source_paths": []
     },
     {
-      "sha": "1e403c813a3f5751678e30fdf61abfc01fa40503",
+      "sha": "178eeccff0da8cffad99f0af3df61bf49609e1f6",
       "subject": "fix(app): deliver native terminal keyboard input exactly once",
       "patch_id": "c94a20ab62b3df70d597b3b46cc5e390940cb553",
       "category": "partially superseded",
@@ -1441,7 +1441,7 @@
       }
     },
     {
-      "sha": "0bfab34c70f5d8cd2c1a567601f0f64e748b6060",
+      "sha": "2b471189cbda3afc6baf334be79299e8d285c290",
       "subject": "fix(app): keep native review threads and text selection usable",
       "patch_id": "55f3ecf2ff373800af19e8a8445191fbbe2f6943",
       "category": "keep",
@@ -1456,7 +1456,7 @@
       "source_paths": []
     },
     {
-      "sha": "4bddeb61081525540ae2a5f55cf6f79c5a3b2e0c",
+      "sha": "c7b294ebecca0300c9358bf30d7e07113c46a4c2",
       "subject": "feat: title agent notifications with the thread title",
       "patch_id": "d3128c0638de42f8e7a6b9332e7db26fdcde803f",
       "category": "keep",
@@ -1471,7 +1471,7 @@
       "source_paths": []
     },
     {
-      "sha": "93cfddf7e8998cae3c268733c6ebf8430652416f",
+      "sha": "f9eaad5b2b0884d54e1f849ab71736b5918207c3",
       "subject": "fix(server): stop re-emitting streamed Claude blocks from per-block snapshots",
       "patch_id": "e84cbf98931207091851b6fc7f1f2325291c2abd",
       "category": "keep",
@@ -1486,7 +1486,7 @@
       "source_paths": []
     },
     {
-      "sha": "dc54b32c1db4c0d53c8d17abfef06173f8044593",
+      "sha": "8ed3a5d791e341cc762a2b1b75af500abb730272",
       "subject": "fix(app): menu button shows the sidebar over an Explorer it cannot share width with",
       "patch_id": "fab1bf6acf17ba7f55e2f1077a5b24ad5658ebf7",
       "category": "keep",
@@ -1501,7 +1501,7 @@
       "source_paths": []
     },
     {
-      "sha": "dac0e42c9d24929b9df5899a6f58d9fc980d8c4a",
+      "sha": "5854284a3580f5528ae6b52177f7623319b740f6",
       "subject": "fix(app): show the real sidebar shortcuts in toggle tooltips",
       "patch_id": "9ac0529633efb6c0fa8ba088b66fb1815ea3820e",
       "category": "keep",
@@ -1516,7 +1516,7 @@
       "source_paths": []
     },
     {
-      "sha": "4bf92c7e0951ea332978c49c3b233862b9b589a5",
+      "sha": "5f10c2867d0da128036ca8c59dce7d735e4bb757",
       "subject": "fix(app): stop message text taking focus from a removed input",
       "patch_id": "a1c1ff9a6264d2fa3b90727d6d76e626771557bf",
       "category": "keep",
@@ -1531,7 +1531,7 @@
       "source_paths": []
     },
     {
-      "sha": "070bacffa59b9933725d913b5b5a1be0a916bbab",
+      "sha": "d3c4c404a7e882f8133f41e8cd62c0916bedd5f2",
       "subject": "perf(app): paint native terminal echo and changed rows promptly",
       "patch_id": "98878825191bb11493923c4a5317e13ec382259d",
       "category": "partially superseded",
@@ -1557,7 +1557,7 @@
       }
     },
     {
-      "sha": "c2ed755dbe803a1cdcd238f56e319ac5cb620e07",
+      "sha": "d6b96fb43af3dc99cb6bfc969f450ec3b28c41eb",
       "subject": "feat(app): bundle current Nerd Fonts and align monospace text",
       "patch_id": "9acad87243a567aa1316ac15f1872192bd2feb97",
       "category": "keep",
@@ -1572,7 +1572,7 @@
       "source_paths": []
     },
     {
-      "sha": "d634a8ab900a275d40af124b0271a269310f8d7e",
+      "sha": "f65a1f8d85d708b97e2e43c6f4eb3cca0d9157bc",
       "subject": "refactor(app): drop fork leftovers that upstream already covers",
       "patch_id": "560bf553cac891690f5f7e6e3c986c84abeb94de",
       "category": "keep",
@@ -1587,7 +1587,7 @@
       "source_paths": []
     },
     {
-      "sha": "70e9c6c647366fd6a656624d02bd09f6fa100f74",
+      "sha": "3c584e4302ff29064f05893a1506b2abcf689cae",
       "subject": "fix(app): restore tab drag-to-split on web and hide editor settings on native",
       "patch_id": "7d9e4450ba81718e3ca93f44df5bd563df7d5192",
       "category": "keep",
@@ -1602,7 +1602,7 @@
       "source_paths": []
     },
     {
-      "sha": "23bc4d2b150e36f7263c926868c74ee755faaed9",
+      "sha": "17262b861c4f9fd130fc6cbb07e1eb36ac7aa2cf",
       "subject": "ci: remove expected Android release warnings",
       "patch_id": "e9ee0d0a79c3fe3b9fbb450549d26beab8ec28f9",
       "category": "keep",
@@ -1617,7 +1617,7 @@
       "source_paths": []
     },
     {
-      "sha": "55ed4c075576cc371830b0107732ddf0908a3031",
+      "sha": "aa47e1af5dec1a1fa9468f4dc29bb5610e36a4fe",
       "subject": "ci(release): print GitHub response when publishing is refused",
       "patch_id": "cbf765e6718ce4e98afeb64e4d15b6f239119163",
       "category": "keep",
@@ -1632,7 +1632,7 @@
       "source_paths": []
     },
     {
-      "sha": "f4ebea3e1a96b08b52e459ad3b206a8c114218a4",
+      "sha": "614bda4cf45d423cb6373d2f07cd558598ea3d00",
       "subject": "fix(app): remove worktree setup popup remnants",
       "patch_id": "64f7fab9f3b6ccd0603b6ee4829cb94d7fc38c31",
       "category": "keep",
@@ -1647,7 +1647,7 @@
       "source_paths": []
     },
     {
-      "sha": "e7a89ffe30a34a650de1b8983c70166a59f2b6a6",
+      "sha": "d4a389d6fa705c81b532573dc8b7060aaaf41fd6",
       "subject": "feat(app): drop the unused diff prototype and report APK sizes per release",
       "patch_id": "3ea6f10f4222bc122cdfe52d9b98f4d6b2bbdd28",
       "category": "keep",
@@ -1662,7 +1662,7 @@
       "source_paths": []
     },
     {
-      "sha": "6bd73c5dd31419b3ec9462361e68924f4866e4e4",
+      "sha": "0ad06a1a3445d734a76e0f384d26dcf445183758",
       "subject": "feat(server): keep the Mac awake while its relay is enabled",
       "patch_id": "01fa8f4738a6b1d1f1f8b34547bd04f9b4bf04b8",
       "category": "keep",
@@ -1677,7 +1677,7 @@
       "source_paths": []
     },
     {
-      "sha": "9e8e30d28c061bb341869ec27d9997e0ac8a4982",
+      "sha": "bd921120faaead7ecad8508190299ed1bd066b07",
       "subject": "fix(server): give the first agent tab the generated workspace title",
       "patch_id": "d26185f05a588bed5fe615a6f952481b4d82e2d6",
       "category": "keep",
@@ -1692,7 +1692,7 @@
       "source_paths": []
     },
     {
-      "sha": "90d26050a3f94db829c90cc953b9da0fe72791a5",
+      "sha": "e2dfee8cf6c79df5ef1ad02c9d2350a2bf7fde09",
       "subject": "feat(testing): provide isolated desktop, browser and Android probes",
       "patch_id": "9871ffa5bf41dc917782445544c80c789d1dd6f3",
       "category": "keep",
@@ -1707,7 +1707,7 @@
       "source_paths": []
     },
     {
-      "sha": "71264bbbefc3531c78e5f00382266cc4de19bfb2",
+      "sha": "3fcd9302979224166e4e98f4cf703edd8239a880",
       "subject": "fix(app): demand the host directory from the workspace route",
       "patch_id": "aab442570665e571e1cdcb8fea6185d57c1dcaa3",
       "category": "keep",
@@ -1722,7 +1722,7 @@
       "source_paths": []
     },
     {
-      "sha": "0c6a88b7ce8382a5a405efb845a527fbd16081b3",
+      "sha": "986287b704e79634e7bcd01a447bcc5fae181fd9",
       "subject": "feat(app): mark the open chat's readiness for agents waiting on a turn",
       "patch_id": "648316b97398ec66661c9f02bb2446654516d3c7",
       "category": "keep",
@@ -1737,9 +1737,9 @@
       "source_paths": []
     },
     {
-      "sha": "8b7846b4116500b366ad3741b098d9a5e3a92cf6",
+      "sha": "26705395f276a68b3ee236bc6ab5ac052075bdee",
       "subject": "fix(app): preserve image viewer state and native image geometry",
-      "patch_id": "b3c2c2353a6f6c62dc4a6602593820aff7d4161f",
+      "patch_id": "1417c7942e42baaae406321e3773621323907524",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -1752,7 +1752,7 @@
       "source_paths": []
     },
     {
-      "sha": "f393b860d3e26418b69bccad6187554f1d457496",
+      "sha": "33aad1b22e925b42530301a61f978a54abae16f5",
       "subject": "fix(notifications): dismiss resolved threads on their owning host",
       "patch_id": "41a5fabbd39ffefe851d7c8519b6bc5d34693a1e",
       "category": "keep",
@@ -1767,7 +1767,7 @@
       "source_paths": []
     },
     {
-      "sha": "a781858133a8b0921326c05834d83a6866649891",
+      "sha": "d09107ac588763302158cbed0f98ba9a2ebc7c1b",
       "subject": "refactor(app): retire the transfer agent switch with the preferences transfer flow",
       "patch_id": "7026a7af2a06966e4a40649bec829d35649f5956",
       "category": "keep",
@@ -1803,7 +1803,7 @@
       ]
     },
     {
-      "sha": "6e19271745cbf01d49222b353f52999c74ac9437",
+      "sha": "6f772c9725e36beb5ae5fe7e5db77cbf79f1f8f3",
       "subject": "fix(desktop): keep direct unpackaged launches out of the installed app's userData",
       "patch_id": "f22854d4c16ec5dfe6a452a85f4de8127e3a765d",
       "category": "keep",
@@ -1818,7 +1818,7 @@
       "source_paths": []
     },
     {
-      "sha": "cdefd31a370942cf3b85d32513b2ad2996b1a4b2",
+      "sha": "5ab00a0d9d765c147c3e856f91972ee2c233510c",
       "subject": "fix(desktop): keep dev and test logs with their userData",
       "patch_id": "8b9e941445959fb75ec0bb38e81e1491c3012c79",
       "category": "keep",
@@ -1833,7 +1833,7 @@
       "source_paths": []
     },
     {
-      "sha": "1a987097fb2b14b3512109e18c490fff5213af8d",
+      "sha": "7b93af4fc2ecedc7683d1f10b8cceb0b4628e77b",
       "subject": "fix(ci): make latency advisory and log its measurement",
       "patch_id": "e02125e6c3a6efb939bc0e936860e7e71b7f75ca",
       "category": "keep",
@@ -1848,7 +1848,7 @@
       "source_paths": []
     },
     {
-      "sha": "f7b161774e5e69f0c05f8d611f2cd21da5faf554",
+      "sha": "3dbff2e125a31b14d6076caf0161f50c9c9a30ec",
       "subject": "fix(ci): keep the routine dependency cache across release version bumps",
       "patch_id": "ff8803ecdd4ff1fbaecb14268b5634582fb11ef6",
       "category": "keep",
@@ -1863,7 +1863,7 @@
       "source_paths": []
     },
     {
-      "sha": "039574da28663903b6756e6f476f6c847adacc12",
+      "sha": "504fb0492141c57a0c47e7568a3a44dfd94319b3",
       "subject": "fix(scripts): build workspace declarations before a fresh typecheck",
       "patch_id": "ef17f76ef400f86d867143f091be564a804966b0",
       "category": "keep",
@@ -1878,7 +1878,7 @@
       "source_paths": []
     },
     {
-      "sha": "93192acccae9e435cdb94e23bbbc2fb7f063b9bd",
+      "sha": "cf37e860a85cde5880145fc920682d35eb54d9bc",
       "subject": "fix(release): load upstream 0.14 built-ins and leave the macos-14 brownout",
       "patch_id": "4d4dcdcbf97e87b26147ed468218d6202bcefd95",
       "category": "keep",
@@ -1893,7 +1893,7 @@
       "source_paths": []
     },
     {
-      "sha": "536a2f442705f5097ca8210a6839fde70f024024",
+      "sha": "78804ee2a888f26fddb2d1a8e1c4440169459059",
       "subject": "ci(release-please): brace the app slug before its [bot] suffix",
       "patch_id": "7bbc87cffbd8218d43d738b19f5347f5cccc076b",
       "category": "keep",
@@ -1908,9 +1908,9 @@
       "source_paths": []
     },
     {
-      "sha": "077204b7ba80ac402a0dc9e77e6f31246c455939",
+      "sha": "256203c0c82bf9078b58ebe9112505275e3f54a5",
       "subject": "feat(app): show images in agent question dialogs",
-      "patch_id": "8506523c7a5ef3a46f99d77cdb239bc2ffacc255",
+      "patch_id": "8c09031868cafb8276045f8991030dc01760c986",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -1923,7 +1923,7 @@
       "source_paths": []
     },
     {
-      "sha": "622ad60e9dae71e32bd31c473121026e8b11da51",
+      "sha": "8a1eb3c5b7bbb7238e3cff58e7c5377af5aa3d42",
       "subject": "fix(app): skip attachment garbage collection when IndexedDB is missing",
       "patch_id": "1314d92adec0832665251a58ff54499bd74ee63f",
       "category": "keep",
@@ -1938,7 +1938,7 @@
       "source_paths": []
     },
     {
-      "sha": "d0a373ab5a321f0fac1f719af4a44794efdc64d2",
+      "sha": "aa4cce05f04dd8202e6620851f4df6419a3e4113",
       "subject": "perf(server): stop server tests waiting out production timeouts",
       "patch_id": "c48b1bc345e09c7b33fa7ce7380ebd6a261fbee4",
       "category": "keep",
@@ -1953,7 +1953,7 @@
       "source_paths": []
     },
     {
-      "sha": "99ec2255ec08049ec854732263062722cb552d74",
+      "sha": "ec02b209f89e4c24d22b8392fececf54d301d7ac",
       "subject": "fix(android): accept image paste from keyboards and clipboard",
       "patch_id": "3cbe200315ec312082b09bfa38060b54fdf26a22",
       "category": "keep",
@@ -1983,7 +1983,7 @@
       "source_paths": ["packages/relay/src/e2e.test.ts"]
     },
     {
-      "sha": "a4bcb776ee9e1253a555d93c244ddb1faeb9a16e",
+      "sha": "e62c94ab4f22835bfb4fb0247ac7b972b0b26794",
       "subject": "refactor(release): one release asset catalog for names and the upload set",
       "patch_id": "a9b7ffc06a7e701cdce869998b6c19a286754314",
       "category": "keep",
@@ -1998,7 +1998,7 @@
       "source_paths": []
     },
     {
-      "sha": "1d6f7d1836befe2328349c4c69bb0bbed2794ae9",
+      "sha": "6dbc1c5e6866c7919d451972aba1cbe928290bf9",
       "subject": "fix(server): tighten daemon WebSocket admission and password checks",
       "patch_id": "b791f7a7fc71f3c1a81dcf98c528038fbcd0c8e0",
       "category": "keep",
@@ -2013,7 +2013,7 @@
       "source_paths": []
     },
     {
-      "sha": "c7a97ea04e928bb5622dcb797146afeeb7d98ea8",
+      "sha": "2d4dfed8f709f64df5a03ad33a61e86bd1dfb340",
       "subject": "fix(server): stop load errors from wiping the registry or daemon identity",
       "patch_id": "e4cb309407cc42e4b19bbe234b9e538aeeee5479",
       "category": "keep",
@@ -2028,7 +2028,7 @@
       "source_paths": []
     },
     {
-      "sha": "474d0021926d2cc225481b7a89202ac3133cfcc3",
+      "sha": "af930cda6f1e7b05fc97f56b818310ca27ad7792",
       "subject": "fix(server): kill a closed terminal's whole process tree",
       "patch_id": "52af40b0dace5548ec4f6618a52c669598d154e8",
       "category": "keep",
@@ -2046,7 +2046,7 @@
       ]
     },
     {
-      "sha": "6f8f90358acf1b7fef1e29a6ddd44b56635708ad",
+      "sha": "046398f866f244e2763db64649a16929625b78eb",
       "subject": "fix(server): keep a merge in progress when Pull fails, and clean up squash conflicts",
       "patch_id": "81fe55eea6928f5c864babad60996faf3fd5b7db",
       "category": "keep",
@@ -2061,7 +2061,7 @@
       "source_paths": []
     },
     {
-      "sha": "c0cb36902765efd0f976f4188f86dbad6349831f",
+      "sha": "e87979e3583de24dffa9f78958f9df25de7ed3be",
       "subject": "fix(app): persist queued prompts and deduplicate delivery",
       "patch_id": "3d98b8e72236e350148f1eb64f5e84ce1b3bb878",
       "category": "keep",
@@ -2076,7 +2076,7 @@
       "source_paths": []
     },
     {
-      "sha": "96b361eb2c32cb67778cc32768ce4e612ce5351a",
+      "sha": "15f681a8d0f5aa21ca3c79f76949a1c8e571a359",
       "subject": "fix(server): keep schedules running past a cron with no next run, and cap run history",
       "patch_id": "be92e87a7e6b78eb8c72ce24b73b572519f22e0f",
       "category": "keep",
@@ -2091,9 +2091,9 @@
       "source_paths": []
     },
     {
-      "sha": "67d645c1c3a9d53cd044ba57200246b125238fe0",
+      "sha": "5cd9853e1dcea850837c11ab56034cc485567f7f",
       "subject": "fix(server): keep agent attention right across unread, stop and archive",
-      "patch_id": "902f1d18403fc15e578f0f803c5147062713577a",
+      "patch_id": "9d891706cbb9eb05129d395ce413f85dd0c0a7bc",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -2106,7 +2106,7 @@
       "source_paths": []
     },
     {
-      "sha": "2645dfa51c505ba9f8774ba421783dae4eee51f9",
+      "sha": "46e33e650bfcb6f3d15f4a875fe5d0d273c6eba6",
       "subject": "fix(server): stop leaking proxy sockets, FIFO opens and old uploads",
       "patch_id": "b20bf4679b9ae40ec65bdc1fe28af81245e7776f",
       "category": "keep",
@@ -2121,7 +2121,7 @@
       "source_paths": []
     },
     {
-      "sha": "3ab115c115fa06585bb89e98be8321669694b92d",
+      "sha": "544feba2b95ef540c9c20e0487149768cebb2441",
       "subject": "fix(android): enable Java native access in build-apk.mjs",
       "patch_id": "609e87f65649d14faa101a4fc3d92ef3e0ca1453",
       "category": "keep",
@@ -2136,7 +2136,7 @@
       "source_paths": []
     },
     {
-      "sha": "23aa43df8ccdfbf70057a4f135d2c3d427409898",
+      "sha": "22d9ba74cfa9d169819105da96fb019a399fe6aa",
       "subject": "fix(server): make archive deletion safe for custom roots and concurrent creates",
       "patch_id": "ccd9941cce16669924fa70df39c1820a12e75a56",
       "category": "keep",
@@ -2151,7 +2151,7 @@
       "source_paths": []
     },
     {
-      "sha": "7f6bae9e9076a4c5c245813ea56c4a72de6774e5",
+      "sha": "5e6f7eccdb68a68472bd9ff3392a686d4c110915",
       "subject": "fix(server): keep only an 8 KiB stderr tail for ACP agents",
       "patch_id": "8149a76645054fecc7e5bfbd4519cf029ff60aae",
       "category": "keep",
@@ -2166,7 +2166,7 @@
       "source_paths": []
     },
     {
-      "sha": "46ac4f18f0b05a936283fce1c5fb3aed6b700bb8",
+      "sha": "d4bf95dcbc212eca99ada496698d4d9e9dd6696d",
       "subject": "fix(plugins): reap esbuild on idle, scaffold the plugin API range, clear stale staging",
       "patch_id": "ebb4b239a1a29e8e71f28c85cf5e0a7e010145ee",
       "category": "keep",
@@ -2181,7 +2181,7 @@
       "source_paths": []
     },
     {
-      "sha": "4b9016f465f5403e69ccb2251f69060b05e82c6b",
+      "sha": "7333db660817cc2ca99de4dc42479d9f2f60cc20",
       "subject": "fix(server): refuse a stash pop when the index names another stash",
       "patch_id": "195e69edc10e06afd4b38b70b75b28503411fc43",
       "category": "keep",
@@ -2196,7 +2196,7 @@
       "source_paths": []
     },
     {
-      "sha": "5a1ae5e552eb86faf18736ce54edcfb2ed565640",
+      "sha": "61ed55409a3d4582af83d19db6aef124f290b996",
       "subject": "feat(app): sort workspaces and preserve project ordering",
       "patch_id": "4a7fa27fe865716f7cf8fd4c47b548495dab45e3",
       "category": "keep",
@@ -2211,7 +2211,7 @@
       "source_paths": []
     },
     {
-      "sha": "431e2d86aa20cab85293f554986a64bc599a96f5",
+      "sha": "3efee8f46cddc4665e7e7e8b2f0a9d537512867a",
       "subject": "fix(skills): route releases to the fork flow and fix fork doc drift",
       "patch_id": "ea702b4ea6c371f7ef3f119bbf23834426955a04",
       "category": "keep",
@@ -2226,7 +2226,7 @@
       "source_paths": []
     },
     {
-      "sha": "eedc16a69311babbff75e2ca080cc57b6abf4f75",
+      "sha": "a5932b48def5c317b905792c017779a6d3299422",
       "subject": "feat(updates): preserve running agents and recover idle daemon upgrades",
       "patch_id": "6db408ae8b6485b6e5d94ff52c7c35489794b749",
       "category": "keep",
@@ -2241,7 +2241,7 @@
       "source_paths": []
     },
     {
-      "sha": "4a3a779bfab48a4296d022a24f0659ad57a6ab29",
+      "sha": "33462e3b2617b4af36accf98f01a24a5fa501ced",
       "subject": "feat(workspaces): update visibility and workspace settings atomically",
       "patch_id": "ee0bf4fcddefa7a2c5789a3473bee8707e40c7ca",
       "category": "keep",
@@ -2256,7 +2256,7 @@
       "source_paths": []
     },
     {
-      "sha": "c934f10935b88b518e43a13fd2e0b74704dc3d28",
+      "sha": "77a4dab878a67adefc3011b65ff161e8b0d27f5e",
       "subject": "feat(app): show bounded provider skill text as Markdown",
       "patch_id": "6d116ef32c753ec2041017c426a6d62cce3032fd",
       "category": "keep",
@@ -2271,7 +2271,7 @@
       "source_paths": []
     },
     {
-      "sha": "4adcf28f7866f13a044b44250d4447baa789b20e",
+      "sha": "509babd0042c72f1a0bef8624ed09510c90d8df3",
       "subject": "fix(schedules): show full details and trigger heartbeats now",
       "patch_id": "ad9812c7cb72b38361b78eef2ee52ffd06b7d94d",
       "category": "keep",
@@ -2286,7 +2286,7 @@
       "source_paths": []
     },
     {
-      "sha": "1bd082ae928fa12a0be176ade6c5a5db1cf9bc44",
+      "sha": "d10dc03b9cb336b8a3401c65667aca955a673c0e",
       "subject": "feat(app): fold received agent messages into turn inputs",
       "patch_id": "362d29cbb157c0271e9f068276f5adf6c6306832",
       "category": "partially superseded",
@@ -2312,9 +2312,9 @@
       }
     },
     {
-      "sha": "0b69a5d902067a8dece91176ce33f815bb3603d8",
+      "sha": "e3ad445e644911ba3e0d4c347a8e3dcdb916f318",
       "subject": "perf(app): show notification messages on the first chat frame",
-      "patch_id": "e28be0a2b3aca818b968e75fdca9db587d0e9517",
+      "patch_id": "0494ed9b8b507aae575ba0b5083cc81ed6a6ef54",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -2327,7 +2327,7 @@
       "source_paths": []
     },
     {
-      "sha": "ed5289c48a5405e2df3eefc8783c62277005500d",
+      "sha": "632efe9866aefc4e19c5089df49ccccb1c47b204",
       "subject": "ci: require deep verification for release PRs",
       "patch_id": "415de8e4669ceba76d3f93701e817dbcb78bc71e",
       "category": "keep",
@@ -2342,7 +2342,7 @@
       "source_paths": []
     },
     {
-      "sha": "a36211ed1500c2399c75f780a10e49ca12d14826",
+      "sha": "c90f1b43c6bf15b9398ed89c736ae88b98afd6d6",
       "subject": "fix: preserve session state across daemon and app restarts",
       "patch_id": "43eb3962e9ecd02898dc93fad4487e1c81973ddc",
       "category": "keep",
@@ -2357,7 +2357,7 @@
       "source_paths": []
     },
     {
-      "sha": "553040991235364669507ed3cdc75a00688556ed",
+      "sha": "82b4e582e4405d903337fb0f5abf39d1f31344b5",
       "subject": "feat(skills): refresh catalogs and slash menus during sessions",
       "patch_id": "6a5d43620f53ebad46162c97aeaa048d0f3f2681",
       "category": "keep",
@@ -2375,7 +2375,7 @@
       ]
     },
     {
-      "sha": "2ea02670cebe91b4378fb163dd9974d2415acd43",
+      "sha": "cc83ecdc269a5cd50dbd43346aa5e0c276e6f9db",
       "subject": "fix(app): stop file readers at document edges",
       "patch_id": "f7a41731460aa14027f8efab4ffb8066b7304640",
       "category": "keep",
@@ -2390,7 +2390,7 @@
       "source_paths": []
     },
     {
-      "sha": "bcd60d5caade236fa60631e030a54ff25626e1b5",
+      "sha": "2b5913031849cd5cf409533451ad71937c8300d8",
       "subject": "fix(app): refresh connected chats on notification taps",
       "patch_id": "02a60a3d6652a42a4b7bd47bc742721a55050906",
       "category": "keep",
@@ -2405,9 +2405,9 @@
       "source_paths": []
     },
     {
-      "sha": "9bd4d950aafeb891e7fad43c47b5ff020e60c8fb",
+      "sha": "b5077b08652b878ec96fcf77835cf6f9756e8dab",
       "subject": "fix(server): show Claude's reason on bypass-mode permission prompts",
-      "patch_id": "a8d92dc32392b500e4d593a6b27192ec05e7595f",
+      "patch_id": "0718f34571998c24996210a29431601af3398bd0",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -2420,7 +2420,7 @@
       "source_paths": []
     },
     {
-      "sha": "451b1548d69c527e28ced3f91b97ac44e6a55296",
+      "sha": "d002a7bb09b052268a4af618c1bf3e1967d3db52",
       "subject": "fix(app): guard unsupported fork iOS builds explicitly",
       "patch_id": "5ce7882a8862e580bf8ecfc8259fc3c041994b6a",
       "category": "keep",
@@ -2435,7 +2435,7 @@
       "source_paths": []
     },
     {
-      "sha": "a0668aadfdb121767775a7974a68fbe43c865ca6",
+      "sha": "5c5a869928d2d163753bdc67037b757da6af19cd",
       "subject": "fix(hooks): check staged mjs files with format and lint",
       "patch_id": "f9e0335bab6585dcd5fc8b3287afc3bd26e52201",
       "category": "keep",
@@ -2450,7 +2450,7 @@
       "source_paths": []
     },
     {
-      "sha": "74637f52090537872b4275b5d61ef878fba09b8f",
+      "sha": "03304fc9b55f759895118b40de6cadc66418df58",
       "subject": "fix(app): preserve workspace links during host discovery",
       "patch_id": "911b092ba6c422d0d95672bcb33582195247a84f",
       "category": "keep",
@@ -2465,9 +2465,9 @@
       "source_paths": []
     },
     {
-      "sha": "7be8ce49f84608a63dd0eccb29ab2ef3967175ea",
+      "sha": "37d5ce9671f0cac8504bfbd7aeaadceb2c6dac78",
       "subject": "fix: expose readable diff and image descriptions",
-      "patch_id": "615386ff4615a9cd7bf96c830ca5a9378b3f59fa",
+      "patch_id": "37cbeed12e600a6484bdf1090260ccf7ef665876",
       "category": "keep",
       "replay": "one-to-one",
       "constituent_counts": {
@@ -2480,7 +2480,7 @@
       "source_paths": []
     },
     {
-      "sha": "71d19118e3dfb8518405069ec1715fea62a1189e",
+      "sha": "9a88398fd9931c6b7f8a53b3691f8b10b7297052",
       "subject": "fix: keep file readers above Android navigation",
       "patch_id": "9e8fbc63799293933ffe9adf1463bc91de5101df",
       "category": "keep",
@@ -2495,7 +2495,7 @@
       "source_paths": []
     },
     {
-      "sha": "1125d440c86ec7fa141b3bfeeede51cf4e556cf2",
+      "sha": "b480bfc3380eba98747c5eca269306450e34ddc2",
       "subject": "fix(android): preserve root layout after rotation",
       "patch_id": "7a35b83b07d2d3b1df07e3d4797356ae24db669c",
       "category": "partially superseded",
@@ -2520,7 +2520,7 @@
       }
     },
     {
-      "sha": "91afeb77c0c0bf64b92a088678c8189539a8ef6a",
+      "sha": "ffd42d7ffc571860fcd9c95266673b5ccae521da",
       "subject": "feat(server): archive workspaces with their last agent",
       "patch_id": "3bc302614cbb9e224cd3674d846d722020b56503",
       "category": "keep",
@@ -2541,7 +2541,7 @@
       ]
     },
     {
-      "sha": "c8753505914759c29f0fc0dbf26ea1446f967adc",
+      "sha": "0ec5c20a1ec9ff3c6d22c173766cefcc22ebfbc1",
       "subject": "fix(server): tell Claude the permission prompt's warning when the user denies it",
       "patch_id": "304c64f17447b7d44882dfc74f0d881b77861b25",
       "category": "keep",
@@ -2556,7 +2556,7 @@
       "source_paths": []
     },
     {
-      "sha": "823dca66b56b7bc8cadc730eb97ced39e4696a97",
+      "sha": "b9472b52efadc1a2bd99c877341cfe6dbdd620a6",
       "subject": "fix(app): let users select and copy permission prompt text",
       "patch_id": "0a248e96a6f07f941de12e4e3c1f914467a42e1b",
       "category": "keep",
@@ -2571,7 +2571,7 @@
       "source_paths": []
     },
     {
-      "sha": "00b6b6eab5d07c4b0c11db49f1ce653ef61c0516",
+      "sha": "678d69563269baffe79373202d37b80f288d3384",
       "subject": "fix(app): open every stream disclosure below its header",
       "patch_id": "3fc4146aa31cdc440427dc3109ff33d88d5b6275",
       "category": "partially superseded",
@@ -2596,7 +2596,7 @@
       }
     },
     {
-      "sha": "bf81c7fe008b4351dc6497aa9fccb48de46245bf",
+      "sha": "d9ec3d34c974e48a6a0cdf75def0e08c44a82b31",
       "subject": "fix: fence stale timelines and recover workspace navigation",
       "patch_id": "a2e48eede56745089345a3da28a718d1470bae32",
       "category": "keep",
@@ -2611,7 +2611,7 @@
       "source_paths": []
     },
     {
-      "sha": "5e4d78f3bd9469f9889f44817fc62424b3a9f556",
+      "sha": "ff2e87b131b12d43956de0f4b3a0a7c0985445e4",
       "subject": "fix(agents): remove unpublished worktrees on automatic archive",
       "patch_id": "74ec69d8a4d90d06ec32a84aff4e7d1c70c0f3d8",
       "category": "keep",
@@ -2626,7 +2626,7 @@
       "source_paths": []
     },
     {
-      "sha": "7739555c2432e11ebc8b7396912d0f8b3f02c613",
+      "sha": "44016c89203cd61cefdcf17e19ea3367a13b778b",
       "subject": "fix(android): capture binary screenshots with bounded receipts",
       "patch_id": "3d2ca9cb41014550c3aca8cd1bf12baa077eec1c",
       "category": "keep",
@@ -2641,7 +2641,7 @@
       "source_paths": []
     },
     {
-      "sha": "73ff0107901cab313942b5619c73da2ba9f72f44",
+      "sha": "956dc67032b8fe5f01268c26657ee74bfc9d0962",
       "subject": "chore(release): capture 0.28.0 packaging, dependencies and changelog",
       "patch_id": "85e06eda0ffed6f717528627605961edadedbbe5",
       "category": "partially superseded",
@@ -2667,7 +2667,7 @@
       }
     },
     {
-      "sha": "2f720d1ef151df1313bb867a3879f2cb5dda9d68",
+      "sha": "4e0700b6cef2de5c18eba5417b34c08fc2d7ec3b",
       "subject": "docs: refresh frozen upstream inventory and supersession ledger",
       "patch_id": "b8bc87380546341660f631ffa762eea58dbf6b1a",
       "category": "keep",
@@ -2680,7 +2680,7 @@
       "source_paths": []
     },
     {
-      "sha": "66b57daca5e25116d3ff687cc41ad0fa16afc537",
+      "sha": "366db1e51e5f0fe6807f527937b6f3bdb1ee8f6e",
       "subject": "chore(release): bound release-please to curated 0.28.0 history",
       "patch_id": "8ec2a0b2b80ed361a947427337f84850eeff256a",
       "category": "keep",
@@ -2691,7 +2691,7 @@
       "source_paths": []
     },
     {
-      "sha": "e89345d06071f18e9f58d70cf5009fc0d5eb1389",
+      "sha": "cfa3982edc1b0bcf690f8feaab4fe8902faa2f4c",
       "subject": "fix(rebase): carry curated supersession decisions across rewrites (#484)",
       "patch_id": "15ea90fa9d68f7f5d43886672b94bc812947555c",
       "category": "keep",
@@ -2703,7 +2703,7 @@
       "source_paths": []
     },
     {
-      "sha": "9c7794c6f5726f59886428c9d9b91be2d7e78071",
+      "sha": "6abe4041ced9576467ba03d0bf1474aa19831263",
       "subject": "fix(ci): sign Nix hash refresh commits through GitHub (#487)",
       "patch_id": "651914090878ba1f65ad8ad25bb45c7302510126",
       "category": "keep",
@@ -2715,7 +2715,7 @@
       "source_paths": []
     },
     {
-      "sha": "9e4a6780500c6b0586a3415f729f4a3b77dde9a3",
+      "sha": "3d276a4e67984ad9f9d9b467855c1421bfdae5be",
       "subject": "fix(rebase): admit reviewed partials and pin upstream sync (#488)",
       "patch_id": "a11b590325044b984c05aefcd89f0cb215212679",
       "category": "keep",
@@ -2727,7 +2727,7 @@
       "source_paths": []
     },
     {
-      "sha": "a4af4a3e5260a00e9db515323e7d584c2dfb0015",
+      "sha": "5c867e2c60249063a3e25bba6cfdb97359f747e3",
       "subject": "fix(rebase): refresh the scrubbed release trigger identity (#489)",
       "patch_id": "0bd368411bbb792ab2ef25b5e65cb2e95c8eec40",
       "category": "keep",
@@ -2739,9 +2739,9 @@
       "source_paths": []
     },
     {
-      "sha": "ef2ead080f2440033457c36d164a5b3afba3f9cd",
+      "sha": "8f55ae41975c1cd36960a8b39f0dbabcb60fadbb",
       "subject": "chore(rebase): adapt incorporated upstream to the fork",
-      "patch_id": "4d366c663c4df1888198ae02b3d68dc8002379cb",
+      "patch_id": "27496831eca96e8de209a4c83eacbca6c371df20",
       "category": "keep",
       "replay": "one-to-one",
       "reason": "Published descendant not covered by the prior curated ledger; retain by default.",
@@ -2751,7 +2751,7 @@
       "source_paths": []
     },
     {
-      "sha": "abf9682017b1f952ae25cfbe0c2d2726cd605684",
+      "sha": "45d4b99849a1530b035e92f01d036018b89faa3d",
       "subject": "chore(rebase): capture incorporated upstream",
       "patch_id": "f1e56561172f02c0035b649726f0e6d878f0fdb2",
       "category": "keep",
@@ -2763,7 +2763,7 @@
       "source_paths": []
     },
     {
-      "sha": "c9ddb753e8898e299c7a44d52cbd8cf673a3c874",
+      "sha": "3cc921feac67e13df5785f1edb99c15fbd1d2007",
       "subject": "chore(rebase): point release-please at the rebased release",
       "patch_id": "692efd1cad447ef80d8d27f053509808da139f31",
       "category": "keep",
@@ -2775,7 +2775,7 @@
       "source_paths": []
     },
     {
-      "sha": "d245f3496eecc4a2fca1741d52feb4d0cffafff6",
+      "sha": "fcad105bcf58a2e67e548f7d1953cf6c6888d68b",
       "subject": "feat(rebase): add validate-only dispatch mode (#494)",
       "patch_id": "8cdefa87d8f2f9fb9ea766ac12f436cb0bcc7d13",
       "category": "keep",
@@ -2787,7 +2787,7 @@
       "source_paths": []
     },
     {
-      "sha": "39055ab0e07a78ae596a98526b6db2a93e9ce2da",
+      "sha": "dbfd3258be021cd7ffdfc3287ecd52f667e08cdb",
       "subject": "docs: clarify test output and Android editor focus (#496)",
       "patch_id": "7a15931e29d3ff7a59cd54cae252825de3ba7f6a",
       "category": "keep",
@@ -2799,7 +2799,7 @@
       "source_paths": []
     },
     {
-      "sha": "428ee71c667ab1bc645e8e90837bbc671e397c29",
+      "sha": "0c887ac3ff545b8512262a3464845f9e9a02c388",
       "subject": "fix(rebase): name dirty paths when validation refuses the tree (#497)",
       "patch_id": "62f5a719fdc6c68333d14d1aac1decc8b7855cad",
       "category": "keep",
@@ -2807,6 +2807,111 @@
       "reason": "Published descendant not covered by the prior curated ledger; retain by default.",
       "retain": "Preserve published fork behavior and history.",
       "cheapest_later_proof": "Fresh clean replay and exact-tree validate-only before publication.",
+      "upstream": [],
+      "source_paths": []
+    },
+    {
+      "sha": "2b79a8a5c14d4f75a76ff1a687ad858b60df7d68",
+      "subject": "fix(rebase): carry the ledger onto published history (#498)",
+      "patch_id": "9906c5a2e3a1e850375cc633d4fc46a21281ea1f",
+      "category": "keep",
+      "replay": "one-to-one",
+      "constituent_counts": {
+        "keep": 1
+      },
+      "reason": "Retain by default: no source-established supersession selected in this inventory. This is a replay decision, not a claim of semantic uniqueness or a line-by-line audit.",
+      "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.",
+      "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.",
+      "upstream": [],
+      "source_paths": []
+    },
+    {
+      "sha": "0f80f9cfe0cd5f40ac7347e48f3bd064b442652d",
+      "subject": "fix(server): avoid skill watcher canary reloads through symlinks (#499)",
+      "patch_id": "2a57422a1af671b83cfef26d2cbaba5c793e5722",
+      "category": "keep",
+      "replay": "one-to-one",
+      "constituent_counts": {
+        "keep": 1
+      },
+      "reason": "Retain by default: no source-established supersession selected in this inventory. This is a replay decision, not a claim of semantic uniqueness or a line-by-line audit.",
+      "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.",
+      "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.",
+      "upstream": [],
+      "source_paths": []
+    },
+    {
+      "sha": "9df347ebb33c1a0dadba5f1763387b3d80c8c25a",
+      "subject": "test: port plugin, relay and terminal fixtures to current APIs (#500)",
+      "patch_id": "549e824d624f3fa0be8bf0c6838c3128665fd984",
+      "category": "keep",
+      "replay": "one-to-one",
+      "constituent_counts": {
+        "keep": 1
+      },
+      "reason": "Retain by default: no source-established supersession selected in this inventory. This is a replay decision, not a claim of semantic uniqueness or a line-by-line audit.",
+      "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.",
+      "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.",
+      "upstream": [],
+      "source_paths": []
+    },
+    {
+      "sha": "c9b1468dfa15e7494a9a15376ab8d96ffa6b286e",
+      "subject": "fix(desktop): read settings regression results from the returned object in browser-tabs e2e (#501)",
+      "patch_id": "becae784d96d099f024d42b5bd0bbce221139a1f",
+      "category": "keep",
+      "replay": "one-to-one",
+      "constituent_counts": {
+        "keep": 1
+      },
+      "reason": "Retain by default: no source-established supersession selected in this inventory. This is a replay decision, not a claim of semantic uniqueness or a line-by-line audit.",
+      "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.",
+      "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.",
+      "upstream": [],
+      "source_paths": []
+    },
+    {
+      "sha": "5a88ba0022ecfacf69ea8507d0045c089ad10d18",
+      "subject": "chore(rebase): adapt incorporated upstream to the fork",
+      "patch_id": "4f00891426b6f4f09a6f24f8f2667535d04844b5",
+      "category": "keep",
+      "replay": "one-to-one",
+      "constituent_counts": {
+        "keep": 1
+      },
+      "reason": "Retain by default: no source-established supersession selected in this inventory. This is a replay decision, not a claim of semantic uniqueness or a line-by-line audit.",
+      "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.",
+      "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.",
+      "upstream": [],
+      "source_paths": []
+    },
+    {
+      "sha": "e441ac7d05ab92fa0f4186d8506b868dea4f6d2b",
+      "subject": "chore(rebase): capture incorporated upstream",
+      "patch_id": "e3c19ccace3147771a322c2320ebc2a838d0ad5b",
+      "category": "keep",
+      "replay": "one-to-one",
+      "constituent_counts": {
+        "keep": 1
+      },
+      "reason": "Retain by default: no source-established supersession selected in this inventory. This is a replay decision, not a claim of semantic uniqueness or a line-by-line audit.",
+      "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.",
+      "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.",
+      "upstream": [],
+      "source_paths": []
+    },
+    {
+      "sha": "c7eb9ec7b20b30bfdcb702a8e462f1ae10e0f170",
+      "subject": "chore(rebase): point release-please at the rebased release",
+      "patch_id": "1e6e519eba44a2c418c5013612b3418a4e9a856e",
+      "category": "keep",
+      "replay": "one-to-one",
+      "constituent_counts": {
+        "keep": 1
+      },
+      "reason": "Retain by default: no source-established supersession selected in this inventory. This is a replay decision, not a claim of semantic uniqueness or a line-by-line audit.",
+      "retain": "Preserve fork behavior and intentional history; adapt overlapping paths rather than accepting an entire side.",
+      "cheapest_later_proof": "Existing affected invariant tests during later exact-tree verification; no runtime proof in this inventory.",
       "upstream": [],
       "source_paths": []
     }
