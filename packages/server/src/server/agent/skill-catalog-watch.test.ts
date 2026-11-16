@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, writeFile, rm, symlink, rename } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 import { watchSkillChanges, skillRoots } from "./skill-catalog-watch.js";
 
@@ -140,5 +140,35 @@ test("ignores canaries through symlinked skill directories but refreshes once fo
   await expect.poll(() => observer.changed.mock.calls.length).toBe(1);
   await new Promise((resolve) => setTimeout(resolve, 2000));
   expect(observer.changed).toHaveBeenCalledTimes(1);
+  expect(observer.errors).toEqual([]);
+});
+
+test("ignores rewrites that leave every skill unchanged", async () => {
+  const root = await fixture();
+  const skills = join(root, "skills");
+  // Claude Code's synced-skill rounds rewrite these files every few seconds.
+  const bucket = join(skills, "synced", "bucket");
+  await mkdir(join(bucket, "pdf"), { recursive: true });
+  const file = join(bucket, "pdf", "SKILL.md");
+  await writeFile(file, "first");
+  await writeFile(join(bucket, "manifest.json"), "{}");
+  const observer = observe([skills]);
+  await observer.watch.ready;
+  // Replace atomically, as sync does, so a reconcile never reads a half-written file.
+  const replace = async (path: string, content: string) => {
+    // A hidden temporary name stays out of the catalog, like a sync client's.
+    const temporary = join(dirname(path), `.${basename(path)}.tmp`);
+    await writeFile(temporary, content);
+    await rename(temporary, path);
+  };
+  for (const round of ["one", "two", "three"]) {
+    await replace(join(bucket, ".last-complete-round"), round);
+    await replace(join(bucket, "manifest.json"), "{}");
+    await replace(file, "first");
+  }
+  await new Promise((resolve) => setTimeout(resolve, 500));
+  expect(observer.changed).not.toHaveBeenCalled();
+  await writeFile(file, "second");
+  await expect.poll(() => observer.changed.mock.calls.length).toBe(1);
   expect(observer.errors).toEqual([]);
 });
