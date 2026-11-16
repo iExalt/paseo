@@ -2,8 +2,7 @@ import {
   preflight,
   command,
   runPreflight as runFullPreflight,
-  assertRoutineReceipt,
-  runLocalRoutine,
+  assertHostedRoutine,
   assertGitHubOrigin,
 } from "./rebase-preflight.mjs";
 import { comparePublication, verifyPublication } from "./rebase-verify.mjs";
@@ -1659,12 +1658,7 @@ test("preflight aggregates independent environment failures and confines push to
     },
   });
   assert.equal(result.ok, false);
-  assert.equal(result.checks.filter((entry) => !entry.ok).length, 11);
-  assert.equal(result.checks.find((entry) => entry.name === "zstd available").ok, false);
-  assert.equal(
-    result.checks.find((entry) => entry.name === "routine process visibility").ok,
-    false,
-  );
+  assert.equal(result.checks.filter((entry) => !entry.ok).length, 9);
   const push = calls.find((args) => args[1] === "push");
   assert.deepEqual(push.slice(0, 4), ["git", "push", "--dry-run", "origin"]);
   assert.match(push[4], /^HEAD:refs\/heads\/rebase-candidate\/preflight-\d+$/);
@@ -2052,53 +2046,152 @@ test("validation reports actual snapshot refs before checks fail and refuses mis
   assert.deepEqual(events, []);
 });
 
-test("routine receipts bind the full plan to the current clean replay and frozen inputs", async () => {
-  const repositoryPath = join(root, "routine-receipt");
+test("hosted routine binds a first-attempt green PR run to the clean replay tree", async () => {
+  const repositoryPath = join(root, "hosted-routine");
   initRepo(repositoryPath);
-  writeFileSync(join(repositoryPath, "tracked"), "source");
-  commit(repositoryPath, "routine receipt fixture");
-  const sha = git(repositoryPath, "rev-parse", "HEAD");
-  const inputs = { dev: sha, upstream: sha, resolutions: sha };
-  for (const name of Object.keys(inputs))
-    git(repositoryPath, "update-ref", `refs/codex/snapshot/${name}`, sha);
-  const receiptPath = join(root, "routine-proof.json");
-  await runLocalRoutine({
-    repositoryPath,
-    receiptPath,
-    validate: async () => {
-      assert.equal(existsSync(receiptPath), false);
-      return sha;
-    },
-  });
-  const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
-  assert.equal(assertRoutineReceipt({ ...inputs, routineReceipt: receiptPath }), sha);
-  for (const delta of [
-    { exitCode: 1 },
-    { command: ["echo", "checks"] },
-    { dev: "a".repeat(40) },
-    { upstream: "a".repeat(40) },
-    { resolutions: "a".repeat(40) },
-    { testedSha: "a".repeat(40) },
-    { testedTree: "a".repeat(40) },
-  ]) {
-    writeFileSync(receiptPath, JSON.stringify({ ...receipt, ...delta }));
-    assert.throws(() => assertRoutineReceipt({ ...inputs, routineReceipt: receiptPath }));
-  }
-  writeFileSync(receiptPath, JSON.stringify(receipt));
-  writeFileSync(join(repositoryPath, "untracked"), "leftover");
-  assert.throws(() => assertRoutineReceipt({ ...inputs, routineReceipt: receiptPath }), /dirty/);
-  unlinkSync(join(repositoryPath, "untracked"));
-  await runLocalRoutine({
-    repositoryPath,
-    receiptPath,
-    validate: async () => {
-      throw new Error("routine failed");
-    },
-  });
-  assert.equal(JSON.parse(readFileSync(receiptPath, "utf8")).exitCode, 1);
-  assert.throws(
-    () => assertRoutineReceipt({ ...inputs, routineReceipt: receiptPath }),
-    /did not pass/,
+  mkdirSync(join(repositoryPath, ".github/scripts"), { recursive: true });
+  writeFileSync(join(repositoryPath, ".github/ci-paths.json"), "{}\n");
+  // Plans every domain unless only docs changed, and scopes format to changed files.
+  writeFileSync(
+    join(repositoryPath, ".github/scripts/ci-routine.mjs"),
+    `export const selectChecks = (files) => ({ files, code: files === null || files.some((file) => !file.startsWith("docs/")) });
+export const planCommands = (selection) => [
+  { name: "format", files: selection.files },
+  ...(selection.code ? [{ name: "units" }] : []),
+];
+`,
   );
-  assert.throws(() => assertRoutineReceipt(inputs), /full routine plan/);
+  writeFileSync(join(repositoryPath, "tracked"), "dev");
+  commit(repositoryPath, "dev");
+  const dev = git(repositoryPath, "rev-parse", "HEAD");
+  git(repositoryPath, "checkout", "-q", "--orphan", "replay");
+  writeFileSync(join(repositoryPath, "tracked"), "replay");
+  commit(repositoryPath, "replay");
+  const candidate = git(repositoryPath, "rev-parse", "HEAD");
+  const tree = git(repositoryPath, "rev-parse", "HEAD^{tree}");
+  const merge = git(repositoryPath, "commit-tree", tree, "-p", candidate, "-p", dev, "-m", "ours");
+  const inputs = { dev, upstream: candidate, resolutions: candidate };
+  for (const [name, sha] of Object.entries(inputs))
+    git(repositoryPath, "update-ref", `refs/codex/snapshot/${name}`, sha);
+  const goodRun = {
+    name: "Routine CI",
+    event: "pull_request",
+    run_attempt: 1,
+    status: "completed",
+    conclusion: "success",
+    head_sha: merge,
+    pull_requests: [{ head: { sha: merge }, base: { sha: dev } }],
+  };
+  const goodJobs = [
+    { name: "plan", conclusion: "success" },
+    { name: "routine (quality)", conclusion: "success" },
+    { name: "Routine CI required", conclusion: "success" },
+  ];
+  const check = ({ workflowRun = goodRun, jobs = goodJobs, format = true, ...options } = {}) => {
+    const calls = [];
+    const run = (file, args, opts) => {
+      calls.push([file, ...args]);
+      if (file === "gh") return JSON.stringify(args[1].includes("/jobs") ? { jobs } : workflowRun);
+      if (file === "npm") {
+        if (!format) throw new Error("format failed");
+        return "";
+      }
+      return command(file, args, opts);
+    };
+    return assertHostedRoutine({
+      replayPath: repositoryPath,
+      routineRun: "42",
+      ...inputs,
+      run,
+      ...options,
+    }).then((detail) => ({ detail, calls }));
+  };
+  const { detail, calls } = await check();
+  assert.match(detail, new RegExp(`^42 at ${merge}, tree ${tree}$`));
+  assert.ok(calls.some((args) => args.join(" ") === "npm run format:check"));
+  const otherTree = git(
+    repositoryPath,
+    "commit-tree",
+    git(repositoryPath, "rev-parse", `${dev}^{tree}`),
+    "-p",
+    candidate,
+    "-p",
+    dev,
+    "-m",
+    "wrong tree",
+  );
+  const reversed = git(repositoryPath, "commit-tree", tree, "-p", dev, "-p", candidate, "-m", "x");
+  for (const [delta, expected] of [
+    [{ workflowRun: { ...goodRun, name: "Deep verification" } }, /not Routine CI/],
+    [{ workflowRun: { ...goodRun, event: "push" } }, /candidate PR/],
+    [{ workflowRun: { ...goodRun, run_attempt: 2 } }, /first attempt/],
+    [{ workflowRun: { ...goodRun, conclusion: "failure" } }, /did not succeed/],
+    [
+      {
+        workflowRun: {
+          ...goodRun,
+          pull_requests: [{ head: { sha: merge }, base: { sha: candidate } }],
+        },
+      },
+      /frozen dev/,
+    ],
+    [
+      {
+        workflowRun: {
+          ...goodRun,
+          head_sha: otherTree,
+          pull_requests: [{ head: { sha: otherTree }, base: { sha: dev } }],
+        },
+      },
+      /tree differs/,
+    ],
+    [
+      {
+        workflowRun: {
+          ...goodRun,
+          head_sha: reversed,
+          pull_requests: [{ head: { sha: reversed }, base: { sha: dev } }],
+        },
+      },
+      /merge frozen dev/,
+    ],
+    [{ jobs: goodJobs.slice(1) }, /plan did not succeed/],
+    [{ jobs: [...goodJobs, { name: "routine (app)", conclusion: "skipped" }] }, /routine \(app\)/],
+    [{ format: false }, /format failed/],
+    [{ dev: candidate }, /Replay dev differs/],
+    [{ routineRun: undefined }, /run ID/],
+  ])
+    await assert.rejects(check(delta), expected);
+  // A docs-only delta drops the units step from the pull_request plan.
+  mkdirSync(join(repositoryPath, "docs"));
+  git(repositoryPath, "checkout", "-q", dev);
+  writeFileSync(join(repositoryPath, "docs/only.md"), "docs");
+  commit(repositoryPath, "docs dev");
+  const docsDev = git(repositoryPath, "rev-parse", "HEAD");
+  git(repositoryPath, "checkout", "-q", "replay");
+  git(repositoryPath, "reset", "-q", "--hard", candidate);
+  const docsTree = git(repositoryPath, "rev-parse", `${docsDev}^{tree}`);
+  git(repositoryPath, "read-tree", "--reset", "-u", docsTree);
+  commit(repositoryPath, "replay docs");
+  const docsCandidate = git(repositoryPath, "rev-parse", "HEAD");
+  const docsMerge = git(
+    repositoryPath,
+    "commit-tree",
+    docsTree,
+    "-p",
+    docsCandidate,
+    "-p",
+    docsDev,
+    "-m",
+    "ours",
+  );
+  git(repositoryPath, "update-ref", "refs/codex/snapshot/dev", docsDev);
+  const docsRun = {
+    ...goodRun,
+    head_sha: docsMerge,
+    pull_requests: [{ head: { sha: docsMerge }, base: { sha: docsDev } }],
+  };
+  await assert.rejects(check({ workflowRun: docsRun, dev: docsDev }), /beyond the format step/);
+  writeFileSync(join(repositoryPath, "untracked"), "leftover");
+  await assert.rejects(check({ workflowRun: docsRun, dev: docsDev }), /dirty/);
 });

@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
-import { assertGitVersion, planRebase, validateRebase } from "./rebase-dev.mjs";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+import { assertGitVersion, planRebase } from "./rebase-dev.mjs";
 
 export function command(file, args, options = {}) {
   const result = spawnSync(file, args, {
@@ -105,24 +105,6 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
   check("Mise nounset startup", () =>
     invoke("zsh", ["-euc", "source ~/.zshenv; mise --version; mise exec -- node --version"]),
   );
-  check("zstd available", () => invoke("zstd", ["--version"]).trim());
-  check("routine process visibility", () => {
-    assert.equal(
-      invoke("node", [
-        "--input-type=module",
-        "-e",
-        `
-      if (process.platform === "linux") {
-        const { ownedProcesses } = await import("./.github/scripts/deep-cleanup.mjs");
-        const { randomUUID } = await import("node:crypto");
-        ownedProcesses(randomUUID());
-      }
-      console.log("routine-process-scan-ok");
-    `,
-      ]).trim(),
-      "routine-process-scan-ok",
-    );
-  });
   check("pinned Node", () => {
     const versions = readFileSync(`${repositoryPath}/.tool-versions`, "utf8");
     const version = /^nodejs\s+(\S+)/m.exec(versions)?.[1];
@@ -138,66 +120,87 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
   return { ok: checks.every((entry) => entry.ok), upstream, checks };
 }
 
-const ROUTINE_COMMAND = ["mise", "run", "--skip-tools", "ci:routine"];
+const ROUTINE_WORKFLOW = "Routine CI";
 
-export async function runLocalRoutine({
-  repositoryPath,
-  receiptPath,
-  validate = validateRebase,
+// Hosted Routine CI on a pull request proves the replay only when the PR head
+// is a signed `-s ours` merge of frozen dev whose tree is the replay tree: dev
+// is then an ancestor, so GitHub's merge ref tree equals the head tree. The
+// pull_request plan scopes only the format step to changed files, so the
+// whole-repo format check runs here on the replay itself.
+export async function assertHostedRoutine({
+  replayPath,
+  routineRun,
+  dev,
+  upstream,
+  resolutions,
   run = command,
 }) {
-  const receipt = { repositoryPath: resolve(repositoryPath), command: ROUTINE_COMMAND };
-  try {
-    for (const name of ["dev", "upstream", "resolutions"])
-      receipt[name] = run(
-        "git",
-        ["rev-parse", "--verify", `refs/codex/snapshot/${name}^{commit}`],
-        { cwd: receipt.repositoryPath },
-      ).trim();
-    receipt.testedSha = await validate({ repositoryPath: receipt.repositoryPath });
-    receipt.testedTree = run("git", ["rev-parse", `${receipt.testedSha}^{tree}`], {
-      cwd: receipt.repositoryPath,
-    }).trim();
-    receipt.exitCode = 0;
-  } catch (error) {
-    receipt.exitCode = 1;
-    receipt.error = error.message;
-  }
-  writeFileSync(receiptPath, JSON.stringify(receipt, null, 2) + "\n");
-  return receipt;
-}
-
-export function assertRoutineReceipt({ routineReceipt, run = command, ...inputs }) {
-  assert.ok(routineReceipt, "Run the full routine plan on the clean replay and pass its receipt");
-  const receipt = JSON.parse(readFileSync(routineReceipt, "utf8"));
-  assert.equal(receipt.exitCode, 0, "Local routine plan did not pass");
-  assert.deepEqual(receipt.command, ROUTINE_COMMAND, "Receipt used a different test plan");
-  assert.ok(isAbsolute(receipt.repositoryPath ?? ""), "Receipt must identify the replay checkout");
-  for (const name of ["dev", "upstream", "resolutions"])
+  assert.ok(
+    replayPath && routineRun,
+    "Pass the clean replay path and its hosted Routine CI run ID",
+  );
+  assert.match(String(routineRun), /^\d+$/, "Routine run ID must be numeric");
+  const cwd = resolve(replayPath);
+  const git = (...args) => run("git", args, { cwd }).trim();
+  const inputs = { dev, upstream, resolutions };
+  for (const name of Object.keys(inputs))
     assert.equal(
-      receipt[name],
+      git("rev-parse", "--verify", `refs/codex/snapshot/${name}^{commit}`),
       inputs[name],
-      `Routine receipt ${name} differs from the frozen input`,
+      `Replay ${name} differs from the frozen input`,
     );
-  for (const name of ["testedSha", "testedTree"])
-    assert.match(receipt[name] ?? "", /^[a-f0-9]{40}$/, `Missing routine ${name}`);
-  const git = (...args) => run("git", args, { cwd: receipt.repositoryPath }).trim();
-  assert.equal(
-    git("rev-parse", "HEAD"),
-    receipt.testedSha,
-    "Replay HEAD moved since routine validation",
-  );
-  assert.equal(
-    git("rev-parse", "HEAD^{tree}"),
-    receipt.testedTree,
-    "Replay tree differs from the routine receipt",
-  );
   assert.equal(
     git("status", "--porcelain", "--untracked-files=all"),
     "",
-    "Replay is dirty after routine validation",
+    "Replay checkout is dirty",
   );
-  return receipt.testedSha;
+  const candidate = git("rev-parse", "HEAD");
+  const tree = git("rev-parse", "HEAD^{tree}");
+  const api = (path) => JSON.parse(run("gh", ["api", `repos/iExalt/paseo/${path}`], { cwd }));
+  const workflowRun = api(`actions/runs/${routineRun}`);
+  assert.equal(workflowRun.name, ROUTINE_WORKFLOW, "Run is not Routine CI");
+  assert.equal(workflowRun.event, "pull_request", "Routine run must come from the candidate PR");
+  assert.equal(workflowRun.run_attempt, 1, "Cite the first attempt; reruns are not accepted");
+  assert.equal(workflowRun.status, "completed", "Routine run has not completed");
+  assert.equal(workflowRun.conclusion, "success", "Routine run did not succeed");
+  const head = workflowRun.head_sha;
+  assert.match(head ?? "", /^[a-f0-9]{40}$/, "Routine run has no head SHA");
+  const pr = workflowRun.pull_requests?.find((entry) => entry.head?.sha === head);
+  assert.equal(pr?.base?.sha, dev, "Routine PR base must be the frozen dev");
+  assert.equal(
+    git("rev-parse", `${head}^{tree}`),
+    tree,
+    "Routine head tree differs from the replay tree",
+  );
+  assert.equal(
+    git("rev-list", "--parents", "-n", "1", head),
+    `${head} ${candidate} ${dev}`,
+    "Routine head must merge frozen dev into the replay HEAD",
+  );
+  const jobs = api(`actions/runs/${routineRun}/attempts/1/jobs?per_page=100`).jobs ?? [];
+  for (const name of ["plan", "Routine CI required"])
+    assert.ok(
+      jobs.some((job) => job.name === name && job.conclusion === "success"),
+      `Routine job ${name} did not succeed`,
+    );
+  const failed = jobs.filter((job) => job.conclusion !== "success").map((job) => job.name);
+  assert.deepEqual(failed, [], `Routine jobs did not succeed: ${failed.join(", ")}`);
+  const routine = await import(pathToFileURL(`${cwd}/.github/scripts/ci-routine.mjs`).href);
+  const filters = JSON.parse(readFileSync(`${cwd}/.github/ci-paths.json`, "utf8"));
+  const changed = git("diff", "--no-renames", "--name-only", "-z", dev, head)
+    .split("\0")
+    .filter(Boolean);
+  const unscoped = (files) =>
+    routine
+      .planCommands(routine.selectChecks(files, filters), cwd)
+      .filter((step) => step.name !== "format");
+  assert.deepEqual(
+    unscoped(changed),
+    unscoped(null),
+    "Pull request plan differs from the full routine beyond the format step",
+  );
+  run("npm", ["run", "format:check"], { cwd, timeout: 600_000 });
+  return `${routineRun} at ${head}, tree ${tree}`;
 }
 
 export async function runPreflight(options = {}, plan = planRebase) {
@@ -233,12 +236,12 @@ export async function runPreflight(options = {}, plan = planRebase) {
   if (!options.environmentOnly) {
     try {
       result.checks.push({
-        name: "local routine plan",
+        name: "hosted routine",
         ok: true,
-        detail: assertRoutineReceipt(options),
+        detail: await assertHostedRoutine(options),
       });
     } catch (error) {
-      result.checks.push({ name: "local routine plan", ok: false, detail: error.message });
+      result.checks.push({ name: "hosted routine", ok: false, detail: error.message });
     }
   }
   result.ok = result.checks.every((entry) => entry.ok);
@@ -248,18 +251,17 @@ export async function runPreflight(options = {}, plan = planRebase) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const result =
-      process.argv[2] === "routine"
-        ? await runLocalRoutine({ repositoryPath: process.argv[3], receiptPath: process.argv[4] })
-        : await runPreflight({
-            upstream: process.argv[2],
-            dev: process.argv[3],
-            resolutions: process.argv[4],
-            environmentOnly: process.argv[5] === "--environment-only",
-            routineReceipt: process.argv[5] === "--environment-only" ? undefined : process.argv[5],
-          });
+    const environmentOnly = process.argv[5] === "--environment-only";
+    const result = await runPreflight({
+      upstream: process.argv[2],
+      dev: process.argv[3],
+      resolutions: process.argv[4],
+      environmentOnly,
+      replayPath: environmentOnly ? undefined : process.argv[5],
+      routineRun: environmentOnly ? undefined : process.argv[6],
+    });
     console.log(JSON.stringify(result, null, 2));
-    if (result.exitCode === 1 || result.ok === false) process.exitCode = 1;
+    if (result.ok === false) process.exitCode = 1;
   } catch (error) {
     console.error(error.message);
     process.exitCode = 1;

@@ -104,28 +104,44 @@ docs, inherited workflows, toolchain changes and generated output paths. The
 routine workflow's filename inventory rejects temporary workflow files; use the
 existing validate-only dispatch instead of adding a proof workflow.
 
-Run the entire routine plan locally on the clean fresh replay before any hosted
-dispatch, including inventory and contract gates. Targeted tests alone missed an
-indirect CLI mock and two new platform splits in the first trial. List the plan
-with `mise run --skip-tools ci:routine --plan`; install every declared prerequisite,
-including zstd, the Electron binary and Linux libraries. Preflight probes process
-visibility too: restricted Linux /proc access can reach the cleanup helper's
-GitHub-hosted-only elevated path. The disposable instance used for the first
-trial could not satisfy that capability. Keep the routine gate red and use a
-supported proof environment or obtain a user-approved acceptance change before
-resuming dispatch. Never label a partial plan as a full routine pass. Keep logs and receipts outside
-the replay checkout:
+Run the whole routine plan on hosted CI against the clean fresh replay before any
+validate-only dispatch. Targeted tests alone missed an indirect CLI mock and two new
+platform splits in the first trial, and a disposable instance cannot run the full
+plan: the cleanup helper's elevated process scan is GitHub-hosted only, and faking
+`GITHUB_ACTIONS` or `RUNNER_ENVIRONMENT` is not a pass. Routine CI has no manual
+trigger and checks a pull request's merge tree, so bind the replay to frozen dev
+with one signed merge that keeps the replay tree:
 
 ```sh
-mise exec -- node .github/scripts/rebase-preflight.mjs routine "$REPLAY_PATH" "$ROUTINE_RECEIPT"
+CANDIDATE=$(git -C "$REPLAY_PATH" rev-parse HEAD)
+HEAD_SHA=$(git -C "$REPLAY_PATH" commit-tree -S "$CANDIDATE^{tree}" -p "$CANDIDATE" -p "$DEV_SHA" \
+  -m "chore(rebase): bind candidate to frozen dev for routine CI (do not merge)")
+git -C "$REPLAY_PATH" push origin "$HEAD_SHA:refs/heads/rebase-candidate/$NAME"
+gh pr create -R iExalt/paseo --draft --base dev --head "rebase-candidate/$NAME" \
+  --label do-not-merge --title "chore(rebase): routine CI for candidate (do not merge)" --body "…"
 ```
 
-The routine subcommand uses `validateRebase()`, including its before/after clean-tree
-and HEAD checks. Full preflight requires that successful receipt to match the
-frozen tuple and the replay's current SHA, tree and clean state. Environment-only
-preflight cannot authorize dispatch. Batch every failure found by the whole-plan
-walk before replaying and validating again. A changed resolution SHA or replay
-invalidates the receipt.
+Frozen dev is then an ancestor of the PR head, so GitHub's merge tree is the replay
+tree. Open at most one such draft; never merge it, mark it ready or enable
+auto-merge. Watch Routine CI on its first attempt with a deadline; a rerun attempt
+does not count. A red lane is a repair input: batch every failure, fix the
+resolutions, replay and push a new candidate. Close the PR and delete the
+candidate branch after the production run, or when abandoning the candidate.
+
+Full preflight then needs the replay path and that run ID:
+
+```sh
+mise exec -- node .github/scripts/rebase-preflight.mjs \
+  "$UPSTREAM_SHA" "$DEV_SHA" "$RESOLUTIONS_SHA" "$REPLAY_PATH" "$ROUTINE_RUN_ID"
+```
+
+It requires a successful first-attempt `pull_request` Routine CI run whose head
+merges frozen dev into the clean replay HEAD with the same tree, whose PR base is
+frozen dev, and whose jobs all succeeded. The pull request plan scopes only the
+format step to changed files; preflight checks that and runs the whole-repo
+`npm run format:check` on the replay, so install dependencies there first.
+Environment-only preflight cannot authorize dispatch. A changed resolution SHA or
+replay invalidates the run.
 
 If updates are authorized, publish only the accepted resolution diff as a normal
 signed descendant of the frozen resolutions SHA. Read back its SHA and tree.
