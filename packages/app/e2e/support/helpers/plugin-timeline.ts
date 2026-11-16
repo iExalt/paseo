@@ -10,6 +10,23 @@ import { expectReconnectingToastVisible } from "./workspace-ui";
 
 const PLUGIN_ID = "timeline-transform-e2e";
 
+async function cleanupPluginFixture(
+  failed: boolean,
+  actions: (() => Promise<unknown>)[],
+): Promise<void> {
+  const errors: unknown[] = [];
+  for (const action of actions) {
+    try {
+      await action();
+    } catch (error) {
+      errors.push(error);
+    }
+  }
+  if (!failed && errors.length > 0) {
+    throw new AggregateError(errors, "Plugin fixture cleanup failed");
+  }
+}
+
 /** Observe the app's real socket, including fresh sockets after a reload. */
 export function trackPluginChatRecovery(page: Page) {
   const messages: {
@@ -149,6 +166,8 @@ export async function withDirectoryPlugin(options: {
   const directory = await mkdtemp(path.join(tmpdir(), "paseo-timeline-plugin-"));
   const pluginClient = await connectNewWorkspaceDaemonClient({ ownProjects: false });
   const previous = await pluginClient.getDaemonConfig();
+  let installed = false;
+  let failed = false;
   try {
     await writeFile(
       path.join(directory, "paseo-plugin.json"),
@@ -157,14 +176,21 @@ export async function withDirectoryPlugin(options: {
     await writeFile(path.join(directory, "index.client.tsx"), source);
     await pluginClient.patchDaemonConfig({ pluginsEnabled: true });
     await pluginClient.installDirectoryPlugin(directory);
+    installed = true;
     await run();
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    await pluginClient.removePlugin(pluginId);
-    await pluginClient.patchDaemonConfig({
-      pluginsEnabled: previous.config.pluginsEnabled ?? false,
-    });
-    await pluginClient.close();
-    await rm(directory, { recursive: true, force: true });
+    await cleanupPluginFixture(failed, [
+      async () => {
+        if (installed) await pluginClient.removePlugin(pluginId);
+      },
+      () =>
+        pluginClient.patchDaemonConfig({ pluginsEnabled: previous.config.pluginsEnabled ?? false }),
+      () => pluginClient.close(),
+      () => rm(directory, { recursive: true, force: true }),
+    ]);
   }
 }
 
@@ -351,9 +377,12 @@ export async function viewInlineThinkingExample(page: Page, info: TestInfo): Pro
     title: "Inline thinking example",
     model: "one-minute-stream",
   });
+  let installed = false;
+  let failed = false;
   try {
     await client.patchDaemonConfig({ pluginsEnabled: true });
     await client.installDirectoryPlugin(example.directory);
+    installed = true;
     await openAgentRoute(page, agent);
     await expect(page.getByRole("textbox", { name: "Message agent..." }).first()).toBeVisible();
     await requestPluginTimeline(agent);
@@ -365,11 +394,18 @@ export async function viewInlineThinkingExample(page: Page, info: TestInfo): Pro
       contentType: "image/png",
     });
     await expect(thought).toHaveText(THOUGHT, { timeout: 30_000 });
+  } catch (error) {
+    failed = true;
+    throw error;
   } finally {
-    await client.removePlugin("inline-thinking");
-    await client.patchDaemonConfig({ pluginsEnabled: previous.config.pluginsEnabled ?? false });
-    await client.close();
-    await agent.cleanup();
-    await example.cleanup();
+    await cleanupPluginFixture(failed, [
+      async () => {
+        if (installed) await client.removePlugin("inline-thinking");
+      },
+      () => client.patchDaemonConfig({ pluginsEnabled: previous.config.pluginsEnabled ?? false }),
+      () => client.close(),
+      () => agent.cleanup(),
+      () => example.cleanup(),
+    ]);
   }
 }
