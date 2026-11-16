@@ -2,9 +2,9 @@ import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import appPackage from "../../../package.json";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 
-export const pluginRequirements = { paseo: `>=${appPackage.version}` };
+export const pluginRequirements = { paseo: `>=${PASEO_PLUGIN_API_VERSION}` };
 
 export async function copyPluginExample(name: string) {
   const directory = await mkdtemp(path.join(tmpdir(), "paseo-plugin-example-"));
@@ -16,7 +16,7 @@ export async function copyPluginExample(name: string) {
     const manifest = z
       .record(z.string(), z.unknown())
       .parse(JSON.parse(await readFile(manifestPath, "utf8")));
-    // Exercise example UI against the checkout runtime before its release version is bumped.
+    // Examples target the retained plugin API independently of the fork release.
     await writeFile(
       manifestPath,
       JSON.stringify({ ...manifest, requirements: pluginRequirements }),
