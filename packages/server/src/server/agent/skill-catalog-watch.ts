@@ -175,14 +175,14 @@ export function watchSkillChanges(
       }
       add(parent, false, child);
     };
-    // Recursive fs.watch does not consistently follow directory symlinks on all platforms.
+    // Watch physical directories directly: recursive fs.watch can report target canaries as symlink aliases.
     const links = async (directory: string): Promise<void> => {
       const target = await realpath(directory);
       if (visited.has(target)) return;
       visited.add(target);
       await parentWatch(target);
-      add(target, true);
       const walk = async (dir: string): Promise<void> => {
+        add(dir, false);
         for (const entry of await readdir(dir, { withFileTypes: true })) {
           const child = join(dir, entry.name);
           if (entry.isSymbolicLink()) {
