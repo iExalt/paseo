@@ -2,6 +2,11 @@ name: Rebase dev onto upstream mirror
 
 on:
   workflow_dispatch:
+    inputs:
+      validate_only:
+        description: "Validate the signed rebase without publishing any refs"
+        type: boolean
+        default: false
 
 permissions: {}
 
@@ -53,9 +58,10 @@ jobs:
         run: node .github/scripts/rebase-dev.mjs validate
 
       # GITHUB_TOKEN cannot push commits that change workflow files. Mint the
-      # one-hour App token only once validation has passed.
+      # one-hour App token only for publication, once validation has passed.
       - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
         id: token
+        if: ${{ !inputs.validate_only }}
         with:
           client-id: ${{ vars.PASEO_SYNC_APP_CLIENT_ID }}
           private-key: ${{ secrets.PASEO_SYNC_APP_PRIVATE_KEY }}
@@ -63,6 +69,7 @@ jobs:
           permission-contents: write
           permission-workflows: write
       - name: Publish backup and rebased dev atomically
+        if: ${{ !inputs.validate_only }}
         run: |
           rebase_auth="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
           echo "::add-mask::$rebase_auth"
