@@ -12,18 +12,30 @@ const LSREGISTER =
   "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister";
 const STORE_OUTPUT = /^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/\s]+$/;
 
+// The Nix build is signed ad hoc, so macOS ties privacy grants to each build's
+// cdhash. The installed copy is re-signed with this self-signed identity
+// instead, whose requirement stays the same across releases
+// (docs/macos-code-signing.md). nix/paseo-macos-codesign.pem holds its certificate.
+export const SIGNING_IDENTITY = "C19E2ACC7E117CDC6F629D23EACF15A6BA588596";
+export const SIGNED_REQUIREMENT = `identifier "sh.paseo.desktop" and certificate leaf = H"${SIGNING_IDENTITY.toLowerCase()}"`;
+const CODESIGN = "/usr/bin/codesign";
+// A keychain prompt nobody answers must not hold the operation lock forever.
+const CHECK_TIMEOUT_MS = 20_000;
+const SIGNING_TIMEOUT_MS = 120_000;
+
 export const appBundle = (outputPath) => join(outputPath, "Applications", "Paseo.app");
 
 function warn(what, error) {
   process.stderr.write(`${what}: ${error instanceof Error ? error.message : String(error)}\n`);
 }
 
-function run(command, args, { input, allowFailure = false } = {}) {
+function run(command, args, { input, allowFailure = false, timeout } = {}) {
   const result = spawnSync(command, args, {
     encoding: "utf8",
     input,
     maxBuffer: 256 * 1024 * 1024,
     stdio: [input === undefined ? "ignore" : "pipe", "pipe", "pipe"],
+    timeout,
   });
   if (result.error) throw result.error;
   if (!allowFailure)
@@ -80,9 +92,17 @@ export async function inspectInstalledApp(path) {
 const OWNED_LINK =
   /(^\/nix\/store\/[a-z0-9]{32}-paseo-desktop-[^/]+|\/Paseo\/nix-update\/profile)\/Applications\/Paseo\.app\/?$/;
 
-export function planAppInstall({ installed, activeOutputPath, activeMarker, busy }) {
+// `resign` asks to replace a current copy that lacks the stable signature, so
+// a copy installed by an older updater picks it up once nothing runs from it.
+export function planAppInstall({
+  installed,
+  activeOutputPath,
+  activeMarker,
+  busy,
+  resign = false,
+}) {
   if (installed.kind === "directory" && installed.outputPath === activeOutputPath)
-    return { action: "current" };
+    return resign && !busy ? { action: "install" } : { action: "current" };
   const owned =
     installed.kind === "missing" ||
     (installed.kind === "symlink" && OWNED_LINK.test(installed.target)) ||
@@ -114,6 +134,40 @@ const processesInBundle = (bundle) =>
   bundleProcesses(run("/bin/ps", ["-axww", "-o", "pid=,command="]).stdout, bundle);
 
 const ditto = (source, destination) => run("/usr/bin/ditto", [source, destination]);
+
+/** Whether the signing identity is in the keychain search list; untrusted identities count. */
+export function hasSigningIdentity() {
+  const result = run("/usr/bin/security", ["find-identity", "-p", "codesigning"], {
+    allowFailure: true,
+    timeout: CHECK_TIMEOUT_MS,
+  });
+  return result.status === 0 && result.stdout.toUpperCase().includes(SIGNING_IDENTITY);
+}
+
+/** Whether the bundle already carries the stable signature (shallow check). */
+export function isSignedWithIdentity(bundle) {
+  const result = run(CODESIGN, ["--verify", `-R=${SIGNED_REQUIREMENT}`, bundle], {
+    allowFailure: true,
+    timeout: CHECK_TIMEOUT_MS,
+  });
+  return result.status === 0;
+}
+
+/**
+ * Re-signs a staged copy with the stable identity and checks the whole bundle.
+ * Returns false when the identity is unavailable; throws when signing fails.
+ */
+export function signWithIdentity(bundle) {
+  if (!hasSigningIdentity()) return false;
+  const options = { timeout: SIGNING_TIMEOUT_MS };
+  run(
+    CODESIGN,
+    ["--force", "--deep", "--sign", SIGNING_IDENTITY, "--timestamp=none", bundle],
+    options,
+  );
+  run(CODESIGN, ["--verify", "--deep", "--strict", `-R=${SIGNED_REQUIREMENT}`, bundle], options);
+  return true;
+}
 // Store files are read-only; the copy must stay deletable by the next update.
 // Mode bits are not part of the code signature.
 export async function makeWritable(path) {
@@ -131,11 +185,18 @@ export async function makeWritable(path) {
 }
 
 /**
- * Copies `source` beside `destination` and swaps it in. The old app is moved
- * aside first and restored if the new one cannot take its place, so the path
- * is never left empty. Only call this while nothing runs from `destination`.
+ * Copies `source` beside `destination`, signs the copy with the stable identity
+ * when it can, and swaps it in. A copy that fails to sign is discarded and
+ * copied again unchanged, so a half-signed bundle is never installed. The old
+ * app is moved aside first and restored if the new one cannot take its place,
+ * so the path is never left empty. Only call this while nothing runs from
+ * `destination`.
  */
-export async function installAppCopy(source, destination, { copy = ditto } = {}) {
+export async function installAppCopy(
+  source,
+  destination,
+  { copy = ditto, sign = signWithIdentity } = {},
+) {
   const parent = dirname(destination);
   const prefix = `.${basename(destination)}.staging-`;
   for (const name of await readdir(parent))
@@ -149,6 +210,23 @@ export async function installAppCopy(source, destination, { copy = ditto } = {})
   try {
     await copy(source, staged);
     await makeWritable(staged);
+    let signed = false;
+    try {
+      signed = await sign(staged);
+      if (!signed)
+        process.stderr.write(
+          `Signing identity ${SIGNING_IDENTITY} is not in the keychain; installing the ad hoc build.\n`,
+        );
+    } catch (error) {
+      warn("Could not sign the app copy; installing the ad hoc build", error);
+      await rm(staged, { recursive: true, force: true });
+      await copy(source, staged);
+      await makeWritable(staged);
+    }
+    if (!signed)
+      process.stderr.write(
+        "macOS privacy grants follow this build only; see docs/macos-code-signing.md.\n",
+      );
     let moved = false;
     try {
       await rename(destination, aside);
@@ -295,6 +373,33 @@ export function migrateDockTiles(adapters = dockAdapters) {
 }
 
 /**
+ * Whether the installed copy is the active release but lacks the stable
+ * signature that the keychain can supply. A failed check means no.
+ */
+export async function needsSignature(
+  bundle,
+  activeOutputPath,
+  {
+    inspect = inspectInstalledApp,
+    isSigned = isSignedWithIdentity,
+    canSign = hasSigningIdentity,
+  } = {},
+) {
+  try {
+    const installed = await inspect(bundle);
+    return (
+      installed.kind === "directory" &&
+      installed.outputPath === activeOutputPath &&
+      !isSigned(bundle) &&
+      canSign()
+    );
+  } catch (error) {
+    warn("Could not check the installed app's signature", error);
+    return false;
+  }
+}
+
+/**
  * Makes /Applications/Paseo.app the active release, keeps LaunchServices on the
  * bundle the app launches from, and repoints the Dock at it. Returns the bundle
  * to open.
@@ -305,12 +410,14 @@ export async function syncDesktopApp(activeOutputPath, { waitForQuitMs = 0 } = {
   let keep = active;
   try {
     const activeMarker = await readMarker(active);
+    let resign = await needsSignature(INSTALLED_APP, activeOutputPath);
     const plan = async (busy) =>
       planAppInstall({
         installed: await inspectInstalledApp(INSTALLED_APP),
         activeOutputPath,
         activeMarker,
         busy,
+        resign,
       });
     let decision = await plan(false);
     if (decision.action === "install") {
@@ -324,6 +431,8 @@ export async function syncDesktopApp(activeOutputPath, { waitForQuitMs = 0 } = {
     }
     if (decision.action === "install") {
       await installAppCopy(active, INSTALLED_APP);
+      // One attempt per run: a copy that could not be signed is still current.
+      resign = false;
       decision = await plan(false);
     }
     if (decision.reason)

@@ -54,6 +54,8 @@ test-results/
 
 # Misc
 *.pem
+# Public certificate only; its private key lives outside this repository.
+!nix/paseo-macos-codesign.pem
 .vercel
 
 # Local Claude configuration

@@ -285,7 +285,9 @@ buildNpmPackage {
   # fixup has rewritten its last file. Ad hoc signatures carry no timestamp, so
   # the output is deterministic for a given codesign. This uses the host
   # codesign, as nixpkgs' sigtool cannot seal bundle resources; the candidate
-  # runtime re-verifies the signature on the imported store path.
+  # runtime re-verifies the signature on the imported store path. The updater
+  # re-signs its /Applications copy with a stable identity so macOS privacy
+  # grants survive updates (docs/macos-code-signing.md).
   postFixup = lib.optionalString stdenv.hostPlatform.isDarwin ''
     app="$out/Applications/Paseo.app"
     /usr/bin/codesign --force --deep --sign - --timestamp=none "$app"
