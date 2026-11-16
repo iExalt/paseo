@@ -1,8 +1,3 @@
-import type {
-  DaemonClient,
-  FetchAgentHistoryOptions,
-  FetchAgentHistoryPageInfo,
-} from "@getpaseo/client/internal/daemon-client";
 import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
 import { useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";

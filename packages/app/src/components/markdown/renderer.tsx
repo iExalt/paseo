@@ -145,6 +145,10 @@ const MarkdownPart = memo(function MarkdownPart({
   find: _find,
   ...imageContext
 }: MarkdownRendererProps & { commandHints?: CommandHints | null; highlight?: boolean }) {
+  let md4cFlags = highlight ? FIND_MD4C_FLAGS : MD4C_FLAGS;
+  if (external) {
+    md4cFlags = highlight ? EXTERNAL_FIND_MD4C_FLAGS : EXTERNAL_MD4C_FLAGS;
+  }
   const environment = useAssistantFileLinkEnvironment();
   const actions = useAssistantFileLinkActions();
   const workspaceForgeShorthand = useForgeShorthand();
@@ -154,20 +158,21 @@ const MarkdownPart = memo(function MarkdownPart({
     (environment.client?.readFile
       ? { readFile: environment.client.readFile.bind(environment.client) }
       : undefined);
-  const { markdown, imageSources, imageAttachments, linkRecognition, linkSource } = useMarkdownSource(
-    text,
-    {
-      workspaceRoot: environment.workspaceRoot,
-      serverId: environment.serverId,
-      ...imageContext,
-      client,
-    },
-    {
-      commandNames: commandHints?.names,
-      forgeReferencePattern: forgeShorthand?.pattern,
-      external,
-    },
-  );
+  const { markdown, imageSources, imageAttachments, linkRecognition, linkSource } =
+    useMarkdownSource(
+      text,
+      {
+        workspaceRoot: environment.workspaceRoot,
+        serverId: environment.serverId,
+        ...imageContext,
+        client,
+      },
+      {
+        commandNames: commandHints?.names,
+        forgeReferencePattern: forgeShorthand?.pattern,
+        external,
+      },
+    );
   const { open: openLightbox, localLightbox } = useAttachmentLightbox();
   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
     if (external) {
@@ -215,7 +220,7 @@ const MarkdownPart = memo(function MarkdownPart({
               uniProps={pickMarkdownStyle(compact, muted, dialog)}
               flavor="github"
               selectable={selectable}
-              md4cFlags={external ? (highlight ? EXTERNAL_FIND_MD4C_FLAGS : EXTERNAL_MD4C_FLAGS) : (highlight ? FIND_MD4C_FLAGS : MD4C_FLAGS)}
+              md4cFlags={md4cFlags}
               linkRecognition={linkRecognition}
               enableTaskListItemToggle={false}
               enableLinkPreview={false}
