@@ -59,12 +59,15 @@ export function deepCommands(lane) {
       ["npm", ["run", "build:main", "--workspace=@getpaseo/desktop"]],
       ["npm", ["exec", "--workspace=@getpaseo/desktop", "--", "install-electron"]],
       ["sudo", ["apt-get", "update", "-qq"]],
+      // List every library Electron links so the lane also runs on hosts without the runner
+      // image's desktop stack; --no-upgrade leaves packages the image already has untouched.
       [
         "sudo",
         [
           "apt-get",
           "install",
           "-y",
+          "--no-upgrade",
           "xvfb",
           "xdotool",
           "libnss3",
@@ -72,6 +75,12 @@ export function deepCommands(lane) {
           "libcups2",
           "libgbm1",
           "libasound2t64",
+          "libgtk-3-0t64",
+          "libcairo2",
+          "libpango-1.0-0",
+          "libxcomposite1",
+          "libxdamage1",
+          "libxfixes3",
         ],
       ],
       [
