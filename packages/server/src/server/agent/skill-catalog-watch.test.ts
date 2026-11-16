@@ -104,3 +104,26 @@ test("watches linked skill files and initially missing symlink targets", async (
   await mutation(observer, () => writeFile(source, "second"));
   await mutation(observer, () => writeFile(source, "third"));
 });
+
+test("ignores canaries through symlinked skill directories but refreshes once for a real edit", async () => {
+  const root = await fixture();
+  const skills = join(root, "skills");
+  const target = join(root, "physical", "iExalt");
+  const nested = join(target, "nested");
+  await mkdir(skills);
+  await mkdir(nested, { recursive: true });
+  const file = join(nested, "SKILL.md");
+  await writeFile(file, "first");
+  await symlink(target, join(skills, "iExalt"), "dir");
+  const observer = observe([skills]);
+  await observer.watch.ready;
+  // Observe beyond the debounce interval so startup canaries cannot pass unnoticed.
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  expect(observer.changed).not.toHaveBeenCalled();
+  expect(observer.errors).toEqual([]);
+  await writeFile(file, "second");
+  await expect.poll(() => observer.changed.mock.calls.length).toBe(1);
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  expect(observer.changed).toHaveBeenCalledTimes(1);
+  expect(observer.errors).toEqual([]);
+});
