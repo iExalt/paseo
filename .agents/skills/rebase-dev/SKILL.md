@@ -84,8 +84,7 @@ so `rebaseDev()` snapshots the approved inputs. Do not reuse a checkout's rr-cac
 Use the captured dev engine, reviewed rerere pairs and exact-stage deletion
 records described in the engine contract. Run `rebaseDev()` with diagnostics and
 a deadline; record stops and the count of conflicted paths. In zsh, brace a SHA
-before a colon (`"${DEV_SHA}:refs/heads/dev"`): `$DEV_SHA:r` is a history modifier
-and silently turns the refspec into a deletion. The instance signing
+before a colon (`"${DEV_SHA}:refs/heads/dev"`): `$DEV_SHA:r` is a modifier that eats the colon and the `r`, so the push fails with a mangled source ref. The instance signing
 key can differ from production: pass its public key explicitly for local replay
 and label the result as instance-signed. Never copy private keys into evidence.
 
@@ -190,8 +189,8 @@ records; verify those after publication. Report any additional production-only
 gap immediately.
 
 The publishing run replays and validates its own tree before it pushes. That tree
-differs from the hosted candidate only in the generated `last-release-sha`, so the
-hosted run and validate-only together cover it.
+differs from the hosted candidate only in the generated `last-release-sha`, which
+the verifier checks after publication.
 
 Exit: reviewer-accepted resolutions, a clean replay ref/tree, and green
 validate-only on the exact frozen dev/target/resolutions. Record platform proofs
@@ -248,7 +247,7 @@ refreshes its owning documentation. Map each row through the replay's
 original-to-rewritten commit mapping onto the published chain, which the verifier
 proved equal position for position. Don't match by subject: every rebase adds
 generated commits whose subjects repeat. Recompute each identity with the engine's
-`commitIdentity` and add keep rows for new published commits. When a partial row's identity moved only through upstream context or content drift (the engine hashes moved files whole), and `git range-diff` shows the fork's own changes unchanged, move its receipt to the new identity. Cite the resolution SHA, the publishing run and that range-diff in its evidence. Prove the result with `planRebase` on published
+`commitIdentity` and add keep rows for new published commits. When a partial row's identity moved only through upstream context or content drift (the engine hashes moved files whole), and `git range-diff` shows the fork's own changes unchanged, move its receipt to the new identity. Cite the resolution SHA, the publishing run and that range-diff in its evidence. If the range-diff shows the fork's own changes moved, leave the receipt stale: the row needs a new source review before the next replay. Prove the result with `planRebase` on published
 dev plus the new ledger: no mismatch and no drops. Preparation runs the
 engine replayPlan ledger check before rehearsal so stale records fail locally.
 
