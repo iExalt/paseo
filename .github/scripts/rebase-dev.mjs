@@ -1265,6 +1265,7 @@ export async function rebaseDev({
   repositoryPath,
   remote = "origin",
   diagnosticsPath,
+  summaryPath,
   signingKey,
   publicKey = SIGNING_PUBLIC_KEY,
 } = {}) {
@@ -1397,7 +1398,38 @@ export async function rebaseDev({
       "Rebase completed; this snapshot will aid diagnosis if a later validation or publication step fails.",
       repositoryPath,
     );
-    return { ...snapshots, signedCommits, fixupCommits, provenanceCommits, boundaryCommits };
+    const commitMapping = plan.retained.map((original, index) => ({
+      original,
+      rewritten: rebasedCommits[index],
+    }));
+    if (summaryPath) {
+      await appendFile(
+        summaryPath,
+        [
+          "## Replay completed (validation pending)",
+          "",
+          `Captured dev: ${snapshots.dev}`,
+          `Captured upstream: ${snapshots.upstream}`,
+          `Captured resolutions: ${snapshots.resolutions}`,
+          "",
+          `Signed replay commits: ${signedCommits}; generated fixup: ${fixupCommits}, provenance: ${provenanceCommits}, release boundary: ${boundaryCommits}.`,
+          "",
+          "| Original commit | Signed replay commit |",
+          "| --- | --- |",
+          ...commitMapping.map(({ original, rewritten }) => `| ${original} | ${rewritten} |`),
+          ...drops.map(({ sha }) => `| ${sha} | Dropped by reviewed ledger |`),
+          "",
+        ].join("\n"),
+      );
+    }
+    return {
+      ...snapshots,
+      signedCommits,
+      fixupCommits,
+      provenanceCommits,
+      boundaryCommits,
+      commitMapping,
+    };
   } catch (error) {
     await writeDiagnostics(diagnosticsPath, snapshots, error.message, repositoryPath);
     throw error;
@@ -1541,6 +1573,15 @@ async function main() {
     const testedSha = await validateRebase({ repositoryPath });
     if (process.env.GITHUB_OUTPUT)
       await appendFile(process.env.GITHUB_OUTPUT, `tested-sha=${testedSha}\n`);
+    if (process.env.GITHUB_STEP_SUMMARY) {
+      const testedTree = (
+        await gitChecked(repositoryPath, ["rev-parse", `${testedSha}^{tree}`])
+      ).trim();
+      await appendFile(
+        process.env.GITHUB_STEP_SUMMARY,
+        `\n## Routine validation passed\n\nTested SHA: ${testedSha}\n\nTested tree: ${testedTree}\n`,
+      );
+    }
     console.log(`Routine verification passed for ${testedSha}`);
     return;
   }
@@ -1549,6 +1590,7 @@ async function main() {
   const snapshots = await rebaseDev({
     repositoryPath,
     diagnosticsPath: process.env.REBASE_DEV_DIAGNOSTICS,
+    summaryPath: process.env.GITHUB_STEP_SUMMARY,
     signingKey,
   });
   for (const drop of snapshots.drops ?? []) console.log(`Ledger drop: ${JSON.stringify(drop)}`);

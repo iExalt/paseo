@@ -583,7 +583,17 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   const workflow = yaml.load(
     readFileSync(new URL("../workflows/rebase-dev.yml", import.meta.url), "utf8"),
   );
-  assert.deepEqual(workflow.on, { workflow_dispatch: null });
+  assert.deepEqual(workflow.on, {
+    workflow_dispatch: {
+      inputs: {
+        validate_only: {
+          description: "Validate the signed rebase without publishing any refs",
+          type: "boolean",
+          default: false,
+        },
+      },
+    },
+  });
   assert.deepEqual(workflow.permissions, {});
   assert.equal(workflow.concurrency["cancel-in-progress"], false);
   assert.equal(workflow.jobs.rebase["timeout-minutes"], 45);
@@ -636,6 +646,39 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   const helper = readFileSync(new URL("./rebase-dev.mjs", import.meta.url), "utf8");
   assert.match(helper, /--reapply-cherry-picks/);
   assert.match(helper, /--empty=stop/);
+});
+
+test("validate-only skips publication and never requests a write-capable token", () => {
+  const workflow = yaml.load(
+    readFileSync(new URL("../workflows/rebase-dev.yml", import.meta.url), "utf8"),
+  );
+  const steps = workflow.jobs.rebase.steps;
+  const guarded = steps.filter((step) => step.if === "${{ !inputs.validate_only }}");
+  assert.deepEqual(
+    guarded.map((step) => step.id ?? step.name),
+    ["token", "Publish backup and rebased dev atomically"],
+  );
+  assert.deepEqual(
+    steps.filter((step) => step.if),
+    [...guarded, steps.at(-1)],
+  );
+  const [token, publish] = guarded;
+  assert.equal(token.with["permission-contents"], "write");
+  assert.equal(token.with["permission-workflows"], "write");
+  assert.deepEqual(workflow.permissions, {});
+  assert.deepEqual(workflow.jobs.rebase.permissions, { contents: "read" });
+  assert.deepEqual(
+    steps.filter((step) => /create-github-app-token/.test(step.uses ?? "")),
+    [token],
+  );
+  assert.deepEqual(
+    steps.filter((step) => /rebase-dev\.mjs publish/.test(step.run ?? "")),
+    [publish],
+  );
+  for (const step of steps) {
+    if (step !== token) assert.equal(step.with?.["private-key"], undefined);
+    if (step !== publish) assert.equal(step.env?.GH_TOKEN, undefined);
+  }
 });
 
 test("resolution export and import preserve arbitrary Git blob bytes", async () => {
@@ -724,6 +767,13 @@ test("known rerere resolution is imported and resumes while preserving adapted c
     `${fixture.upstreamSha}..HEAD~2`,
   ).split("\n");
   assert.equal(rewrittenCommits.length, originalCommits.length);
+  assert.deepEqual(
+    snapshots.commitMapping,
+    originalCommits.map((original, index) => ({
+      original,
+      rewritten: rewrittenCommits[index],
+    })),
+  );
   const allowedSigners = join(fixture.directory, "allowed-signers");
   writeFileSync(
     allowedSigners,
@@ -1195,6 +1245,7 @@ test("validation CLI binds the shared command to a clean tested SHA", async () =
   const originalSha = git(repositoryPath, "rev-parse", "HEAD");
   const invocation = join(root, "validation-invocation.json");
   const output = join(root, "validation-output.txt");
+  const summary = join(root, "validation-summary.md");
   const fakeMise = join(bin, "mise");
   writeFileSync(
     fakeMise,
@@ -1211,6 +1262,7 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
   chmodSync(fakeMise, 0o755);
   const invoke = (mode = "success") => {
     rmSync(output, { force: true });
+    rmSync(summary, { force: true });
     rmSync(invocation, { force: true });
     return spawnSync(
       process.execPath,
@@ -1222,6 +1274,7 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
           ...process.env,
           PATH: `${bin}:${process.env.PATH}`,
           GITHUB_OUTPUT: output,
+          GITHUB_STEP_SUMMARY: summary,
           FIXTURE_INVOCATION: invocation,
           FIXTURE_MODE: mode,
         },
@@ -1235,6 +1288,10 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
     sha: originalSha,
   });
   assert.equal(readFileSync(output, "utf8"), `tested-sha=${originalSha}\n`);
+  assert.equal(
+    readFileSync(summary, "utf8"),
+    `\n## Routine validation passed\n\nTested SHA: ${originalSha}\n\nTested tree: ${git(repositoryPath, "rev-parse", `${originalSha}^{tree}`)}\n`,
+  );
   for (const [mode, error] of [
     ["fail", /Routine verification failed \(17\)/],
     ["dirty", /clean tracked/],
@@ -1245,6 +1302,7 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
     assert.equal(result.status, 1, result.stderr);
     assert.match(result.stderr, error);
     assert.equal(existsSync(output), false);
+    assert.equal(existsSync(summary), false);
     git(repositoryPath, "reset", "--hard", originalSha);
     rmSync(join(repositoryPath, ".env.local"), { force: true });
   }
@@ -1358,9 +1416,11 @@ test("ledger drops exact stable identities and preserves retained signatures and
   git(clone, "config", "rebase.instructionFormat", "%h %s");
   const diagnostics = join(fixture.directory, "diagnostics.txt");
   const refs = git(clone, "ls-remote", "--refs", "origin");
+  const summary = join(fixture.directory, "replay-summary.md");
   const result = await rebaseDev({
     repositoryPath: clone,
     diagnosticsPath: diagnostics,
+    summaryPath: summary,
     ...signingOptions,
   });
   assert.deepEqual(
@@ -1387,6 +1447,29 @@ test("ledger drops exact stable identities and preserves retained signatures and
       git(seed, "show", "-s", `--format=${format}`, kept),
     );
   assert.match(git(clone, "cat-file", "commit", rewritten), /gpgsig -----BEGIN SSH SIGNATURE-----/);
+  const replaySummary = readFileSync(summary, "utf8");
+  assert.match(replaySummary, /Replay completed \(validation pending\)/);
+  assert.doesNotMatch(replaySummary, /Routine validation passed|Tested SHA|Tested tree/);
+  assert.ok(replaySummary.includes(fixture.upstreamSha));
+  assert.ok(replaySummary.includes(result.dev));
+  assert.ok(replaySummary.includes(result.resolutions));
+  const signedReplay = git(clone, "rev-list", "--reverse", `${fixture.upstreamSha}..HEAD~2`).split(
+    "\n",
+  );
+  assert.deepEqual(
+    result.commitMapping.map(({ rewritten: signedSha }) => signedSha),
+    signedReplay,
+  );
+  assert.deepEqual(
+    result.commitMapping.find(({ original }) => original === kept),
+    { original: kept, rewritten },
+  );
+  for (const { original, rewritten: signedSha } of result.commitMapping) {
+    assert.ok(![full, empty].includes(original));
+    assert.ok(replaySummary.includes(`| ${original} | ${signedSha} |`));
+  }
+  for (const dropped of [full, empty])
+    assert.ok(replaySummary.includes(`| ${dropped} | Dropped by reviewed ledger |`));
   const report = readFileSync(diagnostics, "utf8");
   assert.match(report, /Upstream owns this binary/);
   assert.match(report, /Obsolete nonrelease marker/);
