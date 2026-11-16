@@ -108,7 +108,12 @@ Run the entire routine plan locally on the clean fresh replay before any hosted
 dispatch, including inventory and contract gates. Targeted tests alone missed an
 indirect CLI mock and two new platform splits in the first trial. List the plan
 with `mise run --skip-tools ci:routine --plan`; install every declared prerequisite,
-including the Electron binary and Linux libraries. Keep logs and receipts outside
+including zstd, the Electron binary and Linux libraries. Preflight probes process
+visibility too: restricted Linux /proc access can reach the cleanup helper's
+GitHub-hosted-only elevated path. The disposable instance used for the first
+trial could not satisfy that capability. Keep the routine gate red and use a
+supported proof environment or obtain a user-approved acceptance change before
+resuming dispatch. Never label a partial plan as a full routine pass. Keep logs and receipts outside
 the replay checkout:
 
 ```sh

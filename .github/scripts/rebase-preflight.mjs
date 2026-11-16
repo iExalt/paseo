@@ -105,6 +105,24 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
   check("Mise nounset startup", () =>
     invoke("zsh", ["-euc", "source ~/.zshenv; mise --version; mise exec -- node --version"]),
   );
+  check("zstd available", () => invoke("zstd", ["--version"]).trim());
+  check("routine process visibility", () => {
+    assert.equal(
+      invoke("node", [
+        "--input-type=module",
+        "-e",
+        `
+      if (process.platform === "linux") {
+        const { ownedProcesses } = await import("./.github/scripts/deep-cleanup.mjs");
+        const { randomUUID } = await import("node:crypto");
+        ownedProcesses(randomUUID());
+      }
+      console.log("routine-process-scan-ok");
+    `,
+      ]).trim(),
+      "routine-process-scan-ok",
+    );
+  });
   check("pinned Node", () => {
     const versions = readFileSync(`${repositoryPath}/.tool-versions`, "utf8");
     const version = /^nodejs\s+(\S+)/m.exec(versions)?.[1];

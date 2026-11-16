@@ -1649,6 +1649,7 @@ test("preflight aggregates independent environment failures and confines push to
       if (file === "zsh") throw new Error("nounset broken");
       if (file === "node") return "v1.0.0";
       if (file === "npm") return "1.0.0";
+      if (file === "zstd") throw new Error("zstd missing");
       if (args[0] === "ls-remote") return `${"b".repeat(40)}\trefs/heads/upstream/main`;
       if (args[0] === "--version") return "git version 2.54.0";
       if (args[0] === "show") return "N wrong@example.invalid";
@@ -1658,7 +1659,12 @@ test("preflight aggregates independent environment failures and confines push to
     },
   });
   assert.equal(result.ok, false);
-  assert.equal(result.checks.filter((entry) => !entry.ok).length, 9);
+  assert.equal(result.checks.filter((entry) => !entry.ok).length, 11);
+  assert.equal(result.checks.find((entry) => entry.name === "zstd available").ok, false);
+  assert.equal(
+    result.checks.find((entry) => entry.name === "routine process visibility").ok,
+    false,
+  );
   const push = calls.find((args) => args[1] === "push");
   assert.deepEqual(push.slice(0, 4), ["git", "push", "--dry-run", "origin"]);
   assert.match(push[4], /^HEAD:refs\/heads\/rebase-candidate\/preflight-\d+$/);
@@ -1770,22 +1776,26 @@ test("publication generated suffix permits dates alone to differ", () => {
 test("publication entry point verifies real pinned signatures and exact GitHub rows", () => {
   const repositoryPath = join(root, "publication-proof");
   initRepo(repositoryPath);
+  const dates = {
+    GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z",
+    GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
+  };
   mkdirSync(join(repositoryPath, ".github"));
   writeFileSync(join(repositoryPath, "shared.txt"), "upstream\n");
-  commit(repositoryPath, "upstream");
+  commit(repositoryPath, "upstream", dates);
   const upstream = git(repositoryPath, "rev-parse", "HEAD");
   writeFileSync(
     join(repositoryPath, ".github/fork-release.json"),
     JSON.stringify({ upstreamBase: upstream }),
   );
   writeFileSync(join(repositoryPath, "shared.txt"), "release\n");
-  commit(repositoryPath, "release boundary");
+  commit(repositoryPath, "release boundary", dates);
   const original = git(repositoryPath, "rev-parse", "HEAD");
   writeFileSync(
     join(repositoryPath, "release-please-config.json"),
     JSON.stringify({ "last-release-sha": original }) + "\n",
   );
-  commit(repositoryPath, "original config");
+  commit(repositoryPath, "original config", dates);
   const backupSha = git(repositoryPath, "rev-parse", "HEAD");
   const tree = git(repositoryPath, "rev-parse", `${original}^{tree}`);
   const sign = (parent, commitTree, message, key) =>
@@ -1804,7 +1814,7 @@ test("publication entry point verifies real pinned signatures and exact GitHub r
         "-m",
         message,
       ],
-      { cwd: repositoryPath, encoding: "utf8" },
+      { cwd: repositoryPath, encoding: "utf8", env: { ...process.env, ...dates } },
     ).trim();
   const a = sign(upstream, tree, "release boundary", wrongSigningKeyPath);
   const b = sign(upstream, tree, "release boundary", testSigningKeyPath);
