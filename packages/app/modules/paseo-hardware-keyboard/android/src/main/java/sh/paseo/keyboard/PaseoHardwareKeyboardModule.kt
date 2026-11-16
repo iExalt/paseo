@@ -6,6 +6,7 @@ import android.hardware.input.InputManager
 import android.os.Handler
 import android.os.Looper
 import android.view.InputDevice
+import android.view.KeyCharacterMap
 import android.view.KeyEvent
 import android.view.Window
 import android.widget.EditText
@@ -26,6 +27,7 @@ internal object HardwareKeyboard {
   @Volatile var overlayKeys: Set<String> = emptySet()
   private val windows = mutableMapOf<Window, KeyboardWindowCallback>()
   val dispatcher = WindowKeyDispatcher<KeyEvent>()
+  val composerSubmit = ComposerSubmitKeys()
   private val consumedPresses = mutableSetOf<Int>()
   private val terminalArrowCodes = setOf("ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight")
 
@@ -44,10 +46,26 @@ internal object HardwareKeyboard {
     consumedPresses.clear()
   }
 
-  fun dispatch(event: KeyEvent, composing: Boolean, terminalFocused: Boolean): Boolean {
-    if (event.flags and KeyEvent.FLAG_SOFT_KEYBOARD != 0) return false
+  fun dispatch(event: KeyEvent, composing: Boolean, terminalFocused: Boolean, editableFocused: Boolean): Boolean {
     if (event.action != KeyEvent.ACTION_DOWN && event.action != KeyEvent.ACTION_UP) return false
     val code = code(event.keyCode)
+    val unmodified = !event.isAltPressed && !event.isCtrlPressed && !event.isMetaPressed && !event.isShiftPressed
+    val physical = event.flags and KeyEvent.FLAG_SOFT_KEYBOARD == 0 &&
+      event.deviceId != KeyCharacterMap.VIRTUAL_KEYBOARD && event.device?.isVirtual == false
+    val submitted = composerSubmit.dispatch(ComposerSubmitPress(
+      keyCode = event.keyCode,
+      down = event.action == KeyEvent.ACTION_DOWN,
+      repeat = event.repeatCount > 0,
+      enter = code == "Enter",
+      physical = physical,
+      unmodified = unmodified,
+      composing = composing,
+      editable = editableFocused,
+      terminal = terminalFocused,
+      overlayOwnsKey = code in overlayKeys && unmodified && !composing,
+    )) { module?.emitSubmit() }
+    if (submitted) return true
+    if (event.flags and KeyEvent.FLAG_SOFT_KEYBOARD != 0) return false
     if (code.isEmpty()) return false
     val textModifiers = event.metaState and KeyEvent.META_CTRL_MASK.inv() and KeyEvent.META_META_MASK.inv()
     val character = event.getUnicodeChar(textModifiers)
@@ -123,7 +141,7 @@ private class KeyboardWindowCallback(private val window: Window, val previous: W
     val terminalFocused = focus?.getTag(R.id.view_tag_native_id) == TERMINAL_INPUT_NATIVE_ID
     return HardwareKeyboard.dispatcher.dispatch(
       event,
-      { HardwareKeyboard.dispatch(event, composing, terminalFocused) },
+      { HardwareKeyboard.dispatch(event, composing, terminalFocused, focus is EditText) },
       { previous.dispatchKeyEvent(event) },
     )
   }
@@ -147,7 +165,7 @@ class PaseoHardwareKeyboardModule : Module(), ExtraWindowEventListener, InputMan
   override fun onExtraWindowDestroy(window: Window) { HardwareKeyboard.release(window) }
   override fun definition() = ModuleDefinition {
     Name("PaseoHardwareKeyboard")
-    Events("onHardwareKeyboardShortcut", "onHardwareKeyboardPresenceChanged")
+    Events("onHardwareKeyboardShortcut", "onHardwareKeyboardPresenceChanged", "onHardwareKeyboardSubmit")
     OnCreate {
       HardwareKeyboard.module = this@PaseoHardwareKeyboardModule
       val context = appContext.reactContext
@@ -167,14 +185,19 @@ class PaseoHardwareKeyboardModule : Module(), ExtraWindowEventListener, InputMan
       registeredReactContext = null
       if (HardwareKeyboard.module === this@PaseoHardwareKeyboardModule) {
         HardwareKeyboard.module = null
+        HardwareKeyboard.composerSubmit.reset()
         HardwareKeyboard.overlayKeys = emptySet()
         UiThreadUtil.runOnUiThread { if (HardwareKeyboard.module == null) HardwareKeyboard.releaseAll() }
       }
+    }
+    Function("setHardwareKeyboardSubmitEnabled") { enabled: Boolean ->
+      HardwareKeyboard.composerSubmit.enabled = enabled
     }
     Function("getHardwareKeyboardPresent") { keyboardPresent() }
     Function("setOverlayKeys") { keys: List<String> ->
       HardwareKeyboard.overlayKeys = keys.filter { it in setOf("Escape", "Enter", "ArrowUp", "ArrowDown") }.toSet()
     }
   }
+  internal fun emitSubmit() { sendEvent("onHardwareKeyboardSubmit", emptyMap<String, Any>()) }
   internal fun emit(event: Map<String, Any>) { sendEvent("onHardwareKeyboardShortcut", event) }
 }

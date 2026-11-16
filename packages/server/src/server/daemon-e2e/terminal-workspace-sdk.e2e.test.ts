@@ -1,4 +1,3 @@
-import { resolveDaemonVersion } from "../daemon-version.js";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { tmpdir } from "node:os";

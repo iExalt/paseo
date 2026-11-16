@@ -136,7 +136,7 @@ export async function hostGivesAgentsPaseoTools(host: { port: number }): Promise
     Pick<InternalDaemonClient, "connect" | "close" | "getDaemonConfig">
   >({ clientIdPrefix: "app-e2e-onboarding", port: host.port });
   try {
-    return (await client.getDaemonConfig()).config.mcp.injectIntoAgents !== false;
+    return (await client.getDaemonConfig()).config.mcp?.injectIntoAgents !== false;
   } finally {
     await client.close();
   }

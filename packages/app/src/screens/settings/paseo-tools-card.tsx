@@ -22,7 +22,7 @@ export function PaseoToolsCard({ serverId }: { serverId: string }) {
   return (
     <SettingsCard testID="host-page-inject-mcp-card">
       <PaseoToolsRow
-        value={config?.mcp.injectIntoAgents !== false}
+        value={config?.mcp?.injectIntoAgents !== false}
         onValueChange={handleValueChange}
       />
     </SettingsCard>

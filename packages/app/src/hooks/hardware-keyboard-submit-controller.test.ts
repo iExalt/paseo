@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   createHardwareKeyboardSubmitController,
@@ -130,4 +132,20 @@ describe("hardware-keyboard-submit-controller", () => {
 
     expect(keyboard.isEnabled).toBe(false);
   });
+});
+
+// The JS facade and the Expo registration can survive a merge independently.
+// Check the selected native owner, not an unregistered class with the same name.
+it("the registered Android module provides the composer submit API and event", () => {
+  const moduleRoot = path.resolve(import.meta.dirname, "../../modules/paseo-hardware-keyboard");
+  const registration = JSON.parse(
+    readFileSync(path.join(moduleRoot, "expo-module.config.json"), "utf8"),
+  );
+  const [owner] = registration.android.modules;
+  const source = readFileSync(
+    path.join(moduleRoot, "android/src/main/java", owner.replaceAll(".", "/") + ".kt"),
+    "utf8",
+  );
+  expect(source).toContain('Function("setHardwareKeyboardSubmitEnabled")');
+  expect(source).toContain('"onHardwareKeyboardSubmit"');
 });

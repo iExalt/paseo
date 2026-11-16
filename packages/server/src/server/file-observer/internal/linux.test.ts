@@ -12,7 +12,6 @@ test("a file created immediately before new directory coverage is discovered", a
   const root = await mkdtemp(join(tmpdir(), "linux-coverage-"));
   const nested = join(root, "nested");
   const created = join(nested, "during-attach.txt");
-  await mkdir(nested);
   const paths = createObserverPaths(process.platform);
   const observer = createFileObserver();
   let active = true;
@@ -40,6 +39,9 @@ test("a file created immediately before new directory coverage is discovered", a
   );
   try {
     await backend.start();
+    expect(delivered).toEqual([]);
+    await mkdir(nested);
+    await backend.updateIgnore();
     expect(delivered).toContain(created);
   } finally {
     active = false;

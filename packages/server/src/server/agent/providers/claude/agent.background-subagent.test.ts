@@ -860,7 +860,56 @@ test("Claude session started by a control request without a turn can stop its ru
 test.each(["create", "resume"] as const)(
   "an unlaunched Claude %s session does not block an idle daemon upgrade",
   async (operation) => {
-    const launch = vi.fn(() => buildQueryMock([]) as unknown as Query);
+    let finish!: (value: IteratorResult<SDKMessage>) => void;
+    const pending = new Promise<IteratorResult<SDKMessage>>((resolve) => {
+      finish = resolve;
+    });
+    const query = buildQueryMock([]);
+    let nativeInput!: AsyncIterator<SDKUserMessage>;
+    let stage = 0;
+    let awaitingNext = false;
+    query.next = vi.fn(async () => {
+      if (stage++ === 0) {
+        const input = await nativeInput.next();
+        return {
+          done: false,
+          value: { type: "command_lifecycle", command_uuid: input.value.uuid, state: "started" },
+        };
+      }
+      if (stage === 2)
+        return {
+          done: false,
+          value: {
+            type: "system",
+            subtype: "init",
+            session_id: "no-roster",
+            claude_code_version: "2.1.220",
+          },
+        };
+      if (stage === 3)
+        return {
+          done: false,
+          value: {
+            type: "result",
+            subtype: "success",
+            usage: { input_tokens: 1, output_tokens: 1 },
+            total_cost_usd: 0,
+          },
+        };
+      awaitingNext = true;
+      return pending;
+    });
+    const launch = vi.fn(
+      ({
+        prompt,
+      }: Parameters<
+        NonNullable<ConstructorParameters<typeof ClaudeAgentClient>[0]["queryFactory"]>
+      >[0]) => {
+        if (typeof prompt === "string") throw new Error("Expected streaming input");
+        nativeInput = prompt[Symbol.asyncIterator]();
+        return query as unknown as Query;
+      },
+    );
     const client = new ClaudeAgentClient({
       logger: createTestLogger(),
       queryFactory: launch,
@@ -878,12 +927,16 @@ test.each(["create", "resume"] as const)(
     try {
       expect(await session.canStopRuntime!()).toBe(true);
       expect(launch).not.toHaveBeenCalled();
-      // A launched query without a roster must still fail closed, even when
-      // no foreground turn was started (for example, fetching slash commands).
-      await session.listCommands!();
+      // An old CLI has completed a turn but supplies no background roster.
+      // Keep its iterator live after consuming completion to retain that ownership.
+      await session.startTurn("finish without a roster");
+      await expect.poll(() => awaitingNext).toBe(true);
       expect(launch).toHaveBeenCalledOnce();
       expect(await session.canStopRuntime!()).toBe(false);
+      finish({ done: true, value: undefined });
+      await expect.poll(() => session.canStopRuntime!()).toBe(true);
     } finally {
+      finish({ done: true, value: undefined });
       await session.close();
     }
   },

@@ -89,7 +89,7 @@ test("the copied session ID targets the same agent through the daemon and the CL
     const after = (await ctx.client.fetchAgents()).entries.map((entry) => entry.agent.id);
     expect(after.sort()).toEqual(listed.map((entry) => entry.id).sort());
     const storage = ctx.daemon.daemon.agentStorage;
-    expect(await storage.list()).toHaveLength(listed.length);
+    expect(await storage.listAll()).toHaveLength(listed.length);
 
     // A second agent holding the same session ID makes it ambiguous on both paths; neither picks one.
     const stored = await storage.get(created.id);

@@ -9,7 +9,7 @@ import {
   parseTerminalColor,
 } from "./colors";
 import { createNativeHeadlessTerminal } from "./headless-terminal-state";
-import { buildTerminalFrame } from "./terminal-frame";
+import { buildTerminalFrame, createTerminalFindStyleResolver } from "./terminal-frame";
 import { createNativeTerminalOutputDrain } from "./headless-terminal-output-drain";
 import { resolveMeasuredNativeTerminalSize } from "./terminal-size-measurement";
 
@@ -241,4 +241,59 @@ test("builds native frames after replay commits at captured geometry and the lat
     drain.dispose();
     terminal.dispose();
   }
+});
+
+function backgroundColumns(styles: number[]): number[] {
+  const columns: number[] = [];
+  for (let index = 0; index < styles.length; index += 4) {
+    for (let count = 0; count < styles[index]!; count++) columns.push(styles[index + 2]!);
+  }
+  return columns;
+}
+
+test("find paints absolute rows with the current match above ordinary matches while retaining selection", async () => {
+  const original = await frameFor("abc\r\ndef", { cols: 4, rows: 2 });
+  const state = { ...original.state, firstRow: 100 };
+  const selection = { start: { row: 100, col: 1 }, end: { row: 101, col: 2 }, coordinateEpoch: 0 };
+  const findResolver = createTerminalFindStyleResolver({
+    state,
+    columns: 4,
+    resolver,
+    find: {
+      matches: [
+        { startRow: 99, startCol: 0, endRow: 100, endCol: 2 },
+        { startRow: 101, startCol: 0, endRow: 101, endCol: 1 },
+      ],
+      current: { startRow: 100, startCol: 1, endRow: 100, endCol: 2 },
+    },
+    matchColor: 0xffaabbcc,
+    currentColor: 0xff112233,
+  });
+  const frame = buildTerminalFrame({ state, columns: 4, resolver: findResolver, selection });
+  expect(backgroundColumns(frame.rows[0]!.styles)).toEqual([0xffaabbcc, 0xff112233, 0, 0]);
+  expect(backgroundColumns(frame.rows[1]!.styles)).toEqual([0xffaabbcc, 0, 0, 0]);
+  expect(frame.selection).toEqual({ startRow: 0, startCol: 1, endRow: 1, endCol: 2 });
+  expect(frame.rows.map((row) => row.cells)).toEqual(original.frame.rows.map((row) => row.cells));
+});
+
+test("find includes a wide glyph touched on its continuation column and excludes the half-open end", async () => {
+  const { state } = await frameFor("界ab", { cols: 4, rows: 1 });
+  const findResolver = createTerminalFindStyleResolver({
+    state,
+    columns: 4,
+    resolver,
+    find: {
+      matches: [{ startRow: 0, startCol: 1, endRow: 0, endCol: 2 }],
+      current: { startRow: 0, startCol: 2, endRow: 0, endCol: 3 },
+    },
+    matchColor: 0xffaabbcc,
+    currentColor: 0xff112233,
+  });
+  const frame = buildTerminalFrame({ state, columns: 4, resolver: findResolver, selection: null });
+  expect(backgroundColumns(frame.rows[0]!.styles)).toEqual([0xffaabbcc, 0xffaabbcc, 0xff112233, 0]);
+  expect(cellLayout(frame.rows[0]!)).toEqual([
+    { text: "界", col: 0, span: 2 },
+    { text: "a", col: 2, span: 1 },
+    { text: "b", col: 3, span: 1 },
+  ]);
 });

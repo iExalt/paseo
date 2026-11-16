@@ -1,3 +1,4 @@
+import { usesDesktopBindings } from "./internal/conventions";
 import type { KeyboardFocusScope } from "@/keyboard/actions";
 import {
   type ChordState,
@@ -130,6 +131,7 @@ export function buildNativeShortcutPolicy(input: {
   const contextFor = (typing: boolean) => ({
     isMac,
     isDesktop: false,
+    usesDesktopBindings,
     commandCenterOpen,
     focusScope: resolveNativeKeyboardFocusScope({ typing, typingScope, commandCenterOpen }),
   });
