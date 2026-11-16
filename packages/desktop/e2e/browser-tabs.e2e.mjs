@@ -1662,9 +1662,9 @@ async function main() {
     writeJson(path.join(artifactDir, "result.json"), {
       ...report,
       browserCli,
-      ...(settingsMemory ? { settingsMemory } : {}),
+      ...(settings.settingsMemory ? { settingsMemory: settings.settingsMemory } : {}),
       ...(pluginLinks ? { pluginLinks } : {}),
-      ...(adaptiveTheme ? { adaptiveTheme } : {}),
+      ...(settings.adaptiveTheme ? { adaptiveTheme: settings.adaptiveTheme } : {}),
     });
     console.log(
       `Browser desktop browser E2E passed: WebContents ${report.originalWebContentsId} remained ${report.finalWebContentsId}; viewport, inactive capture, focus continuity, list, snapshot, click, local-page selectors passed.`,
