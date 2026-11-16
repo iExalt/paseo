@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.29.1](https://github.com/iExalt/paseo/compare/paseo-v0.29.0...paseo-v0.29.1) (2026-11-16)
+
+
+### Bug Fixes
+
+* **desktop:** sign the installed macOS app with a stable identity ([#511](https://github.com/iExalt/paseo/issues/511)) ([f772e00](https://github.com/iExalt/paseo/commit/f772e0002b00fcc658be98944aa123a45e40ae6e))
+* **server:** ignore skill rewrites that leave the catalog unchanged ([#509](https://github.com/iExalt/paseo/issues/509)) ([3412bed](https://github.com/iExalt/paseo/commit/3412bed90f9c361de039e3c0ed1d61c9050bf102))
+
 ## [0.29.0](https://github.com/iExalt/paseo/compare/paseo-v0.28.0...paseo-v0.29.0) (2026-11-16)
 
 
