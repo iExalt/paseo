@@ -1,0 +1,272 @@
+diff --git a/packages/app/src/app/_layout.tsx b/packages/app/src/app/_layout.tsx
+index 9f796ee2c..e3d653baf 100644
+--- a/packages/app/src/app/_layout.tsx
++++ b/packages/app/src/app/_layout.tsx
+@@ -956,12 +956,30 @@ function RootStack() {
+       </Stack.Protected>
+       <Stack.Screen name="h/[serverId]" />
+       <Stack.Screen name="settings/hosts/[serverId]/index" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+-      <Stack.Screen name="settings/hosts/[serverId]/[hostSection]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+-      <Stack.Screen name="settings/hosts/[serverId]/plugins/[pluginId]/index" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+-      <Stack.Screen name="settings/hosts/[serverId]/plugins/[pluginId]/[screenId]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+-      <Stack.Screen name="settings/hosts/[serverId]/plugin-directory/[owner]/[slug]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+-      <Stack.Screen name="settings/hosts/[serverId]/projects/index" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+-      <Stack.Screen name="settings/hosts/[serverId]/projects/[projectId]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
++      <Stack.Screen
++        name="settings/hosts/[serverId]/[hostSection]"
++        options={SETTINGS_PAGE_SCREEN_OPTIONS}
++      />
++      <Stack.Screen
++        name="settings/hosts/[serverId]/plugins/[pluginId]/index"
++        options={SETTINGS_PAGE_SCREEN_OPTIONS}
++      />
++      <Stack.Screen
++        name="settings/hosts/[serverId]/plugins/[pluginId]/[screenId]"
++        options={SETTINGS_PAGE_SCREEN_OPTIONS}
++      />
++      <Stack.Screen
++        name="settings/hosts/[serverId]/plugin-directory/[owner]/[slug]"
++        options={SETTINGS_PAGE_SCREEN_OPTIONS}
++      />
++      <Stack.Screen
++        name="settings/hosts/[serverId]/projects/index"
++        options={SETTINGS_PAGE_SCREEN_OPTIONS}
++      />
++      <Stack.Screen
++        name="settings/hosts/[serverId]/projects/[projectId]"
++        options={SETTINGS_PAGE_SCREEN_OPTIONS}
++      />
+     </ThemedStack>
+   );
+ }
+diff --git a/packages/app/src/components/markdown/images.ts b/packages/app/src/components/markdown/images.ts
+index 29ed1482d..c1d253949 100644
+--- a/packages/app/src/components/markdown/images.ts
++++ b/packages/app/src/components/markdown/images.ts
+@@ -60,7 +60,15 @@ export function useMarkdownSource(
+         imageLabel,
+         imageUnavailableLabel,
+       }),
+-    [text, context.workspaceRoot, commandNames, forgeReferencePattern, external, imageLabel, imageUnavailableLabel],
++    [
++      text,
++      context.workspaceRoot,
++      commandNames,
++      forgeReferencePattern,
++      external,
++      imageLabel,
++      imageUnavailableLabel,
++    ],
+   );
+   const sources = [...new Set(prepared.images.map((image) => image.source))];
+   const acquisitions = sources.map((source) => {
+diff --git a/packages/app/src/components/markdown/renderer.tsx b/packages/app/src/components/markdown/renderer.tsx
+index 3cb8ff51a..1973ef2c7 100644
+--- a/packages/app/src/components/markdown/renderer.tsx
++++ b/packages/app/src/components/markdown/renderer.tsx
+@@ -145,6 +145,10 @@ const MarkdownPart = memo(function MarkdownPart({
+   find: _find,
+   ...imageContext
+ }: MarkdownRendererProps & { commandHints?: CommandHints | null; highlight?: boolean }) {
++  let md4cFlags = highlight ? FIND_MD4C_FLAGS : MD4C_FLAGS;
++  if (external) {
++    md4cFlags = highlight ? EXTERNAL_FIND_MD4C_FLAGS : EXTERNAL_MD4C_FLAGS;
++  }
+   const environment = useAssistantFileLinkEnvironment();
+   const actions = useAssistantFileLinkActions();
+   const workspaceForgeShorthand = useForgeShorthand();
+@@ -154,20 +158,21 @@ const MarkdownPart = memo(function MarkdownPart({
+     (environment.client?.readFile
+       ? { readFile: environment.client.readFile.bind(environment.client) }
+       : undefined);
+-  const { markdown, imageSources, imageAttachments, linkRecognition, linkSource } = useMarkdownSource(
+-    text,
+-    {
+-      workspaceRoot: environment.workspaceRoot,
+-      serverId: environment.serverId,
+-      ...imageContext,
+-      client,
+-    },
+-    {
+-      commandNames: commandHints?.names,
+-      forgeReferencePattern: forgeShorthand?.pattern,
+-      external,
+-    },
+-  );
++  const { markdown, imageSources, imageAttachments, linkRecognition, linkSource } =
++    useMarkdownSource(
++      text,
++      {
++        workspaceRoot: environment.workspaceRoot,
++        serverId: environment.serverId,
++        ...imageContext,
++        client,
++      },
++      {
++        commandNames: commandHints?.names,
++        forgeReferencePattern: forgeShorthand?.pattern,
++        external,
++      },
++    );
+   const { open: openLightbox, localLightbox } = useAttachmentLightbox();
+   const pressLink = useStableEvent(({ url, sourceType }: LinkPressEvent) => {
+     if (external) {
+@@ -215,7 +220,7 @@ const MarkdownPart = memo(function MarkdownPart({
+               uniProps={pickMarkdownStyle(compact, muted, dialog)}
+               flavor="github"
+               selectable={selectable}
+-              md4cFlags={external ? (highlight ? EXTERNAL_FIND_MD4C_FLAGS : EXTERNAL_MD4C_FLAGS) : (highlight ? FIND_MD4C_FLAGS : MD4C_FLAGS)}
++              md4cFlags={md4cFlags}
+               linkRecognition={linkRecognition}
+               enableTaskListItemToggle={false}
+               enableLinkPreview={false}
+diff --git a/packages/app/src/hooks/use-agent-history.ts b/packages/app/src/hooks/use-agent-history.ts
+index 7012b8962..b9d9f6b03 100644
+--- a/packages/app/src/hooks/use-agent-history.ts
++++ b/packages/app/src/hooks/use-agent-history.ts
+@@ -1,8 +1,3 @@
+-import type {
+-  DaemonClient,
+-  FetchAgentHistoryOptions,
+-  FetchAgentHistoryPageInfo,
+-} from "@getpaseo/client/internal/daemon-client";
+ import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+ import { useCallback, useMemo } from "react";
+ import { useTranslation } from "react-i18next";
+diff --git a/packages/cli/src/commands/agent/archive.test.ts b/packages/cli/src/commands/agent/archive.test.ts
+index de9f6fe68..f3c564d27 100644
+--- a/packages/cli/src/commands/agent/archive.test.ts
++++ b/packages/cli/src/commands/agent/archive.test.ts
+@@ -82,18 +82,20 @@ describe("unlisted agent resolution", () => {
+     expect(client.closed).toBe(true);
+   });
+ 
+-  it("enforces archived and running checks on fetched unlisted agents", async () => {
++  it("preserves idempotent archive and delegates running agents to the daemon", async () => {
+     const archivedClient = new FakeAgentClient(
+       [],
+       [makeAgent(unlistedId, { archivedAt: "2026-11-14T10:00:00.000Z" })],
+     );
+-    await expect(archiveAgent(unlistedId, {}, async () => archivedClient)).rejects.toMatchObject({
+-      code: "AGENT_ALREADY_ARCHIVED",
+-    });
++    const archived = await archiveAgent(unlistedId, {}, async () => archivedClient);
++    expect(archived.data.archivedAt).toBe("2026-11-14T10:00:00.000Z");
++    expect(archivedClient.archived).toEqual([]);
++    expect(archivedClient.closed).toBe(true);
+     const runningClient = new FakeAgentClient([], [makeAgent(unlistedId, { status: "running" })]);
+-    await expect(archiveAgent(unlistedId, {}, async () => runningClient)).rejects.toMatchObject({
+-      code: "AGENT_RUNNING",
+-    });
++    const running = await archiveAgent(unlistedId, {}, async () => runningClient);
++    expect(running.data.archivedAt).toBe("2026-11-15T00:00:00.000Z");
++    expect(runningClient.archived).toEqual([unlistedId]);
++    expect(runningClient.closed).toBe(true);
+   });
+ 
+   it("reloads and detaches unlisted agents via fetchAgent fallback", async () => {
+diff --git a/packages/server/src/server/agent/providers/claude/agent.test.ts b/packages/server/src/server/agent/providers/claude/agent.test.ts
+index be4ec52e0..c38549dcd 100644
+--- a/packages/server/src/server/agent/providers/claude/agent.test.ts
++++ b/packages/server/src/server/agent/providers/claude/agent.test.ts
+@@ -972,13 +972,13 @@ describe("ClaudeAgentSession features", () => {
+     }
+   });
+ 
+-  test("shows Claude's decision reason on bypass-immune permission prompts", async () => {
++  test("shows Claude's decision reason on interactive permission prompts", async () => {
+     const { queryFactory } = createQueryMock();
+     const session = await new ClaudeAgentClient({
+       logger,
+       queryFactory,
+       resolveBinary: async () => "/test/claude/bin",
+-    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "bypassPermissions" });
++    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "default" });
+ 
+     try {
+       await session.startTurn("run the tool");
+@@ -1005,7 +1005,7 @@ describe("ClaudeAgentSession features", () => {
+       logger,
+       queryFactory,
+       resolveBinary: async () => "/test/claude/bin",
+-    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "bypassPermissions" });
++    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "default" });
+     const events: AgentStreamEvent[] = [];
+     const unsubscribe = session.subscribe((event) => events.push(event));
+ 
+diff --git a/packages/server/src/server/agent/providers/claude/agent.ts b/packages/server/src/server/agent/providers/claude/agent.ts
+index a2e4a2ff3..3c7a9ba78 100644
+--- a/packages/server/src/server/agent/providers/claude/agent.ts
++++ b/packages/server/src/server/agent/providers/claude/agent.ts
+@@ -5507,8 +5507,6 @@ class ClaudeAgentSession implements AgentSession {
+           })?.detail
+         : undefined;
+ 
+-    // Claude's safety checks still ask in bypassPermissions mode; decisionReason
+-    // says which one fired, so the card can explain the unexpected prompt.
+     const summary = buildClaudeQuestionPermissionSummary(toolName, input);
+     const decisionReason = readNonEmptyString(stripAnsi(options.decisionReason ?? ""))?.trim();
+ 
+diff --git a/packages/server/src/server/agent/resolve-agent-identifier.test.ts b/packages/server/src/server/agent/resolve-agent-identifier.test.ts
+index 6ab1ee1e6..270590193 100644
+--- a/packages/server/src/server/agent/resolve-agent-identifier.test.ts
++++ b/packages/server/src/server/agent/resolve-agent-identifier.test.ts
+@@ -208,3 +208,21 @@ describe("resolveAgentIdentifierFrom keeps its Paseo ID behavior", () => {
+     expect(resolveAgentIdentifierFrom(identifier, input)).toMatchObject(expected);
+   });
+ });
++
++test("a missing full Paseo ID never selects another agent's title or prefix", () => {
++  const id = "01999c0c-2f73-722b-9d95-d5011863d90f";
++  const input = sources({ stored: [stored("title-owner", { title: id }), stored(`${id}-suffix`)] });
++  expect(resolveAgentIdentifierFrom(id, input)).toMatchObject({ ok: false, notFound: true });
++});
++
++test("exact Paseo IDs and exact UUID provider sessions retain their precedence", () => {
++  const id = "01999c0c-2f73-722b-9d95-d5011863d90f";
++  const input = sources({
++    stored: [stored("session-owner", { persisted: id }), stored("title-owner", { title: id })],
++  });
++  expect(resolveAgentIdentifierFrom(id, input)).toEqual({ ok: true, agentId: "session-owner" });
++  expect(resolveAgentIdentifierFrom(id, { ...input, live: [live(id)] })).toEqual({
++    ok: true,
++    agentId: id,
++  });
++});
+diff --git a/packages/server/src/server/agent/resolve-agent-identifier.ts b/packages/server/src/server/agent/resolve-agent-identifier.ts
+index a049edec8..ecf767962 100644
+--- a/packages/server/src/server/agent/resolve-agent-identifier.ts
++++ b/packages/server/src/server/agent/resolve-agent-identifier.ts
+@@ -4,6 +4,8 @@ import {
+   type ProviderSessionIdSource,
+ } from "@getpaseo/protocol/agent-provider-session-id";
+ 
++const FULL_AGENT_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
++
+ export type AgentIdentifierResolution =
+   | { ok: true; agentId: string }
+   | { ok: false; notFound: boolean; error: string };
+@@ -74,6 +76,11 @@ export function resolveAgentIdentifierFrom(
+     return nativeMatch;
+   }
+ 
++  // A missing complete Paseo ID must not select a prefix or another agent's title.
++  if (FULL_AGENT_ID_PATTERN.test(trimmed)) {
++    return { ok: false, notFound: true, error: `Agent not found: ${trimmed}` };
++  }
++
+   const prefixMatches = Array.from(knownIds).filter((id) => id.startsWith(trimmed));
+   if (prefixMatches.length === 1) {
+     return { ok: true, agentId: prefixMatches[0] };
+diff --git a/packages/server/src/server/session.ts b/packages/server/src/server/session.ts
+index 21bdcaac3..ef2e695ee 100644
+--- a/packages/server/src/server/session.ts
++++ b/packages/server/src/server/session.ts
+@@ -350,7 +350,6 @@ type ProviderSubagentManagerEvent = Extract<
+ // Clients before 0.1.45 validate providers with z.enum(["claude", "codex", "opencode"]) and reject
+ // the entire session message if they encounter an unknown provider.
+ const LEGACY_PROVIDER_IDS = new Set(["claude", "codex", "opencode"]);
+-const FULL_AGENT_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+ const MIN_VERSION_ALL_PROVIDERS = "0.1.45";
+ const MIN_VERSION_EXPLICIT_WORKSPACE_RECOVERY = "0.1.105";
+ function errorToFriendlyMessage(error: unknown): string {

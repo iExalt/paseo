@@ -202,5 +202,22 @@
         "stage": 3
       }
     ]
+  },
+  {
+    "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+    "commit": "ab531a61913231a82827f38030a4de29aa813a70",
+    "path": "packages/app/src/screens/settings/plugins-page.test.tsx",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "dfb16ccfa7672535e99ff0e33a2d71f8472655b6",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "b2f557fface2068c4304fb1dbb6081db093a7a6b",
+        "stage": 3
+      }
+    ]
   }
 ]

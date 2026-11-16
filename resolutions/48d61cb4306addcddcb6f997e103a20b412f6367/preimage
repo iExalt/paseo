@@ -1,0 +1,247 @@
+<<<<<<<
+import type {
+  DaemonClient,
+  FetchAgentHistoryOptions,
+  FetchAgentHistoryPageInfo,
+} from "@getpaseo/client/internal/daemon-client";
+import { keepPreviousData, useInfiniteQuery } from "@tanstack/react-query";
+=======
+import { useInfiniteQuery } from "@tanstack/react-query";
+>>>>>>>
+import { useCallback, useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { useShallow } from "zustand/shallow";
+import type { AggregatedAgent } from "@/hooks/use-aggregated-agents";
+import {
+  getHostRuntimeStore,
+  useHostRuntimeConnectionStatuses,
+  useHosts,
+} from "@/runtime/host-runtime";
+import { useSessionStore } from "@/stores/session-store";
+import {
+  collectAgentHistoryHostErrors,
+  fetchAgentHistoryBatch,
+  sortByLatestActivity,
+  type AgentHistoryBatchPage,
+  type AgentHistoryCursorByServerId,
+  type AgentHistoryHost,
+  type AgentHistoryHostError,
+} from "./agent-history-fetch";
+import { agentHistoryQueryKey, allAgentHistoryQueryKey } from "./agent-history-query-key";
+
+export {
+  collectAgentHistoryHostErrors,
+  fetchAgentHistoryBatch,
+  fetchAgentHistoryPage,
+} from "./agent-history-fetch";
+export type {
+  AgentHistoryClient,
+  AgentHistoryHost,
+  AgentHistoryHostError,
+  AgentHistoryPage,
+} from "./agent-history-fetch";
+
+export interface AgentHistoryResult {
+  agents: AggregatedAgent[];
+  isLoading: boolean;
+  isInitialLoad: boolean;
+  isRevalidating: boolean;
+  isError: boolean;
+  hasMore: boolean;
+  isLoadingMore: boolean;
+  /** False when any target host predates search; the screen hides the field. */
+  isSearchSupported: boolean;
+  /** More sessions matched than the ranked page holds. Narrow the query. */
+  isSearchTruncated: boolean;
+  /** The agents answer the previous query; the current one is loading (`keepPreviousResults`). */
+  isPreviousResults: boolean;
+  /** Hosts that failed while others succeeded. The list still renders. */
+  hostErrors: AgentHistoryHostError[];
+  refreshAll: () => Promise<void>;
+  loadMore: () => void;
+}
+
+function getNextAgentHistoryPageParam(
+  page: AgentHistoryBatchPage,
+): AgentHistoryCursorByServerId | null {
+  const cursorByServerId: AgentHistoryCursorByServerId = {};
+  for (const [serverId, pageInfo] of Object.entries(page.pageInfoByServerId)) {
+    if (pageInfo.hasMore && pageInfo.nextCursor) {
+      cursorByServerId[serverId] = pageInfo.nextCursor;
+    }
+  }
+
+  return Object.keys(cursorByServerId).length > 0 ? cursorByServerId : null;
+}
+
+export function useAgentHistory(options: {
+  serverId?: string | null;
+  enabled?: boolean;
+  search?: string;
+  /**
+   * Leave out hosts that predate search, instead of searching no host. For a surface that adds
+   * history matches to other results, where a missing host is not a claim of "no matches".
+   */
+  searchableHostsOnly?: boolean;
+  /** Keep the previous query's results until the next query's arrive. */
+  keepPreviousResults?: boolean;
+}): AgentHistoryResult {
+  const { t } = useTranslation();
+  const daemons = useHosts();
+  const runtime = getHostRuntimeStore();
+  const serverId = useMemo(() => {
+    const value = options.serverId;
+    return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+  }, [options.serverId]);
+  const enabled = options.enabled ?? true;
+  const requestedServerIds = useMemo(
+    () => (serverId ? [serverId] : daemons.map((daemon) => daemon.serverId)),
+    [daemons, serverId],
+  );
+  const searchableServerIds = useSessionStore(
+    useShallow((state) =>
+      requestedServerIds.filter(
+        (id) => state.sessions[id]?.serverInfo?.features?.agentHistorySearch === true,
+      ),
+    ),
+  );
+  const serverIds = options.searchableHostsOnly ? searchableServerIds : requestedServerIds;
+  const connectionStatuses = useHostRuntimeConnectionStatuses(serverIds);
+  // A host the user asked about splits two ways: one this fetch can reach, and
+  // one whose sessions will be missing from the answer. Both come out of here,
+  // because dropping the unreachable ones silently is what lets the list — and
+  // worse, "No sessions match" — overstate what was actually searched.
+  const { targetHosts, unreachableHosts } = useMemo(() => {
+    const serverLabelById = new Map(daemons.map((daemon) => [daemon.serverId, daemon.label]));
+    const hosts: AgentHistoryHost[] = [];
+    const unreachable: AgentHistoryHostError[] = [];
+
+    for (const targetServerId of serverIds) {
+      const client = runtime.getClient(targetServerId);
+      const serverName = serverLabelById.get(targetServerId) ?? targetServerId;
+      if (!client || connectionStatuses.get(targetServerId) !== "online") {
+        unreachable.push({ serverId: targetServerId, serverName });
+        continue;
+      }
+      hosts.push({ serverId: targetServerId, serverLabel: serverName, client });
+    }
+
+    return { targetHosts: hosts, unreachableHosts: unreachable };
+  }, [daemons, runtime, connectionStatuses, serverIds]);
+  const targetServerIds = useMemo(() => targetHosts.map((host) => host.serverId), [targetHosts]);
+  // One gate, checked before the field is offered: a fleet where any host
+  // predates search has no search, rather than a list that silently omits that
+  // host's sessions.
+  const isSearchSupported = useSessionStore(
+    useCallback(
+      (state) =>
+        targetServerIds.length > 0 &&
+        targetServerIds.every(
+          (id) => state.sessions[id]?.serverInfo?.features?.agentHistorySearch === true,
+        ),
+      [targetServerIds],
+    ),
+  );
+  const search = useMemo(() => {
+    const trimmed = options.search?.trim() ?? "";
+    return isSearchSupported ? trimmed : "";
+  }, [isSearchSupported, options.search]);
+  const queryKey = useMemo(
+    () => [
+      ...(serverId ? agentHistoryQueryKey(serverId) : allAgentHistoryQueryKey(targetServerIds)),
+      search,
+    ],
+    [search, serverId, targetServerIds],
+  );
+  const serverLabelById = useMemo(
+    () => new Map(daemons.map((daemon) => [daemon.serverId, daemon.label])),
+    [daemons],
+  );
+
+  const queryEnabled = Boolean(enabled && targetHosts.length > 0);
+  const historyQuery = useInfiniteQuery<
+    AgentHistoryBatchPage,
+    Error,
+    { pages: AgentHistoryBatchPage[] },
+    readonly unknown[],
+    AgentHistoryCursorByServerId | null
+  >({
+    queryKey,
+    enabled: queryEnabled,
+    staleTime: 30_000,
+    // Previous results stand in only until the next query's arrive. With no host to search,
+    // nothing will arrive, so they would stand in, and read as still loading, indefinitely.
+    ...(options.keepPreviousResults && queryEnabled ? { placeholderData: keepPreviousData } : {}),
+    initialPageParam: null,
+    getNextPageParam: getNextAgentHistoryPageParam,
+    queryFn: async ({ pageParam }) => {
+      if (targetHosts.length === 0) {
+        throw new Error(t("workspace.terminal.hostDisconnected"));
+      }
+      return fetchAgentHistoryBatch({
+        hosts: targetHosts,
+        cursorByServerId: pageParam,
+        ...(search ? { search } : {}),
+      });
+    },
+  });
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isError,
+    isFetching,
+    isFetchingNextPage,
+    isLoading,
+    isPlaceholderData,
+    refetch,
+  } = historyQuery;
+
+  const refreshAll = useCallback(async () => {
+    if (!enabled || targetHosts.length === 0) {
+      return;
+    }
+    await refetch();
+  }, [enabled, refetch, targetHosts.length]);
+
+  const loadMore = useCallback(() => {
+    if (!enabled || targetHosts.length === 0 || !hasNextPage || isFetchingNextPage) {
+      return;
+    }
+    void fetchNextPage();
+  }, [enabled, fetchNextPage, hasNextPage, isFetchingNextPage, targetHosts.length]);
+
+  const agents = useMemo(() => {
+    const pages = data?.pages ?? [];
+    const historyAgents = pages.flatMap((page) => page.agents);
+    const labelledAgents = historyAgents.map((agent) =>
+      Object.assign({}, agent, {
+        serverLabel: serverLabelById.get(agent.serverId) ?? agent.serverLabel,
+      }),
+    );
+    return sortByLatestActivity(labelledAgents);
+  }, [data?.pages, serverLabelById]);
+  const isInitialLoad = isLoading && agents.length === 0;
+  const isRevalidating = isFetching && !isFetchingNextPage && agents.length > 0;
+  const isSearchTruncated = Boolean(search && data?.pages.some((page) => page.isSearchTruncated));
+  const hostErrors = useMemo(
+    () => collectAgentHistoryHostErrors({ pages: data?.pages ?? [], unreachableHosts }),
+    [data?.pages, unreachableHosts],
+  );
+
+  return {
+    agents,
+    isLoading,
+    isInitialLoad,
+    isRevalidating,
+    isError,
+    hasMore: hasNextPage,
+    isLoadingMore: isFetchingNextPage,
+    isSearchSupported,
+    isSearchTruncated,
+    isPreviousResults: isPlaceholderData,
+    hostErrors,
+    refreshAll,
+    loadMore,
+  };
+}
