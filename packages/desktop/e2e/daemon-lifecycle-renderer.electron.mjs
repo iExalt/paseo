@@ -239,10 +239,14 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
       page
         .locator('[data-testid="settings-sidebar"]:visible')
         .getByRole("button", { name: "Appearance", exact: true });
+    const themeOption = (name) =>
+      page
+        .getByRole("radiogroup", { name: "Theme", exact: true })
+        .getByRole("radio", { name, exact: true });
     await appearance().click();
-    await page.getByLabel("Theme: System", { exact: true }).click();
-    await page.getByText("Light", { exact: true }).click();
-    await expect(page.getByLabel("Theme: Light", { exact: true })).toBeVisible();
+    await expect(themeOption("System")).toBeChecked();
+    await themeOption("Light").click();
+    await expect(themeOption("Light")).toBeChecked();
     const fontSize = page.getByLabel("Interface font size");
     await fontSize.fill("17");
     await fontSize.press("Tab");
@@ -279,7 +283,7 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
     await page.route(/:(6767|6768)\b/, (route) => route.abort());
     await page.getByRole("button", { name: "Settings", exact: true }).click({ timeout: 90_000 });
     await appearance().click();
-    await expect(page.getByLabel("Theme: Light", { exact: true })).toBeVisible();
+    await expect(themeOption("Light")).toBeChecked();
     await expect(page.getByLabel("Interface font size")).toHaveValue("17");
     await expect(page.locator('[data-testid="settings-sidebar"]:visible')).toHaveCSS(
       "background-color",
@@ -320,7 +324,7 @@ export async function verifyAttachedDaemonControls({ repo, root, env, home, port
     await page.route(/:(6767|6768)\b/, (route) => route.abort());
     await page.getByRole("button", { name: "Settings", exact: true }).click({ timeout: 90_000 });
     await appearance().click();
-    await expect(page.getByLabel("Theme: Light", { exact: true })).toBeVisible();
+    await expect(themeOption("Light")).toBeChecked();
     await expect(page.getByLabel("Interface font size")).toHaveValue("19");
     await expect
       .poll(async () => {
