@@ -45,7 +45,8 @@ const archiveAgent = vi.fn(async () => ({ archivedAt: "2026-11-14T00:00:00.000Z"
 const deleteAgent = vi.fn(async (_id: string) => undefined);
 const close = vi.fn(async () => undefined);
 
-vi.mock("../../utils/client.js", () => ({
+vi.mock("../../utils/client.js", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../../utils/client.js")>()),
   connectToDaemon: vi.fn(async () => ({
     fetchAgents: vi.fn(async () => historyPage(undefined)),
     fetchAgentHistory,

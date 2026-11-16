@@ -208,3 +208,21 @@ describe("resolveAgentIdentifierFrom keeps its Paseo ID behavior", () => {
     expect(resolveAgentIdentifierFrom(identifier, input)).toMatchObject(expected);
   });
 });
+
+test("a missing full Paseo ID never selects another agent's title or prefix", () => {
+  const id = "01999c0c-2f73-722b-9d95-d5011863d90f";
+  const input = sources({ stored: [stored("title-owner", { title: id }), stored(`${id}-suffix`)] });
+  expect(resolveAgentIdentifierFrom(id, input)).toMatchObject({ ok: false, notFound: true });
+});
+
+test("exact Paseo IDs and exact UUID provider sessions retain their precedence", () => {
+  const id = "01999c0c-2f73-722b-9d95-d5011863d90f";
+  const input = sources({
+    stored: [stored("session-owner", { persisted: id }), stored("title-owner", { title: id })],
+  });
+  expect(resolveAgentIdentifierFrom(id, input)).toEqual({ ok: true, agentId: "session-owner" });
+  expect(resolveAgentIdentifierFrom(id, { ...input, live: [live(id)] })).toEqual({
+    ok: true,
+    agentId: id,
+  });
+});

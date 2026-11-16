@@ -60,7 +60,15 @@ export function useMarkdownSource(
         imageLabel,
         imageUnavailableLabel,
       }),
-    [text, context.workspaceRoot, commandNames, forgeReferencePattern, external, imageLabel, imageUnavailableLabel],
+    [
+      text,
+      context.workspaceRoot,
+      commandNames,
+      forgeReferencePattern,
+      external,
+      imageLabel,
+      imageUnavailableLabel,
+    ],
   );
   const sources = [...new Set(prepared.images.map((image) => image.source))];
   const acquisitions = sources.map((source) => {
