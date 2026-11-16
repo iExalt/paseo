@@ -1,3 +1,11 @@
+import {
+  preflight,
+  command,
+  runPreflight as runFullPreflight,
+  assertHostedRoutine,
+  assertGitHubOrigin,
+} from "./rebase-preflight.mjs";
+import { comparePublication, verifyPublication } from "./rebase-verify.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -32,6 +40,8 @@ import {
   validateRebase,
 } from "./rebase-dev.mjs";
 
+const runPreflight = (options, plan) =>
+  runFullPreflight({ environmentOnly: true, ...options }, plan);
 const yaml = createRequire(import.meta.url)("js-yaml");
 // Detached auto-maintenance runs rerere-gc, which takes MERGE_RR.lock and races the
 // fixture's own rebase picks.
@@ -1286,6 +1296,8 @@ test("validation CLI binds the shared command to a clean tested SHA", async () =
   git(repositoryPath, "add", "-f", ".env.example");
   commit(repositoryPath, "validation fixture");
   const originalSha = git(repositoryPath, "rev-parse", "HEAD");
+  for (const name of ["dev", "upstream", "resolutions"])
+    git(repositoryPath, "update-ref", `refs/codex/snapshot/${name}`, originalSha);
   const invocation = join(root, "validation-invocation.json");
   const output = join(root, "validation-output.txt");
   const summary = join(root, "validation-summary.md");
@@ -1343,6 +1355,12 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
   ]) {
     const result = invoke(mode);
     assert.equal(result.status, 1, result.stderr);
+    assert.match(
+      result.stdout,
+      new RegExp(
+        `Captured inputs: .*"dev":"${originalSha}".*"upstream":"${originalSha}".*"resolutions":"${originalSha}"`,
+      ),
+    );
     assert.match(result.stderr, error);
     assert.equal(existsSync(output), false);
     assert.equal(existsSync(summary), false);
@@ -1610,4 +1628,585 @@ test("ledger fails closed before replay for partial, mismatched, ambiguous and s
     assert.equal(existsSync(join(clone, ".git/rebase-merge")), false, name);
     assert.equal(git(clone, "ls-remote", "--refs", "origin"), refs, name);
   }
+});
+
+test("preflight aggregates independent environment failures and confines push to candidates", () => {
+  const calls = [];
+  const result = preflight({
+    upstream: "a".repeat(40),
+    dev: "b".repeat(40),
+    resolutions: "c".repeat(40),
+    repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
+    run(file, args) {
+      calls.push([file, ...args]);
+      if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git\n";
+      if (file === "gh" && args[0] === "api")
+        return JSON.stringify(
+          args[1].endsWith("upstream-sync.yml") ? { state: "active" } : { total_count: 0 },
+        );
+      if (file === "gh") throw new Error("auth missing");
+      if (file === "zsh") throw new Error("nounset broken");
+      if (file === "node") return "v1.0.0";
+      if (file === "npm") return "1.0.0";
+      if (file === "zstd") throw new Error("zstd missing");
+      if (args[0] === "ls-remote") return `${"b".repeat(40)}\trefs/heads/upstream/main`;
+      if (args[0] === "--version") return "git version 2.54.0";
+      if (args[0] === "show") return "N wrong@example.invalid";
+      if (args[0] === "status")
+        return "?? .artifacts/diff-subscription/cold-many-file-metrics.json";
+      return "a".repeat(40);
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.checks.filter((entry) => !entry.ok).length, 9);
+  const push = calls.find((args) => args[1] === "push");
+  assert.deepEqual(push.slice(0, 4), ["git", "push", "--dry-run", "origin"]);
+  assert.match(push[4], /^HEAD:refs\/heads\/rebase-candidate\/preflight-\d+$/);
+  assert.ok(calls.some((args) => args[1] === "commit-tree" && args.includes("-S")));
+});
+
+function publicationFixture() {
+  const identity = {
+    author: "A <a@example.invalid> 1 +0000",
+    committer: "A <a@example.invalid> 1 +0000",
+    encoding: [],
+    message: "release\n",
+  };
+  const original = [{ ...identity, sha: "1".repeat(40) }];
+  const clean = [
+    { ...identity, sha: "2".repeat(40), tree: "same" },
+    { ...identity, message: "tail\n", sha: "3".repeat(40), tree: "clean-final" },
+  ];
+  const published = [
+    { ...clean[0], sha: "4".repeat(40) },
+    { ...clean[1], sha: "5".repeat(40), tree: "published-final" },
+  ];
+  return {
+    original,
+    originalBoundary: original[0],
+    clean,
+    published,
+    cleanConfig: JSON.stringify({ "last-release-sha": clean[0].sha }) + "\n",
+    publishedConfig: JSON.stringify({ "last-release-sha": published[0].sha }) + "\n",
+    finalPaths: ["release-please-config.json"],
+    cleanConfigMode: "100644",
+    publishedConfigMode: "100644",
+  };
+}
+
+test("publication compares every intermediate tree and permits only mapped boundary bytes", () => {
+  assert.equal(comparePublication(publicationFixture()).boundarySlot, 1);
+  for (const mutate of [
+    (f) => {
+      f.published[0].tree = "wrong";
+    },
+    (f) => {
+      f.publishedConfig = JSON.stringify({ "last-release-sha": f.published[1].sha });
+    },
+    (f) => {
+      f.publishedConfig += "\n";
+    },
+    (f) => {
+      f.finalPaths.push("unexpected.txt");
+    },
+    (f) => {
+      f.published[0].message = "wrong\n";
+    },
+    (f) => {
+      f.published[0].author += "wrong";
+    },
+    (f) => {
+      f.clean.push({ ...f.clean[0] });
+    },
+  ]) {
+    const fixture = publicationFixture();
+    mutate(fixture);
+    assert.throws(() => comparePublication(fixture));
+  }
+});
+
+test("publication verifier requires immutable refs before invoking credentials", () => {
+  const run = () => {
+    throw new Error("must not execute");
+  };
+  assert.throws(
+    () =>
+      verifyPublication({ backup: "dev", published: "a".repeat(40), replay: "b".repeat(40), run }),
+    /backup ref/,
+  );
+  assert.throws(
+    () =>
+      verifyPublication({
+        backup: "refs/heads/backup/rebase-dev/1-1",
+        published: "dev",
+        replay: "b".repeat(40),
+        run,
+      }),
+    /immutable/,
+  );
+});
+
+test("publication compares raw message bytes and config modes", () => {
+  const f = publicationFixture();
+  f.clean[1].message = Buffer.from([0x80]);
+  f.published[1].message = Buffer.from([0x81]);
+  assert.throws(() => comparePublication(f));
+  const mode = publicationFixture();
+  mode.publishedConfigMode = "100755";
+  assert.throws(() => comparePublication(mode), /mode differs/);
+});
+
+test("publication generated suffix permits dates alone to differ", () => {
+  const f = publicationFixture();
+  f.clean[1].message = f.published[1].message =
+    "chore(rebase): point release-please at the rebased release\n";
+  f.clean[1].author = f.clean[1].committer = "Clement Liaw <cman101202@gmail.com> 1 +0000";
+  f.published[1].author = f.published[1].committer = "Clement Liaw <cman101202@gmail.com> 2 +0000";
+  assert.equal(comparePublication(f).count, 2);
+  f.published[1].committer = "Other <a@example.invalid> 2 +0000";
+  assert.throws(() => comparePublication(f));
+});
+
+test("publication entry point verifies real pinned signatures and exact GitHub rows", () => {
+  const repositoryPath = join(root, "publication-proof");
+  initRepo(repositoryPath);
+  const dates = {
+    GIT_AUTHOR_DATE: "2026-01-01T00:00:00Z",
+    GIT_COMMITTER_DATE: "2026-01-01T00:00:00Z",
+  };
+  mkdirSync(join(repositoryPath, ".github"));
+  writeFileSync(join(repositoryPath, "shared.txt"), "upstream\n");
+  commit(repositoryPath, "upstream", dates);
+  const upstream = git(repositoryPath, "rev-parse", "HEAD");
+  writeFileSync(
+    join(repositoryPath, ".github/fork-release.json"),
+    JSON.stringify({ upstreamBase: upstream }),
+  );
+  writeFileSync(join(repositoryPath, "shared.txt"), "release\n");
+  commit(repositoryPath, "release boundary", dates);
+  const original = git(repositoryPath, "rev-parse", "HEAD");
+  writeFileSync(
+    join(repositoryPath, "release-please-config.json"),
+    JSON.stringify({ "last-release-sha": original }) + "\n",
+  );
+  commit(repositoryPath, "original config", dates);
+  const backupSha = git(repositoryPath, "rev-parse", "HEAD");
+  const tree = git(repositoryPath, "rev-parse", `${original}^{tree}`);
+  const sign = (parent, commitTree, message, key) =>
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "gpg.format=ssh",
+        "-c",
+        `user.signingkey=${key}`,
+        "commit-tree",
+        "-S",
+        "-p",
+        parent,
+        commitTree,
+        "-m",
+        message,
+      ],
+      { cwd: repositoryPath, encoding: "utf8", env: { ...process.env, ...dates } },
+    ).trim();
+  const a = sign(upstream, tree, "release boundary", wrongSigningKeyPath);
+  const b = sign(upstream, tree, "release boundary", testSigningKeyPath);
+  const finish = (boundary, key) => {
+    git(repositoryPath, "read-tree", tree);
+    // Stage a byte-exact config without changing either chain's first tree.
+    writeFileSync(
+      join(repositoryPath, "release-please-config.json"),
+      JSON.stringify({ "last-release-sha": boundary }) + "\n",
+    );
+    git(repositoryPath, "add", "release-please-config.json");
+    return sign(boundary, git(repositoryPath, "write-tree"), "final config", key);
+  };
+  const replay = finish(a, wrongSigningKeyPath);
+  const published = finish(b, testSigningKeyPath);
+  const backup = "refs/heads/backup/rebase-dev/123-1";
+  let badApi = null;
+  const run = (file, args, options) => {
+    if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git\n";
+    if (file === "gh") {
+      const commits = [b, published].map((sha) => ({
+        sha,
+        commit: { verification: { verified: badApi !== "unverified" } },
+      }));
+      if (badApi === "wrong-sha") commits[0].sha = "f".repeat(40);
+      return JSON.stringify([{ commits }]);
+    }
+    if (args[0] === "ls-remote") return args.includes("--tags") ? "" : `${backupSha}\t${backup}\n`;
+    if (args[0] === "fetch") return "";
+    return command(file, args, options);
+  };
+  const options = {
+    backup,
+    published,
+    replay,
+    repositoryPath,
+    run,
+    publicKey: testSigningPublicKey,
+  };
+  assert.equal(verifyPublication(options).pinnedSignatures, 2);
+  assert.throws(
+    () =>
+      verifyPublication({
+        ...options,
+        publicKey: readFileSync(`${wrongSigningKeyPath}.pub`, "utf8"),
+      }),
+    /verify-commit/,
+  );
+  badApi = "unverified";
+  assert.throws(() => verifyPublication(options), /GitHub unverified/);
+  badApi = "wrong-sha";
+  assert.throws(() => verifyPublication(options), /GitHub SHA set/);
+});
+
+test("preflight includes ledger refusal alongside an independent environment error", async () => {
+  const result = await runPreflight(
+    {
+      upstream: "a".repeat(40),
+      dev: "b".repeat(40),
+      resolutions: "c".repeat(40),
+      repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
+      run(file, args) {
+        if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git\n";
+        throw new Error("missing environment");
+      },
+    },
+    async () => {
+      throw new Error("Supersession ledger key mismatch");
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.checks.some(
+      (row) => row.name === "replayPlan ledger" && /key mismatch/.test(row.detail),
+    ),
+  );
+  assert.ok(result.checks.filter((row) => !row.ok).length > 1);
+});
+
+test("publication final config comparison preserves arbitrary blob bytes", () => {
+  const f = publicationFixture();
+  const config = (sha, byte) =>
+    Buffer.concat([
+      Buffer.from(`{"last-release-sha":"${sha}","note":"`),
+      Buffer.from([byte]),
+      Buffer.from('"}\n'),
+    ]);
+  f.cleanConfig = config(f.clean[0].sha, 0x80);
+  f.publishedConfig = config(f.published[0].sha, 0x81);
+  assert.throws(() => comparePublication(f), /Final config differs/);
+  f.publishedConfig = config(f.published[0].sha, 0x80);
+  assert.equal(comparePublication(f).count, 2);
+});
+
+test("publication treats prior generated commits as retained in the next rebase", () => {
+  const f = publicationFixture();
+  const oldGenerated = {
+    ...f.clean[0],
+    message: "chore(rebase): capture incorporated upstream\n",
+    sha: "6".repeat(40),
+  };
+  const later = { ...f.clean[0], message: "fix: later descendant\n", sha: "7".repeat(40) };
+  f.clean.splice(1, 0, oldGenerated, later);
+  f.published.splice(
+    1,
+    0,
+    { ...oldGenerated, sha: "8".repeat(40) },
+    { ...later, sha: "9".repeat(40) },
+  );
+  const a = f.clean.at(-1),
+    b = f.published.at(-1);
+  a.message = b.message = "chore(rebase): point release-please at the rebased release\n";
+  a.author = a.committer = "Clement Liaw <cman101202@gmail.com> 1 +0000";
+  b.author = b.committer = "Clement Liaw <cman101202@gmail.com> 2 +0000";
+  assert.equal(comparePublication(f).count, 4);
+  f.published[1].committer += "changed";
+  assert.throws(() => comparePublication(f), /Committer differs/);
+});
+
+test("origin binding accepts canonical GitHub URLs and rejects redirected or multiple pushes", () => {
+  for (const url of [
+    "https://github.com/iExalt/paseo.git",
+    "git@github.com:iExalt/paseo.git",
+    "ssh://git@github.com/iExalt/paseo",
+  ]) {
+    assert.doesNotThrow(() => assertGitHubOrigin({ run: () => url }));
+  }
+  for (const [fetchUrl, pushUrl] of [
+    ["/workspace/frozen.git", "/workspace/frozen.git"],
+    ["https://github.com/other/paseo.git", "https://github.com/other/paseo.git"],
+    ["https://github.com/iExalt/paseo.git", "https://github.com/other/paseo.git"],
+    [
+      "https://github.com/iExalt/paseo.git",
+      "https://github.com/iExalt/paseo.git\nhttps://github.com/other/paseo.git",
+    ],
+  ])
+    assert.throws(() =>
+      assertGitHubOrigin({ run: (_file, args) => (args.includes("--push") ? pushUrl : fetchUrl) }),
+    );
+});
+
+test("wrong origin prevents remote permission and publication verification claims", async () => {
+  const calls = [];
+  const run = (file, args) => {
+    calls.push([file, ...args]);
+    if (file === "git" && args[0] === "remote") return "/workspace/frozen.git\n";
+    throw new Error("independent environment failure");
+  };
+  let planned = false;
+  const result = await runPreflight(
+    {
+      upstream: "a".repeat(40),
+      dev: "b".repeat(40),
+      resolutions: "c".repeat(40),
+      repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
+      run,
+    },
+    async () => {
+      planned = true;
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(planned, false);
+  assert.ok(
+    !calls.some(
+      ([file, operation]) => file === "git" && ["push", "fetch", "ls-remote"].includes(operation),
+    ),
+  );
+  calls.length = 0;
+  assert.throws(
+    () =>
+      verifyPublication({
+        backup: "refs/heads/backup/rebase-dev/1-1",
+        published: "a".repeat(40),
+        replay: "b".repeat(40),
+        run,
+      }),
+    /origin fetch URL/,
+  );
+  assert.ok(calls.every(([file, operation]) => file === "git" && operation === "remote"));
+});
+
+test("origin binding checks Git's effective rewrites and separate push URL", () => {
+  const repositoryPath = join(root, "origin-rewrites");
+  initRepo(repositoryPath);
+  git(repositoryPath, "config", "url.https://github.com/.insteadOf", "rewrite:");
+  git(repositoryPath, "remote", "add", "origin", "rewrite:iExalt/paseo.git");
+  assert.doesNotThrow(() => assertGitHubOrigin({ repositoryPath }));
+  git(repositoryPath, "config", "remote.origin.pushurl", "rewrite:other/paseo.git");
+  assert.throws(() => assertGitHubOrigin({ repositoryPath }), /origin push URL/);
+});
+
+test("preflight preserves the captured tuple and rejects movement in every frozen ref", async () => {
+  const expected = { upstream: "a".repeat(40), dev: "b".repeat(40), resolutions: "c".repeat(40) };
+  const run = (file, args) => {
+    if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git";
+    throw new Error("independent environment failure");
+  };
+  for (const changed of [null, "dev", "upstream", "resolutions"]) {
+    const actual = { ...expected, ...(changed ? { [changed]: "d".repeat(40) } : {}) };
+    const result = await runPreflight(
+      { ...expected, repositoryPath: fileURLToPath(new URL("../../", import.meta.url)), run },
+      async () => ({ ...actual, retained: [], drops: [] }),
+    );
+    assert.deepEqual(result.inputs, actual);
+    const gate = result.checks.find((row) => row.name === "replayPlan ledger");
+    assert.equal(gate.ok, changed === null);
+    if (changed) assert.match(gate.detail, new RegExp(`Captured ${changed} moved`));
+  }
+});
+
+test("validation reports actual snapshot refs before checks fail and refuses missing captures", async () => {
+  const repositoryPath = join(root, "captured-input-output");
+  initRepo(repositoryPath);
+  const expected = {};
+  for (const name of ["dev", "upstream", "resolutions"]) {
+    git(repositoryPath, "commit", "--allow-empty", "-m", name);
+    expected[name] = git(repositoryPath, "rev-parse", "HEAD");
+    git(repositoryPath, "update-ref", `refs/codex/snapshot/${name}`, expected[name]);
+  }
+  const events = [];
+  const options = {
+    repositoryPath,
+    reportInputs: (inputs) => events.push(inputs),
+    runChecks: async () => {
+      events.push("checks");
+      throw new Error("expected routine failure");
+    },
+  };
+  await assert.rejects(validateRebase(options), /expected routine failure/);
+  assert.deepEqual(events, [expected, "checks"]);
+  events.length = 0;
+  git(repositoryPath, "update-ref", "-d", "refs/codex/snapshot/resolutions");
+  await assert.rejects(validateRebase(options));
+  assert.deepEqual(events, []);
+});
+
+test("hosted routine binds a first-attempt green PR run to the clean replay tree", async () => {
+  const repositoryPath = join(root, "hosted-routine");
+  initRepo(repositoryPath);
+  mkdirSync(join(repositoryPath, ".github/scripts"), { recursive: true });
+  writeFileSync(join(repositoryPath, ".github/ci-paths.json"), "{}\n");
+  // Plans every domain unless only docs changed, and scopes format to changed files.
+  writeFileSync(
+    join(repositoryPath, ".github/scripts/ci-routine.mjs"),
+    `export const selectChecks = (files) => ({ files, code: files === null || files.some((file) => !file.startsWith("docs/")) });
+export const planMatrix = () => ({ lane: ["quality", "app-1"] });
+export const routineJobName = (lane) => \`routine (\${lane})\`;
+export const planCommands = (selection) => [
+  { name: "format", files: selection.files },
+  ...(selection.code ? [{ name: "units" }] : []),
+];
+`,
+  );
+  writeFileSync(join(repositoryPath, "tracked"), "dev");
+  commit(repositoryPath, "dev");
+  const dev = git(repositoryPath, "rev-parse", "HEAD");
+  git(repositoryPath, "checkout", "-q", "--orphan", "replay");
+  writeFileSync(join(repositoryPath, "tracked"), "replay");
+  commit(repositoryPath, "replay");
+  const candidate = git(repositoryPath, "rev-parse", "HEAD");
+  const tree = git(repositoryPath, "rev-parse", "HEAD^{tree}");
+  const merge = git(repositoryPath, "commit-tree", tree, "-p", candidate, "-p", dev, "-m", "ours");
+  const inputs = { dev, upstream: candidate, resolutions: candidate };
+  for (const [name, sha] of Object.entries(inputs))
+    git(repositoryPath, "update-ref", `refs/codex/snapshot/${name}`, sha);
+  const goodRun = {
+    name: "Routine CI",
+    event: "pull_request",
+    run_attempt: 1,
+    status: "completed",
+    conclusion: "success",
+    head_sha: merge,
+    pull_requests: [{ head: { sha: merge }, base: { sha: dev } }],
+  };
+  // Shaped like a real pull request run: dev-only cache refresh is skipped.
+  const goodJobs = [
+    { name: "plan", conclusion: "success" },
+    { name: "routine (quality)", conclusion: "success" },
+    { name: "routine (app-1)", conclusion: "success" },
+    { name: "Refresh installed dependency cache", conclusion: "skipped" },
+    { name: "Routine CI required", conclusion: "success" },
+  ];
+  const withConclusion = (name, conclusion) => [
+    ...goodJobs.filter((job) => job.name !== name),
+    { name, conclusion },
+  ];
+  const check = ({ workflowRun = goodRun, jobs = goodJobs, format = true, ...options } = {}) => {
+    const calls = [];
+    const run = (file, args, opts) => {
+      calls.push([file, ...args]);
+      if (file === "gh") return JSON.stringify(args[1].includes("/jobs") ? { jobs } : workflowRun);
+      if (file === "npm") {
+        if (!format) throw new Error("format failed");
+        return "";
+      }
+      return command(file, args, opts);
+    };
+    return assertHostedRoutine({
+      replayPath: repositoryPath,
+      routineRun: "42",
+      ...inputs,
+      run,
+      ...options,
+    }).then((detail) => ({ detail, calls }));
+  };
+  const { detail, calls } = await check();
+  assert.match(detail, new RegExp(`^42 at ${merge}, tree ${tree}$`));
+  assert.ok(calls.some((args) => args.join(" ") === "npm run format:check"));
+  const otherTree = git(
+    repositoryPath,
+    "commit-tree",
+    git(repositoryPath, "rev-parse", `${dev}^{tree}`),
+    "-p",
+    candidate,
+    "-p",
+    dev,
+    "-m",
+    "wrong tree",
+  );
+  const reversed = git(repositoryPath, "commit-tree", tree, "-p", dev, "-p", candidate, "-m", "x");
+  for (const [delta, expected] of [
+    [{ workflowRun: { ...goodRun, name: "Deep verification" } }, /not Routine CI/],
+    [{ workflowRun: { ...goodRun, event: "push" } }, /candidate PR/],
+    [{ workflowRun: { ...goodRun, run_attempt: 2 } }, /first attempt/],
+    [{ workflowRun: { ...goodRun, conclusion: "failure" } }, /did not succeed/],
+    [
+      {
+        workflowRun: {
+          ...goodRun,
+          pull_requests: [{ head: { sha: merge }, base: { sha: candidate } }],
+        },
+      },
+      /frozen dev/,
+    ],
+    [
+      {
+        workflowRun: {
+          ...goodRun,
+          head_sha: otherTree,
+          pull_requests: [{ head: { sha: otherTree }, base: { sha: dev } }],
+        },
+      },
+      /tree differs/,
+    ],
+    [
+      {
+        workflowRun: {
+          ...goodRun,
+          head_sha: reversed,
+          pull_requests: [{ head: { sha: reversed }, base: { sha: dev } }],
+        },
+      },
+      /merge frozen dev/,
+    ],
+    [{ jobs: goodJobs.slice(1) }, /full lane matrix/],
+    [{ jobs: goodJobs.filter((job) => job.name !== "routine (app-1)") }, /full lane matrix/],
+    [
+      { jobs: [...goodJobs, { name: "routine (app-2)", conclusion: "success" }] },
+      /full lane matrix/,
+    ],
+    [{ jobs: withConclusion("routine (app-1)", "skipped") }, /full lane matrix/],
+    [{ jobs: withConclusion("Refresh installed dependency cache", "failure") }, /full lane matrix/],
+    [{ format: false }, /format failed/],
+    [{ dev: candidate }, /Replay dev differs/],
+    [{ routineRun: undefined }, /run ID/],
+  ])
+    await assert.rejects(check(delta), expected);
+  // A docs-only delta drops the units step from the pull_request plan.
+  mkdirSync(join(repositoryPath, "docs"));
+  git(repositoryPath, "checkout", "-q", dev);
+  writeFileSync(join(repositoryPath, "docs/only.md"), "docs");
+  commit(repositoryPath, "docs dev");
+  const docsDev = git(repositoryPath, "rev-parse", "HEAD");
+  git(repositoryPath, "checkout", "-q", "replay");
+  git(repositoryPath, "reset", "-q", "--hard", candidate);
+  const docsTree = git(repositoryPath, "rev-parse", `${docsDev}^{tree}`);
+  git(repositoryPath, "read-tree", "--reset", "-u", docsTree);
+  commit(repositoryPath, "replay docs");
+  const docsCandidate = git(repositoryPath, "rev-parse", "HEAD");
+  const docsMerge = git(
+    repositoryPath,
+    "commit-tree",
+    docsTree,
+    "-p",
+    docsCandidate,
+    "-p",
+    docsDev,
+    "-m",
+    "ours",
+  );
+  git(repositoryPath, "update-ref", "refs/codex/snapshot/dev", docsDev);
+  const docsRun = {
+    ...goodRun,
+    head_sha: docsMerge,
+    pull_requests: [{ head: { sha: docsMerge }, base: { sha: docsDev } }],
+  };
+  await assert.rejects(check({ workflowRun: docsRun, dev: docsDev }), /beyond the format step/);
+  writeFileSync(join(repositoryPath, "untracked"), "leftover");
+  await assert.rejects(check({ workflowRun: docsRun, dev: docsDev }), /dirty/);
 });
