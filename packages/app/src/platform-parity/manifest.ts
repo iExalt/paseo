@@ -14,6 +14,64 @@ const PANE_DRAG_WEB_ONLY =
  */
 export const PARITY_MANIFEST: ParityManifest = {
   splitModules: {
+    "appearance/text": {
+      kind: "equivalent",
+      note: "Web subscribes the text leaf to font tokens; native Text resolves the theme directly",
+    },
+    "components/ui/menu/keyboard-navigation": {
+      kind: "gap",
+      chunk: "E3",
+      reason:
+        "Arrow, Home, End and activation navigation uses DOM focus on web; native implementation has no menu navigation",
+    },
+    "composer/input/hardware-back-exit": {
+      kind: "deliberate",
+      reason:
+        "Android hardware Back leaves fullscreen; other platforms have no Android BackHandler",
+    },
+    "composer/pasted-text": {
+      kind: "deliberate",
+      reason:
+        "Web converts linked HTML clipboard content to Markdown; native keeps platform clipboard handling",
+    },
+    "keyboard/internal/conventions": {
+      kind: "deliberate",
+      reason:
+        "Native keeps desktop shortcut conventions and its existing Return path; web supports configurable composer send keys",
+    },
+    "keyboard/internal/dom-popover": {
+      kind: "deliberate",
+      reason: "Only web has DOM popovers whose Escape handling must precede agent shortcuts",
+    },
+    "keyboard/internal/focused-text-input": {
+      kind: "equivalent",
+      note: "Native reads TextInput focus; web classifies focus from DOM keyboard events",
+    },
+    "keyboard/internal/overlay-registration": {
+      kind: "equivalent",
+      note: "Both register the highest overlay; web additionally traps and restores DOM focus",
+    },
+    "keyboard/internal/presence": {
+      kind: "equivalent",
+      note: "Native receives keyboard presence from the OS; web observes pointer capability and modifier keys",
+    },
+    "keyboard/internal/sources/hardware": {
+      kind: "equivalent",
+      note: "Android and iOS native modules publish hardware shortcuts and presence; web sources use DOM events",
+    },
+    "keyboard/internal/sources/index": {
+      kind: "equivalent",
+      note: "Native subscribes its hardware source; web subscribes DOM and Electron guest sources",
+    },
+    "keyboard/internal/use-focus-surface": {
+      kind: "equivalent",
+      note: "Native declares the focused surface; web classifies it from the DOM event target",
+    },
+    "window-layout/index": {
+      kind: "deliberate",
+      reason:
+        "iOS probes native window geometry and safe insets; other platforms use the shared layout without that probe",
+    },
     "agent-stream/chat-find/index": {
       kind: "equivalent",
       note: "Web marks DOM ranges; native highlights the occurrence in the Markdown source it draws",
@@ -75,10 +133,6 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
     "composer/dock/index": equivalent,
     "composer/dock/internal/background": equivalent,
-    "composer/input/fullscreen-exit": {
-      kind: "equivalent",
-      note: "Back leaves the fullscreen composer on native; Escape does on web",
-    },
     "composer/input/height": equivalent,
     "desktop/browser/pane/index": {
       kind: "deliberate",
@@ -187,10 +241,6 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
     "constants/layout.ts": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
     "file-panels/source/panel.tsx": { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
-    "components/add-host-method-modal.tsx": {
-      kind: "deliberate",
-      reason: "Remote SSH onboarding needs a local SSH client",
-    },
     "screens/settings-screen.tsx": {
       kind: "deliberate",
       reason: "Open location and built-in daemon controls need Electron",

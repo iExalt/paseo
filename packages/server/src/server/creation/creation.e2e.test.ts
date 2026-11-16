@@ -9,7 +9,7 @@ import { BUILTIN_PROVIDER_IDS } from "@getpaseo/protocol/provider-manifest";
 import { WebSocket } from "ws";
 import { SessionInboundMessageSchema, WSOutboundMessageSchema } from "@getpaseo/protocol/messages";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test, vi } from "vitest";
@@ -751,4 +751,111 @@ test.each(["COMPLETE_HANDOFF", "BLOCKED_APPROVAL_HANDOFF"])(
     }
   },
   30000,
+);
+
+test("ordinary creation resolves an unloaded caller and retains its workspace, parent and background", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "creation-stored-caller-"));
+  const daemon = await createCreationDaemon();
+  const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+  const peer = await connectCreationPeer(daemon.port);
+  try {
+    await client.connect();
+    const workspaceId = await mintLocalWorkspace(client, directory);
+    const parent = await daemon.daemon.agentManager.createAgent(
+      { provider: "codex", cwd: directory },
+      undefined,
+      { workspaceId, background: true },
+    );
+    await daemon.daemon.agentManager.closeAgent(parent.id);
+    await daemon.daemon.agentManager.flush();
+    const response = await peer.request({
+      type: "agent.create.request",
+      requestId: "stored-caller",
+      config: { provider: "codex", cwd: directory },
+      callerAgentId: parent.id,
+      relationship: "subagent",
+    });
+    if (response.type !== "agent.create.response")
+      throw new Error("Expected agent creation response");
+    expect(response.payload.error).toBeNull();
+    expect(response.payload.agent).toMatchObject({
+      workspaceId,
+      background: true,
+      labels: { [PARENT_AGENT_ID_LABEL]: parent.id },
+    });
+    await daemon.daemon.agentManager.archiveSnapshot(parent.id, new Date().toISOString());
+    const archived = await peer.request({
+      type: "agent.create.request",
+      requestId: "archived-caller",
+      config: { provider: "codex", cwd: directory },
+      callerAgentId: parent.id,
+      relationship: "subagent",
+    });
+    if (archived.type !== "agent.create.response")
+      throw new Error("Expected agent creation response");
+    expect(archived.payload.error).toMatch(/archived|not found/i);
+  } finally {
+    peer.close();
+    await client.close();
+    await daemon.close();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+test.each(["relative", "absolute"])(
+  "explicit %s runtime cwd remains scoped to a live caller and requires a directory",
+  async (kind) => {
+    const directory = await mkdtemp(join(tmpdir(), "creation-runtime-cwd-"));
+    const nested = join(directory, "nested");
+    await mkdir(nested);
+    const daemon = await createCreationDaemon();
+    const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
+    const peer = await connectCreationPeer(daemon.port);
+    try {
+      await client.connect();
+      const workspaceId = await mintLocalWorkspace(client, directory);
+      const parent = await daemon.daemon.agentManager.createAgent(
+        { provider: "codex", cwd: directory },
+        undefined,
+        { workspaceId },
+      );
+      const request = {
+        type: "agent.create.request" as const,
+        config: { provider: "codex", cwd: directory },
+        callerAgentId: parent.id,
+        relationship: "subagent" as const,
+      };
+      const response = await peer.request({
+        ...request,
+        requestId: "explicit-cwd",
+        runtimeCwd: kind === "relative" ? "nested" : nested,
+      });
+      if (response.type !== "agent.create.response")
+        throw new Error("Expected agent creation response");
+      expect(response.payload.error).toBeNull();
+      expect(response.payload.agent?.cwd).toBe(nested);
+      const missing = await peer.request({
+        ...request,
+        requestId: "missing-cwd",
+        runtimeCwd: "missing",
+      });
+      if (missing.type !== "agent.create.response")
+        throw new Error("Expected agent creation response");
+      expect(missing.payload.error).toContain("not a directory");
+      await daemon.daemon.agentManager.closeAgent(parent.id);
+      const unloaded = await peer.request({
+        ...request,
+        requestId: "unloaded-explicit-cwd",
+        runtimeCwd: nested,
+      });
+      if (unloaded.type !== "agent.create.response")
+        throw new Error("Expected agent creation response");
+      expect(unloaded.payload.error).toMatch(/Caller agent .*not found/);
+    } finally {
+      peer.close();
+      await client.close();
+      await daemon.close();
+      await rm(directory, { recursive: true, force: true });
+    }
+  },
 );

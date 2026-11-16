@@ -999,7 +999,15 @@ it("defers the worker to the first terminal and then opens it there", async () =
     }),
   );
 
-  await expect.poll(() => getVisibleText(session), { timeout: 10000 }).toContain("deferred-ok");
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await readReplay(manager!, session.id);
+        return snapshot ? getVisibleTextFromState(snapshot.state) : "";
+      },
+      { timeout: 10000 },
+    )
+    .toContain("deferred-ok");
   expect(await listTerminalWorkerRecords(paseoHome)).toHaveLength(1);
 });
 
@@ -1710,8 +1718,10 @@ it("leaves a worker from a newer Paseo running, reports it incompatible, and clo
 
   await manager.closeTerminals();
 
-  expect(isProcessAlive(newer.workerPid)).toBe(false);
   expect(isProcessAlive(newer.programPid)).toBe(false);
+  // Cleanup counts the worker gone once its socket refuses connections, which happens before
+  // its process exits.
+  await waitForCondition(() => !isProcessAlive(newer.workerPid), 5000);
   expect(await workerRecords(paseoHome)).toEqual([]);
 });
 

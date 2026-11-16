@@ -35,7 +35,6 @@ function mountTerminal(): Mounted {
   runtime.mount({
     root,
     host,
-    initialSnapshot: null,
     scrollback: 1_000,
     theme: { background: "#0b0b0b", foreground: "#e6e6e6", cursor: "#e6e6e6" },
   });

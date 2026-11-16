@@ -970,12 +970,14 @@ it.each(["message", "finished", "errored", "permission-required", "closed"] as c
     const collapsed = present({ ...input, display: "collapseTurns" });
     expect(collapsed.tail.map((item) => item.id)).toEqual([
       "prompt",
+      "turn-summary:prompt",
       "reply",
       received.id,
+      `turn-summary:${received.id}`,
       "answer",
     ]);
-    expect(collapsed.tail[2]?.kind).toBe(kind);
-    expect(collapsed.turns.turnsByHostId.get(received.id)?.summary.tools).toMatchObject({
+    expect(collapsed.tail[3]?.kind).toBe(kind);
+    expect(collapsed.turns.summaryRowsByHostId.get(received.id)?.tools).toMatchObject({
       commandCount: 0,
       sentMessageCount: 1,
     });
@@ -1022,6 +1024,6 @@ it("keeps the Codex message rule only between messages that sit next to each oth
     isTurnActive: false,
     display: "collapseTurns",
   });
-  expect(withoutHead.tail.map((row) => row.id)).toEqual(["prompt", "third"]);
+  expect(withoutHead.tail.map((row) => row.id)).toEqual(["prompt", "turn-summary:prompt", "third"]);
   expect(text(withoutHead.tail, "third")).toBe("Done.");
 });
