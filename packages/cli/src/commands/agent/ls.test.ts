@@ -400,3 +400,11 @@ describe("agent identifier UUID safety", () => {
     expect(resolveAgentId(exactId, [collision])).toBeNull();
   });
 });
+
+it("resolves a provider session UUID before applying missing-daemon-UUID safety", () => {
+  const sessionId = "9eac296c-4d60-4189-a0b5-ae71dd9c6ad9";
+  const holder = { id: "daemon-agent", persistence: { provider: "codex", sessionId } };
+  expect(resolveAgentId(sessionId, [holder])).toBe(holder.id);
+  expect(resolveAgentId(sessionId, [holder, { id: sessionId }])).toBe(sessionId);
+  expect(() => resolveAgentId(sessionId, [holder, { ...holder, id: "second" }])).toThrowError();
+});

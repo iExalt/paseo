@@ -7,7 +7,7 @@ import type {
 import { LaunchWrapUnsupportedError, ProviderOptionsValidationError } from "./provider-options.js";
 import type { AgentToolResult } from "@getpaseo/plugin/server";
 import type { RuntimeCleanupCandidate } from "./idle-runtime-cleanup/index.js";
-import { withWorkspaceLifecycleLock } from "../workspace-lifecycle-lock.js";
+import { lifecycleAdmission, workspaceLifecycleKeys } from "../workspace-lifecycle-lock.js";
 import {
   AgentNotFoundError,
   ensureAgentLoaded,
@@ -987,6 +987,7 @@ export class AgentManager {
   >();
   private skillRefreshBarrier: Promise<void> | null = null;
   private readonly collectingRuntimes = new Set<string>();
+  private readonly lifecycleAdmissionId = randomUUID();
   private readonly lifecycleMutationTails = new Map<string, Promise<void>>();
   private readonly pendingCancellations = new Map<string, Promise<unknown>>();
   // Agents an archive is stopping: a send that arrives meanwhile fails instead of starting a
@@ -1038,16 +1039,35 @@ export class AgentManager {
       await this.workspaceLifecycle?.assertActive(workspaceId);
   }
 
-  private async withWorkspaceAdmission<T>(
-    workspaceId: string | undefined,
+  private withAgentAdmission<T>(
+    agentId: string,
+    workspace: () => Promise<string | undefined>,
     work: () => Promise<T>,
+    ready?: Promise<void> | null,
   ): Promise<T> {
-    if (!workspaceId) return work();
-    return withWorkspaceLifecycleLock([workspaceId], async () => {
-      await this.workspaceLifecycle?.assertActive(workspaceId);
-      return work();
-    });
+    let reservedWorkspace: string | undefined;
+    const result = lifecycleAdmission.run(
+      [this.agentLifecycleKey(agentId)],
+      async () => {
+        if ((await workspace()) !== reservedWorkspace)
+          throw new Error("Agent workspace changed during admission; retry the operation");
+        return work();
+      },
+      {
+        additionalKeys: async () => {
+          reservedWorkspace = await workspace();
+          return workspaceLifecycleKeys(reservedWorkspace ? [reservedWorkspace] : []);
+        },
+        ready,
+      },
+    );
+    return this.trackLifecycleMutation(agentId, result);
   }
+
+  private agentLifecycleKey(agentId: string): string {
+    return `agent:${this.lifecycleAdmissionId}:${agentId}`;
+  }
+
   private onWorkspaceStateMayHaveChanged?: (params: { cwd: string }) => void;
   private logger: Logger;
   private readonly rescueTimeouts: Required<AgentManagerRescueTimeouts>;
@@ -1808,14 +1828,17 @@ export class AgentManager {
     options: CreateAgentOptions,
   ): Promise<ManagedAgent> {
     const resolvedAgentId = validateAgentId(agentId ?? this.idFactory(), "createAgent");
-    const barrier = this.skillRefreshBarrier;
-    const operation = () =>
-      this.withWorkspaceAdmission(options.workspaceId, () =>
-        this.runLifecycleMutation(resolvedAgentId, async () => {
+    return this.trackAgentRegistrationOperation(
+      this.withAgentAdmission(
+        resolvedAgentId,
+        async () => options.workspaceId,
+        async () => {
+          if (options.workspaceId) await this.workspaceLifecycle?.assertActive(options.workspaceId);
           return this.createAgentInternal(config, resolvedAgentId, options);
-        }),
-      );
-    return this.trackAgentRegistrationOperation(barrier ? barrier.then(operation) : operation());
+        },
+        this.skillRefreshBarrier,
+      ),
+    );
   }
 
   /**
@@ -1825,21 +1848,21 @@ export class AgentManager {
    */
   createAgentFromRecord(agentId: string): Promise<ManagedAgent> {
     const resolvedAgentId = validateAgentId(agentId, "createAgentFromRecord");
-    const barrier = this.skillRefreshBarrier;
-    const operation = async () => {
-      const initial = await this.requireRegistry().get(resolvedAgentId);
-      return this.withWorkspaceAdmission(initial?.workspaceId, () =>
-        this.runLifecycleMutation(resolvedAgentId, async () => {
+    return this.trackAgentRegistrationOperation(
+      this.withAgentAdmission(
+        resolvedAgentId,
+        async () => (await this.requireRegistry().get(resolvedAgentId))?.workspaceId,
+        async () => {
           const record = await this.requireRegistry().get(resolvedAgentId);
           if (!record) throw new AgentNotFoundError(resolvedAgentId);
+          if (record.workspaceId) await this.workspaceLifecycle?.assertActive(record.workspaceId);
           const config = buildSessionConfig(record, {
             validProviders: this.getRegisteredProviderIds(),
           });
-          if (!config) {
+          if (!config)
             throw new Error(
               `Agent ${resolvedAgentId} references unavailable provider '${record.provider}'`,
             );
-          }
           return this.createAgentInternal(config, resolvedAgentId, {
             labels: record.labels,
             metadata: record.metadata,
@@ -1848,10 +1871,10 @@ export class AgentManager {
             background: record.background,
             env: record.launchEnv,
           });
-        }),
-      );
-    };
-    return this.trackAgentRegistrationOperation(barrier ? barrier.then(operation) : operation());
+        },
+        this.skillRefreshBarrier,
+      ),
+    );
   }
 
   private createAgentInternal(
@@ -1972,12 +1995,18 @@ export class AgentManager {
       agentId ?? this.idFactory(),
       "resumeAgentFromPersistence",
     );
-    const barrier = this.skillRefreshBarrier;
-    const operation = async () => {
-      const record = await this.registry?.get(resolvedAgentId);
-      const workspaceId = options?.workspaceId ?? record?.workspaceId;
-      return withWorkspaceLifecycleLock(workspaceId ? [workspaceId] : [], () =>
-        this.runLifecycleMutation(resolvedAgentId, async () => {
+    return this.trackAgentRegistrationOperation(
+      this.withAgentAdmission(
+        resolvedAgentId,
+        async () =>
+          options?.workspaceId ?? (await this.registry?.get(resolvedAgentId))?.workspaceId,
+        async () => {
+          // An explicit interactive open cannot become a history read after losing admission.
+          if (resumeOptions?.purpose === "interactive") {
+            const workspaceId =
+              options?.workspaceId ?? (await this.registry?.get(resolvedAgentId))?.workspaceId;
+            if (workspaceId) await this.workspaceLifecycle?.assertActive(workspaceId);
+          }
           return this.resumeAgentFromPersistenceInternal(
             handle,
             overrides,
@@ -1985,10 +2014,10 @@ export class AgentManager {
             options,
             resumeOptions,
           );
-        }),
-      );
-    };
-    return this.trackAgentRegistrationOperation(barrier ? barrier.then(operation) : operation());
+        },
+        this.skillRefreshBarrier,
+      ),
+    );
   }
 
   private resumeAgentFromPersistenceInternal(
@@ -3341,9 +3370,15 @@ export class AgentManager {
     agentId: string,
     updates?: { workspaceId?: string; labels?: AgentLabelPatch },
   ): Promise<boolean> {
-    const record = await this.requireRegistry().get(agentId);
-    return this.withWorkspaceAdmission(updates?.workspaceId ?? record?.workspaceId, () =>
-      this.runLifecycleMutation(agentId, () => this.unarchiveSnapshotUnlocked(agentId, updates)),
+    return this.withAgentAdmission(
+      agentId,
+      async () => updates?.workspaceId ?? (await this.requireRegistry().get(agentId))?.workspaceId,
+      async () => {
+        const record = await this.requireRegistry().get(agentId);
+        const workspaceId = updates?.workspaceId ?? record?.workspaceId;
+        if (workspaceId) await this.workspaceLifecycle?.assertActive(workspaceId);
+        return this.unarchiveSnapshotUnlocked(agentId, updates);
+      },
     );
   }
 
@@ -3442,22 +3477,24 @@ export class AgentManager {
     await this.writeStoredMetadata(agentId, updates);
   }
 
-  private async runLifecycleMutation<T>(agentId: string, mutation: () => Promise<T>): Promise<T> {
-    // Parent cascade classifies a child inside the same lane used by open-tab
-    // label writes, so a received ownership update cannot be overtaken.
-    const previous = this.lifecycleMutationTails.get(agentId) ?? Promise.resolve();
-    const result = previous.catch(() => undefined).then(mutation);
-    const tail = result.then(
+  private runLifecycleMutation<T>(agentId: string, mutation: () => Promise<T>): Promise<T> {
+    return this.trackLifecycleMutation(
+      agentId,
+      lifecycleAdmission.run([this.agentLifecycleKey(agentId)], mutation),
+    );
+  }
+
+  private trackLifecycleMutation<T>(agentId: string, result: Promise<T>): Promise<T> {
+    const finished = result.finally(() => {
+      if (this.lifecycleMutationTails.get(agentId) === tail)
+        this.lifecycleMutationTails.delete(agentId);
+    });
+    const tail = finished.then(
       () => undefined,
       () => undefined,
     );
     this.lifecycleMutationTails.set(agentId, tail);
-    void tail.finally(() => {
-      if (this.lifecycleMutationTails.get(agentId) === tail) {
-        this.lifecycleMutationTails.delete(agentId);
-      }
-    });
-    return result;
+    return finished;
   }
 
   async runAgent(
@@ -5368,11 +5405,13 @@ export class AgentManager {
           (entry) => this.agents.get(entry.id) === entry && this.runtimeHasNoPendingWork(entry),
         );
       for (const entry of affected) this.collectingRuntimes.add(entry.id);
-      const lock = (index: number, operation: () => Promise<boolean>): Promise<boolean> => {
-        const entry = affected[index];
-        return entry
-          ? this.runLifecycleMutation(entry.id, () => lock(index + 1, operation))
-          : operation();
+      const lock = (_index: number, operation: () => Promise<boolean>): Promise<boolean> => {
+        const result = lifecycleAdmission.run(
+          affected.map((entry) => this.agentLifecycleKey(entry.id)),
+          operation,
+        );
+        for (const entry of affected) this.trackLifecycleMutation(entry.id, result);
+        return result;
       };
       const operation = this.trackAgentRegistrationOperation(
         lock(0, async () => {
@@ -6131,6 +6170,16 @@ export class AgentManager {
     this.emitState(agent);
   }
 
+  private applyStreamUsage(
+    agent: ActiveManagedAgent,
+    usage: AgentUsage,
+    fromHistory: boolean,
+  ): void {
+    if (!fromHistory) this.recordSpend(agent, usage);
+    agent.lastUsage = withKnownCost(usage, agent.lastUsage);
+    this.emitState(agent);
+  }
+
   private dispatchStreamEventByType(params: {
     agent: ActiveManagedAgent;
     event: AgentStreamEvent;
@@ -6158,9 +6207,7 @@ export class AgentManager {
         this.onStreamThreadStarted(agent);
         return undefined;
       case "usage_updated":
-        if (!fromHistory) this.recordSpend(agent, event.usage);
-        agent.lastUsage = withKnownCost(event.usage, agent.lastUsage);
-        this.emitState(agent);
+        this.applyStreamUsage(agent, event.usage, fromHistory);
         return undefined;
       case "session_metrics_updated":
         // Clients read these from the agent snapshot; the event itself is not on the wire.

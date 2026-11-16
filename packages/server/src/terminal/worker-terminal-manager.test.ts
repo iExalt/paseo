@@ -1051,7 +1051,15 @@ it("defers the worker to the first terminal and then opens it there", async () =
     }),
   );
 
-  await expect.poll(() => getVisibleText(session), { timeout: 10000 }).toContain("deferred-ok");
+  await expect
+    .poll(
+      async () => {
+        const snapshot = await readReplay(manager!, session.id);
+        return snapshot ? getVisibleTextFromState(snapshot.state) : "";
+      },
+      { timeout: 10000 },
+    )
+    .toContain("deferred-ok");
   expect(await listTerminalWorkerRecords(paseoHome)).toHaveLength(1);
 });
 

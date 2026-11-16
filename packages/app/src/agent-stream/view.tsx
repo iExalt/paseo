@@ -434,7 +434,7 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
       readOnly: providedReadOnly,
       routeRequest: routeBottomAnchorRequest,
     });
-    const { receipt, readOnly } = previewPresentation;
+    const { readOnly } = previewPresentation;
     const forkAgent = useForkAgent({
       serverId: resolvedServerId,
       toast,

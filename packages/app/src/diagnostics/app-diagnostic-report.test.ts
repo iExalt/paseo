@@ -61,6 +61,7 @@ function makeSnapshot(host: HostProfile): HostRuntimeSnapshot {
     lastOnlineAt: "2026-06-25T00:00:00.000Z",
     agentDirectoryStatus: "ready",
     agentDirectoryError: null,
+    agentDirectoryRefresh: null,
     hasEverLoadedAgentDirectory: true,
     probeByConnectionId: new Map([
       ["direct:secret.example.test:6767", { status: "available", latencyMs: 42 }],
@@ -138,6 +139,7 @@ describe("app diagnostics report", () => {
         lastOnlineAt: null,
         agentDirectoryStatus: "ready",
         agentDirectoryError: null,
+        agentDirectoryRefresh: null,
         hasEverLoadedAgentDirectory: true,
         probeByConnectionId: new Map(),
         clientGeneration: 1,

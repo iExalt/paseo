@@ -378,6 +378,12 @@ async function printTimelinePage(
   else console.log(formatAgentActivityTranscript(entries.map((entry) => entry.item)));
 }
 
+function requestsTimelinePage(options: AgentLogsOptions, json: boolean): boolean {
+  return Boolean(
+    json || options.full || options.limit !== undefined || options.before !== undefined,
+  );
+}
+
 export async function runLogsCommand(
   id: string,
   options: AgentLogsOptions,
@@ -406,12 +412,7 @@ export async function runLogsCommand(
       console.log(pageOptions.json ? JSON.stringify(result) : JSON.stringify(result, null, 2));
       return;
     }
-    if (
-      pageOptions.json ||
-      options.full ||
-      options.limit !== undefined ||
-      options.before !== undefined
-    ) {
+    if (requestsTimelinePage(options, pageOptions.json)) {
       await printTimelinePage(client, resolvedId, options, pageOptions, sinceTimestampMs);
       return;
     }

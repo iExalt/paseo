@@ -3,10 +3,7 @@ import {
   createTerminalWorkerProcessInspector,
   type TerminalWorkerProcessInspector,
 } from "./terminal-worker-processes.js";
-import {
-  classifyTerminalWorkerProcess,
-  classifyTerminalProgramProcess,
-} from "./terminal-worker-ownership.js";
+import { classifyTerminalProgramProcess } from "./terminal-worker-ownership.js";
 /** Read-only: an empty worker exits when its daemon disconnects; live terminals are never closed. */
 export async function terminalUpdateBlockers(
   paseoHome: string,
@@ -18,8 +15,8 @@ export async function terminalUpdateBlockers(
   const inspector = options.inspector ?? createTerminalWorkerProcessInspector();
   for (const file of await listTerminalWorkerRecords(paseoHome)) {
     if ("error" in file) return true;
-    const worker = classifyTerminalWorkerProcess(
-      file.record,
+    const worker = classifyTerminalProgramProcess(
+      { startedAt: file.record.identity?.startedAt ?? null },
       await inspector.inspect(file.record.pid),
     );
     if (worker.status === "unknown" || (worker.status === "owned" && !options.allowEmptyWorkers))

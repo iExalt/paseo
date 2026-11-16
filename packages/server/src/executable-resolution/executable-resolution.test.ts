@@ -64,7 +64,8 @@ describe("findExecutable", () => {
   test.runIf(isPlatform("linux"))(
     "propagates a failed lookup process instead of reporting a missing executable",
     async () => {
-      await expect(findExecutable("x".repeat(1024 * 1024))).rejects.toMatchObject({
+      // Linux allows a single argument up to 32 pages, including 64 KiB-page hosts.
+      await expect(findExecutable("x".repeat(4 * 1024 * 1024))).rejects.toMatchObject({
         code: "E2BIG",
       });
     },

@@ -836,10 +836,10 @@ describe("ScheduleService", () => {
       config: { provider: "claude", cwd: tempDir },
     };
     now = new Date("2044-02-28T00:00:00.000Z");
-    // Feb 29 on a Monday: 2044, then 2072, outside the search window.
+    // A persisted cadence can have no successor; one exhausted record must not stop the tick.
     const rare = await service.create({
-      prompt: "Leap Monday",
-      cadence: { type: "cron", expression: "0 0 29 2 1" },
+      prompt: "Exhausted cron",
+      cadence: { type: "cron", expression: "0 0 29 2 *" },
       target,
     });
     const later = await service.create({
@@ -848,6 +848,11 @@ describe("ScheduleService", () => {
       target,
     });
 
+    const store = new ScheduleStore(join(tempDir, "schedules"), createTestLogger());
+    await store.update(rare.id, (schedule) => ({
+      ...schedule,
+      cadence: { type: "cron", expression: "0 0 31 2 *" },
+    }));
     now = new Date("2044-02-29T00:00:00.000Z");
     await service.tick();
 

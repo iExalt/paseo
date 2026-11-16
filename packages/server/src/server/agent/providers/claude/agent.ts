@@ -3772,15 +3772,15 @@ class ClaudeAgentSession implements AgentSession {
       return false;
     }
     await this.reloadConversationHistory(sessionId, {
-      leafUuid: typeof leafUuid === "string" ? leafUuid : this.trackedRewindLeaf(messageId),
+      leafUuid: typeof leafUuid === "string" ? leafUuid : await this.trackedRewindLeaf(messageId),
     });
     return true;
   }
 
   /** The kept turn's reply as Paseo tracked it, for a CLI that does not report the rewind's leaf. */
-  private trackedRewindLeaf(messageId: string): string | null {
+  private async trackedRewindLeaf(messageId: string): Promise<string | null> {
     try {
-      const target = this.resolveConversationRewindTarget(messageId);
+      const target = await this.resolveConversationRewindTarget(messageId);
       return target.kind === "fresh-session" ? null : target.messageId;
     } catch {
       return null;

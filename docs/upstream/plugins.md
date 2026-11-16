@@ -100,7 +100,7 @@ Built-in plugins ship from `plugins/<id>/`, with `paseo-plugin.json`, `index.ser
 checks cover that registry. Unlisted directories do not load.
 
 The `worktree-include` built-in copies gitignored files selected by
-[`.worktreeinclude`](../../public-docs/worktrees.md#copy-local-files-with-worktreeinclude)
+[`.worktreeinclude`](../../public-docs/worktrees/worktreeinclude.md)
 before setup and agents, through `worktree.create.after`.
 
 Desktop packaging ships the entire built-in plugin directory as an external resource,
@@ -377,7 +377,7 @@ payload for a log, and the client's bootstrap buffer holds bytes only until the 
 attaches. Binary outputs reach only clients that send `pluginBinaryPayloads`. A binary input
 frame (`0x22`) becomes a synthetic `plugin.rpc.invoke.request` and runs through the normal message
 path, so it is authorized like any other invoke. The author contract, including the native upload
-limit, is in [stream events from the daemon](../public-docs/plugins/reference.md#subscriptions).
+limit, is in [stream events from the daemon](../../public-docs/plugins/reference.md#subscriptions).
 
 `usePaseo()` and the handler's `{ paseo }` context expose the same `PaseoApi`: projects,
 workspaces, agents, terminals, providers, and daemon config. They do not expose connection lifecycle.
@@ -697,7 +697,7 @@ When the host’s **Check usage** switch is off, the daemon rejects usage reques
 The sidebar view slot is global across hosts, while header and footer contributions retain their
 host selection. The slot owns selection loading, fallback and the error boundary; the plugin owns
 its layout. This keeps plugin failures from removing navigation or recovery controls. The
-[sidebar view guide](../public-docs/plugins/sidebar-views.md) owns the author API.
+[sidebar view guide](../../public-docs/plugins/sidebar-views.md) owns the author API.
 
 ## Contribute sidebar items
 
@@ -736,7 +736,7 @@ one section's order from built-ins, plugin groups, and the section's preference
 
 ## Contribute workspace row badge items
 
-The [public reference](../public-docs/plugins/reference.md#workspace-row-badge-items) owns the author API.
+The [public reference](../../public-docs/plugins/reference.md#workspace-row-badge-items) owns the author API.
 The host lives in `packages/app/src/plugins/workspace-row-badge-items/`; `WorkspaceMetaRow` draws a host's
 items after its own.
 
@@ -801,7 +801,7 @@ work inside it. See the maintained [composer pill example](../../plugin-examples
 ## Contribute composer items
 
 `addComposerItem` mounts a plugin component in the agent, draft and New workspace composers. The
-public contract is the [composer items reference](../public-docs/plugins/reference.md#composer-items).
+public contract is the [composer items reference](../../public-docs/plugins/reference.md#composer-items).
 
 A plugin reads one `ComposerModel` (`packages/app/src/composer/model.ts`): state, subscribe and
 commands. `toPluginComposer` (`packages/app/src/plugins/composer-items/`) turns its state into the
@@ -894,7 +894,7 @@ the sheet draws no plugin rows.
 ## Contribute New workspace items
 
 `addNewWorkspaceItem` mounts a plugin component on the New workspace screen. The public contract
-is the [New workspace items reference](../public-docs/plugins/reference.md#new-workspace-items).
+is the [New workspace items reference](../../public-docs/plugins/reference.md#new-workspace-items).
 
 The screen's choices that a plugin may change live in one plain store,
 `createNewWorkspaceSetup` (`packages/app/src/screens/new-workspace/setup-model.ts`): the base

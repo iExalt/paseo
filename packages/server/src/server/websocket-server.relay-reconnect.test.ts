@@ -1153,25 +1153,27 @@ describe("relay external socket reconnect behavior", () => {
       clientId: "cid-stable-project-identity",
     });
 
-    expect(serverInfo.features?.stableProjectIdentity).toBe(true);
-    expect(serverInfo.features?.canonicalSubmittedPrompts).toBe(true);
-    expect(serverInfo.features?.providersSnapshotCwd).toBe(true);
-    expect(serverInfo.features?.hopliteProvider).toBe(false);
-    expect(serverInfo.features?.fxProvider).toBe(false);
-    expect(serverInfo.features?.pluginLogs).toBe(true);
-    expect(serverInfo.features?.pushNotificationPreferences).toBe(true);
-    expect(serverInfo.features?.workspaceMarkUnread).toBe(true);
-    expect(serverInfo.features?.workspaceNotifications).toBe(true);
-    expect(serverInfo.features?.agentClose).toBe(true);
-    expect(serverInfo.features?.agentCancelOutcome).toBe(true);
-    expect(serverInfo.features?.profileList).toBe(true);
-    expect(serverInfo.features?.providerInspect).toBe(true);
-    expect(serverInfo.features?.agentDirectoryQuery).toBe(true);
-    expect(serverInfo.features?.agentStatus).toBe(true);
-    expect(serverInfo.features?.agentActivity).toBe(true);
-    expect(serverInfo.features?.["terminal-input-mode-replay"]).toBe(true);
-    expect(serverInfo.features?.["terminal-size-ownership"]).toBe(true);
-    expect(serverInfo.features?.["terminal-grapheme-widths"]).toBe(true);
+    expect(serverInfo.features).toMatchObject({
+      stableProjectIdentity: true,
+      canonicalSubmittedPrompts: true,
+      providersSnapshotCwd: true,
+      hopliteProvider: false,
+      fxProvider: false,
+      pluginLogs: true,
+      pushNotificationPreferences: true,
+      workspaceMarkUnread: true,
+      workspaceNotifications: true,
+      agentClose: true,
+      agentCancelOutcome: true,
+      profileList: true,
+      providerInspect: true,
+      agentDirectoryQuery: true,
+      agentStatus: true,
+      agentActivity: true,
+      "terminal-input-mode-replay": true,
+      "terminal-size-ownership": true,
+      "terminal-grapheme-widths": true,
+    });
     expect(serverInfo.features?.agentTurnIdentity).toBeUndefined();
     expect(serverInfo.features?.relayKeepAwake).toBeUndefined();
     expect(serverInfo.permissions).toEqual(DAEMON_PERMISSIONS);

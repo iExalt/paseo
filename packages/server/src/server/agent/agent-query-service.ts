@@ -22,7 +22,7 @@ export interface AgentQueryServiceDependencies {
   agentManager: AgentManager;
   agentStorage: AgentStorage;
   providerSnapshotManager: ProviderSnapshotManager;
-  workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "list">;
+  workspaceRegistry?: Pick<WorkspaceRegistry, "get" | "listActive">;
   logger: Logger;
 }
 
@@ -112,7 +112,10 @@ export async function queryAgentDirectory(
     workspaces: dependencies.workspaceRegistry,
     projectLive: (snapshot: ManagedAgent) =>
       serializeSnapshotWithMetadata(dependencies.agentStorage, snapshot, dependencies.logger),
-    projectStored: (record) => buildStoredAgentPayload(record, registeredProviders),
+    projectStored: (record) =>
+      buildStoredAgentPayload(record, registeredProviders, (provider, own) =>
+        dependencies.agentManager.effectiveOptionsFor(provider, own),
+      ),
     isProviderVisible: () => true,
     isStoredProviderAvailable: (record) =>
       isStoredAgentProviderAvailable(record, registeredProviders),
@@ -154,6 +157,7 @@ export async function getAgentStatus(input: AgentStatusServiceInput): Promise<Ag
   const snapshot = buildStoredAgentPayload(
     record,
     new Set(dependencies.providerSnapshotManager.listRegisteredProviderIds()),
+    (provider, own) => dependencies.agentManager.effectiveOptionsFor(provider, own),
   );
   return { status: snapshot.status, snapshot };
 }

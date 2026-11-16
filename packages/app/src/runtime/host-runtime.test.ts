@@ -3045,12 +3045,13 @@ describe("HostRuntimeStore", () => {
       readCursor: () => undefined,
       fetchPage: async () => ({ hasNewer: false, endCursor: null }),
       fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+      canCheckFreshness: () => true,
       reportError: () => {},
     });
     const register = vi.spyOn(owner, "prepareAgentOpen");
     useSessionStore.getState().setViewedTimelineSync(host.serverId, owner);
     expect(register).toHaveBeenCalledExactlyOnceWith("target");
-    expect(owner.getAgentTimelineStatus("target")).toBe("pending");
+    expect(owner.getAgentTimelineStatus("target")).toBe("reattaching");
     await vi.advanceTimersByTimeAsync(15_000);
     release();
     useSessionStore.getState().setViewedTimelineSync(host.serverId, null);
@@ -3114,6 +3115,7 @@ describe("HostRuntimeStore", () => {
       readCursor: () => undefined,
       fetchPage: async () => ({ hasNewer: false, endCursor: null }),
       fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+      canCheckFreshness: () => true,
       reportError: () => {},
     });
     useSessionStore.getState().setViewedTimelineSync(host.serverId, owner);
@@ -6418,6 +6420,7 @@ describe("timeline response publication ownership", () => {
         readCursor: () => undefined,
         fetchPage: async () => ({ hasNewer: false, endCursor: null }),
         fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
+        canCheckFreshness: () => true,
         reportError: () => {},
       });
     const owner = makeOwner();

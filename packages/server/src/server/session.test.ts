@@ -475,7 +475,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     }),
     agentStorage: asAgentStorage({
       get: vi.fn().mockResolvedValue(undefined),
-      list: vi.fn().mockResolvedValue([]),
+      listAll: vi.fn().mockResolvedValue([]),
       ...options.agentStorage,
     }),
     projectRegistry: {
@@ -491,7 +491,7 @@ function createSessionForTest(options: SessionForTestOptions = {}): Session {
     },
     workspaceRegistry: options.workspaceRegistry ?? {
       get: vi.fn(),
-      list: vi.fn().mockResolvedValue([]),
+      listActive: vi.fn().mockResolvedValue([]),
     },
     workspaceLabelService: options.workspaceLabelService,
     scheduleService: asScheduleService(),
@@ -666,13 +666,13 @@ describe("provider inspect session context", () => {
         status: "ready",
         enabled: true,
       });
-      const listDraftFeatures = vi.fn().mockResolvedValue([]);
+      const listDraftControls = vi.fn().mockResolvedValue({ controls: [], options: {} });
       const session = createSessionForTest({
         messages,
         providerSnapshotManager: providerSnapshot.manager,
         agentManager: {
           getAgent: vi.fn(() => ({ id: "caller-agent", cwd: "/workspace/parent" })),
-          listDraftFeatures,
+          listDraftControls,
         },
         resolveVoiceCallerContext: (agentId) => (agentId === "caller-agent" ? callerContext : null),
       });
@@ -685,7 +685,7 @@ describe("provider inspect session context", () => {
         callerAgentId: "caller-agent",
       });
 
-      expect(listDraftFeatures).toHaveBeenCalledWith({ provider: "claude", cwd: expectedCwd });
+      expect(listDraftControls).toHaveBeenCalledWith({ provider: "claude", cwd: expectedCwd });
       expect(messages).toContainEqual(
         expect.objectContaining({
           type: "provider.inspect.response",
@@ -1982,7 +1982,7 @@ describe("agent detach RPC", () => {
         detachAgent,
       },
       agentStorage: {
-        list: vi.fn().mockResolvedValue([]),
+        listAll: vi.fn().mockResolvedValue([]),
         get: vi.fn().mockResolvedValue(null),
       },
       workspaceRegistry: {

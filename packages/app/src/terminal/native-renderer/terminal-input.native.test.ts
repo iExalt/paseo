@@ -409,3 +409,435 @@ it("forwards native arrow key events to the terminal key path", () => {
     },
   ]);
 });
+
+// Android: printable text comes only from the text diff. Events are written as
+// `c` (text change), `k` (keypress), `reset` (focus, blur or show-keyboard)
+// and `at` (clock, ms).
+// "AOSP" rows follow the AOSP keyboard's order and "Samsung" rows Samsung
+// Keyboard's, both traced on devices.
+type InputEvent = readonly ["c" | "k", string] | readonly ["at", number] | readonly ["reset"];
+
+function createDiffInput() {
+  let clock = 0;
+  const input = createTerminalTextInputState({ printableSource: "diff", now: () => clock });
+  function play(...events: InputEvent[]): string {
+    let sent = "";
+    for (const event of events) {
+      if (event[0] === "at") clock = event[1];
+      else if (event[0] === "reset") input.reset();
+      else if (event[0] === "c") sent += input.receiveTextChange(event[1]).data;
+      else sent += input.receiveKeyPress(event[1]).data;
+    }
+    return sent;
+  }
+  return { input, play };
+}
+
+describe("native terminal typed input, diff (Android)", () => {
+  describe("printable text", () => {
+    it("sends each letter once whichever event comes first", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "l"], ["k", "l"], ["c", "ls"], ["k", "s"])).toBe("ls");
+      expect(play(["k", " "], ["c", "ls "])).toBe(" ");
+    });
+
+    it("sends a merged change once", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ab"], ["k", "a"], ["k", "b"])).toBe("ab");
+    });
+
+    it("keeps a committed space that has no key", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "git"], ["c", "git "])).toBe("git ");
+    });
+
+    it("sends nothing for a printable key without a text change", () => {
+      const { play } = createDiffInput();
+      expect(play(["k", "x"])).toBe("");
+    });
+  });
+
+  describe("Backspace", () => {
+    it.each([
+      [
+        "AOSP, key first",
+        [
+          ["k", "Backspace"],
+          ["c", "a"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung, change first",
+        [
+          ["c", "a"],
+          ["k", "Backspace"],
+        ] as InputEvent[],
+      ],
+    ])("deletes one character: %s", (_order, events) => {
+      const { play } = createDiffInput();
+      play(["c", "ab"]);
+      expect(play(...events)).toBe("\x7f");
+      expect(play(["at", 1000], ["k", "Backspace"], ["c", ""])).toBe("\x7f");
+    });
+
+    it("deletes to empty and then past the field, AOSP order", () => {
+      const { play } = createDiffInput();
+      play(["c", "a"]);
+      expect(play(["k", "Backspace"], ["c", ""])).toBe("\x7f");
+      expect(play(["k", "Backspace"])).toBe("\x7f");
+    });
+
+    it("deletes to empty, Samsung order", () => {
+      const { play } = createDiffInput();
+      play(["c", "a"]);
+      expect(play(["c", ""], ["k", "Backspace"])).toBe("\x7f");
+      expect(play(["k", "Backspace"])).toBe("\x7f");
+    });
+
+    it("deletes a whole composing word or selection that empties at once", () => {
+      const { play } = createDiffInput();
+      play(["c", "hel"]);
+      expect(play(["c", ""], ["k", "Backspace"])).toBe("\x7f\x7f\x7f");
+      play(["c", "abcd"]);
+      expect(play(["c", ""], ["k", "Backspace"])).toBe("\x7f".repeat(4));
+    });
+
+    it("realigns after Backspace so the next letter is sent once", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ab"], ["k", "Backspace"], ["c", "a"], ["c", "ac"], ["k", "c"])).toBe(
+        "ab\x7fc",
+      );
+    });
+
+    it("pairs a change-first Backspace with its key after a stall", () => {
+      const { play } = createDiffInput();
+      play(["c", "ab"]);
+      expect(play(["at", 0], ["c", "a"], ["at", 500], ["k", "Backspace"])).toBe("\x7f");
+      expect(play(["at", 1000], ["k", "Backspace"], ["c", ""])).toBe("\x7f");
+    });
+  });
+
+  describe("replacements", () => {
+    it("keeps Backspace working after a swallowed autocorrect", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "teh"], ["c", "the"])).toBe("teh");
+      expect(play(["k", "Backspace"], ["c", "th"])).toBe("\x7f");
+    });
+
+    it("keeps the CJK rubout off after a swallowed autocorrect until a reset", () => {
+      const { play } = createDiffInput();
+      play(["c", "teh"], ["c", "the"]);
+      expect(play(["c", "thenihao"], ["c", "the你好"])).toBe("nihao");
+      expect(play(["reset"], ["c", "nihao"], ["c", "你好"])).toBe("nihao\x7f\x7f\x7f\x7f\x7f你好");
+    });
+
+    it("types the spike's case: Backspace into a sent word, then retype", () => {
+      const { play } = createDiffInput();
+      let typed = "";
+      let sent = "";
+      for (const letter of "hello world") {
+        typed += letter;
+        sent += play(["c", typed], ["k", letter]);
+      }
+      for (const text of ["hello worl", "hello wor", "hello wo"]) {
+        sent += play(["k", "Backspace"], ["c", text]);
+      }
+      sent += play(["c", "hello wol"], ["k", "l"], ["c", "hello wold"], ["k", "d"]);
+      expect(sent).toBe("hello world\x7f\x7f\x7fld");
+    });
+  });
+
+  describe("Enter and field clears", () => {
+    it("sends Enter once when the clear lands, AOSP order", () => {
+      const { input, play } = createDiffInput();
+      play(["c", "ls"]);
+      expect(input.receiveTextChange("ls\n")).toEqual({ data: "\r", shouldClear: true });
+      expect(play(["reset"])).toBe("");
+      expect(input.receiveKeyPress("Enter")).toEqual({ data: "", shouldClear: false });
+      expect(play(["c", "x"])).toBe("x");
+    });
+
+    it("sends Enter once when the clear lands, Samsung order", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ls"], ["k", "Enter"], ["c", "ls\n"], ["reset"], ["c", "x"])).toBe("ls\rx");
+    });
+
+    it.each([
+      [
+        "AOSP",
+        [
+          ["c", "ls\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        [
+          ["k", "Enter"],
+          ["c", "ls\n"],
+        ] as InputEvent[],
+      ],
+    ])("diffs against the old line when the clear never lands: %s", (_order, enter) => {
+      const { play } = createDiffInput();
+      play(["c", "ls"]);
+      expect(play(...enter, ["reset"])).toBe("\r");
+      expect(play(["c", "ls\nx"], ["c", "ls\nxy"])).toBe("xy");
+      expect(play(["k", "Backspace"], ["c", "ls\nx"])).toBe("\x7f");
+    });
+
+    it("does not resend the old line on Backspace after a stuck clear, AOSP order", () => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"]);
+      expect(play(["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
+      expect(play(["c", "lsx"])).toBe("x");
+      expect(play(["at", 1000], ["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
+    });
+
+    it.each([
+      [
+        "AOSP",
+        [
+          ["c", "ls\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        [
+          ["k", "Enter"],
+          ["c", "ls\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends a fast first letter after Backspace on an empty prompt: %s", (_order, enter) => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ...enter, ["reset"]);
+      expect(play(["at", 0], ["k", "Backspace"], ["at", 50], ["c", "l"], ["k", "l"])).toBe("\x7fl");
+    });
+
+    it("resends the old line on Backspace after a stuck clear, Samsung order (known gap)", () => {
+      // A change-first Backspace into a stuck line looks like typing a new line
+      // that starts the same way; see the plan's known gaps.
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"]);
+      expect(play(["c", "ls"], ["k", "Backspace"], ["c", "lsx"])).toBe("lsx");
+    });
+
+    it.each([
+      [
+        "AOSP",
+        "ls",
+        [
+          ["c", "ls\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        "ls",
+        [
+          ["k", "Enter"],
+          ["c", "ls\n"],
+        ] as InputEvent[],
+      ],
+      [
+        "AOSP",
+        "y",
+        [
+          ["c", "y\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        "y",
+        [
+          ["k", "Enter"],
+          ["c", "y\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends a repeated line in full after a clear lands: %s %s", (_order, line, enter) => {
+      const { play } = createDiffInput();
+      let typed = "";
+      for (const letter of line) {
+        typed += letter;
+        play(["c", typed]);
+      }
+      play(...enter, ["reset"]);
+      typed = "";
+      let sent = "";
+      for (const letter of line) {
+        typed += letter;
+        sent += play(["c", typed], ["k", letter]);
+      }
+      expect(sent).toBe(line);
+    });
+
+    it.each([
+      [
+        "AOSP",
+        [
+          ["c", "the\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        [
+          ["k", "Enter"],
+          ["c", "the\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends Enter committed with an autocorrect at once: %s", (_order, enter) => {
+      const { play } = createDiffInput();
+      expect(play(["c", "teh"], ...enter)).toBe("teh\r");
+      expect(play(["reset"], ["c", "x"])).toBe("x");
+    });
+
+    it("realigns a Backspace into a stuck line that ended in CR LF", () => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\r\n"], ["k", "Enter"], ["reset"]);
+      expect(play(["k", "Backspace"], ["c", "ls"])).toBe("\x7f");
+      expect(play(["c", "lsx"])).toBe("x");
+    });
+
+    it("sends Enter from a newline change that has no Enter key", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "l"], ["c", "ls\n"])).toBe("ls\r");
+      expect(play(["reset"], ["c", "x"])).toBe("x");
+    });
+
+    it.each([
+      [
+        "key first",
+        [
+          ["k", "s\n"],
+          ["c", "ls\n"],
+        ] as InputEvent[],
+      ],
+      [
+        "change first",
+        [
+          ["c", "ls\n"],
+          ["k", "s\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends a letter and Enter committed together once: %s", (_order, events) => {
+      const { play } = createDiffInput();
+      expect(play(["c", "l"], ...events, ["reset"], ["c", "x"])).toBe("ls\rx");
+    });
+
+    it("sends one Enter when its key comes long after the newline change", () => {
+      const { play } = createDiffInput();
+      expect(
+        play(["c", "ls"], ["at", 0], ["c", "ls\n"], ["reset"], ["at", 500], ["k", "Enter"]),
+      ).toBe("ls\r");
+    });
+
+    it("sends an Enter key that has no newline change at the next event", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ls"], ["k", "Enter"])).toBe("ls");
+      expect(play(["c", "lsx"])).toBe("\rx");
+    });
+
+    it("sends a pending deletion before a newline change", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ab"], ["c", ""], ["c", "x\n"])).toBe("ab\x7f\x7fx\r");
+    });
+
+    it("keeps the stuck-clear marker across a show-keyboard reset", () => {
+      const { play } = createDiffInput();
+      play(["c", "ls"], ["c", "ls\n"], ["k", "Enter"], ["reset"], ["reset"]);
+      expect(play(["c", "ls\nx"])).toBe("x");
+    });
+
+    it("sends Enter on an empty field", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "\n"], ["k", "Enter"], ["reset"], ["c", "x"])).toBe("\rx");
+    });
+
+    it("does not resend a multi-line paste whose clear never lands", () => {
+      const { play } = createDiffInput();
+      expect(
+        play(["c", "printf one\nprintf two"], ["reset"], ["c", "printf one\nprintf twox"]),
+      ).toBe("x");
+    });
+
+    it("resends stale text when a show-keyboard clear never lands (accepted cost)", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "abc"], ["reset"], ["c", "abcd"])).toBe("abcabcd");
+    });
+  });
+
+  describe("keys", () => {
+    it("translates software keyboard terminal control keys", () => {
+      const { input, play } = createDiffInput();
+      expect(input.receiveKeyPress("Backspace")).toEqual({ data: "\x7f", shouldClear: false });
+      expect(play(["k", "Enter"], ["c", "\n"])).toBe("\r");
+      expect(play(["k", "Return"], ["c", "\n"])).toBe("\r");
+      expect(input.receiveTextChange("hello\n")).toEqual({ data: "hello\r", shouldClear: true });
+    });
+
+    it.each([
+      [
+        "AOSP",
+        [
+          ["c", "\n"],
+          ["k", "Enter"],
+        ] as InputEvent[],
+      ],
+      [
+        "Samsung",
+        [
+          ["k", "Enter"],
+          ["c", "\n"],
+        ] as InputEvent[],
+      ],
+    ])("sends Enter twice on an empty prompt: %s", (_order, enter) => {
+      const { play } = createDiffInput();
+      expect(play(...enter, ["reset"], ...enter, ["reset"])).toBe("\r\r");
+    });
+  });
+
+  describe("composition and Backspace", () => {
+    it("deletes once per held Backspace through a Hangul syllable, Samsung order", () => {
+      const { play } = createDiffInput();
+      play(["c", "한"]);
+      let sent = "";
+      for (const [at, text] of [
+        [0, "하"],
+        [50, "ㅎ"],
+        [100, ""],
+      ] as const) {
+        sent += play(["at", at], ["c", text], ["at", at + 1], ["k", "Backspace"]);
+      }
+      expect(sent).toBe("\x7f하\x7fㅎ\x7f");
+      expect(play(["at", 1000], ["k", "Backspace"])).toBe("\x7f");
+    });
+
+    it("pairs a Hangul rewrite with its Backspace key, AOSP order", () => {
+      const { play } = createDiffInput();
+      play(["c", "한"]);
+      expect(play(["k", "Backspace"], ["c", "하"])).toBe("\x7f하");
+      expect(play(["at", 1000], ["k", "Backspace"], ["c", "ㅎ"])).toBe("\x7fㅎ");
+    });
+
+    it("sends nothing extra for Korean jamo keys, Samsung order", () => {
+      const { play } = createDiffInput();
+      expect(
+        play(["c", "ㅎ"], ["k", "ㅎ"], ["c", "하"], ["k", "ㅏ"], ["c", "한"], ["k", "ㄴ"]),
+      ).toBe("ㅎ\x7f하\x7f한");
+    });
+
+    it("deletes once when a Backspace key comes long after the field empties", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "ab"], ["at", 0], ["c", ""], ["at", 500], ["k", "Backspace"])).toBe(
+        "ab\x7f\x7f",
+      );
+    });
+
+    it("sends a deletion with no Backspace key at the next event", () => {
+      const { play } = createDiffInput();
+      expect(play(["c", "a"], ["c", ""], ["c", "b"])).toBe("a\x7fb");
+    });
+  });
+});

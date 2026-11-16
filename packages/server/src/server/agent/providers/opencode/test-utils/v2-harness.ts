@@ -7,8 +7,10 @@ import type {
 import type { V2Api } from "../v2/api.js";
 import type { V2Connection } from "../v2/runtime.js";
 
-function unexpected(): never {
-  throw new Error("Unexpected OpenCode v2 test operation");
+function unexpected(operation: string): (...args: unknown[]) => never {
+  return () => {
+    throw new Error(`Unexpected OpenCode v2 test operation: ${operation}`);
+  };
 }
 
 export type HarnessSessionInfo = SessionInfo & {
@@ -144,9 +146,9 @@ export class V2Harness {
   }
 
   readonly api: V2Api = {
-    server: { info: unexpected },
+    server: { info: unexpected("info") },
     shell: {
-      remove: unexpected,
+      remove: unexpected("remove"),
       list: async () => ({ location: { directory: this.info.location.directory }, data: [] }),
     },
     plugin: {
@@ -166,12 +168,12 @@ export class V2Harness {
         data: [],
       }),
     },
-    model: { list: unexpected, default: unexpected },
-    provider: { list: unexpected },
-    command: { list: unexpected },
-    skill: { list: unexpected },
-    // Paseo hosts session MCP servers itself; OpenCode's location-wide MCP is never used.
-    mcp: { add: unexpected, list: unexpected },
+    model: { list: unexpected("list"), default: unexpected("default") },
+    provider: { list: unexpected("list") },
+    command: { list: unexpected("list") },
+    skill: { list: unexpected("list") },
+    // Paseo hosts session MCP servers itself; location-wide MCP is never used.
+    mcp: { add: unexpected("mcp.add"), list: unexpected("mcp.list") },
     message: {
       list: async (input) => {
         if (input.cursor && input.order) throw new Error("cursor cannot be combined with order");
@@ -194,10 +196,10 @@ export class V2Harness {
         return { data, cursor: next ? { next } : {} };
       },
     },
-    permission: { list: async () => [], reply: unexpected },
+    permission: { list: async () => [], reply: unexpected("reply") },
     session: {
       inbox: { list: async () => [] },
-      form: { list: async () => [], reply: unexpected, cancel: unexpected },
+      form: { list: async () => [], reply: unexpected("reply"), cancel: unexpected("cancel") },
       create: async (input = {}) => {
         this.creates.push(input);
         return this.info;
@@ -212,8 +214,10 @@ export class V2Harness {
         return this.active ? { [this.info.id]: { type: "running" as const } } : {};
       },
       remove: async () => undefined,
-      switchAgent: unexpected,
-      switchModel: unexpected,
+      switchAgent: async ({ agent }) => {
+        this.info.agent = agent;
+      },
+      switchModel: unexpected("switchModel"),
       environment: async (input) => {
         this.environments.push(input);
       },
@@ -235,9 +239,13 @@ export class V2Harness {
           this.finishExecution();
       },
       interrupt: (input, options) => this.interrupt(input, options),
-      command: unexpected,
-      compact: unexpected,
-      revert: { stage: unexpected, clear: unexpected, commit: unexpected },
+      command: unexpected("command"),
+      compact: unexpected("compact"),
+      revert: {
+        stage: unexpected("stage"),
+        clear: unexpected("clear"),
+        commit: unexpected("commit"),
+      },
     },
     event: { subscribe: (options) => this.events(options) },
   };

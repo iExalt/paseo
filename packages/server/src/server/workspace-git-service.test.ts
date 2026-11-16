@@ -363,9 +363,8 @@ function createFolderBackedGit(options?: FolderBackedGitOptions) {
     watchCallbacks.set(directory, callback);
     return createAsyncSubscription();
   });
-  const getCheckoutSnapshotFacts = vi.fn(
-    async (cwd: string): Promise<CheckoutSnapshotFacts> =>
-      existsSync(cwd) ? (options?.facts ?? createCheckoutSnapshotFacts)(cwd) : { isGit: false },
+  const getCheckoutSnapshotFacts = vi.fn(async (cwd: string): Promise<CheckoutSnapshotFacts> =>
+    existsSync(cwd) ? (options?.facts ?? createCheckoutSnapshotFacts)(cwd) : { isGit: false },
   );
   const getCheckoutStatus = vi.fn(async (cwd: string) =>
     existsSync(cwd) ? createCheckoutStatus(cwd) : ({ isGit: false } as const),

@@ -765,7 +765,7 @@ test("createWorkspaceForDirectory waits for an archive's delete and refuses the 
   releaseArchive();
   await archive;
   expect(await outcome).toBe(`Workspace directory was removed: ${repo}`);
-  expect(await workspaceRegistry.list()).toEqual([]);
+  expect(await workspaceRegistry.listActive()).toEqual([]);
 });
 
 test("directory creation persists the live branch and a trimmed title", async () => {
