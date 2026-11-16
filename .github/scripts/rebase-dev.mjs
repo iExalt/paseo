@@ -1515,7 +1515,20 @@ function runRoutine(repositoryPath) {
   });
 }
 
-export async function validateRebase({ repositoryPath, runChecks = runRoutine }) {
+export async function validateRebase({ repositoryPath, runChecks = runRoutine, reportInputs }) {
+  if (reportInputs) {
+    const inputs = {};
+    for (const name of ["dev", "upstream", "resolutions"]) {
+      inputs[name] = (
+        await gitChecked(repositoryPath, [
+          "rev-parse",
+          "--verify",
+          `refs/codex/snapshot/${name}^{commit}`,
+        ])
+      ).trim();
+    }
+    reportInputs(inputs);
+  }
   const testedSha = await checkedTree(repositoryPath);
   await runChecks(repositoryPath);
   await checkedTree(repositoryPath, testedSha);
@@ -1589,7 +1602,10 @@ async function main() {
     return;
   }
   if (process.argv[2] === "validate") {
-    const testedSha = await validateRebase({ repositoryPath });
+    const testedSha = await validateRebase({
+      repositoryPath,
+      reportInputs: (inputs) => console.log(`Captured inputs: ${JSON.stringify(inputs)}`),
+    });
     if (process.env.GITHUB_OUTPUT)
       await appendFile(process.env.GITHUB_OUTPUT, `tested-sha=${testedSha}\n`);
     if (process.env.GITHUB_STEP_SUMMARY) {
@@ -1620,6 +1636,9 @@ async function main() {
       `dev-sha=${snapshots.dev}\nupstream-sha=${snapshots.upstream}\nresolutions-sha=${snapshots.resolutions}\n`,
     );
   }
+  console.log(
+    `Captured inputs: ${JSON.stringify({ dev: snapshots.dev, upstream: snapshots.upstream, resolutions: snapshots.resolutions })}`,
+  );
   console.log(`Rebase complete from upstream ${snapshots.upstream}; captured dev ${snapshots.dev}`);
 }
 

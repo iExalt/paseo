@@ -1288,6 +1288,8 @@ test("validation CLI binds the shared command to a clean tested SHA", async () =
   git(repositoryPath, "add", "-f", ".env.example");
   commit(repositoryPath, "validation fixture");
   const originalSha = git(repositoryPath, "rev-parse", "HEAD");
+  for (const name of ["dev", "upstream", "resolutions"])
+    git(repositoryPath, "update-ref", `refs/codex/snapshot/${name}`, originalSha);
   const invocation = join(root, "validation-invocation.json");
   const output = join(root, "validation-output.txt");
   const summary = join(root, "validation-summary.md");
@@ -1345,6 +1347,12 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
   ]) {
     const result = invoke(mode);
     assert.equal(result.status, 1, result.stderr);
+    assert.match(
+      result.stdout,
+      new RegExp(
+        `Captured inputs: .*"dev":"${originalSha}".*"upstream":"${originalSha}".*"resolutions":"${originalSha}"`,
+      ),
+    );
     assert.match(result.stderr, error);
     assert.equal(existsSync(output), false);
     assert.equal(existsSync(summary), false);
@@ -1997,4 +2005,30 @@ test("preflight preserves the captured tuple and rejects movement in every froze
     assert.equal(gate.ok, changed === null);
     if (changed) assert.match(gate.detail, new RegExp(`Captured ${changed} moved`));
   }
+});
+
+test("validation reports actual snapshot refs before checks fail and refuses missing captures", async () => {
+  const repositoryPath = join(root, "captured-input-output");
+  initRepo(repositoryPath);
+  const expected = {};
+  for (const name of ["dev", "upstream", "resolutions"]) {
+    git(repositoryPath, "commit", "--allow-empty", "-m", name);
+    expected[name] = git(repositoryPath, "rev-parse", "HEAD");
+    git(repositoryPath, "update-ref", `refs/codex/snapshot/${name}`, expected[name]);
+  }
+  const events = [];
+  const options = {
+    repositoryPath,
+    reportInputs: (inputs) => events.push(inputs),
+    runChecks: async () => {
+      events.push("checks");
+      throw new Error("expected routine failure");
+    },
+  };
+  await assert.rejects(validateRebase(options), /expected routine failure/);
+  assert.deepEqual(events, [expected, "checks"]);
+  events.length = 0;
+  git(repositoryPath, "update-ref", "-d", "refs/codex/snapshot/resolutions");
+  await assert.rejects(validateRebase(options));
+  assert.deepEqual(events, []);
 });

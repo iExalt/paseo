@@ -92,7 +92,9 @@ gates. Record any human or device dependency and fix blockers together.
 Unknown conflicts stop unattended replay. Review every manual resolution and
 supersession with the reviewer, complete rehearsal, then export the completed
 rerere pairs into a separate rebase-resolutions checkout. Review deletion records
-and target-specific fixups separately. Inspect each complete resolved blob and
+and target-specific fixups separately. Sweep callers and mocks of every adapted
+interface, including tests that import the changed operation indirectly; checking
+only its matching test filename can miss a stale module mock. Inspect each complete resolved blob and
 net deletions, including bytes outside conflict markers; a helper can silently
 truncate an unchanged suffix. Prove exported resolutions with a fresh unattended
 replay against the reviewed source tree. Include nontextual breaks: new upstream
@@ -114,7 +116,13 @@ Compare remote dev, mirror and resolutions with the frozen tuple immediately bef
 dispatch. After every run, verify the captured tuple in its summary or logs, even
 when the run is green. A mismatch is an input change, not a failed validate-only
 attempt: review and replay the delta, re-freeze, then redispatch. Missing capture
-evidence leaves the gate unverified. Capture the run ID and its starting SHAs. Require the rebase job and actual
+evidence leaves the gate unverified. Before the stdout capture change is on dev,
+use the repository activity API for any SHA available only in the job summary:
+`gh api --paginate 'repos/iExalt/paseo/activity?ref=refs/heads/rebase-resolutions&per_page=100'`.
+Read every page covering the full run interval. Require the last push before the
+run to end at the frozen SHA and no ref change through completion. Preserve the
+activity response and interval as the binding evidence; current refs alone do not
+prove the captured input. Capture the run ID and its starting SHAs. Require the rebase job and actual
 validation step to run successfully with a tested SHA; skipped jobs do not pass. Watch with a deadline and stop on first
 failure. Require the actual `validateRebase()` entry point: it runs routine checks
 and asserts the exact tested tree stays clean afterward. Running only the checks
