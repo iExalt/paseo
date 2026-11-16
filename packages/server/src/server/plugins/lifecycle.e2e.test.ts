@@ -7,7 +7,7 @@ import { expect, onTestFinished, test } from "vitest";
 import { createPaseoClient } from "@getpaseo/client";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
-import { resolveDaemonVersion } from "../daemon-version.js";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { BuiltinPluginLoader } from "./builtin/index.js";
 import { createPaseoApi } from "@getpaseo/client";
 
@@ -258,7 +258,7 @@ test("metadata set at creation reaches the hooks, a before hook can add to it, a
       path.join(directory, "paseo-plugin.json"),
       JSON.stringify({
         id: "metadata-hooks",
-        requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+        requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
       }),
     );
     await writeFile(
@@ -340,7 +340,7 @@ test("hooks tell a background agent from a normal one", async () => {
       path.join(directory, "paseo-plugin.json"),
       JSON.stringify({
         id: "background-hooks",
-        requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+        requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
       }),
     );
     await writeFile(
@@ -422,7 +422,7 @@ test("metadata set at creation and through setMetadata survives a daemon restart
       path.join(pluginDirectory, "paseo-plugin.json"),
       JSON.stringify({
         id: "metadata-restart",
-        requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+        requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
       }),
     );
     // Returns an explicit object without `metadata`, as a plugin written before metadata existed.
@@ -908,7 +908,7 @@ async function createProviderPlugin(
     path.join(directory, "paseo-plugin.json"),
     JSON.stringify({
       id: "shutdown-provider-plugin",
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(
