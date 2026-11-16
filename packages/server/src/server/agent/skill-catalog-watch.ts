@@ -1,6 +1,7 @@
 import { createWatcherLivenessCanary } from "../watcher-liveness-canary.js";
+import { createHash } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
-import { readdir, readlink, realpath, stat } from "node:fs/promises";
+import { readFile, readdir, readlink, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 
@@ -132,6 +133,7 @@ export function watchSkillChanges(
   let subscriptions: Array<() => void> = [];
   let preparing: Array<() => void> = [];
   let pending = Promise.resolve();
+  let catalog: string | undefined;
   const change = () => {
     if (closed) return;
     clearTimeout(timer);
@@ -139,18 +141,23 @@ export function watchSkillChanges(
       pending = pending
         .then(async () => {
           if (closed) return;
-          await reconcile();
-          if (!closed) await onChange();
+          const next = await reconcile();
+          // Claude Code rewrites sync bookkeeping in ~/.claude/skills every few seconds without
+          // changing any skill; reporting those writes keeps slash menus reloading forever.
+          if (closed || next === catalog) return undefined;
+          await onChange();
+          catalog = next;
           return undefined;
         })
         .catch(onError);
     }, debounceMs);
     timer.unref();
   };
-  async function reconcile() {
+  async function reconcile(): Promise<string> {
     const next: Array<() => void> = [];
     preparing = next;
     const readiness: Promise<void>[] = [];
+    const entries: string[] = [];
     const observed = new Set<string>();
     const visited = new Set<string>();
     const add = async (directory: string, recursive: boolean, filter?: string) => {
@@ -163,6 +170,7 @@ export function watchSkillChanges(
         const { dev, ino, birthtimeNs } = await stat(directory, { bigint: true });
         if (closed) return;
         const identity = `${dev}:${ino}:${birthtimeNs}`;
+        if (filter === undefined) entries.push(`d ${directory} ${identity}`);
         const observation = observe(directory, recursive, change, onError, identity, filter);
         next.push(observation.close);
         readiness.push(observation.ready);
@@ -193,14 +201,19 @@ export function watchSkillChanges(
           const child = join(dir, entry.name);
           if (entry.isSymbolicLink()) {
             // Keep observing a dangling target's parent so later creation is visible.
-            await parentWatch(resolve(dirname(child), await readlink(child)));
+            const linkTarget = await readlink(child);
+            entries.push(`l ${child} ${linkTarget}`);
+            await parentWatch(resolve(dirname(child), linkTarget));
             const info = await stat(child).catch(() => null);
             if (info?.isDirectory()) await links(child);
             else if (info?.isFile()) {
               const fileTarget = await realpath(child);
               await parentWatch(fileTarget);
+              if (!entry.name.startsWith(".")) entries.push(`f ${child} ${await digest(child)}`);
             }
           } else if (entry.isDirectory()) await walk(child);
+          else if (entry.isFile() && !entry.name.startsWith("."))
+            entries.push(`f ${child} ${await digest(child)}`);
         }
       };
       await walk(target);
@@ -219,8 +232,15 @@ export function watchSkillChanges(
     if (closed) for (const unsubscribe of next) unsubscribe();
     subscriptions = closed ? [] : next;
     preparing = [];
+    return entries.sort().join("\n");
   }
-  const ready = reconcile().catch(onError);
+  const ready = (async () => {
+    try {
+      catalog = await reconcile();
+    } catch (error) {
+      onError(error);
+    }
+  })();
   pending = ready;
   return {
     ready,
@@ -233,6 +253,31 @@ export function watchSkillChanges(
       preparing = [];
     },
   };
+}
+
+/** Content hashes keyed by path, reused while the file's stat is unchanged. */
+const digests = new Map<string, { stamp: string; digest: string }>();
+const maxHashedBytes = 1024 * 1024;
+/** Identifies a file's content; a rewrite with identical bytes keeps its digest. */
+async function digest(path: string): Promise<string> {
+  try {
+    const { dev, ino, size, mtimeNs, ctimeNs } = await stat(path, { bigint: true });
+    const stamp = `${dev}:${ino}:${size}:${mtimeNs}:${ctimeNs}`;
+    // Hashing large assets costs more than the rare extra refresh their edits cause.
+    if (size > maxHashedBytes) return stamp;
+    const cached = digests.get(path);
+    if (cached?.stamp === stamp) return cached.digest;
+    const value = createHash("sha256")
+      .update(await readFile(path))
+      .digest("hex");
+    digests.set(path, { stamp, digest: value });
+    return value;
+  } catch (error) {
+    // An unreadable file must not stop the walk of the rest of its root.
+    const code =
+      typeof error === "object" && error !== null && "code" in error ? String(error.code) : "";
+    return `unreadable:${code}`;
+  }
 }
 
 function missing(error: unknown): boolean {
