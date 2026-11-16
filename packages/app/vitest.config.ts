@@ -125,7 +125,7 @@ export default defineConfig({
             // load it outside Vite, where its react-native import would miss the web alias.
             {
               find: /^@legendapp\/list\/react-native$/,
-              replacement: path.resolve(rootNodeModules, "@legendapp/list/react-native.mjs"),
+              replacement: path.resolve(resolvePackageEntry("@legendapp/list"), "react-native.mjs"),
             },
           ],
         },

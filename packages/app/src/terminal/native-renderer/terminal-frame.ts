@@ -1,3 +1,4 @@
+import type { TerminalFindMatch } from "./terminal-buffer-search";
 import type {
   PaseoTerminalFrame,
   PaseoTerminalRow,
@@ -80,5 +81,43 @@ function toFrameSelection(input: {
     startCol: input.range.start.col,
     endRow: input.range.end.row - input.firstRow,
     endCol: input.range.end.col,
+  };
+}
+
+/** Find uses absolute buffer rows and half-open column ranges, including wide glyphs. */
+export function createTerminalFindStyleResolver(input: {
+  state: TerminalViewportState;
+  columns: number;
+  resolver: TerminalCellStyleResolver;
+  find: { matches: readonly TerminalFindMatch[]; current: TerminalFindMatch | null };
+  matchColor: number;
+  currentColor: number;
+}): TerminalCellStyleResolver {
+  const { state, columns, resolver, find } = input;
+  const highlights = new Map<object, number>();
+  const mark = (match: TerminalFindMatch, color: number) => {
+    const first = Math.max(match.startRow, state.firstRow);
+    const last = Math.min(match.endRow, state.firstRow + state.grid.length - 1);
+    for (let row = first; row <= last; row += 1) {
+      const cells = state.grid[row - state.firstRow]!;
+      const start = row === match.startRow ? match.startCol : 0;
+      const end = row === match.endRow ? match.endCol : columns;
+      for (let col = 0; col < Math.min(columns, cells.length); col += 1) {
+        const cell = cells[col]!;
+        if (col < end && col + Math.max(1, cell.width ?? 1) > start) highlights.set(cell, color);
+      }
+    }
+  };
+  for (const match of find.matches) mark(match, input.matchColor);
+  if (find.current) mark(find.current, input.currentColor);
+  return {
+    ...resolver,
+    resolve: (cell) => {
+      const style = resolver.resolve(cell);
+      const background = highlights.get(cell);
+      return background === undefined
+        ? style
+        : { ...style, background, foreground: resolver.backgroundColor };
+    },
   };
 }

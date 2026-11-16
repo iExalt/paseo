@@ -5923,17 +5923,7 @@ export class DaemonClient {
     requestId?: string,
   ): Promise<WorkspaceCreatePayload> {
     const resolvedRequestId = this.createRequestId(requestId ?? input.requestId);
-    if (
-      input.callerContext !== undefined &&
-      this.lastServerInfoMessage?.features?.workspaceCallerContext !== true
-    ) {
-      throw new Error("Update the host to use caller-scoped workspace creation.");
-    }
-    if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();
-    if (input.agent?.background !== undefined)
-      throw new Error("Configure background on the workspace, not its initial agent.");
-    if (input.metadata !== undefined || input.agent?.metadata !== undefined)
-      this.requireEntityMetadata();
+    this.assertWorkspaceCreateOptions(input);
     let agentConfig = input.agent ? resolveAgentConfig(input.agent) : undefined;
     if (agentConfig && this.carriesLegacyOptions(agentConfig)) {
       agentConfig = await this.routeLegacyCreateConfig(agentConfig);
@@ -5950,6 +5940,20 @@ export class DaemonClient {
       setupTerminalId: result.setupTerminalId ?? null,
       requestId: result.requestId ?? resolvedRequestId,
     };
+  }
+
+  private assertWorkspaceCreateOptions(input: CreateWorkspaceRequestOptions): void {
+    if (
+      input.callerContext !== undefined &&
+      this.lastServerInfoMessage?.features?.workspaceCallerContext !== true
+    ) {
+      throw new Error("Update the host to use caller-scoped workspace creation.");
+    }
+    if (input.background !== undefined || input.callerAgentId) this.requireBackgroundWorkspaces();
+    if (input.agent?.background !== undefined)
+      throw new Error("Configure background on the workspace, not its initial agent.");
+    if (input.metadata !== undefined || input.agent?.metadata !== undefined)
+      this.requireEntityMetadata();
   }
 
   private async createLegacyWorkspace(

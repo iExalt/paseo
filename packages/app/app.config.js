@@ -9,7 +9,6 @@ const withFdroidAutolinking = require("./plugins/with-fdroid-autolinking");
 const withPasteInput = require("./plugins/with-paste-input");
 const withAndroidScroll = require("./modules/paseo-scroll/app.plugin");
 const withAndroidDisplayMetrics = require("./modules/paseo-display-metrics/app.plugin");
-const withAndroidHardwareKeyboard = require("./modules/paseo-hardware-keyboard/app.plugin");
 const { getNativeReleaseVersion } = require("./native-release-version");
 const { resolveAppVariant, resolvePreferencesMigrationBridge } = require("./app-variant");
 const { withForkBuild, assertForkBuildPlatform } = require("./plugins/with-fork-build");
@@ -171,7 +170,6 @@ export default {
       withPasteInput,
       withAndroidScroll,
       withAndroidDisplayMetrics,
-      withAndroidHardwareKeyboard,
       [withAndroidAsyncStorageSize, 64],
       ...buildProfile.cameraPlugins,
       withAndroidOptionalCamera,

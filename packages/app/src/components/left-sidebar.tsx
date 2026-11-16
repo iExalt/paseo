@@ -1,13 +1,6 @@
 import { SidebarViewSlot } from "@/plugins/sidebar-view";
 import { useAddHost } from "@/hosts/add-host";
-import {
-  CircleGauge,
-  FolderPlus,
-  GitBranch,
-  Server,
-  Settings,
-  type LucideIcon,
-} from "lucide-react-native";
+import { CircleGauge, FolderPlus, GitBranch, Server, Settings } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
 import {
   memo,
@@ -474,7 +467,8 @@ function SidebarFooter({
       resolveSidebarFooterLayout({
         rowWidth: Math.max(
           0,
-          rowWidth - updateActionCount * TOOLBAR_CONTROL_SIZES[controlSizingForLayout(isCompactLayout)],
+          rowWidth -
+            updateActionCount * TOOLBAR_CONTROL_SIZES[controlSizingForLayout(isCompactLayout)],
         ),
         controlSize: TOOLBAR_CONTROL_SIZES[controlSizingForLayout(isCompactLayout)],
         rowPadding: FOOTER_ROW_PADDING,

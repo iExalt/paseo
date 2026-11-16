@@ -850,7 +850,7 @@ function ChatAgentContent({
   const viewState = useAgentScreenStateMachine({
     routeKey: `${serverId}:${agentId ?? ""}`,
     input: {
-      agent: agent ?? null,
+      agent,
       isArchived: agentState.archivedAt !== null,
       missingAgentState,
       isConnected,

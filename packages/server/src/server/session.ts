@@ -367,7 +367,6 @@ type ProviderSubagentManagerEvent = Extract<
 // Clients before 0.1.45 validate providers with z.enum(["claude", "codex", "opencode"]) and reject
 // the entire session message if they encounter an unknown provider.
 const LEGACY_PROVIDER_IDS = new Set(["claude", "codex", "opencode"]);
-const FULL_AGENT_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
 const MIN_VERSION_ALL_PROVIDERS = "0.1.45";
 const MIN_VERSION_EXPLICIT_WORKSPACE_RECOVERY = "0.1.105";
 function errorToFriendlyMessage(error: unknown): string {
@@ -2380,11 +2379,6 @@ export class Session {
           return;
         }
 
-        if (event.type === "provider_subagent") {
-          this.forwardProviderSubagent(event.event);
-          return;
-        }
-
         if (event.type === "background_work") {
           void this.forwardBackgroundWork(event.agentId).catch((error) =>
             this.sessionLogger.error(
@@ -2464,14 +2458,6 @@ export class Session {
       // listings see them; everything else above filters them out.
       { replayState: false, includeInternal: true },
     );
-  }
-
-  private forwardProviderSubagent(event: ProviderSubagentManagerEvent): void {
-    const parentAgentId =
-      event.type === "upsert" ? event.subagent.parentAgentId : event.parentAgentId;
-    if (this.agentManager.getAgent(parentAgentId)?.internal) return;
-    this.emitProviderSubagentWorkspaceUpdate(event);
-    this.forwardProviderSubagentUpdate(event);
   }
 
   private async forwardBackgroundWork(agentId: string): Promise<void> {
@@ -4108,6 +4094,13 @@ export class Session {
         return this.handleArchiveWorkspaceRequest(msg);
       case "project.remove.request":
         return this.handleProjectRemoveRequest(msg);
+      default:
+        return this.dispatchWorkspaceMetadataMessage(msg);
+    }
+  }
+
+  private dispatchWorkspaceMetadataMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
       case "workspace.title.set.request":
         return this.handleWorkspaceTitleSetRequest(
           msg.workspaceId,
@@ -5929,8 +5922,8 @@ export class Session {
   private async resolveSessionRuntimeCwd(
     msg: CreateAgentRequestMessage,
   ): Promise<string | undefined> {
+    if (msg.runtimeCwd === undefined) return undefined;
     const callerAgent = this.resolveSessionCreateCaller(msg);
-    if (!msg.runtimeCwd) return undefined;
     const runtimeCwd = resolveScopedAgentCwd({
       requestedCwd: msg.runtimeCwd,
       callerAgent,

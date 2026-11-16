@@ -2276,6 +2276,7 @@ describe("ClaudeAgentSession features", () => {
       const client = new ClaudeAgentClient({
         logger,
         queryFactory: mock.queryFactory,
+        runtimeSettings: { command: { mode: "replace", argv: [process.execPath] } },
         resolveBinary: async () => "/test/claude/bin",
       });
       return { ...mock, client };

@@ -25,7 +25,7 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/expo-dev-launcher",
     patchPrefix: "expo-dev-launcher+",
   },
-  // Backport for expo-modules-core 57.0.23: https://github.com/expo/expo/pull/49634.
+  // Backport for expo-modules-core 57.0.24: https://github.com/expo/expo/pull/49634.
   // Remove the Activity hunks when Expo includes that fix; retain the Gradle plugin
   // compiler alignment until Expo ships a compatible pin.
   {
@@ -70,6 +70,11 @@ const patchedPackages = [
     patchPrefix: "react-native-reanimated+",
   },
   // The native chat timeline. The patch's header lists its hunks and the upstream issue.
+  {
+    nodeModulesPath: "packages/app/node_modules/@legendapp/list",
+    patchPrefix: "@legendapp+list+",
+    cwd: "packages/app",
+  },
   {
     nodeModulesPath: "node_modules/@legendapp/list",
     patchPrefix: "@legendapp+list+",
@@ -127,10 +132,6 @@ const patchedPackages = [
   {
     nodeModulesPath: "node_modules/react-native-svg",
     patchPrefix: "react-native-svg+",
-  },
-  {
-    nodeModulesPath: "node_modules/react-native-reanimated",
-    patchPrefix: "react-native-reanimated+",
   },
   // Android's onShouldStartLoadWithRequest reports isTopFrame; see the browser pane.
   {

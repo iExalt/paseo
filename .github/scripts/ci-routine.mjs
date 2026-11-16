@@ -23,6 +23,7 @@ export const coreTests = [
   ".github/scripts/android-size-report.test.mjs",
 ];
 export const helperTests = [
+  "scripts/changelog-utils.test.mjs",
   "packages/desktop/scripts/after-pack.test.mjs",
   "scripts/agent-adb.test.mjs",
   "scripts/daemon-launch-contract.test.mjs",

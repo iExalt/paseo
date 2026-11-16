@@ -1,3 +1,4 @@
+import { ACP_PROVIDER_CATALOG_DATA } from "@getpaseo/protocol/acp-provider-catalog";
 import { describe, expect, it } from "vitest";
 import { ACP_PROVIDER_CATALOG } from "@/data/acp-provider-catalog";
 import { buildAcpProviderConfigPatch, getAcpProviderCatalog } from "./use-acp-provider-catalog";
@@ -174,3 +175,17 @@ it.each([
     });
   },
 );
+
+it("shares all 40 provider definitions and bundled feature gates with the CLI", () => {
+  expect(ACP_PROVIDER_CATALOG_DATA).toHaveLength(40);
+  expect(ACP_PROVIDER_CATALOG.map(({ iconSvg: _icon, ...entry }) => entry)).toEqual(
+    ACP_PROVIDER_CATALOG_DATA.map(({ iconId: _icon, ...entry }) => ({
+      ...entry,
+      bundledProvider: "bundledProvider" in entry ? entry.bundledProvider : undefined,
+      env: "env" in entry ? entry.env : undefined,
+      params: "params" in entry ? entry.params : undefined,
+    })),
+  );
+  expect(findProvider("fx").bundledProvider).toEqual({ hostFeature: "fxProvider" });
+  expect(findProvider("hoplite").bundledProvider).toEqual({ hostFeature: "hopliteProvider" });
+});

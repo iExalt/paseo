@@ -1909,6 +1909,10 @@ test("replans one superseded catch-up from the current cursor and preserves retr
     },
     fetchLatestTail: async () => ({ hasNewer: false, endCursor: null }),
     onCatchUpEnded: () => {},
+    onCatchUpOwed: () => {},
+    onCatchUpSettled: () => {},
+    canCheckFreshness: () => true,
+    applyCurrentTimeline: () => {},
     reportError: (error) => errors.push(error),
   });
   sync.replaceVisibleAgentIds("pane", ["agent"]);

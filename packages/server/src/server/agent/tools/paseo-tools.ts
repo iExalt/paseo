@@ -1241,7 +1241,7 @@ function createToolCatalog(
   const topLevelSendAgentPromptInputSchema = {
     ...commonSendAgentPromptInputSchema,
     activeTurnBehavior: ActiveTurnBehaviorSchema.optional().describe(
-      'Default "steer": the prompt joins the running turn when the provider supports it. "interrupt" replaces the turn.',
+      'Default "steer": the prompt joins the running turn when the provider supports it, otherwise waits behind it. "interrupt" replaces the turn.',
     ),
     notifyOnFinish: z
       .boolean()

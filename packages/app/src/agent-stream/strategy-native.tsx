@@ -537,7 +537,6 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         bottomAnchorController.prepareForStickyViewportChange();
       },
       holdRow,
-      holdReadingPosition,
       scrollToMessage,
       scrollToItem,
       scrollByWindowDelta,
