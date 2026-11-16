@@ -165,6 +165,16 @@ export const ACP_PROVIDER_CATALOG_DATA = [
     command: ["uvx", "--from", "fast-agent-acp==0.10.47", "fast-agent-acp", "-x"],
   },
   {
+    id: "fx",
+    bundledProvider: { hostFeature: "fxProvider" },
+    title: "fx",
+    description: "Vercel Labs' tiny, open, native coding agent",
+    version: "manual",
+    iconId: "fx",
+    installLink: "https://fx.sh/docs/getting-started/installation",
+    command: ["fx", "acp"],
+  },
+  {
     id: "gemini",
     title: "Gemini CLI",
     description: "Google's official CLI for Gemini",
@@ -226,7 +236,7 @@ export const ACP_PROVIDER_CATALOG_DATA = [
   },
   {
     id: "hoplite",
-    bundledProvider: true,
+    bundledProvider: { hostFeature: "hopliteProvider" },
     title: "Hoplite",
     description: "Cloud coding agent through the local hoplite acp bridge",
     version: "manual",

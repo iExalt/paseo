@@ -2282,11 +2282,6 @@ export class Session {
           return;
         }
 
-        if (event.type === "provider_subagent") {
-          this.forwardProviderSubagent(event.event);
-          return;
-        }
-
         if (event.type === "background_work") {
           this.forwardBackgroundWork(event);
           return;
@@ -2361,14 +2356,6 @@ export class Session {
       // listings see them; everything else above filters them out.
       { replayState: false, includeInternal: true },
     );
-  }
-
-  private forwardProviderSubagent(event: ProviderSubagentManagerEvent): void {
-    const parentAgentId =
-      event.type === "upsert" ? event.subagent.parentAgentId : event.parentAgentId;
-    if (this.agentManager.getAgent(parentAgentId)?.internal) return;
-    this.emitProviderSubagentWorkspaceUpdate(event);
-    this.forwardProviderSubagentUpdate(event);
   }
 
   private forwardBackgroundWork(
@@ -3935,6 +3922,13 @@ export class Session {
         return this.handleArchiveWorkspaceRequest(msg);
       case "project.remove.request":
         return this.handleProjectRemoveRequest(msg);
+      default:
+        return this.dispatchWorkspaceMetadataMessage(msg);
+    }
+  }
+
+  private dispatchWorkspaceMetadataMessage(msg: SessionInboundMessage): Promise<void> | undefined {
+    switch (msg.type) {
       case "workspace.title.set.request":
         return this.handleWorkspaceTitleSetRequest(
           msg.workspaceId,
@@ -4855,7 +4849,7 @@ export class Session {
 
     try {
       if (!workspaceId) {
-        workspaceId = this.getCallerWorkspaceId(callerAgentId) ?? "";
+        workspaceId = (await this.resolveCreationCaller(callerAgentId))?.workspaceId ?? "";
       }
       if (!workspaceId) {
         throw new Error("workspaceId is required outside an agent-scoped session");
@@ -5732,8 +5726,8 @@ export class Session {
   private async resolveSessionRuntimeCwd(
     msg: CreateAgentRequestMessage,
   ): Promise<string | undefined> {
+    if (msg.runtimeCwd === undefined) return undefined;
     const callerAgent = this.resolveSessionCreateCaller(msg);
-    if (!msg.runtimeCwd) return undefined;
     const runtimeCwd = resolveScopedAgentCwd({
       requestedCwd: msg.runtimeCwd,
       callerAgent,

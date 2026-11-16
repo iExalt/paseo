@@ -27,7 +27,7 @@ import {
   type TerminalGridCellMetrics,
 } from "./terminal-grid-metrics";
 import type { TerminalFindMatch } from "./terminal-buffer-search";
-import { buildTerminalFrame } from "./terminal-frame";
+import { buildTerminalFrame, createTerminalFindStyleResolver } from "./terminal-frame";
 import type { TerminalSelectionRange } from "./terminal-selection";
 
 const DEFAULT_FONT_SIZE = 12;
@@ -63,7 +63,7 @@ export function TerminalGridView({
   xtermTheme = DEFAULT_TERMINAL_THEME,
   fontFamily,
   fontSize = DEFAULT_FONT_SIZE,
-  style,
+  style: containerStyle,
   selection = null,
   find = null,
   onCellMetricsChange,
@@ -88,38 +88,14 @@ export function TerminalGridView({
   const columns = resolveVisibleCols({ viewportWidth, cellWidth, gridCols: state.cols });
   const frame = useMemo(() => {
     if (!find) return buildTerminalFrame({ state, columns, resolver, selection });
-    const highlights = new Map<object, number>();
-    const mark = (match: TerminalFindMatch, color: number) => {
-      const first = Math.max(match.startRow, state.firstRow);
-      const last = Math.min(match.endRow, state.firstRow + state.grid.length - 1);
-      for (let row = first; row <= last; row += 1) {
-        const cells = state.grid[row - state.firstRow]!;
-        const start = row === match.startRow ? match.startCol : 0;
-        const end = row === match.endRow ? match.endCol : columns;
-        for (let col = 0; col < Math.min(columns, cells.length); col += 1) {
-          const cell = cells[col]!;
-          if (col < end && col + Math.max(1, cell.width ?? 1) > start) highlights.set(cell, color);
-        }
-      }
-    };
-    const matchColor = parseTerminalColor(xtermTheme.yellow, 0xffb58900);
-    const currentColor = parseTerminalColor(xtermTheme.blue, 0xff268bd2);
-    for (const match of find.matches) mark(match, matchColor);
-    if (find.current) mark(find.current, currentColor);
-    const findResolver = {
-      ...resolver,
-      resolve: (cell: Parameters<typeof resolver.resolve>[0]) => {
-        const style = resolver.resolve(cell);
-        const background = highlights.get(cell);
-        return background === undefined
-          ? style
-          : {
-              ...style,
-              background,
-              foreground: resolver.backgroundColor,
-            };
-      },
-    };
+    const findResolver = createTerminalFindStyleResolver({
+      state,
+      columns,
+      resolver,
+      find,
+      matchColor: parseTerminalColor(xtermTheme.yellow, 0xffb58900),
+      currentColor: parseTerminalColor(xtermTheme.blue, 0xff268bd2),
+    });
     return buildTerminalFrame({ state, columns, resolver: findResolver, selection });
   }, [columns, find, resolver, selection, state, xtermTheme]);
 
@@ -145,7 +121,11 @@ export function TerminalGridView({
   }, []);
 
   return (
-    <View onLayout={handleContainerLayout} pointerEvents="none" style={[styles.root, style]}>
+    <View
+      onLayout={handleContainerLayout}
+      pointerEvents="none"
+      style={[styles.root, containerStyle]}
+    >
       <PaseoTerminalView
         frame={frame}
         theme={theme}

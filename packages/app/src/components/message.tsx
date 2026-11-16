@@ -421,7 +421,7 @@ function UserMessageImagePill({ image, onOpen, accessibilityLabel }: UserMessage
 }
 
 function UntruncatedMessagePreview({ children }: { children: ReactNode; itemId?: string }) {
-  return <>{children}</>;
+  return children;
 }
 
 function userMessagePresentation(sender: AgentMessage["sender"] | undefined) {
@@ -2184,7 +2184,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const [isPressed, setIsPressed] = useState(false);
   const isInteractive = Boolean(onToggle);
   const hasDetailContent = Boolean(renderDetails);
-  const detailContent = hasDetailContent && isExpanded ? renderDetails?.() : null;
+  const detailContent = isExpanded && renderDetails ? renderDetails() : null;
   const detailWrapperRef = useRef<View | null>(null);
 
   const handleHoverIn = useCallback(() => setIsHovered(true), []);
@@ -2421,7 +2421,7 @@ export const ExpandableBadge = memo(function ExpandableBadge({
   const ThemedIcon = icon ? getThemedBadgeIcon(icon) : null;
   const iconNode = renderExpandableBadgeIcon({ isError, isActive, ThemedIcon });
   const iconSlotNode = renderExpandableBadgeIconSlot({
-    showChevron: isInteractive && (isHovered || isExpanded),
+    showChevron: isInteractive && isActive,
     chevronStyle,
     iconNode,
   });

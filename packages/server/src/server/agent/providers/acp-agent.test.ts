@@ -4209,6 +4209,33 @@ describe("ACPAgentSession", () => {
     expect(asInternals<ACPSessionInternals>(session).activeForegroundTurnId).toBeNull();
   }, 3_000);
 
+  test("closing during a pending disconnect emits no late turn failure", async () => {
+    let promptReceived!: () => void;
+    const received = new Promise<void>((resolve) => {
+      promptReceived = resolve;
+    });
+    const agent = await connectInMemoryACPAgent(
+      fakeACPAgent(() => {
+        promptReceived();
+        return new Promise(() => {});
+      }),
+    );
+    const session = createSession();
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
+    const internals = asInternals<ACPSessionInternals>(session);
+    internals.sessionId = agent.sessionId;
+    internals.connection = agent.connection;
+    await session.startTurn("hello");
+    await received;
+    await agent.closeTransport();
+    await session.close();
+    await agent.connection.closed;
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(events.filter((event) => event.type === "turn_started")).toHaveLength(1);
+    expect(terminalEvents(events)).toEqual([]);
+  });
+
   test("a turn answered just before its ACP transport closes still completes", async () => {
     const agent = await connectInMemoryACPAgent(
       fakeACPAgent(async () => ({ stopReason: "end_turn" })),

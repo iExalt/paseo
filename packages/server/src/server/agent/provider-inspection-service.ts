@@ -3,7 +3,8 @@ import {
   type ProviderInspectRequest,
   type ProviderInspectPayload,
 } from "@getpaseo/protocol/messages";
-import type { AgentFeature, AgentSessionConfig } from "./agent-sdk-types.js";
+import { featuresFromControls } from "@getpaseo/protocol/option-controls";
+import type { AgentSessionConfig } from "./agent-sdk-types.js";
 import type { AgentManager } from "./agent-manager.js";
 import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
 import type { VoiceCallerContext } from "../voice-types.js";
@@ -36,7 +37,7 @@ function createDraftFeatureConfig(options: DraftFeatureConfigOptions): AgentSess
     ...(input.settings?.thinkingOptionId
       ? { thinkingOptionId: input.settings.thinkingOptionId }
       : {}),
-    ...(input.settings?.features ? { featureValues: input.settings.features } : {}),
+    ...(input.settings?.features ? { providerOptions: input.settings.features } : {}),
   };
 }
 
@@ -79,7 +80,7 @@ export async function inspectProviderCapabilities(
   }
 
   const selectedModel = input.settings?.model ?? resolved.model;
-  const features: AgentFeature[] = await agentManager.listDraftFeatures(
+  const draft = await agentManager.listDraftControls(
     createDraftFeatureConfig({ input, provider: resolved.provider, cwd, model: selectedModel }),
   );
 
@@ -91,6 +92,6 @@ export async function inspectProviderCapabilities(
     status: summary.status,
     modes: summary.modes,
     selectedModel: selectedModel ?? null,
-    features,
+    features: featuresFromControls(draft),
   });
 }

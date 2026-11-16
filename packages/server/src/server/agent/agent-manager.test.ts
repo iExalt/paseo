@@ -1,5 +1,5 @@
 import { archiveByScope, type ArchiveDependencies } from "../workspace-archive-service.js";
-import { withWorkspaceLifecycleLock } from "../workspace-lifecycle-lock.js";
+import { LifecycleAdmission, withWorkspaceLifecycleLock } from "../workspace-lifecycle-lock.js";
 import { createIdleRuntimeCleanup } from "./idle-runtime-cleanup/index.js";
 import { resolvePaseoCliExecutablePath } from "../../terminal/paseo-cli-path.js";
 import {
@@ -3833,6 +3833,7 @@ test("createAgent and resume give the agent its workspace id", async () => {
     PASEO_AGENT_ID: snapshot.id,
     PASEO_AGENT_CWD: workdir,
     PASEO_WORKSPACE_ID: "ws-agent-home",
+    PASEO_CLI: resolvePaseoCliExecutablePath(),
   });
 
   // The stored record supplies the workspace when the caller doesn't.
@@ -3845,6 +3846,7 @@ test("createAgent and resume give the agent its workspace id", async () => {
     PASEO_AGENT_ID: snapshot.id,
     PASEO_AGENT_CWD: workdir,
     PASEO_WORKSPACE_ID: "ws-agent-home",
+    PASEO_CLI: resolvePaseoCliExecutablePath(),
   };
 
   await manager.closeAgent(snapshot.id);
@@ -15089,6 +15091,201 @@ describe("empty workspace cascade admission", () => {
     };
   }
 
+  async function prepareAdmission(f: Awaited<ReturnType<typeof fixture>>, kind: string) {
+    const id = randomUUID();
+    let record: StoredAgentRecord | null = null;
+    if (kind !== "create") {
+      await f.manager.createAgent({ provider: "codex", cwd: f.cwd }, id, {
+        workspaceId: f.workspaceId,
+      });
+      await f.manager.closeAgent(id);
+      await f.manager.flush();
+      record = await f.storage.get(id);
+    }
+    return {
+      id,
+      run: () => {
+        if (kind === "create")
+          return f.manager.createAgent({ provider: "codex", cwd: f.cwd }, id, {
+            workspaceId: f.workspaceId,
+          });
+        if (kind === "stored") return f.manager.createAgentFromRecord(id);
+        return f.manager.resumeAgentFromPersistence(
+          record!.persistence!,
+          { provider: "codex", cwd: f.cwd },
+          id,
+          { workspaceId: f.workspaceId },
+          { purpose: "interactive" },
+        );
+      },
+    };
+  }
+
+  test.each(["stored", "resume"])(
+    "%s resolves workspace after a queued moving unarchive",
+    async (kind) => {
+      const providerEntered = deferred<void>();
+      const providerRelease = deferred<void>();
+      let holdProvider = false;
+      class Client extends TestAgentClient {
+        override async createSession(config: AgentSessionConfig): Promise<AgentSession> {
+          if (holdProvider) {
+            providerEntered.resolve();
+            await providerRelease.promise;
+          }
+          return super.createSession(config);
+        }
+        override async resumeSession(
+          handle: AgentPersistenceHandle,
+          config?: Partial<AgentSessionConfig>,
+        ): Promise<AgentSession> {
+          if (holdProvider) {
+            providerEntered.resolve();
+            await providerRelease.promise;
+          }
+          return super.resumeSession(handle, config);
+        }
+      }
+      const f = await fixture(new Client());
+      const old = await f.create();
+      await f.manager.closeAgent(old.id);
+      await f.manager.flush();
+      const record = (await f.storage.get(old.id))!;
+      await f.storage.upsert({ ...record, archivedAt: new Date().toISOString() });
+      const moving = deferred<void>();
+      const moveAllowed = deferred<void>();
+      f.manager.setWorkspaceLifecycle({
+        assertActive: async (workspaceId) => {
+          if (workspaceId === "new-workspace") {
+            moving.resolve();
+            await moveAllowed.promise;
+          }
+        },
+        onAgentRemoved: async () => {},
+      });
+      const move = f.manager.unarchiveSnapshot(old.id, { workspaceId: "new-workspace" });
+      await moving.promise;
+      holdProvider = true;
+      const registration =
+        kind === "stored"
+          ? f.manager.createAgentFromRecord(old.id)
+          : f.manager.resumeAgentFromPersistence(
+              record.persistence!,
+              { provider: "codex", cwd: f.cwd },
+              old.id,
+              undefined,
+              { purpose: "interactive" },
+            );
+      let archived = false;
+      const archive = withWorkspaceLifecycleLock(["new-workspace"], async () => {
+        archived = true;
+      });
+      moveAllowed.resolve();
+      await move;
+      await providerEntered.promise;
+      expect(archived).toBe(false);
+      providerRelease.resolve();
+      expect((await registration).workspaceId).toBe("new-workspace");
+      await archive;
+      expect(archived).toBe(true);
+    },
+  );
+
+  for (const kind of ["create", "stored", "resume"]) {
+    test.each([false, true])(
+      `${kind} reserves registration before metadata and labels (barrier=%s)`,
+      async (barrier) => {
+        const f = await fixture();
+        const admission = await prepareAdmission(f, kind);
+        const refresh = deferred<void>();
+        if (barrier) Object.assign(f.manager, { skillRefreshBarrier: refresh.promise });
+        const creation = admission.run();
+        const metadata = f.manager.setMetadata(admission.id, { receipt: "after-create" });
+        const labels = f.manager.setLabels(admission.id, { ordered: "yes" });
+        if (barrier) {
+          await new Promise<void>((resolve) => setImmediate(resolve));
+          expect(f.manager.getAgent(admission.id)).toBeNull();
+        }
+        refresh.resolve();
+        Object.assign(f.manager, { skillRefreshBarrier: null });
+        const agent = await creation;
+        await Promise.all([metadata, labels]);
+        expect(f.manager.getAgent(agent.id)?.metadata.receipt).toBe("after-create");
+        expect(f.manager.getAgent(agent.id)?.labels.ordered).toBe("yes");
+      },
+    );
+
+    test.each([false, true])(
+      `${kind} cannot deadlock an archive already holding its workspace (barrier=%s)`,
+      async (barrier) => {
+        const f = await fixture();
+        const admission = await prepareAdmission(f, kind);
+        if (kind === "create")
+          await f.manager.createAgent({ provider: "codex", cwd: f.cwd }, admission.id, {
+            workspaceId: f.workspaceId,
+          });
+        const entered = deferred<void>();
+        const release = deferred<void>();
+        const refresh = deferred<void>();
+        const original = f.deps.markWorkspaceArchiving;
+        f.deps.markWorkspaceArchiving = (...args) => {
+          original(...args);
+          entered.resolve();
+        };
+        const archiveRecord = f.deps.listActiveWorkspaces;
+        let hold = false;
+        f.deps.listActiveWorkspaces = async () => {
+          if (hold) {
+            hold = false;
+            entered.resolve();
+            await release.promise;
+          }
+          return archiveRecord();
+        };
+        // Hold inside the real archive's workspace owner, before it takes the agent lane.
+        const archive = withWorkspaceLifecycleLock([f.workspaceId], async () => {
+          hold = true;
+          return archiveByScope(f.deps, {
+            scope: { kind: "workspace", workspaceId: f.workspaceId },
+            requestId: `joint-${kind}`,
+          });
+        });
+        await entered.promise;
+        if (barrier) Object.assign(f.manager, { skillRefreshBarrier: refresh.promise });
+        const rejected = expect(admission.run()).rejects.toThrow(/archived|closed|active/i);
+        const followingMetadata = f.manager.setMetadata(admission.id, { after: true });
+        release.resolve();
+        await archive;
+        refresh.resolve();
+        Object.assign(f.manager, { skillRefreshBarrier: null });
+        await rejected;
+        await followingMetadata;
+        expect(f.isActive()).toBe(false);
+      },
+    );
+
+    test.each([false, true])(
+      `${kind} admitted before an empty archive keeps the workspace active (barrier=%s)`,
+      async (barrier) => {
+        const f = await fixture();
+        const admission = await prepareAdmission(f, kind);
+        const refresh = deferred<void>();
+        if (barrier) Object.assign(f.manager, { skillRefreshBarrier: refresh.promise });
+        const creation = admission.run();
+        const archive = archiveByScope(f.deps, {
+          scope: { kind: "workspace", workspaceId: f.workspaceId },
+          requestId: `first-${kind}`,
+          onlyIfEmpty: true,
+        });
+        refresh.resolve();
+        Object.assign(f.manager, { skillRefreshBarrier: null });
+        await creation;
+        expect((await archive).archivedWorkspaceIds).toEqual([]);
+        expect(f.isActive()).toBe(true);
+      },
+    );
+  }
+
   test.each(["live archive", "stored archive", "delete", "internal archive"])(
     "%s archives its last workspace after the agent lifecycle settles",
     async (operation) => {
@@ -15235,4 +15432,149 @@ test("failed provider close never schedules empty-workspace cleanup", async () =
   await manager.archiveAgent(agent.id);
   await checked.promise;
   expect(checks).toBe(1);
+});
+
+test("lifecycle admission: workspace owner bypasses only its blocked reservations; siblings stay exclusive", async () => {
+  const scheduler = new LifecycleAdmission();
+  const held = deferred<void>();
+  const enter = deferred<void>();
+  const order: string[] = [];
+  const archive = scheduler.run(["workspace:w"], async () => {
+    enter.resolve();
+    await held.promise;
+    const mutate = (id: number) =>
+      scheduler.run(["agent:a"], async () => {
+        order.push(`start${id}`);
+        await Promise.resolve();
+        order.push(`end${id}`);
+      });
+    await Promise.all([mutate(1), mutate(2)]);
+  });
+  await enter.promise;
+  const create = scheduler.run(["workspace:w", "agent:a"], async () => {
+    order.push("create");
+  });
+  const metadata = scheduler.run(["agent:a"], async () => {
+    order.push("metadata");
+  });
+  held.resolve();
+  await Promise.all([archive, create, metadata]);
+  expect(order).toEqual(["start1", "end1", "start2", "end2", "create", "metadata"]);
+});
+
+test("lifecycle admission: independent earlier agent work precedes nested archive work", async () => {
+  const scheduler = new LifecycleAdmission();
+  const held = deferred<void>();
+  const entered = deferred<void>();
+  const order: string[] = [];
+  const first = scheduler.run(["agent:a"], async () => {
+    entered.resolve();
+    await held.promise;
+  });
+  await entered.promise;
+  const metadata = scheduler.run(["agent:a"], async () => {
+    order.push("metadata");
+  });
+  const archive = scheduler.run(["workspace:w"], () =>
+    scheduler.run(["agent:a"], async () => {
+      order.push("archive");
+    }),
+  );
+  held.resolve();
+  await Promise.all([first, metadata, archive]);
+  expect(order).toEqual(["metadata", "archive"]);
+});
+
+test("lifecycle admission: unknown workspace and a refresh barrier reserve order without occupying agent keys", async () => {
+  const scheduler = new LifecycleAdmission();
+  const workspace = deferred<string[]>();
+  const ready = deferred<void>();
+  const order: string[] = [];
+  const create = scheduler.run(
+    ["agent:a"],
+    async () => {
+      order.push("create");
+    },
+    { additionalKeys: () => workspace.promise, ready: ready.promise },
+  );
+  const metadata = scheduler.run(["agent:a"], async () => {
+    order.push("metadata");
+  });
+  const archive = scheduler.run(["workspace:w"], async () => {
+    order.push("archive");
+  });
+  await Promise.resolve();
+  expect(order).toEqual([]);
+  workspace.resolve(["workspace:w"]);
+  ready.resolve();
+  await Promise.all([create, metadata, archive]);
+  expect(order[0]).toBe("create");
+});
+
+test("lifecycle admission: a long independent predecessor chain stays ordered before nested work", async () => {
+  const scheduler = new LifecycleAdmission();
+  const held = deferred<void>();
+  const entered = deferred<void>();
+  const order: number[] = [];
+  const first = scheduler.run(["agent:x"], async () => {
+    entered.resolve();
+    await held.promise;
+  });
+  await entered.promise;
+  const backlog = Array.from({ length: 128 }, (_, id) =>
+    scheduler.run(["agent:x"], async () => {
+      order.push(id);
+    }),
+  );
+  const joint = scheduler.run(["agent:x", "agent:a"], async () => {
+    order.push(128);
+  });
+  const archive = scheduler.run(["workspace:w"], () =>
+    scheduler.run(["agent:a"], async () => {
+      order.push(129);
+    }),
+  );
+  held.resolve();
+  await Promise.all([first, ...backlog, joint, archive]);
+  expect(order).toEqual(Array.from({ length: 130 }, (_, id) => id));
+});
+
+test("lifecycle admission: rejected lookup and work release reservations; detached contexts cannot reenter", async () => {
+  const scheduler = new LifecycleAdmission();
+  await expect(
+    scheduler.run(["agent:a"], async () => {}, {
+      additionalKeys: async () => {
+        throw new Error("lookup");
+      },
+    }),
+  ).rejects.toThrow("lookup");
+  await expect(
+    scheduler.run(["agent:a"], async () => {
+      throw new Error("work");
+    }),
+  ).rejects.toThrow("work");
+  const wake = deferred<void>();
+  let detached!: Promise<void>;
+  const enterDetached = () =>
+    scheduler.run(["agent:a"], async () => {
+      order.push("detached");
+    });
+  await scheduler.run(["agent:a"], async () => {
+    detached = wake.promise.then(enterDetached);
+  });
+  const held = deferred<void>();
+  const entered = deferred<void>();
+  const order: string[] = [];
+  const active = scheduler.run(["agent:a"], async () => {
+    entered.resolve();
+    await held.promise;
+    order.push("active");
+  });
+  await entered.promise;
+  wake.resolve();
+  await Promise.resolve();
+  expect(order).toEqual([]);
+  held.resolve();
+  await Promise.all([active, detached]);
+  expect(order).toEqual(["active", "detached"]);
 });

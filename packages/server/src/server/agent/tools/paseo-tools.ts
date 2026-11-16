@@ -31,7 +31,6 @@ import {
   WorkspaceNotificationsSchema,
 } from "@getpaseo/protocol/messages";
 import type { DaemonConfigStore } from "../../daemon-config-store.js";
-import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import {
   AgentFeatureSchema,
   AgentPendingPermissionPayloadSchema,
@@ -1191,7 +1190,7 @@ function createToolCatalog(
     .strict();
   const commonSendAgentPromptInputSchema = {
     activeTurnBehavior: ActiveTurnBehaviorSchema.optional().describe(
-      'How to send into a running turn: "steer" joins it, falling back to interrupt when unavailable; "interrupt" replaces it. Defaults to steer for agent callers and interrupt otherwise.',
+      'How to send into a running turn: "steer" joins it when supported, otherwise waits behind it; "interrupt" replaces it. Defaults to steer for every caller.',
     ),
     agentId: z.string(),
     prompt: z.string(),
@@ -1396,12 +1395,10 @@ function createToolCatalog(
         if (!options.createDirectoryWorkspace) {
           throw new Error("Workspace provisioning is not configured");
         }
-        workspace = await options.createDirectoryWorkspace(
-          cwd,
-          title,
-          projectId,
-          { ...workspaceBackgroundIntent(background), notifications },
-        );
+        workspace = await options.createDirectoryWorkspace(cwd, title, projectId, {
+          ...workspaceBackgroundIntent(background),
+          notifications,
+        });
       } else {
         let cwd =
           path !== undefined || !projectId ? resolveScopedCwd(path, { required: true }) : null;
@@ -1887,11 +1884,10 @@ function createToolCatalog(
       const cwd = process.cwd();
       return {
         cwd,
-        workspaceId: await options.ensureWorkspaceForCreate(
-          cwd,
-          firstAgentContext,
-          { ...workspaceBackgroundIntent(undefined), notifications },
-        ),
+        workspaceId: await options.ensureWorkspaceForCreate(cwd, firstAgentContext, {
+          ...workspaceBackgroundIntent(undefined),
+          notifications,
+        }),
       };
     }
     const caller = resolveCallerAgent();
@@ -1995,11 +1991,10 @@ function createToolCatalog(
       }
       return {
         cwd,
-        workspaceId: await options.ensureWorkspaceForCreate(
-          cwd,
-          firstAgentContext,
-          { ...workspaceBackgroundIntent(undefined), notifications: workspace.notifications },
-        ),
+        workspaceId: await options.ensureWorkspaceForCreate(cwd, firstAgentContext, {
+          ...workspaceBackgroundIntent(undefined),
+          notifications: workspace.notifications,
+        }),
       };
     }
 
