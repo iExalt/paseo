@@ -185,9 +185,7 @@ export async function assertHostedRoutine({
   const expected = [
     "plan",
     "Routine CI required",
-    ...routine
-      .planMatrix(routine.selectChecks(null, filters))
-      .lane.map((lane) => `routine (${lane})`),
+    ...routine.planMatrix(routine.selectChecks(null, filters)).lane.map(routine.routineJobName),
   ].sort();
   const actual = jobs
     .filter((job) => !(job.name === CACHE_JOB && job.conclusion === "skipped"))

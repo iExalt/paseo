@@ -2056,6 +2056,7 @@ test("hosted routine binds a first-attempt green PR run to the clean replay tree
     join(repositoryPath, ".github/scripts/ci-routine.mjs"),
     `export const selectChecks = (files) => ({ files, code: files === null || files.some((file) => !file.startsWith("docs/")) });
 export const planMatrix = () => ({ lane: ["quality", "app-1"] });
+export const routineJobName = (lane) => \`routine (\${lane})\`;
 export const planCommands = (selection) => [
   { name: "format", files: selection.files },
   ...(selection.code ? [{ name: "units" }] : []),

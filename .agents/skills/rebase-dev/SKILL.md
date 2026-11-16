@@ -83,7 +83,9 @@ Point its origin at an isolated bare repository holding the frozen branch refs
 so `rebaseDev()` snapshots the approved inputs. Do not reuse a checkout's rr-cache.
 Use the captured dev engine, reviewed rerere pairs and exact-stage deletion
 records described in the engine contract. Run `rebaseDev()` with diagnostics and
-a deadline; record stops and the count of conflicted paths. The instance signing
+a deadline; record stops and the count of conflicted paths. In zsh, brace a SHA
+before a colon (`"${DEV_SHA}:refs/heads/dev"`): `$DEV_SHA:r` is a history modifier
+and silently turns the refspec into a deletion. The instance signing
 key can differ from production: pass its public key explicitly for local replay
 and label the result as instance-signed. Never copy private keys into evidence.
 
@@ -141,7 +143,8 @@ mise exec -- node .github/scripts/rebase-preflight.mjs \
 
 It requires a successful first-attempt `pull_request` Routine CI run whose head
 merges frozen dev into the clean replay HEAD with the same tree, whose PR base is
-frozen dev, and whose jobs all succeeded. The pull request plan scopes only the
+frozen dev, and whose jobs are exactly the full lane matrix, all successful; only
+the dev-only dependency cache refresh may be skipped. The pull request plan scopes only the
 format step to changed files; preflight checks that and runs the whole-repo
 `npm run format:check` on the replay, so install dependencies there first.
 Environment-only preflight cannot authorize dispatch. A changed resolution SHA or
@@ -186,6 +189,10 @@ production-only gap. Unpublished commits also have no GitHub verification
 records; verify those after publication. Report any additional production-only
 gap immediately.
 
+The publishing run replays and validates its own tree before it pushes. That tree
+differs from the hosted candidate only in the generated `last-release-sha`, so the
+hosted run and validate-only together cover it.
+
 Exit: reviewer-accepted resolutions, a clean replay ref/tree, and green
 validate-only on the exact frozen dev/target/resolutions. Record platform proofs
 separately; this gate does not establish app behavior on every platform. Stop here
@@ -196,12 +203,15 @@ unless the user explicitly authorizes production publication.
 Entry: the user gave a production go naming this repository and target, decided
 production writer coordination separately, and dry run passed. Read back dev, mirror, resolutions, sync state and active runs. Require
 the same inputs as the accepted validate-only run. Any movement invalidates this
-gate. Record the user's go and exact dispatch command before running it.
+gate. Rerun full preflight immediately before the dispatch and dispatch only on
+`readyForDispatch`. Record the user's go and exact dispatch command before running it.
 
 Dispatch `rebase-dev.yml` on `dev` with `validate_only=false` only under that go.
 Record the run ID, attempt, captured refs, tested SHA and resulting backup ref.
 Use a bounded fail-fast watcher; a failure is not permission to rerun. Never
-repair publication by directly pushing dev or moving its backup.
+repair publication by directly pushing dev or moving its backup. Close the
+candidate draft and delete its branch as soon as the run publishes: merging it
+afterwards would bring the old history back onto dev.
 
 Exit: the workflow published atomically and its backup names the frozen dev.
 Pass the published SHA, backup ref, clean replay SHA and evidence path to verify.
@@ -233,9 +243,15 @@ execution must repin and revalidate if the mirror moved. A failed production
 verification leaves sync paused until the recovery owner decides how to proceed.
 Record which rule applied. Never dispatch an unpinned sync as cleanup.
 
-Carry the ledger forward after every publication: sweep every subject/patch-ID
-key in `docs/upstream-rebase-inventory.json` against the published history and
-refresh its owning documentation through a reviewed PR. Preparation runs the
+Carry the ledger forward after every publication through a reviewed PR that also
+refreshes its owning documentation. Map each row through the replay's
+original-to-rewritten commit mapping onto the published chain, which the verifier
+proved equal position for position. Don't match by subject: every rebase adds
+generated commits whose subjects repeat. Recompute each identity with the engine's
+`commitIdentity` and add keep rows for new published commits. When a partial
+row's patch changed only through reviewed resolutions, move its receipt to the new
+identity and cite the resolution SHA and publishing run in its evidence. Prove the result with `planRebase` on published
+dev plus the new ledger: no mismatch and no drops. Preparation runs the
 engine replayPlan ledger check before rehearsal so stale records fail locally.
 
 Exit: verifier output, live ref readback when applicable, restored sync state,
