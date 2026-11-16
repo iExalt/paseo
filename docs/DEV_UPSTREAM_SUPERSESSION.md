@@ -22,16 +22,18 @@ fully superseded rows that match no current commit. Rows were carried through th
 replay's original-to-rewritten mapping, not by subject, because each rebase adds
 generated commits with repeated subjects. The carry changed 18 patch IDs and every
 SHA hint. The new keep rows are #498 to #501 and this rebase's three generated
-commits. The engine's ledger check on published dev with this ledger plans 143
-retained commits and no drops.
+commits. The engine's ledger check on published dev with this ledger retains every
+published commit and drops none.
 
 [The manifest](upstream-rebase-inventory.json) records the carried keys, incoming
 paths and capture provenance. The previous ledger is available at
 [the pre-rebase dev](https://github.com/iExalt/paseo/blob/37a7244debe3ed1dd2b3682d4db94a5b55e2748e/docs/upstream-rebase-inventory.json).
 
 The ten partial rows authorized retaining their distinct outcomes at this
-target. Two of them changed patch through reviewed conflict resolutions; their
-receipts carry the published identity and cite the resolution snapshot and run.
+target. Two of them changed patch identity through upstream context and content
+drift: the engine hashes moved files whole, and `git range-diff` shows the fork's
+own changes unchanged. Their receipts carry the published identity and cite the
+resolution snapshot and run.
 A newer target needs new source review and receipts for every partial row. Nine listed source-path sets do not overlap the incoming changes. The
 replica-rendering row overlaps only `_layout.tsx`: incoming changes add two plugin
 routes away from the fork's favicon mount and hidden-selector behavior. These

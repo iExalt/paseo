@@ -676,7 +676,7 @@
         "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
         "patch_id": "7c8e21d9513c4b1493d158a43333673bf5cf1e3c",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate. Carried to the published patch identity after the reviewed resolution snapshot 307f2300ce7786e06b74b6d40f2344738c9f479d and publication run https://github.com/iExalt/paseo/actions/runs/43810387905; the patch changed only through those reviewed conflict resolutions."
+        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate. Carried to the published patch identity after the reviewed resolution snapshot 307f2300ce7786e06b74b6d40f2344738c9f479d and publication run https://github.com/iExalt/paseo/actions/runs/43810387905. The identity moved through upstream context and content drift (the engine hashes moved files whole under --no-renames); git range-diff shows the fork's own changes unchanged."
       }
     },
     {
@@ -698,7 +698,7 @@
         "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
         "patch_id": "6b44a93ffc56c8a4e4c443462c3ea5234e9c2e68",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate. Carried to the published patch identity after the reviewed resolution snapshot 307f2300ce7786e06b74b6d40f2344738c9f479d and publication run https://github.com/iExalt/paseo/actions/runs/43810387905; the patch changed only through those reviewed conflict resolutions."
+        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate. Carried to the published patch identity after the reviewed resolution snapshot 307f2300ce7786e06b74b6d40f2344738c9f479d and publication run https://github.com/iExalt/paseo/actions/runs/43810387905. The identity moved through upstream context and content drift (the engine hashes moved files whole under --no-renames); git range-diff shows the fork's own changes unchanged."
       }
     },
     {
