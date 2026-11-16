@@ -1,3 +1,5 @@
+import { preflight, command, runPreflight } from "./rebase-preflight.mjs";
+import { comparePublication, verifyPublication } from "./rebase-verify.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createRequire } from "node:module";
@@ -1610,4 +1612,290 @@ test("ledger fails closed before replay for partial, mismatched, ambiguous and s
     assert.equal(existsSync(join(clone, ".git/rebase-merge")), false, name);
     assert.equal(git(clone, "ls-remote", "--refs", "origin"), refs, name);
   }
+});
+
+test("preflight aggregates independent environment failures and confines push to candidates", () => {
+  const calls = [];
+  const result = preflight({
+    upstream: "a".repeat(40),
+    repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
+    run(file, args) {
+      calls.push([file, ...args]);
+      if (file === "gh" && args[0] === "api")
+        return JSON.stringify(
+          args[1].endsWith("upstream-sync.yml") ? { state: "active" } : { total_count: 0 },
+        );
+      if (file === "gh") throw new Error("auth missing");
+      if (file === "zsh") throw new Error("nounset broken");
+      if (file === "node") return "v1.0.0";
+      if (file === "npm") return "1.0.0";
+      if (args[0] === "ls-remote") return `${"b".repeat(40)}\trefs/heads/upstream/main`;
+      if (args[0] === "--version") return "git version 2.54.0";
+      if (args[0] === "show") return "N wrong@example.invalid";
+      if (args[0] === "status")
+        return "?? .artifacts/diff-subscription/cold-many-file-metrics.json";
+      return "a".repeat(40);
+    },
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.checks.filter((entry) => !entry.ok).length, 9);
+  const push = calls.find((args) => args[1] === "push");
+  assert.deepEqual(push.slice(0, 4), ["git", "push", "--dry-run", "origin"]);
+  assert.match(push[4], /^HEAD:refs\/heads\/rebase-candidate\/preflight-\d+$/);
+  assert.ok(calls.some((args) => args[1] === "commit-tree" && args.includes("-S")));
+});
+
+function publicationFixture() {
+  const identity = {
+    author: "A <a@example.invalid> 1 +0000",
+    committer: "A <a@example.invalid> 1 +0000",
+    encoding: [],
+    message: "release\n",
+  };
+  const original = [{ ...identity, sha: "1".repeat(40) }];
+  const clean = [
+    { ...identity, sha: "2".repeat(40), tree: "same" },
+    { ...identity, message: "tail\n", sha: "3".repeat(40), tree: "clean-final" },
+  ];
+  const published = [
+    { ...clean[0], sha: "4".repeat(40) },
+    { ...clean[1], sha: "5".repeat(40), tree: "published-final" },
+  ];
+  return {
+    original,
+    originalBoundary: original[0],
+    clean,
+    published,
+    cleanConfig: JSON.stringify({ "last-release-sha": clean[0].sha }) + "\n",
+    publishedConfig: JSON.stringify({ "last-release-sha": published[0].sha }) + "\n",
+    finalPaths: ["release-please-config.json"],
+    cleanConfigMode: "100644",
+    publishedConfigMode: "100644",
+  };
+}
+
+test("publication compares every intermediate tree and permits only mapped boundary bytes", () => {
+  assert.equal(comparePublication(publicationFixture()).boundarySlot, 1);
+  for (const mutate of [
+    (f) => {
+      f.published[0].tree = "wrong";
+    },
+    (f) => {
+      f.publishedConfig = JSON.stringify({ "last-release-sha": f.published[1].sha });
+    },
+    (f) => {
+      f.publishedConfig += "\n";
+    },
+    (f) => {
+      f.finalPaths.push("unexpected.txt");
+    },
+    (f) => {
+      f.published[0].message = "wrong\n";
+    },
+    (f) => {
+      f.published[0].author += "wrong";
+    },
+    (f) => {
+      f.clean.push({ ...f.clean[0] });
+    },
+  ]) {
+    const fixture = publicationFixture();
+    mutate(fixture);
+    assert.throws(() => comparePublication(fixture));
+  }
+});
+
+test("publication verifier requires immutable refs before invoking credentials", () => {
+  const run = () => {
+    throw new Error("must not execute");
+  };
+  assert.throws(
+    () =>
+      verifyPublication({ backup: "dev", published: "a".repeat(40), replay: "b".repeat(40), run }),
+    /backup ref/,
+  );
+  assert.throws(
+    () =>
+      verifyPublication({
+        backup: "refs/heads/backup/rebase-dev/1-1",
+        published: "dev",
+        replay: "b".repeat(40),
+        run,
+      }),
+    /immutable/,
+  );
+});
+
+test("publication compares raw message bytes and config modes", () => {
+  const f = publicationFixture();
+  f.clean[1].message = Buffer.from([0x80]);
+  f.published[1].message = Buffer.from([0x81]);
+  assert.throws(() => comparePublication(f));
+  const mode = publicationFixture();
+  mode.publishedConfigMode = "100755";
+  assert.throws(() => comparePublication(mode), /mode differs/);
+});
+
+test("publication generated suffix permits dates alone to differ", () => {
+  const f = publicationFixture();
+  f.clean[1].message = f.published[1].message =
+    "chore(rebase): point release-please at the rebased release\n";
+  f.clean[1].author = f.clean[1].committer = "Clement Liaw <cman101202@gmail.com> 1 +0000";
+  f.published[1].author = f.published[1].committer = "Clement Liaw <cman101202@gmail.com> 2 +0000";
+  assert.equal(comparePublication(f).count, 2);
+  f.published[1].committer = "Other <a@example.invalid> 2 +0000";
+  assert.throws(() => comparePublication(f));
+});
+
+test("publication entry point verifies real pinned signatures and exact GitHub rows", () => {
+  const repositoryPath = join(root, "publication-proof");
+  initRepo(repositoryPath);
+  mkdirSync(join(repositoryPath, ".github"));
+  writeFileSync(join(repositoryPath, "shared.txt"), "upstream\n");
+  commit(repositoryPath, "upstream");
+  const upstream = git(repositoryPath, "rev-parse", "HEAD");
+  writeFileSync(
+    join(repositoryPath, ".github/fork-release.json"),
+    JSON.stringify({ upstreamBase: upstream }),
+  );
+  writeFileSync(join(repositoryPath, "shared.txt"), "release\n");
+  commit(repositoryPath, "release boundary");
+  const original = git(repositoryPath, "rev-parse", "HEAD");
+  writeFileSync(
+    join(repositoryPath, "release-please-config.json"),
+    JSON.stringify({ "last-release-sha": original }) + "\n",
+  );
+  commit(repositoryPath, "original config");
+  const backupSha = git(repositoryPath, "rev-parse", "HEAD");
+  const tree = git(repositoryPath, "rev-parse", `${original}^{tree}`);
+  const sign = (parent, commitTree, message, key) =>
+    execFileSync(
+      "git",
+      [
+        "-c",
+        "gpg.format=ssh",
+        "-c",
+        `user.signingkey=${key}`,
+        "commit-tree",
+        "-S",
+        "-p",
+        parent,
+        commitTree,
+        "-m",
+        message,
+      ],
+      { cwd: repositoryPath, encoding: "utf8" },
+    ).trim();
+  const a = sign(upstream, tree, "release boundary", wrongSigningKeyPath);
+  const b = sign(upstream, tree, "release boundary", testSigningKeyPath);
+  const finish = (boundary, key) => {
+    git(repositoryPath, "read-tree", tree);
+    // Stage a byte-exact config without changing either chain's first tree.
+    writeFileSync(
+      join(repositoryPath, "release-please-config.json"),
+      JSON.stringify({ "last-release-sha": boundary }) + "\n",
+    );
+    git(repositoryPath, "add", "release-please-config.json");
+    return sign(boundary, git(repositoryPath, "write-tree"), "final config", key);
+  };
+  const replay = finish(a, wrongSigningKeyPath);
+  const published = finish(b, testSigningKeyPath);
+  const backup = "refs/heads/backup/rebase-dev/123-1";
+  let badApi = null;
+  const run = (file, args, options) => {
+    if (file === "gh") {
+      const commits = [b, published].map((sha) => ({
+        sha,
+        commit: { verification: { verified: badApi !== "unverified" } },
+      }));
+      if (badApi === "wrong-sha") commits[0].sha = "f".repeat(40);
+      return JSON.stringify([{ commits }]);
+    }
+    if (args[0] === "ls-remote") return args.includes("--tags") ? "" : `${backupSha}\t${backup}\n`;
+    if (args[0] === "fetch") return "";
+    return command(file, args, options);
+  };
+  const options = {
+    backup,
+    published,
+    replay,
+    repositoryPath,
+    run,
+    publicKey: testSigningPublicKey,
+  };
+  assert.equal(verifyPublication(options).pinnedSignatures, 2);
+  assert.throws(
+    () =>
+      verifyPublication({
+        ...options,
+        publicKey: readFileSync(`${wrongSigningKeyPath}.pub`, "utf8"),
+      }),
+    /verify-commit/,
+  );
+  badApi = "unverified";
+  assert.throws(() => verifyPublication(options), /GitHub unverified/);
+  badApi = "wrong-sha";
+  assert.throws(() => verifyPublication(options), /GitHub SHA set/);
+});
+
+test("preflight includes ledger refusal alongside an independent environment error", async () => {
+  const result = await runPreflight(
+    {
+      upstream: "a".repeat(40),
+      repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
+      run() {
+        throw new Error("missing environment");
+      },
+    },
+    async () => {
+      throw new Error("Supersession ledger key mismatch");
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.ok(
+    result.checks.some(
+      (row) => row.name === "replayPlan ledger" && /key mismatch/.test(row.detail),
+    ),
+  );
+  assert.ok(result.checks.filter((row) => !row.ok).length > 1);
+});
+
+test("publication final config comparison preserves arbitrary blob bytes", () => {
+  const f = publicationFixture();
+  const config = (sha, byte) =>
+    Buffer.concat([
+      Buffer.from(`{"last-release-sha":"${sha}","note":"`),
+      Buffer.from([byte]),
+      Buffer.from('"}\n'),
+    ]);
+  f.cleanConfig = config(f.clean[0].sha, 0x80);
+  f.publishedConfig = config(f.published[0].sha, 0x81);
+  assert.throws(() => comparePublication(f), /Final config differs/);
+  f.publishedConfig = config(f.published[0].sha, 0x80);
+  assert.equal(comparePublication(f).count, 2);
+});
+
+test("publication treats prior generated commits as retained in the next rebase", () => {
+  const f = publicationFixture();
+  const oldGenerated = {
+    ...f.clean[0],
+    message: "chore(rebase): capture incorporated upstream\n",
+    sha: "6".repeat(40),
+  };
+  const later = { ...f.clean[0], message: "fix: later descendant\n", sha: "7".repeat(40) };
+  f.clean.splice(1, 0, oldGenerated, later);
+  f.published.splice(
+    1,
+    0,
+    { ...oldGenerated, sha: "8".repeat(40) },
+    { ...later, sha: "9".repeat(40) },
+  );
+  const a = f.clean.at(-1),
+    b = f.published.at(-1);
+  a.message = b.message = "chore(rebase): point release-please at the rebased release\n";
+  a.author = a.committer = "Clement Liaw <cman101202@gmail.com> 1 +0000";
+  b.author = b.committer = "Clement Liaw <cman101202@gmail.com> 2 +0000";
+  assert.equal(comparePublication(f).count, 4);
+  f.published[1].committer += "changed";
+  assert.throws(() => comparePublication(f), /Committer differs/);
 });

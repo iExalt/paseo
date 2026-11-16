@@ -1261,6 +1261,19 @@ export function assertGitVersion(versionText) {
   }
 }
 
+// Share the exact ledger gate with preparation; no checkout, index or rebase changes.
+export async function planRebase({ repositoryPath, remote = "origin" } = {}) {
+  const snapshots = await snapshotRefs(repositoryPath, remote);
+  const originalCommits = await replayCommitIds(repositoryPath, snapshots.upstream, snapshots.dev);
+  const boundaries = await releaseTagCommits(repositoryPath, remote);
+  const config = JSON.parse(
+    await gitChecked(repositoryPath, ["show", `${snapshots.dev}:release-please-config.json`]),
+  );
+  boundaries.add(config["last-release-sha"]);
+  const plan = await replayPlan(repositoryPath, snapshots, originalCommits, boundaries);
+  return { ...snapshots, ...plan };
+}
+
 export async function rebaseDev({
   repositoryPath,
   remote = "origin",
