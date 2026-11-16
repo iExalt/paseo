@@ -1232,6 +1232,49 @@ test("atomic publication saves captured dev and rejects a stale dev lease", asyn
   );
 });
 
+test("validation names dirty paths without contents and bounds the listing", async () => {
+  const repositoryPath = join(root, "dirty-paths-checkout");
+  initRepo(repositoryPath);
+  writeFileSync(join(repositoryPath, "tracked.txt"), "original\n");
+  commit(repositoryPath, "dirty paths fixture");
+  const privateContents = "PRIVATE_CONTENT_MUST_NOT_BE_PRINTED";
+  writeFileSync(join(repositoryPath, "tracked.txt"), privateContents);
+  mkdirSync(join(repositoryPath, "untracked"));
+  for (let index = 0; index < 50; index++) {
+    writeFileSync(
+      join(repositoryPath, "untracked", `${String(index).padStart(2, "0")}.txt`),
+      privateContents,
+    );
+  }
+  writeFileSync(join(repositoryPath, "untracked", "00-line\nbreak.txt"), privateContents);
+  let checksRan = false;
+  await assert.rejects(
+    validateRebase({
+      repositoryPath,
+      runChecks: async () => {
+        checksRan = true;
+      },
+    }),
+    (error) => {
+      const lines = error.message.split("\n");
+      assert.equal(lines[0], "Validation requires a clean tracked and nonignored working tree");
+      assert.equal(lines[1], "Dirty paths: 52 total (showing first 50)");
+      assert.deepEqual(
+        lines.slice(2),
+        git(repositoryPath, "status", "--porcelain=v1", "-uall").trimEnd().split("\n").slice(0, 50),
+      );
+      assert.equal(lines.length, 52);
+      assert.match(error.message, / M tracked\.txt/);
+      assert.match(error.message, /\?\? untracked\/00\.txt/);
+      assert.match(error.message, /line\\nbreak\.txt/);
+      assert.doesNotMatch(error.message, /untracked\/49\.txt/);
+      assert.doesNotMatch(error.message, new RegExp(privateContents));
+      return true;
+    },
+  );
+  assert.equal(checksRan, false);
+});
+
 test("validation CLI binds the shared command to a clean tested SHA", async () => {
   const repositoryPath = join(root, "validation-checkout");
   const bin = join(root, "validation-bin");
