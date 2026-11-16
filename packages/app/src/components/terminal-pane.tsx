@@ -6,6 +6,8 @@ import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as Clipboard from "expo-clipboard";
 import {
+  Keyboard,
+  Platform,
   Pressable,
   Text,
   View,
@@ -66,6 +68,7 @@ import {
   reconcileFocusClaim,
   resolveTerminalResizeClaim,
   settleFocusClaim,
+  shouldReclaimTerminalKeyboard,
 } from "./terminal-pane-focus-claim";
 import {
   TerminalStreamController,
@@ -442,6 +445,28 @@ export function TerminalPane({
     }
     emulatorRef.current?.blur();
   }, [isMobile, isWorkspaceFocused, mobileView]);
+  const wasKeyboardSurfaceRef = useRef(false);
+  useEffect(() => {
+    // Android only: the stale input connection is Android IME behaviour, and iOS resigns the
+    // keyboard on navigation instead.
+    const isKeyboardSurface =
+      Platform.OS === "android" &&
+      isMobile &&
+      isTerminalPresented &&
+      isPaneFocused &&
+      mobileView === "agent";
+    const shouldReclaim = shouldReclaimTerminalKeyboard({
+      wasPresented: wasKeyboardSurfaceRef.current,
+      isPresented: isKeyboardSurface,
+      // Settled state (didShow/didHide), not the animated inset, so a keyboard that is closing
+      // as the terminal returns stays closed.
+      isKeyboardVisible: Keyboard.isVisible(),
+    });
+    wasKeyboardSurfaceRef.current = isKeyboardSurface;
+    if (shouldReclaim) {
+      emulatorRef.current?.showKeyboard();
+    }
+  }, [isMobile, isPaneFocused, isTerminalPresented, mobileView]);
   const handleRendererReadyChange = useCallback(
     (change: TerminalRendererReadyChange) => {
       if (!change.isReady && change.streamKey === terminalStreamKey) findRef.current?.reset();
