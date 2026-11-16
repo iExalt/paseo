@@ -86,7 +86,7 @@ class PaseoTerminalView(context: Context, appContext: AppContext) : ExpoView(con
     val sizePx = (fontSize * density).toFloat()
     val current = font
     if (current == null || !current.sameAs(fontFamily, sizePx, density)) {
-      val next = TerminalFont(fontFamily, sizePx, density)
+      val next = TerminalFont(fontFamily, sizePx, density, context.assets)
       font = next
       clearRowCache()
       frameChanged = true

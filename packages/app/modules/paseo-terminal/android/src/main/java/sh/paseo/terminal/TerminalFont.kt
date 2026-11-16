@@ -1,7 +1,9 @@
 package sh.paseo.terminal
 
+import android.content.res.AssetManager
 import android.graphics.Paint
 import android.graphics.Typeface
+import com.facebook.react.common.assets.ReactFontManager
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -11,11 +13,20 @@ private const val MEASURE_TEXT = "mmmmmmmmmm"
  * The terminal font at one pixel size: a paint per face (regular, bold, italic, bold italic) and
  * the cell those faces are laid out on. Cells are whole device pixels so every column origin is
  * exact. Platform fallback fonts cover characters the family lacks.
+ *
+ * Families resolve through React Native's font manager, which holds the fonts the app bundles
+ * (expo-font registers them there) and falls back to system families. `Typeface.create` alone
+ * sees only system fonts, so a bundled family silently became the proportional default.
  */
-internal class TerminalFont(val family: String, val sizePx: Float, val density: Float) {
+internal class TerminalFont(
+  val family: String,
+  val sizePx: Float,
+  val density: Float,
+  assets: AssetManager?,
+) {
   private val faces: Array<Paint> = Array(4) { face ->
     Paint(Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG).apply {
-      typeface = Typeface.create(family, typefaceStyle(face))
+      typeface = ReactFontManager.getInstance().getTypeface(family, typefaceStyle(face), assets)
       textSize = sizePx
     }
   }
