@@ -624,6 +624,27 @@ export async function installTerminalKeystrokeStressProbe(page: Page): Promise<v
       }
 
       send(data: Parameters<WebSocket["send"]>[0]): void {
+        if (typeof data === "string") {
+          try {
+            const envelope = JSON.parse(data);
+            const message = envelope.type === "session" ? envelope.message : undefined;
+            let input: unknown;
+            if (message?.type === "terminal.input.request") {
+              input = message.data;
+            } else if (message?.type === "terminal_input" && message.message?.type === "input") {
+              input = message.message.data;
+            }
+            if (typeof input === "string") {
+              probe.inputFrames.push({
+                at: performance.now(),
+                text: input,
+                bytes: new TextEncoder().encode(input).byteLength,
+              });
+            }
+          } catch {
+            // Non-JSON WebSocket messages are not terminal input requests.
+          }
+        }
         const bytes = bytesFrom(data);
         if (bytes && bytes.byteLength >= 2 && bytes[0] === INPUT_OPCODE) {
           probe.inputFrames.push({
