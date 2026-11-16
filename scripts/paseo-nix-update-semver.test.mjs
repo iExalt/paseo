@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { generateKeyPairSync, sign, createHash } from "node:crypto";
+import { generateKeyPairSync, sign, createHash, X509Certificate } from "node:crypto";
 import {
   chmod,
   cp,
@@ -44,12 +44,15 @@ import {
 } from "./paseo-nix-update.mjs";
 import {
   INSTALLED_APP,
+  SIGNED_REQUIREMENT,
+  SIGNING_IDENTITY,
   bundleProcesses,
   installAppCopy,
   inspectInstalledApp,
   makeWritable,
   markerOutputPath,
   migrateDockTiles,
+  needsSignature,
   planAppInstall,
   rewriteDockPlist,
   staleLaunchServicesBundles,
@@ -341,11 +344,10 @@ test("installed app copy replaces a profile link, preserves links, and never lea
 
     // ditto exists only on macOS; CI runs this on Linux.
     const portableCopy = (from, to) => cp(from, to, { recursive: true, verbatimSymlinks: true });
-    await installAppCopy(
-      source,
-      destination,
-      process.platform === "darwin" ? undefined : { copy: portableCopy },
-    );
+    await installAppCopy(source, destination, {
+      ...(process.platform === "darwin" ? {} : { copy: portableCopy }),
+      sign: async () => false,
+    });
     assert.deepEqual(await inspectInstalledApp(destination), {
       kind: "directory",
       managed: true,
@@ -361,10 +363,120 @@ test("installed app copy replaces a profile link, preserves links, and never lea
       [async () => {}, /ENOENT/],
     ];
     for (const [copy, error] of failingCopies) {
-      await assert.rejects(installAppCopy(source, destination, { copy }), error);
+      await assert.rejects(
+        installAppCopy(source, destination, { copy, sign: async () => false }),
+        error,
+      );
       assert.deepEqual(await inspectInstalledApp(destination), installed);
       assert.deepEqual(await readdir(applications), ["Paseo.app"]);
     }
+  } finally {
+    await makeWritable(root);
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test("the pinned signing identity is the committed certificate", async () => {
+  const pem = await readFile(new URL("../nix/paseo-macos-codesign.pem", import.meta.url));
+  const certificate = new X509Certificate(pem);
+  assert.equal(certificate.fingerprint.replaceAll(":", ""), SIGNING_IDENTITY);
+  assert.equal(certificate.subject, "CN=Paseo Local Code Signing (iExalt)");
+  assert.ok(new Date(certificate.validTo) > new Date("2050-01-01"));
+  assert.equal(
+    SIGNED_REQUIREMENT,
+    `identifier "sh.paseo.desktop" and certificate leaf = H"${SIGNING_IDENTITY.toLowerCase()}"`,
+  );
+});
+
+test("installed app plan re-signs a current copy only when nothing runs from it", async () => {
+  const active = `/nix/store/${"a".repeat(32)}-paseo-desktop-0.6.0`;
+  const older = `/nix/store/${"b".repeat(32)}-paseo-desktop-0.5.0`;
+  const activeMarker = { managed: true, outputPath: active };
+  const plan = (installed, { busy = false, resign = false } = {}) =>
+    planAppInstall({ installed, activeOutputPath: active, activeMarker, busy, resign }).action;
+  const current = { kind: "directory", managed: true, outputPath: active };
+  assert.equal(plan(current, { resign: true }), "install");
+  assert.equal(plan(current, { resign: true, busy: true }), "current");
+  assert.equal(plan(current), "current");
+  // resign never widens what the updater may replace.
+  assert.equal(plan({ kind: "symlink", target: "/opt/Paseo.app" }, { resign: true }), "skip");
+  assert.equal(
+    plan({ kind: "directory", managed: false, outputPath: null }, { resign: true }),
+    "skip",
+  );
+  assert.equal(
+    plan({ kind: "directory", managed: true, outputPath: older }, { resign: true, busy: true }),
+    "defer",
+  );
+
+  const check = (overrides) =>
+    needsSignature(INSTALLED_APP, active, {
+      inspect: async () => current,
+      isSigned: () => false,
+      canSign: () => true,
+      ...overrides,
+    });
+  assert.equal(await check({}), true);
+  assert.equal(await check({ isSigned: () => true }), false);
+  assert.equal(await check({ canSign: () => false }), false);
+  assert.equal(await check({ inspect: async () => ({ kind: "missing" }) }), false);
+  // A codesign or keychain timeout must not stop an ordinary install.
+  const timeout = () => {
+    throw Object.assign(new Error("spawnSync /usr/bin/codesign ETIMEDOUT"), { code: "ETIMEDOUT" });
+  };
+  assert.equal(await check({ isSigned: timeout }), false);
+  assert.equal(await check({ canSign: timeout }), false);
+});
+
+test("installed app copy signs the staged copy and never installs a half-signed bundle", async () => {
+  const root = await mkdtemp(join(tmpdir(), "paseo-signed-app-"));
+  try {
+    const source = join(root, "store", "Paseo.app");
+    const binary = join(source, "Contents", "MacOS", "Paseo");
+    await mkdir(dirname(binary), { recursive: true });
+    await writeFile(binary, "ad hoc");
+    const applications = join(root, "Applications");
+    await mkdir(applications);
+    const destination = join(applications, "Paseo.app");
+    const copy = (from, to) => cp(from, to, { recursive: true, verbatimSymlinks: true });
+    const installedBytes = () => readFile(join(destination, "Contents", "MacOS", "Paseo"), "utf8");
+
+    const signedPaths = [];
+    await installAppCopy(source, destination, {
+      copy,
+      sign: async (staged) => {
+        signedPaths.push(staged);
+        await writeFile(join(staged, "Contents", "MacOS", "Paseo"), "signed");
+        return true;
+      },
+    });
+    assert.equal(signedPaths.length, 1);
+    assert.notEqual(signedPaths[0], destination);
+    assert.equal(await installedBytes(), "signed");
+
+    // Signing that fails midway leaves partial changes; the copy is redone from the store.
+    const halfSign = async (staged) => {
+      await writeFile(join(staged, "Contents", "MacOS", "Paseo"), "half signed");
+      throw new Error("codesign failed");
+    };
+    await installAppCopy(source, destination, { copy, sign: halfSign });
+    assert.equal(await installedBytes(), "ad hoc");
+    assert.deepEqual(await readdir(applications), ["Paseo.app"]);
+
+    // If the fresh copy fails too, the previous app stays and the error surfaces.
+    let copies = 0;
+    const secondCopyFails = async (from, to) => {
+      copies += 1;
+      if (copies > 1) throw new Error("disk full");
+      await copy(from, to);
+    };
+    await writeFile(join(destination, "Contents", "MacOS", "Paseo"), "previous");
+    await assert.rejects(
+      installAppCopy(source, destination, { copy: secondCopyFails, sign: halfSign }),
+      /disk full/,
+    );
+    assert.equal(await installedBytes(), "previous");
+    assert.deepEqual(await readdir(applications), ["Paseo.app"]);
   } finally {
     await makeWritable(root);
     await rm(root, { recursive: true, force: true });
