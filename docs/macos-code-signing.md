@@ -56,7 +56,7 @@ Then quit Paseo and install a signed copy of the release named in the installed 
 ## Limits
 
 - The updater that installs a release is the one from the release you were running. The first update into a signing-aware release, and any update, rollback or downgrade performed by an older updater, installs an ad hoc copy. Run `install-app` from the new release as above, or the grants break until the next signing-aware install.
-- Reset and approve the grants once after the first signed install, since the existing ones name an ad hoc `cdhash`: `tccutil reset All sh.paseo.desktop`, then enable Paseo again in System Settings → Privacy & Security. Full Disk Access and Screen & System Audio Recording are switched on there by hand; macOS doesn't prompt for them.
+- Reset and approve the grants once after the first signed install, since the existing ones name an ad hoc `cdhash`: `tccutil reset All sh.paseo.desktop`, then enable Paseo again in System Settings → Privacy & Security. Full Disk Access has no prompt, and the Screen & System Audio Recording prompt only points you to System Settings; switch both on there.
 
 ## Check it
 
