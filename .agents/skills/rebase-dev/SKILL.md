@@ -116,7 +116,9 @@ with one signed merge that keeps the replay tree:
 CANDIDATE=$(git -C "$REPLAY_PATH" rev-parse HEAD)
 HEAD_SHA=$(git -C "$REPLAY_PATH" commit-tree -S "$CANDIDATE^{tree}" -p "$CANDIDATE" -p "$DEV_SHA" \
   -m "chore(rebase): bind candidate to frozen dev for routine CI (do not merge)")
-git -C "$REPLAY_PATH" push origin "$HEAD_SHA:refs/heads/rebase-candidate/$NAME"
+# The replay's origin is the frozen bare; push from the GitHub-origin checkout.
+git fetch "$REPLAY_PATH" "$HEAD_SHA"
+git push origin "$HEAD_SHA:refs/heads/rebase-candidate/$NAME"
 gh pr create -R iExalt/paseo --draft --base dev --head "rebase-candidate/$NAME" \
   --label do-not-merge --title "chore(rebase): routine CI for candidate (do not merge)" --body "…"
 ```
@@ -125,8 +127,10 @@ Frozen dev is then an ancestor of the PR head, so GitHub's merge tree is the rep
 tree. Open at most one such draft; never merge it, mark it ready or enable
 auto-merge. Watch Routine CI on its first attempt with a deadline; a rerun attempt
 does not count. A red lane is a repair input: batch every failure, fix the
-resolutions, replay and push a new candidate. Close the PR and delete the
-candidate branch after the production run, or when abandoning the candidate.
+resolutions, replay and push a new candidate. Keep the PR open until the last
+preflight before dispatch passes: the run lists only open pull requests. Close it
+and delete the candidate branch after the production run, or when abandoning the
+candidate.
 
 Full preflight then needs the replay path and that run ID:
 
@@ -146,11 +150,8 @@ replay invalidates the run.
 If updates are authorized, publish only the accepted resolution diff as a normal
 signed descendant of the frozen resolutions SHA. Read back its SHA and tree.
 Retain the old SHA for a separately approved rollback. Update the frozen resolutions
-SHA to the accepted pushed commit, then run full preflight on that intentional new tuple:
-
-```sh
-mise exec -- node .github/scripts/rebase-preflight.mjs "$UPSTREAM_SHA" "$DEV_SHA" "$RESOLUTIONS_SHA" "$ROUTINE_RECEIPT"
-```
+SHA to the accepted pushed commit. The replay and its hosted Routine CI run must use
+that exact SHA; then run full preflight, as above, on that intentional new tuple.
 
 Run validate-only once even when resolutions did not change, and after **every**
 resolutions change:

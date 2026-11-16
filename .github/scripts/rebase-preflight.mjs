@@ -121,6 +121,7 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
 }
 
 const ROUTINE_WORKFLOW = "Routine CI";
+const CACHE_JOB = "Refresh installed dependency cache";
 
 // Hosted Routine CI on a pull request proves the replay only when the PR head
 // is a signed `-s ours` merge of frozen dev whose tree is the replay tree: dev
@@ -178,15 +179,25 @@ export async function assertHostedRoutine({
     "Routine head must merge frozen dev into the replay HEAD",
   );
   const jobs = api(`actions/runs/${routineRun}/attempts/1/jobs?per_page=100`).jobs ?? [];
-  for (const name of ["plan", "Routine CI required"])
-    assert.ok(
-      jobs.some((job) => job.name === name && job.conclusion === "success"),
-      `Routine job ${name} did not succeed`,
-    );
-  const failed = jobs.filter((job) => job.conclusion !== "success").map((job) => job.name);
-  assert.deepEqual(failed, [], `Routine jobs did not succeed: ${failed.join(", ")}`);
   const routine = await import(pathToFileURL(`${cwd}/.github/scripts/ci-routine.mjs`).href);
   const filters = JSON.parse(readFileSync(`${cwd}/.github/ci-paths.json`, "utf8"));
+  // Only dev pushes refresh the dependency cache, so a pull request skips it.
+  const expected = [
+    "plan",
+    "Routine CI required",
+    ...routine
+      .planMatrix(routine.selectChecks(null, filters))
+      .lane.map((lane) => `routine (${lane})`),
+  ].sort();
+  const actual = jobs
+    .filter((job) => !(job.name === CACHE_JOB && job.conclusion === "skipped"))
+    .map((job) => `${job.name}: ${job.conclusion}`)
+    .sort();
+  assert.deepEqual(
+    actual,
+    expected.map((name) => `${name}: success`).sort(),
+    "Routine jobs must be the full lane matrix, all successful",
+  );
   const changed = git("diff", "--no-renames", "--name-only", "-z", dev, head)
     .split("\0")
     .filter(Boolean);

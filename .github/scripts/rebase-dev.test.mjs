@@ -2055,6 +2055,7 @@ test("hosted routine binds a first-attempt green PR run to the clean replay tree
   writeFileSync(
     join(repositoryPath, ".github/scripts/ci-routine.mjs"),
     `export const selectChecks = (files) => ({ files, code: files === null || files.some((file) => !file.startsWith("docs/")) });
+export const planMatrix = () => ({ lane: ["quality", "app-1"] });
 export const planCommands = (selection) => [
   { name: "format", files: selection.files },
   ...(selection.code ? [{ name: "units" }] : []),
@@ -2082,10 +2083,17 @@ export const planCommands = (selection) => [
     head_sha: merge,
     pull_requests: [{ head: { sha: merge }, base: { sha: dev } }],
   };
+  // Shaped like a real pull request run: dev-only cache refresh is skipped.
   const goodJobs = [
     { name: "plan", conclusion: "success" },
     { name: "routine (quality)", conclusion: "success" },
+    { name: "routine (app-1)", conclusion: "success" },
+    { name: "Refresh installed dependency cache", conclusion: "skipped" },
     { name: "Routine CI required", conclusion: "success" },
+  ];
+  const withConclusion = (name, conclusion) => [
+    ...goodJobs.filter((job) => job.name !== name),
+    { name, conclusion },
   ];
   const check = ({ workflowRun = goodRun, jobs = goodJobs, format = true, ...options } = {}) => {
     const calls = [];
@@ -2155,8 +2163,14 @@ export const planCommands = (selection) => [
       },
       /merge frozen dev/,
     ],
-    [{ jobs: goodJobs.slice(1) }, /plan did not succeed/],
-    [{ jobs: [...goodJobs, { name: "routine (app)", conclusion: "skipped" }] }, /routine \(app\)/],
+    [{ jobs: goodJobs.slice(1) }, /full lane matrix/],
+    [{ jobs: goodJobs.filter((job) => job.name !== "routine (app-1)") }, /full lane matrix/],
+    [
+      { jobs: [...goodJobs, { name: "routine (app-2)", conclusion: "success" }] },
+      /full lane matrix/,
+    ],
+    [{ jobs: withConclusion("routine (app-1)", "skipped") }, /full lane matrix/],
+    [{ jobs: withConclusion("Refresh installed dependency cache", "failure") }, /full lane matrix/],
     [{ format: false }, /format failed/],
     [{ dev: candidate }, /Replay dev differs/],
     [{ routineRun: undefined }, /run ID/],
