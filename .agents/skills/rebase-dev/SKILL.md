@@ -49,13 +49,15 @@ and rebase-resolutions with `git ls-remote origin` and record all three SHAs,
 including the old resolutions SHA for rollback. Require no active sync/rebase
 run. A later stage must reject changed inputs instead of silently refreshing them.
 
+Run preflight from a clean checkout whose effective origin fetch and single push URL
+point at GitHub iExalt/paseo, before switching rehearsal to a frozen local origin.
 In the instance's exact shell/tool environment, run:
 
 ```sh
 mise exec -- node .github/scripts/rebase-preflight.mjs "$UPSTREAM_SHA"
 ```
 
-It reports all environment problems together: paused/idle workflows, mirror pin,
+It reports all environment problems together: GitHub origin binding, paused/idle workflows, mirror pin,
 Git, signing, GitHub auth, candidate push, clean tree, Mise nounset startup, Node
 and npm pins. Run it from a clean committed checkout; keep logs outside it. Fix
 all reported problems before a hosted validation. A signed throwaway commit must

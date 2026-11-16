@@ -1,4 +1,4 @@
-import { preflight, command, runPreflight } from "./rebase-preflight.mjs";
+import { preflight, command, runPreflight, assertGitHubOrigin } from "./rebase-preflight.mjs";
 import { comparePublication, verifyPublication } from "./rebase-verify.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
@@ -1621,6 +1621,7 @@ test("preflight aggregates independent environment failures and confines push to
     repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
     run(file, args) {
       calls.push([file, ...args]);
+      if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git\n";
       if (file === "gh" && args[0] === "api")
         return JSON.stringify(
           args[1].endsWith("upstream-sync.yml") ? { state: "active" } : { total_count: 0 },
@@ -1803,6 +1804,7 @@ test("publication entry point verifies real pinned signatures and exact GitHub r
   const backup = "refs/heads/backup/rebase-dev/123-1";
   let badApi = null;
   const run = (file, args, options) => {
+    if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git\n";
     if (file === "gh") {
       const commits = [b, published].map((sha) => ({
         sha,
@@ -1843,7 +1845,8 @@ test("preflight includes ledger refusal alongside an independent environment err
     {
       upstream: "a".repeat(40),
       repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
-      run() {
+      run(file, args) {
+        if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git\n";
         throw new Error("missing environment");
       },
     },
@@ -1898,4 +1901,75 @@ test("publication treats prior generated commits as retained in the next rebase"
   assert.equal(comparePublication(f).count, 4);
   f.published[1].committer += "changed";
   assert.throws(() => comparePublication(f), /Committer differs/);
+});
+
+test("origin binding accepts canonical GitHub URLs and rejects redirected or multiple pushes", () => {
+  for (const url of [
+    "https://github.com/iExalt/paseo.git",
+    "git@github.com:iExalt/paseo.git",
+    "ssh://git@github.com/iExalt/paseo",
+  ]) {
+    assert.doesNotThrow(() => assertGitHubOrigin({ run: () => url }));
+  }
+  for (const [fetchUrl, pushUrl] of [
+    ["/workspace/frozen.git", "/workspace/frozen.git"],
+    ["https://github.com/other/paseo.git", "https://github.com/other/paseo.git"],
+    ["https://github.com/iExalt/paseo.git", "https://github.com/other/paseo.git"],
+    [
+      "https://github.com/iExalt/paseo.git",
+      "https://github.com/iExalt/paseo.git\nhttps://github.com/other/paseo.git",
+    ],
+  ])
+    assert.throws(() =>
+      assertGitHubOrigin({ run: (_file, args) => (args.includes("--push") ? pushUrl : fetchUrl) }),
+    );
+});
+
+test("wrong origin prevents remote permission and publication verification claims", async () => {
+  const calls = [];
+  const run = (file, args) => {
+    calls.push([file, ...args]);
+    if (file === "git" && args[0] === "remote") return "/workspace/frozen.git\n";
+    throw new Error("independent environment failure");
+  };
+  let planned = false;
+  const result = await runPreflight(
+    {
+      upstream: "a".repeat(40),
+      repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
+      run,
+    },
+    async () => {
+      planned = true;
+    },
+  );
+  assert.equal(result.ok, false);
+  assert.equal(planned, false);
+  assert.ok(
+    !calls.some(
+      ([file, operation]) => file === "git" && ["push", "fetch", "ls-remote"].includes(operation),
+    ),
+  );
+  calls.length = 0;
+  assert.throws(
+    () =>
+      verifyPublication({
+        backup: "refs/heads/backup/rebase-dev/1-1",
+        published: "a".repeat(40),
+        replay: "b".repeat(40),
+        run,
+      }),
+    /origin fetch URL/,
+  );
+  assert.ok(calls.every(([file, operation]) => file === "git" && operation === "remote"));
+});
+
+test("origin binding checks Git's effective rewrites and separate push URL", () => {
+  const repositoryPath = join(root, "origin-rewrites");
+  initRepo(repositoryPath);
+  git(repositoryPath, "config", "url.https://github.com/.insteadOf", "rewrite:");
+  git(repositoryPath, "remote", "add", "origin", "rewrite:iExalt/paseo.git");
+  assert.doesNotThrow(() => assertGitHubOrigin({ repositoryPath }));
+  git(repositoryPath, "config", "remote.origin.pushurl", "rewrite:other/paseo.git");
+  assert.throws(() => assertGitHubOrigin({ repositoryPath }), /origin push URL/);
 });

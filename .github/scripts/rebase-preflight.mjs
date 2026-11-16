@@ -18,6 +18,18 @@ export function command(file, args, options = {}) {
   return result.stdout;
 }
 
+export function assertGitHubOrigin({ repositoryPath = process.cwd(), run = command } = {}) {
+  const invoke = (args) =>
+    run("git", ["remote", "get-url", ...args, "origin"], { cwd: repositoryPath }).trim();
+  const fetchUrl = invoke([]);
+  const pushUrls = invoke(["--push", "--all"]).split("\n");
+  const canonical =
+    /^(?:https:\/\/github\.com\/iExalt\/paseo|git@github\.com:iExalt\/paseo|ssh:\/\/git@github\.com\/iExalt\/paseo)(?:\.git)?$/i;
+  assert.ok(canonical.test(fetchUrl), "origin fetch URL must target GitHub iExalt/paseo");
+  assert.equal(pushUrls.length, 1, "origin must have exactly one push URL");
+  assert.ok(canonical.test(pushUrls[0]), "origin push URL must target GitHub iExalt/paseo");
+}
+
 // The runner is injectable so failure aggregation never needs live credentials.
 export function preflight({ upstream, repositoryPath = process.cwd(), run = command } = {}) {
   assert.match(upstream ?? "", /^[a-f0-9]{40}$/, "Pass the pinned upstream SHA");
@@ -31,6 +43,16 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
       checks.push({ name, ok: false, detail: error.message });
     }
   };
+  let originReady = false;
+  check("GitHub origin binding", () => {
+    assertGitHubOrigin({ repositoryPath, run });
+    originReady = true;
+  });
+  const remoteCheck = (name, operation) =>
+    check(name, () => {
+      assert.ok(originReady, "origin binding failed; remote check skipped");
+      return operation();
+    });
   check("upstream-sync paused", () => {
     const workflow = JSON.parse(
       invoke("gh", ["api", "repos/iExalt/paseo/actions/workflows/upstream-sync.yml"]),
@@ -50,7 +72,7 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
       }
     });
   }
-  check("pinned mirror", () => {
+  remoteCheck("pinned mirror", () => {
     assert.equal(git("ls-remote", "origin", "refs/heads/upstream/main").split(/\s/)[0], upstream);
   });
   check("Git >= 2.55", () => assertGitVersion(git("--version")));
@@ -68,7 +90,7 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
       "Workflow requires active iExalt actor",
     );
   });
-  check("candidate push dry run", () => {
+  remoteCheck("candidate push dry run", () => {
     const destination = `refs/heads/rebase-candidate/preflight-${process.pid}`;
     return git("push", "--dry-run", "origin", `HEAD:${destination}`);
   });
@@ -100,6 +122,10 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
 export async function runPreflight(options = {}, plan = planRebase) {
   const result = preflight(options);
   try {
+    assert.ok(
+      result.checks.some((row) => row.name === "GitHub origin binding" && row.ok),
+      "origin binding failed; ledger check skipped",
+    );
     const capture = await plan({ repositoryPath: options.repositoryPath ?? process.cwd() });
     assert.equal(capture.upstream, options.upstream, "Captured ledger target moved");
     result.checks.push({

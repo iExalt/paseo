@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { command } from "./rebase-preflight.mjs";
+import { command, assertGitHubOrigin } from "./rebase-preflight.mjs";
 import { parseReleaseTags, releaseBoundary } from "./rebase-dev.mjs";
 
 const PRODUCTION_KEY =
@@ -135,6 +135,7 @@ export function verifyPublication({
   );
   for (const value of [published, replay])
     assert.match(value ?? "", /^[a-f0-9]{40}$/, "Use immutable full published/replay SHAs");
+  assertGitHubOrigin({ repositoryPath, run });
   const invoke = (file, args) => run(file, args, { cwd: repositoryPath });
   const git = (...args) => invoke("git", args).trimEnd();
   const backupSha = git("ls-remote", "origin", backup).split(/\s/)[0];
