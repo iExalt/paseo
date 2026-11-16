@@ -4,6 +4,8 @@ import {
   type ProviderSessionIdSource,
 } from "@getpaseo/protocol/agent-provider-session-id";
 
+const FULL_AGENT_ID_PATTERN = /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i;
+
 export type AgentIdentifierResolution =
   | { ok: true; agentId: string }
   | { ok: false; notFound: boolean; error: string };
@@ -72,6 +74,11 @@ export function resolveAgentIdentifierFrom(
   const nativeMatch = resolveProviderSessionId(trimmed, sources);
   if (nativeMatch) {
     return nativeMatch;
+  }
+
+  // A missing complete Paseo ID must not select a prefix or another agent's title.
+  if (FULL_AGENT_ID_PATTERN.test(trimmed)) {
+    return { ok: false, notFound: true, error: `Agent not found: ${trimmed}` };
   }
 
   const prefixMatches = Array.from(knownIds).filter((id) => id.startsWith(trimmed));

@@ -82,18 +82,20 @@ describe("unlisted agent resolution", () => {
     expect(client.closed).toBe(true);
   });
 
-  it("enforces archived and running checks on fetched unlisted agents", async () => {
+  it("preserves idempotent archive and delegates running agents to the daemon", async () => {
     const archivedClient = new FakeAgentClient(
       [],
       [makeAgent(unlistedId, { archivedAt: "2026-11-14T10:00:00.000Z" })],
     );
-    await expect(archiveAgent(unlistedId, {}, async () => archivedClient)).rejects.toMatchObject({
-      code: "AGENT_ALREADY_ARCHIVED",
-    });
+    const archived = await archiveAgent(unlistedId, {}, async () => archivedClient);
+    expect(archived.data.archivedAt).toBe("2026-11-14T10:00:00.000Z");
+    expect(archivedClient.archived).toEqual([]);
+    expect(archivedClient.closed).toBe(true);
     const runningClient = new FakeAgentClient([], [makeAgent(unlistedId, { status: "running" })]);
-    await expect(archiveAgent(unlistedId, {}, async () => runningClient)).rejects.toMatchObject({
-      code: "AGENT_RUNNING",
-    });
+    const running = await archiveAgent(unlistedId, {}, async () => runningClient);
+    expect(running.data.archivedAt).toBe("2026-11-15T00:00:00.000Z");
+    expect(runningClient.archived).toEqual([unlistedId]);
+    expect(runningClient.closed).toBe(true);
   });
 
   it("reloads and detaches unlisted agents via fetchAgent fallback", async () => {
