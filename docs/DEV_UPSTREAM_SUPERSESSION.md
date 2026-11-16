@@ -2,41 +2,50 @@
 
 The version 2 ledger carries the reviewed retained outcomes onto published `dev`. Exact fully superseded and empty/history-only matches are drop instructions; partial decisions require target-bound source retain receipts. Retained curated commits keep one-to-one replay. [The rebase procedure](upstream/rebase-dev.md#carry-supersession-decisions-forward) owns matching, target and release-boundary safeguards.
 
-This refresh changes ledger identities and target-bound source decisions. It does not change application code or establish runtime parity.
+The ledger matches published `dev` after the rebase onto `0273b6b614bac623168d03e7f89f9e161274b468`. It changes no application code and does not establish runtime parity.
 
-## Frozen inputs
+## Published rebase
 
-- Published fork dev (0.28.0): `428ee71c667ab1bc645e8e90837bbc671e397c29`.
-- Next target: `0273b6b614bac623168d03e7f89f9e161274b468`.
-- Incorporated upstream: `c1d7d56b71960bca17ce86f8d358445b6135b809`.
-- Resolutions: `ee15d9c93920488be24042655aae42a9e528477c`.
+- Published fork dev: `c7eb9ec7b20b30bfdcb702a8e462f1ae10e0f170`, from [rebase-dev run 43810387905](https://github.com/iExalt/paseo/actions/runs/43810387905).
+- Backup of the pre-rebase dev: `backup/rebase-dev/43810387905-1` at `37a7244debe3ed1dd2b3682d4db94a5b55e2748e`.
+- Incorporated upstream: `0273b6b614bac623168d03e7f89f9e161274b468`.
+- Resolutions: `307f2300ce7786e06b74b6d40f2344738c9f479d`.
 
-The incoming capture has 40 non-merge commits. The published fork has 136
-non-merge commits above the incorporated upstream. The ledger has 138 rows:
-126 carried published identities, ten newer keep descendants, and two historical
-fully superseded rows already absent from published history.
+The published history has 143 non-merge commits above the incorporated upstream:
+140 replayed curated commits and the run's three generated commits. The verifier
+matched all 143 to a clean replay, commit for commit and tree for tree, apart from
+the generated `last-release-sha`. All 143 carry the pinned production signature
+and GitHub verification.
 
-The whole-ledger sweep found 65 changed patch IDs and 126 rewritten SHA hints;
-all 126 retained subjects matched uniquely. Reasons and retained outcomes remain
-on their rows. The two old drop decisions remain as provenance and match no
-current commit. New descendants retain by default.
+The ledger has 145 rows: 136 carried rows, seven new keep rows and two historical
+fully superseded rows that match no current commit. Rows were carried through the
+replay's original-to-rewritten mapping, not by subject, because each rebase adds
+generated commits with repeated subjects. The carry changed 18 patch IDs and every
+SHA hint. The new keep rows are #498 to #501 and this rebase's three generated
+commits. The engine's ledger check on published dev with this ledger retains every
+published commit and drops none.
 
-[The manifest](upstream-rebase-inventory.json) records the refreshed keys, incoming
-paths and previous capture provenance. The previous inventory is available at
-[the captured published revision](https://github.com/iExalt/paseo/blob/428ee71c667ab1bc645e8e90837bbc671e397c29/docs/upstream-rebase-inventory.json).
+[The manifest](upstream-rebase-inventory.json) records the carried keys, incoming
+paths and capture provenance. The previous ledger is available at
+[the pre-rebase dev](https://github.com/iExalt/paseo/blob/37a7244debe3ed1dd2b3682d4db94a5b55e2748e/docs/upstream-rebase-inventory.json).
 
-The ten partial rows authorize retaining their distinct outcomes at the new
-target. Nine listed source-path sets do not overlap the incoming changes. The
+The ten partial rows authorized retaining their distinct outcomes at this
+target. Two of them changed patch identity through upstream context and content
+drift: the engine hashes moved files whole, and `git range-diff` shows the fork's
+own changes unchanged. Their receipts carry the published identity and cite the
+resolution snapshot and run.
+A newer target needs new source review and receipts for every partial row. Nine listed source-path sets do not overlap the incoming changes. The
 replica-rendering row overlaps only `_layout.tsx`: incoming changes add two plugin
 routes away from the fork's favicon mount and hidden-selector behavior. These
-source decisions authorize rehearsal; they do not establish replay, CI or runtime
-parity. Fresh clean replay and full validate-only remain required.
+source decisions authorized rehearsal; validate-only and the publishing run then
+passed the full routine on the exact tree. Runtime and platform parity remain
+unproven.
 
 ## Decisions
 
 | Category             | Ledger rows | Replay                                                      |
 | -------------------- | ----------: | ----------------------------------------------------------- |
-| keep                 |         126 | Retain one-to-one.                                          |
+| keep                 |         133 | Retain one-to-one.                                          |
 | partially superseded |          10 | Retain with the exact-target source review receipt.         |
 | fully superseded     |           2 | Historical decisions; neither commit is in current history. |
 
@@ -117,9 +126,8 @@ notifications, updater and plugin surfaces need the later platform matrix.
 Incoming iOS changes are inventoried, not proven on a device. No physical device
 or Google Play Services proof was performed here.
 
-The resolution branch remains frozen at the SHA above. Stored records alone do
-not establish conflict coverage for this target. This ledger refresh does not
-train rerere, change application code or authorize production publication.
+Stored resolution records cover this target only. A newer target needs new
+rerere training, fixups and validation.
 
 The previously listed browser dependency-optimization, shared timeline-fencing
 and subscription-memory-test risks are now recorded done in the tracker at
