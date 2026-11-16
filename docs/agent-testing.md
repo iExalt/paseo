@@ -103,6 +103,10 @@ does not decompress the image data.
 
 ### Reading state
 
+Keyboard visible/app focus does not prove the editor owner. Verify the IME-served view, native
+focus and the expected terminal hitbox before sending keys and after pane switches, and inspect
+the Show/Hide state before toggling.
+
 - `testID` surfaces as `resource-id`. The selected tab carries `selected="true"` in a raw
   `uiautomator dump`, and in the helper's flags column; other summaries lose it.
 - Terminal rows are in the dump as `terminal-row-<n>` with their text. Diff code is drawn with
