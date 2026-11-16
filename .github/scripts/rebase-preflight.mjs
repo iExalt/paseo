@@ -120,6 +120,8 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
 }
 
 export async function runPreflight(options = {}, plan = planRebase) {
+  for (const name of ["dev", "resolutions"])
+    assert.match(options[name] ?? "", /^[a-f0-9]{40}$/, `Pass the frozen ${name} SHA`);
   const result = preflight(options);
   try {
     assert.ok(
@@ -127,7 +129,17 @@ export async function runPreflight(options = {}, plan = planRebase) {
       "origin binding failed; ledger check skipped",
     );
     const capture = await plan({ repositoryPath: options.repositoryPath ?? process.cwd() });
-    assert.equal(capture.upstream, options.upstream, "Captured ledger target moved");
+    result.inputs = {
+      dev: capture.dev,
+      upstream: capture.upstream,
+      resolutions: capture.resolutions,
+    };
+    for (const name of ["dev", "upstream", "resolutions"])
+      assert.equal(
+        capture[name],
+        options[name],
+        `Captured ${name} moved; review and re-freeze inputs`,
+      );
     result.checks.push({
       name: "replayPlan ledger",
       ok: true,
@@ -142,7 +154,11 @@ export async function runPreflight(options = {}, plan = planRebase) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   try {
-    const result = await runPreflight({ upstream: process.argv[2] });
+    const result = await runPreflight({
+      upstream: process.argv[2],
+      dev: process.argv[3],
+      resolutions: process.argv[4],
+    });
     console.log(JSON.stringify(result, null, 2));
     if (!result.ok) process.exitCode = 1;
   } catch (error) {

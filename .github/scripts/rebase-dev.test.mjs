@@ -1618,6 +1618,8 @@ test("preflight aggregates independent environment failures and confines push to
   const calls = [];
   const result = preflight({
     upstream: "a".repeat(40),
+    dev: "b".repeat(40),
+    resolutions: "c".repeat(40),
     repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
     run(file, args) {
       calls.push([file, ...args]);
@@ -1844,6 +1846,8 @@ test("preflight includes ledger refusal alongside an independent environment err
   const result = await runPreflight(
     {
       upstream: "a".repeat(40),
+      dev: "b".repeat(40),
+      resolutions: "c".repeat(40),
       repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
       run(file, args) {
         if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git\n";
@@ -1936,6 +1940,8 @@ test("wrong origin prevents remote permission and publication verification claim
   const result = await runPreflight(
     {
       upstream: "a".repeat(40),
+      dev: "b".repeat(40),
+      resolutions: "c".repeat(40),
       repositoryPath: fileURLToPath(new URL("../../", import.meta.url)),
       run,
     },
@@ -1972,4 +1978,23 @@ test("origin binding checks Git's effective rewrites and separate push URL", () 
   assert.doesNotThrow(() => assertGitHubOrigin({ repositoryPath }));
   git(repositoryPath, "config", "remote.origin.pushurl", "rewrite:other/paseo.git");
   assert.throws(() => assertGitHubOrigin({ repositoryPath }), /origin push URL/);
+});
+
+test("preflight preserves the captured tuple and rejects movement in every frozen ref", async () => {
+  const expected = { upstream: "a".repeat(40), dev: "b".repeat(40), resolutions: "c".repeat(40) };
+  const run = (file, args) => {
+    if (file === "git" && args[0] === "remote") return "https://github.com/iExalt/paseo.git";
+    throw new Error("independent environment failure");
+  };
+  for (const changed of [null, "dev", "upstream", "resolutions"]) {
+    const actual = { ...expected, ...(changed ? { [changed]: "d".repeat(40) } : {}) };
+    const result = await runPreflight(
+      { ...expected, repositoryPath: fileURLToPath(new URL("../../", import.meta.url)), run },
+      async () => ({ ...actual, retained: [], drops: [] }),
+    );
+    assert.deepEqual(result.inputs, actual);
+    const gate = result.checks.find((row) => row.name === "replayPlan ledger");
+    assert.equal(gate.ok, changed === null);
+    if (changed) assert.match(gate.detail, new RegExp(`Captured ${changed} moved`));
+  }
 });

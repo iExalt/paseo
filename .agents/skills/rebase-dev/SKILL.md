@@ -31,7 +31,8 @@ target decision. A moving upstream main is discovery input, never the target.
 
 Record the scope, active-time cap, review/check ownership, approvals for pausing
 sync, pinning the mirror and updating resolutions, and the production go gate.
-Check active upstream-sync and rebase-dev runs before changing workflow state.
+A plan-only request stops before changing workflow state unless those operations
+are separately authorized. Check active upstream-sync and rebase-dev runs before changing workflow state.
 Pause upstream-sync with `gh workflow disable upstream-sync.yml -R iExalt/paseo`
 and read back `disabled_manually`. Disabling the workflow also disables manual
 dispatch: to pin by its authorized `ref` input, dispatch once while enabled, then
@@ -48,13 +49,15 @@ Entry: the plan's approvals and mirror pin still hold. Freeze remote dev, mirror
 and rebase-resolutions with `git ls-remote origin` and record all three SHAs,
 including the old resolutions SHA for rollback. Require no active sync/rebase
 run. A later stage must reject changed inputs instead of silently refreshing them.
+Pausing sync freezes only the mirror; other approved work can still advance dev.
+Dry runs need no writer hold. Review and replay a changed input before re-freezing it.
 
 Run preflight from a clean checkout whose effective origin fetch and single push URL
 point at GitHub iExalt/paseo, before switching rehearsal to a frozen local origin.
 In the instance's exact shell/tool environment, run:
 
 ```sh
-mise exec -- node .github/scripts/rebase-preflight.mjs "$UPSTREAM_SHA"
+mise exec -- node .github/scripts/rebase-preflight.mjs "$UPSTREAM_SHA" "$DEV_SHA" "$RESOLUTIONS_SHA"
 ```
 
 It reports all environment problems together: GitHub origin binding, paused/idle workflows, mirror pin,
@@ -82,24 +85,36 @@ a deadline; record stops and the count of conflicted paths. The instance signing
 key can differ from production: pass its public key explicitly for local replay
 and label the result as instance-signed. Never copy private keys into evidence.
 
+Before the first shared-system or expensive attempt, walk the whole path: check
+real tools, resources, permissions, mutable inputs, leftover files and final-only
+gates. Record any human or device dependency and fix blockers together.
+
 Unknown conflicts stop unattended replay. Review every manual resolution and
 supersession with the reviewer, complete rehearsal, then export the completed
 rerere pairs into a separate rebase-resolutions checkout. Review deletion records
-and target-specific fixups separately. Include nontextual breaks: new upstream
+and target-specific fixups separately. Inspect each complete resolved blob and
+net deletions, including bytes outside conflict markers; a helper can silently
+truncate an unchanged suffix. Prove exported resolutions with a fresh unattended
+replay against the reviewed source tree. Include nontextual breaks: new upstream
 docs, inherited workflows, toolchain changes and generated output paths. The
 routine workflow's filename inventory rejects temporary workflow files; use the
 existing validate-only dispatch instead of adding a proof workflow.
 
 If updates are authorized, publish only the accepted resolution diff as a normal
 signed descendant of the frozen resolutions SHA. Read back its SHA and tree.
-Retain the old SHA for a separately approved rollback. Run validate-only once even when resolutions did not change, and after **every**
+Retain the old SHA for a separately approved rollback. Update the frozen resolutions
+SHA to the accepted pushed commit, then rerun preflight on that intentional new tuple. Run validate-only once even when resolutions did not change, and after **every**
 resolutions change:
 
 ```sh
 gh workflow run rebase-dev.yml -R iExalt/paseo --ref dev -f validate_only=true
 ```
 
-Capture the run ID and its starting SHAs. Require the rebase job and actual
+Compare remote dev, mirror and resolutions with the frozen tuple immediately before
+dispatch. After every run, verify the captured tuple in its summary or logs, even
+when the run is green. A mismatch is an input change, not a failed validate-only
+attempt: review and replay the delta, re-freeze, then redispatch. Missing capture
+evidence leaves the gate unverified. Capture the run ID and its starting SHAs. Require the rebase job and actual
 validation step to run successfully with a tested SHA; skipped jobs do not pass. Watch with a deadline and stop on first
 failure. Require the actual `validateRebase()` entry point: it runs routine checks
 and asserts the exact tested tree stays clean afterward. Running only the checks
@@ -111,7 +126,9 @@ Reassess scope and forecast after the first validate-only result. Two failed
 validate-only attempts require a whole-procedure dependency walk before a third.
 A green run proves production signing, replay and validation. It does not exercise
 the publication App token or atomic push permissions; those remain a known
-production-only gap. Report any additional production-only gap immediately.
+production-only gap. Unpublished commits also have no GitHub verification
+records; verify those after publication. Report any additional production-only
+gap immediately.
 
 Exit: reviewer-accepted resolutions, a clean replay ref/tree, and green
 validate-only on the exact frozen dev/target/resolutions. Record platform proofs
@@ -120,8 +137,8 @@ unless the user explicitly authorizes production publication.
 
 ## Execute
 
-Entry: the user gave a production go naming this repository and target, and dry
-run passed. Read back dev, mirror, resolutions, sync state and active runs. Require
+Entry: the user gave a production go naming this repository and target, decided
+production writer coordination separately, and dry run passed. Read back dev, mirror, resolutions, sync state and active runs. Require
 the same inputs as the accepted validate-only run. Any movement invalidates this
 gate. Record the user's go and exact dispatch command before running it.
 
