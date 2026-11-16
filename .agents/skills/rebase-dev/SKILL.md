@@ -248,9 +248,7 @@ refreshes its owning documentation. Map each row through the replay's
 original-to-rewritten commit mapping onto the published chain, which the verifier
 proved equal position for position. Don't match by subject: every rebase adds
 generated commits whose subjects repeat. Recompute each identity with the engine's
-`commitIdentity` and add keep rows for new published commits. When a partial
-row's patch changed only through reviewed resolutions, move its receipt to the new
-identity and cite the resolution SHA and publishing run in its evidence. Prove the result with `planRebase` on published
+`commitIdentity` and add keep rows for new published commits. When a partial row's identity moved only through upstream context or content drift (the engine hashes moved files whole), and `git range-diff` shows the fork's own changes unchanged, move its receipt to the new identity. Cite the resolution SHA, the publishing run and that range-diff in its evidence. Prove the result with `planRebase` on published
 dev plus the new ledger: no mismatch and no drops. Preparation runs the
 engine replayPlan ledger check before rehearsal so stale records fail locally.
 
