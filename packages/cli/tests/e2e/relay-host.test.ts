@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { spawn, type ChildProcess } from "node:child_process";
+import { execFile, spawn, type ChildProcess } from "node:child_process";
 import { createRequire } from "node:module";
+import { promisify } from "node:util";
 import net from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,7 +15,8 @@ import { createE2ETestContext } from "../helpers/test-daemon.ts";
 
 const nodeMajor = Number((process.versions.node ?? "0").split(".")[0] ?? "0");
 const shouldRunRelayE2e = process.env.FORCE_RELAY_E2E === "1" || nodeMajor < 25;
-const wranglerCliPath = createRequire(import.meta.url).resolve("wrangler/bin/wrangler.js");
+const wranglerCliPath = createRequire(import.meta.url).resolve("wrangler");
+const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const relayDir = path.resolve(__dirname, "../../../relay");
 const STARTUP_HOOK_TIMEOUT_MS = 120_000;
@@ -50,6 +52,8 @@ function spawnRelayDevServer(port: number): ChildProcess {
       wranglerCliPath,
       "dev",
       "--local",
+      "--var",
+      "PASEO_RELAY_UPSTREAM:",
       "--ip",
       "127.0.0.1",
       "--port",
@@ -163,6 +167,10 @@ async function waitForDaemonRelayRegistered(offerUrl: string, timeoutMs = 30_000
   let offerUrl: string;
 
   beforeAll(async () => {
+    await execFileAsync(process.execPath, [wranglerCliPath, "--version"], {
+      cwd: relayDir,
+      timeout: 30_000,
+    });
     relayPort = await getAvailablePort();
     relayProcess = spawnRelayDevServer(relayPort);
     relayProcess.stdout?.on("data", forwardRelayStdout);
