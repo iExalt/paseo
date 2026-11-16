@@ -127,3 +127,18 @@ export function settleFocusClaim(
     requestedKey: null,
   };
 }
+
+/**
+ * Android can leave a soft keyboard that was open elsewhere (the agent composer) attached to the
+ * hidden terminal input when the terminal comes back on screen, without focusing that input. Keys
+ * then miss the field: Samsung's Enter adds no line break, so the line is never cleared and
+ * reappears in later edits. Focus the input once on return, while the keyboard is settled open,
+ * as the keyboard toggle would.
+ */
+export function shouldReclaimTerminalKeyboard(input: {
+  wasPresented: boolean;
+  isPresented: boolean;
+  isKeyboardVisible: boolean;
+}): boolean {
+  return input.isPresented && !input.wasPresented && input.isKeyboardVisible;
+}
