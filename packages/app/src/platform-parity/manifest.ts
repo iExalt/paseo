@@ -14,6 +14,15 @@ const PANE_DRAG_WEB_ONLY =
  */
 export const PARITY_MANIFEST: ParityManifest = {
   splitModules: {
+    "components/ui/autocomplete-popover/internal/frame": {
+      kind: "equivalent",
+      note: "Native measures the anchor on the UI thread; web observes its DOM layout before paint",
+    },
+    "components/zoomable-viewport/image-size": {
+      kind: "deliberate",
+      reason:
+        "Web uses the browser 300 by 150 fallback for images without intrinsic dimensions; native rejects a missing size",
+    },
     "appearance/text": {
       kind: "equivalent",
       note: "Web subscribes the text leaf to font tokens; native Text resolves the theme directly",

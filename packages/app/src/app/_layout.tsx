@@ -958,15 +958,39 @@ function RootStack() {
         <Stack.Screen name="schedules" />
       </Stack.Protected>
       <Stack.Screen name="h/[serverId]" />
-      <Stack.Screen name="settings/device-hosts/[serverId]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+      <Stack.Screen
+        name="settings/device-hosts/[serverId]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
       <Stack.Screen name="settings/hosts/[serverId]/index" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
-      <Stack.Screen name="settings/hosts/[serverId]/[hostSection]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
-      <Stack.Screen name="settings/hosts/[serverId]/plugins/[pluginId]/index" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
-      <Stack.Screen name="settings/hosts/[serverId]/plugins/[pluginId]/[screenId]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
-      <Stack.Screen name="settings/hosts/[serverId]/plugin-directory/[owner]/[slug]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
-      <Stack.Screen name="settings/hosts/[serverId]/projects/index" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
-      <Stack.Screen name="settings/hosts/[serverId]/projects/[projectId]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
-      <Stack.Screen name="settings/hosts/[serverId]/providers/[providerId]" options={SETTINGS_PAGE_SCREEN_OPTIONS} />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/[hostSection]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/plugins/[pluginId]/index"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/plugins/[pluginId]/[screenId]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/plugin-directory/[owner]/[slug]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/projects/index"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/projects/[projectId]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
+      <Stack.Screen
+        name="settings/hosts/[serverId]/providers/[providerId]"
+        options={SETTINGS_PAGE_SCREEN_OPTIONS}
+      />
     </ThemedStack>
   );
 }

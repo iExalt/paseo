@@ -970,13 +970,13 @@ describe("ClaudeAgentSession features", () => {
     }
   });
 
-  test("shows Claude's decision reason on bypass-immune permission prompts", async () => {
+  test("shows Claude's decision reason on interactive permission prompts", async () => {
     const { queryFactory } = createQueryMock();
     const session = await new ClaudeAgentClient({
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
-    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "bypassPermissions" });
+    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "default" });
 
     try {
       await session.startTurn("run the tool");
@@ -1003,7 +1003,7 @@ describe("ClaudeAgentSession features", () => {
       logger,
       queryFactory,
       resolveBinary: async () => "/test/claude/bin",
-    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "bypassPermissions" });
+    }).createSession({ provider: "claude", cwd: process.cwd(), modeId: "default" });
     const events: AgentStreamEvent[] = [];
     const unsubscribe = session.subscribe((event) => events.push(event));
 
