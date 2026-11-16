@@ -6778,3 +6778,31 @@ index e760f98b7..be97f5c5f 100644
    // Android's onShouldStartLoadWithRequest reports isTopFrame; see the browser pane.
    {
      nodeModulesPath: "node_modules/react-native-webview",
+diff --git a/.gitignore b/.gitignore
+index a85ff1fd8..ffadc0787 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -89,6 +89,7 @@ packages/protocol/src/generated/validation/ws-outbound-schema-metadata.ts
+ packages/protocol/codegen/generated/
+ 
+ /artifacts
++/.artifacts/diff-subscription/
+ packages/desktop/.cache/
+ packages/desktop/src-tauri/resources/managed-runtime/
+ app.json
+diff --git a/packages/server/src/terminal/worker-terminal-manager.test.ts b/packages/server/src/terminal/worker-terminal-manager.test.ts
+index e57e413b4..6864c7615 100644
+--- a/packages/server/src/terminal/worker-terminal-manager.test.ts
++++ b/packages/server/src/terminal/worker-terminal-manager.test.ts
+@@ -1690,8 +1690,10 @@ it("leaves a worker from a newer Paseo running, reports it incompatible, and clo
+ 
+   await manager.closeTerminals();
+ 
+-  expect(isProcessAlive(newer.workerPid)).toBe(false);
+   expect(isProcessAlive(newer.programPid)).toBe(false);
++  // Cleanup counts the worker gone once its socket refuses connections, which happens before
++  // its process exits.
++  await waitForCondition(() => !isProcessAlive(newer.workerPid), 5000);
+   expect(await workerRecords(paseoHome)).toEqual([]);
+ });
+ 
