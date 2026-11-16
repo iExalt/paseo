@@ -5,6 +5,7 @@ import {
   reconcileFocusClaim,
   resolveTerminalResizeClaim,
   settleFocusClaim,
+  shouldReclaimTerminalKeyboard,
   type FocusClaimState,
 } from "./terminal-pane-focus-claim";
 
@@ -248,5 +249,22 @@ describe("terminal pane focus claim", () => {
 
     expect(refocused.shouldRequest).toBe(true);
     expect(changed.shouldRequest).toBe(true);
+  });
+});
+
+describe("terminal keyboard reclaim", () => {
+  it("focuses the terminal input only when it returns on screen with the keyboard up", () => {
+    const returnWithKeyboard = { wasPresented: false, isPresented: true, isKeyboardVisible: true };
+    expect(shouldReclaimTerminalKeyboard(returnWithKeyboard)).toBe(true);
+    expect(shouldReclaimTerminalKeyboard({ ...returnWithKeyboard, isKeyboardVisible: false })).toBe(
+      false,
+    );
+    // Already on screen: the keyboard toggle owns focus, so showing the keyboard there is not a return.
+    expect(shouldReclaimTerminalKeyboard({ ...returnWithKeyboard, wasPresented: true })).toBe(
+      false,
+    );
+    expect(shouldReclaimTerminalKeyboard({ ...returnWithKeyboard, isPresented: false })).toBe(
+      false,
+    );
   });
 });
