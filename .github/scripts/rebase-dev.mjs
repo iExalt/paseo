@@ -1443,10 +1443,16 @@ async function checkedTree(repositoryPath, expectedSha) {
   const status = await gitChecked(repositoryPath, [
     "status",
     "--porcelain=v1",
-    "-z",
     "--untracked-files=all",
   ]);
-  if (status) throw new Error("Validation requires a clean tracked and nonignored working tree");
+  if (status) {
+    const paths = status.trimEnd().split("\n");
+    throw new Error(
+      `Validation requires a clean tracked and nonignored working tree\n` +
+        `Dirty paths: ${paths.length} total (showing first ${Math.min(paths.length, 50)})\n` +
+        paths.slice(0, 50).join("\n"),
+    );
+  }
 
   // Fresh hosted checkouts may generate ignored build outputs, but must not load
   // local environment overrides. This is not an audit of every possible ignored input.
