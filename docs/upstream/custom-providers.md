@@ -285,6 +285,28 @@ Paseo passes those variables through to the Codex app-server process **and** map
 }
 ```
 
+### Auto-review models
+
+Check that your endpoint serves the approval reviewer's model as well as the worker's.
+Codex 0.162.1 can select `codex-auto-review` even when a custom endpoint does not serve it;
+the worker starts, but flagged commands fail when the reviewer is called.
+
+To select a served reviewer model, set `"auto_review_model_override": "custom-model"`
+on the worker's matching ModelInfo row in a full compatible Codex model catalogue.
+Preserve the other rows and the worker row's metadata and instructions. If the worker
+model is absent, use the installed Codex version's
+[fallback descriptor](https://github.com/openai/codex/blob/rust-v0.162.1/codex-rs/models-manager/src/model_info.rs)
+for that row. Point Codex's startup config at the catalogue:
+
+```toml
+# $CODEX_HOME/config.toml
+model_catalog_json = "/absolute/path/models.json"
+```
+
+The catalogue is read at app-server startup; thread config overrides do not reload it.
+`review_model` controls `/review`, not approval reviews. Retest the intended allow/deny
+behavior after changing models: a successful reviewer call does not guarantee a refusal.
+
 ### What Paseo wires up
 
 Under the hood, for each custom Codex provider Paseo injects this into Codex's config:
