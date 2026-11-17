@@ -887,13 +887,23 @@ test("known rerere resolution is imported and resumes while preserving adapted c
   );
   const repeated = join(fixture.directory, "repeat-checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, repeated);
-  const unchanged = await rebaseDev({ repositoryPath: repeated, ...signingOptions });
-  assert.equal(
-    unchanged.provenanceCommits,
-    0,
-    "Unchanged upstream must not add provenance commits",
+  const beforeRepeat = git(repeated, "rev-parse", "HEAD");
+  const beforeRepeatCount = git(repeated, "rev-list", "--count", "HEAD");
+  const remoteBefore = git(repeated, "ls-remote", "--refs", "origin");
+  await assert.rejects(
+    rebaseDev({ repositoryPath: repeated, ...signingOptions }),
+    /already incorporates captured upstream; no rebase is needed/,
   );
-  assert.equal(unchanged.boundaryCommits, 0, "An unmoved release commit needs no new boundary");
+  assert.equal(git(repeated, "rev-parse", "HEAD"), beforeRepeat);
+  assert.equal(git(repeated, "rev-list", "--count", "HEAD"), beforeRepeatCount);
+  assert.equal(git(repeated, "symbolic-ref", "--short", "HEAD"), "dev");
+  assert.equal(git(repeated, "status", "--porcelain"), "");
+  assert.equal(
+    existsSync(join(repeated, ".git", "rr-cache")),
+    false,
+    "Refuse before importing resolutions",
+  );
+  assert.equal(git(repeated, "ls-remote", "--refs", "origin"), remoteBefore);
 });
 
 test("release boundary maps the newest tagged or configured replay commit", () => {
@@ -1216,7 +1226,12 @@ test("atomic publication saves captured dev and rejects a stale dev lease", asyn
   const fixture = await makeFixture("publish");
   const clone = join(fixture.directory, "checkout");
   git(fixture.directory, "clone", "--branch", "dev", fixture.remote, clone);
-  await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const captured = await rebaseDev({ repositoryPath: clone, ...signingOptions });
+  const captures = {
+    devSha: captured.dev,
+    upstreamSha: captured.upstream,
+    resolutionsSha: captured.resolutions,
+  };
 
   await assert.rejects(
     validateRebase({
@@ -1232,13 +1247,42 @@ test("atomic publication saves captured dev and rejects a stale dev lease", asyn
   const testedSha = await validateRebase({ repositoryPath: clone, runChecks: async () => {} });
   writeFileSync(join(clone, "unexpected.txt"), "untracked input");
   await assert.rejects(
-    publishRebase({ repositoryPath: clone, devSha: fixture.devSha, testedSha, runId: "90000" }),
+    publishRebase({ repositoryPath: clone, ...captures, testedSha, runId: "90000" }),
     /clean tracked and nonignored/,
   );
   unlinkSync(join(clone, "unexpected.txt"));
+  for (const [name, ref] of [
+    ["upstream", "refs/heads/upstream/main"],
+    ["resolutions", "refs/heads/rebase-resolutions"],
+  ]) {
+    await assert.rejects(
+      publishRebase({
+        repositoryPath: clone,
+        ...captures,
+        [`${name}Sha`]: undefined,
+        testedSha,
+        runId: "90000",
+      }),
+      new RegExp(`A captured ${name} SHA is required`),
+    );
+    for (const moved of [fixture.devSha, null]) {
+      if (moved) git(fixture.remote, "update-ref", ref, moved, captured[name]);
+      else git(fixture.remote, "update-ref", "-d", ref, captured[name]);
+      await assert.rejects(
+        publishRebase({ repositoryPath: clone, ...captures, testedSha, runId: "90000" }),
+        new RegExp(`Captured ${name} ref moved or is missing`),
+      );
+      assert.equal(git(fixture.remote, "rev-parse", "refs/heads/dev"), fixture.devSha);
+      assert.equal(
+        git(clone, "ls-remote", "--refs", "origin", "refs/heads/backup/rebase-dev/*"),
+        "",
+      );
+      git(fixture.remote, "update-ref", ref, captured[name]);
+    }
+  }
   const first = await publishRebase({
     repositoryPath: clone,
-    devSha: fixture.devSha,
+    ...captures,
     testedSha,
     runId: "90001",
     runAttempt: "1",
@@ -1249,14 +1293,14 @@ test("atomic publication saves captured dev and rejects a stale dev lease", asyn
   writeFileSync(join(clone, "after-publish.txt"), "make the second push non-empty\n");
   commit(clone, "local unpublished change");
   await assert.rejects(
-    publishRebase({ repositoryPath: clone, devSha: fixture.devSha, testedSha, runId: "90002" }),
+    publishRebase({ repositoryPath: clone, ...captures, testedSha, runId: "90002" }),
     /HEAD differs/,
   );
 
   await assert.rejects(
     publishRebase({
       repositoryPath: clone,
-      devSha: fixture.devSha,
+      ...captures,
       testedSha: git(clone, "rev-parse", "HEAD"),
       runId: "90002",
       runAttempt: "1",

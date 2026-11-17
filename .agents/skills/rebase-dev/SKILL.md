@@ -92,7 +92,7 @@ Before the first shared-system or expensive attempt, walk the whole path: check
 real tools, resources, permissions, mutable inputs, leftover files and final-only
 gates. Record any human or device dependency and fix blockers together.
 
-Unknown conflicts stop unattended replay. Review every manual resolution and
+An already-incorporated upstream target stops before replay or resolution import; do not retry it. Unknown conflicts stop unattended replay. Review every manual resolution and
 supersession with the reviewer, complete rehearsal, then export the completed
 rerere pairs into a separate rebase-resolutions checkout. Review deletion records
 and target-specific fixups separately. Sweep callers and mocks of every adapted
@@ -206,7 +206,7 @@ gate. Rerun full preflight immediately before the dispatch and dispatch only on
 `readyForDispatch`. Record the user's go and exact dispatch command before running it.
 
 Dispatch `rebase-dev.yml` on `dev` with `validate_only=false` only under that go.
-Record the run ID, attempt, captured refs, tested SHA and resulting backup ref.
+Record the run ID, attempt, captured refs, tested SHA and resulting backup ref. Publication refuses if upstream or resolutions moved or disappeared since capture; re-prepare changed inputs rather than retrying the atomic push.
 Use a bounded fail-fast watcher; a failure is not permission to rerun. Never
 repair publication by directly pushing dev or moving its backup. Close the
 candidate draft and delete its branch as soon as the run publishes: merging it
