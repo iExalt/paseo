@@ -5,7 +5,6 @@ import type { NotificationOpenSource, NotificationTap } from "./source";
 class FakeSource implements NotificationOpenSource {
   listeners = new Set<(tap: NotificationTap) => void>();
   acknowledged: string[] = [];
-  launchReads = 0;
   constructor(readonly launch: NotificationTap | null) {}
   subscribe(onTap: (tap: NotificationTap) => void) {
     this.listeners.add(onTap);
@@ -14,7 +13,6 @@ class FakeSource implements NotificationOpenSource {
     };
   }
   async takeLaunchTap() {
-    this.launchReads++;
     return this.launch;
   }
   acknowledge(tap: NotificationTap) {
@@ -100,14 +98,83 @@ describe("notification open", () => {
     return { source, agents, routes, terminals, router, prepareAgent, cancelPreparation };
   }
 
-  it("takes the launch tap once across remounts", async () => {
+  it("recovers a new launch tap after remount without reopening handled taps", async () => {
     const { source, agents, router } = setup();
-    router.start()();
+    const live = { id: "two", data: { serverId: "host", agentId: "second" } };
+    const nextLaunch = { id: "three", data: { serverId: "host", agentId: "third" } };
     const stop = router.start();
     await flush();
-    expect(source.launchReads).toBe(1);
-    expect(agents).toEqual([{ serverId: "host", agentId: "agent" }]);
+    source.tap(live);
+    await flush();
     stop();
+
+    source.takeLaunchTap = async () => nextLaunch;
+    const stopAgain = router.start();
+    await flush();
+    expect(agents).toEqual([
+      { serverId: "host", agentId: "agent" },
+      { serverId: "host", agentId: "second" },
+      { serverId: "host", agentId: "third" },
+    ]);
+    source.tap(launch);
+    source.tap(live);
+    source.tap(nextLaunch);
+    await flush();
+
+    expect(agents).toEqual([
+      { serverId: "host", agentId: "agent" },
+      { serverId: "host", agentId: "second" },
+      { serverId: "host", agentId: "third" },
+    ]);
+    expect(source.acknowledged).toEqual(["one", "two", "three"]);
+    stopAgain();
+  });
+
+  it("does not let handled listener replay hide a fresh launch response", async () => {
+    const { source, agents, router } = setup();
+    const stop = router.start();
+    await flush();
+    stop();
+    let resolveLaunch = (_tap: NotificationTap) => {};
+    source.takeLaunchTap = () =>
+      new Promise<NotificationTap>((resolve) => {
+        resolveLaunch = resolve;
+      });
+    const stopAgain = router.start();
+    source.tap(launch);
+    resolveLaunch({ id: "two", data: { serverId: "host", agentId: "second" } });
+    await flush();
+
+    expect(agents).toEqual([
+      { serverId: "host", agentId: "agent" },
+      { serverId: "host", agentId: "second" },
+    ]);
+    expect(source.acknowledged).toEqual(["one", "two"]);
+    stopAgain();
+  });
+
+  it("ignores a stopped subscription's launch read without acknowledging a newer response", async () => {
+    const { source, agents, router } = setup();
+    let resolveOld = (_tap: NotificationTap) => {};
+    let resolveCurrent = (_tap: NotificationTap) => {};
+    const oldRead = new Promise<NotificationTap>((resolve) => {
+      resolveOld = resolve;
+    });
+    const currentRead = new Promise<NotificationTap>((resolve) => {
+      resolveCurrent = resolve;
+    });
+    source.takeLaunchTap = vi.fn().mockReturnValueOnce(oldRead).mockReturnValueOnce(currentRead);
+    const stop = router.start();
+    stop();
+    const stopAgain = router.start();
+    resolveCurrent({ id: "two", data: { serverId: "host", agentId: "second" } });
+    await flush();
+    resolveOld(launch);
+    await flush();
+
+    expect(agents).toEqual([{ serverId: "host", agentId: "second" }]);
+    expect(source.acknowledged).toEqual(["two"]);
+    stopAgain();
   });
 
   it("ignores listener replay of the launch tap after remount", async () => {
