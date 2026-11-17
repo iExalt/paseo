@@ -289,3 +289,47 @@ export function keyboardEventToComboString(
 
   return parts.join("+");
 }
+
+export type ShortcutCaptureResult =
+  | { kind: "pass" }
+  | { kind: "ignore" }
+  | { kind: "modifiers"; value: string | null }
+  | { kind: "remove" }
+  | { kind: "cancel" }
+  | { kind: "combo"; value: string };
+
+const CAPTURE_NAVIGATION_CODES = new Set([
+  "Backspace",
+  "Escape",
+  "Tab",
+  "Enter",
+  "NumpadEnter",
+  "ArrowLeft",
+  "ArrowRight",
+  "ArrowUp",
+  "ArrowDown",
+]);
+
+/** Preserve native text/navigation ownership while recording supported shortcut keys. */
+export function normalizeShortcutCapture(
+  event: Pick<
+    KeyboardEvent,
+    "key" | "code" | "altKey" | "ctrlKey" | "metaKey" | "shiftKey" | "repeat"
+  > & { isComposing?: boolean },
+  typing: boolean,
+): ShortcutCaptureResult {
+  if (event.isComposing || event.key === "Dead" || event.key === "Process") return { kind: "pass" };
+  if (isModifierKeyCode(event.code))
+    return { kind: "modifiers", value: heldModifiersFromEvent(event) };
+  const command = event.ctrlKey || event.metaKey;
+  if (!command && typing) return { kind: "pass" };
+  if (!command && CAPTURE_NAVIGATION_CODES.has(event.code)) {
+    if (event.altKey || event.shiftKey) return { kind: "pass" };
+    if (event.code === "Backspace") return { kind: event.repeat ? "ignore" : "remove" };
+    if (event.code === "Escape") return { kind: event.repeat ? "ignore" : "cancel" };
+    return { kind: "pass" };
+  }
+  const value = keyboardEventToComboString(event);
+  if (value === null) return { kind: "pass" };
+  return event.repeat ? { kind: "ignore" } : { kind: "combo", value };
+}

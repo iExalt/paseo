@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { formatShortcut } from "@/utils/format-shortcut";
 import {
+  normalizeShortcutCapture,
   comboStringToShortcutKeys,
   keyComboToString,
   keyboardEventToComboString,
@@ -143,5 +144,69 @@ describe("comboStringToShortcutKeys", () => {
       const rendered = formatShortcut([key], "non-mac");
       expect(rendered, `${name} renders as ${rendered}`).not.toBe(name.toUpperCase());
     }
+  });
+});
+
+describe("shortcut capture ownership", () => {
+  const key = (code: string, extra: Partial<KeyboardEvent> = {}) =>
+    keyboardEvent({ code, key: code, ...extra });
+  it("reserves navigation while Ctrl and Cmd combinations remain capturable", () => {
+    for (const code of [
+      "Backspace",
+      "Escape",
+      "Tab",
+      "Enter",
+      "ArrowLeft",
+      "ArrowRight",
+      "ArrowUp",
+      "ArrowDown",
+    ]) {
+      for (const extra of [{ ctrlKey: true }, { metaKey: true }]) {
+        expect(normalizeShortcutCapture(key(code, extra), true)).toEqual({
+          kind: "combo",
+          value: `${extra.ctrlKey ? "Ctrl" : "Cmd"}+${code}`,
+        });
+      }
+    }
+    for (const code of ["Tab", "Enter", "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"]) {
+      for (const extra of [{}, { shiftKey: true }, { altKey: true }])
+        expect(normalizeShortcutCapture(key(code, extra), false)).toEqual({ kind: "pass" });
+    }
+  });
+  it("edits capture only outside focused text", () => {
+    expect(normalizeShortcutCapture(key("Backspace"), false)).toEqual({ kind: "remove" });
+    expect(normalizeShortcutCapture(key("Escape"), false)).toEqual({ kind: "cancel" });
+    for (const code of ["Backspace", "Escape", "KeyA", "Space", "Delete"])
+      expect(normalizeShortcutCapture(key(code), true)).toEqual({ kind: "pass" });
+    expect(normalizeShortcutCapture(key("Backspace", { altKey: true }), false)).toEqual({
+      kind: "pass",
+    });
+  });
+  it("previews modifiers and records logical punctuation without duplicate repeat steps", () => {
+    expect(
+      normalizeShortcutCapture(key("ControlLeft", { key: "Control", ctrlKey: true }), false),
+    ).toEqual({ kind: "modifiers", value: "Ctrl" });
+    expect(normalizeShortcutCapture(key("KeyN", { key: "b", ctrlKey: true }), true)).toEqual({
+      kind: "combo",
+      value: "Ctrl+B",
+    });
+    expect(normalizeShortcutCapture(key("Minus", { key: "_", shiftKey: true }), false)).toEqual({
+      kind: "combo",
+      value: "Shift+-",
+    });
+    expect(
+      normalizeShortcutCapture(key("KeyJ", { key: "j", ctrlKey: true, repeat: true }), true),
+    ).toEqual({ kind: "ignore" });
+    expect(normalizeShortcutCapture(key("Backspace", { repeat: true }), false)).toEqual({
+      kind: "ignore",
+    });
+    expect(normalizeShortcutCapture(key("Tab", { repeat: true }), false)).toEqual({ kind: "pass" });
+  });
+  it("leaves composition, dead and unsupported keys with the input", () => {
+    for (const extra of [{ isComposing: true }, { key: "Dead" }, { key: "Process" }])
+      expect(normalizeShortcutCapture(key("KeyA", extra), false)).toEqual({ kind: "pass" });
+    expect(normalizeShortcutCapture(key("Unmapped", { key: "Unidentified" }), false)).toEqual({
+      kind: "pass",
+    });
   });
 });

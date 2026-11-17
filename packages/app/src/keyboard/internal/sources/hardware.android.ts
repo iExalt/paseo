@@ -4,6 +4,7 @@ interface HardwareKeyboardModule {
   getHardwareKeyboardPresent(): boolean;
   addListener(event: "onHardwareKeyboardPresenceChanged", handler: () => void): { remove(): void };
   setOverlayKeys(keys: readonly string[]): void;
+  setShortcutCaptureActive(active: boolean): void;
   addListener(
     event: "onHardwareKeyboardShortcut",
     handler: (event: HardwareKeyboardEvent) => void,
@@ -29,4 +30,8 @@ export function getHardwareKeyboardPresent(): boolean {
 export function subscribeHardwareKeyboardPresence(changed: () => void): () => void {
   const subscription = module.addListener("onHardwareKeyboardPresenceChanged", changed);
   return () => subscription.remove();
+}
+
+export function setShortcutCaptureActive(active: boolean): void {
+  module.setShortcutCaptureActive(active);
 }
