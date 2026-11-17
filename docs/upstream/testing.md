@@ -183,7 +183,7 @@ Codex MultiAgentV2 real tests use local Codex authentication rather than the Ope
 
 Test suites in this repo are heavy. Running them in bulk freezes the machine, especially with multiple agents in parallel.
 
-Run only the file you changed. From the repository root, use the app workspace for an app unit test; its path is relative to `packages/app`:
+Run only the focused tests your change affects. From the repository root, use the app workspace for an app unit test; its path is relative to `packages/app`:
 
 ```bash
 npm run test --workspace=@getpaseo/app -- src/provider-selection/provider-selection.test.ts --project unit --bail=1
@@ -202,7 +202,7 @@ Build workspace dependencies first in a fresh checkout; see [development setup](
 - When changing CLI registration, update and run `packages/cli/src/cli-surface.test.ts` before pushing.
 - Never run `npm run test` for a whole workspace unless asked.
 - For a broad sweep, append `> /tmp/test-output.txt 2>&1` to the appropriate command above and read the file afterward.
-- Never re-run a suite another agent already reported green.
+- Never re-run a suite another agent already reported green on the same revision and inputs.
 - For full-suite confidence, push to CI and check GitHub Actions.
 - Never run the full Playwright E2E suite locally — defer whole-suite verification to CI. Targeted Playwright specs are allowed when you changed or need to prove that specific flow.
 - App Playwright shares one warmed Metro server per run and gives every Playwright worker its own isolated daemon and `PASEO_HOME`. Spec files run concurrently without exposing one file's projects, agents, terminals, history, or provider configuration to another worker; tests within a file remain together so file-level setup is not repeated.
