@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Paseo is a mobile app for monitoring and controlling your local AI coding agents from anywhere. Your dev environment, in your pocket. Connects directly to your actual development environment — your code stays on your machine.
+Paseo is a mobile app for monitoring and controlling your local AI coding agents from anywhere. It connects directly to your actual development environment — your code stays on your machine.
 
 **Supported agents:** Claude Code, Codex, GitHub Copilot, OpenCode, Pi, Oh My Pi, Antigravity, and Muse Code.
 
@@ -19,91 +19,10 @@ This is an npm workspace monorepo:
 
 `docs/` is the source of truth for system-level and process-level knowledge. **"The docs", "check the docs", or "check the X docs" always mean this directory — not the web.** Look here before fetching anything online; the docs capture gotchas and conventions you cannot derive from the code or external sources.
 
-Fork-specific operating notes live at the top level of `docs/`. Paseo's bundled documentation and evidence live in `docs/upstream/`. Upstream code comments and lint messages cite these as `docs/<name>.md`; read `docs/upstream/<name>.md`. Upstream docs added since the move landed at the top level of `docs/` (`markdown-renderer.md`, `native-text-selection.md`, `terminal-worker.md`); `rebase-dev` now stops on new ones, and [docs/upstream/rebase-dev.md](docs/upstream/rebase-dev.md) says how to move them when you prepare a rebase. Process docs in `docs/upstream/` (release, Docker, EAS) describe upstream's pipeline unless a fork note says otherwise.
+Fork-specific operating notes live at the top level of `docs/`. Paseo's bundled documentation and evidence live in `docs/upstream/`. Upstream code comments and lint messages cite these as `docs/<name>.md`; read `docs/upstream/<name>.md`. Process docs in `docs/upstream/` (release, Docker, EAS) describe upstream's pipeline unless a fork note says otherwise.
 
-At the start of non-trivial work, list `docs/` and skim anything relevant to the task.
-
-| Doc                                                                                    | What's in it                                                                                                                   |
-| -------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| [docs/agent-testing.md](docs/agent-testing.md)                                         | Ad hoc app testing by agents: Android deep links and their state, reading dumps, desktop and daemon isolation                  |
-| [docs/DEV_UPSTREAM_SUPERSESSION.md](docs/DEV_UPSTREAM_SUPERSESSION.md)                 | Frozen rebase inputs, commit inventory, supersession ledger and retained fork behavior                                         |
-| [docs/upstream/rebase-dev.md](docs/upstream/rebase-dev.md)                             | Fork `rebase-dev` workflow: replay rules, rerere resolutions, fixups and deletions                                             |
-| [docs/terminal-worker.md](docs/terminal-worker.md)                                     | Terminal worker process: terminals that survive daemon restarts, crashes and upgrades                                          |
-| [docs/macos-code-signing.md](docs/macos-code-signing.md)                               | Stable signature for the installed macOS app so privacy grants survive updates; identity, Mac setup, limits                    |
-| [docs/upstream/product.md](docs/upstream/product.md)                                   | What Paseo is, who it's for, where it's going                                                                                  |
-| [docs/upstream/architecture.md](docs/upstream/architecture.md)                         | System design, package layering, WebSocket protocol, agent lifecycle, data flow                                                |
-| [docs/upstream/agent-lifecycle.md](docs/upstream/agent-lifecycle.md)                   | Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track                                  |
-| [docs/markdown-renderer.md](docs/markdown-renderer.md)                                 | Shared Markdown engine, native selection, links, images and library constraints                                                |
-| [docs/native-text-selection.md](docs/native-text-selection.md)                         | Native diagram grouping, selection boundaries and leading inline image limitations                                             |
-| [docs/upstream/data-model.md](docs/upstream/data-model.md)                             | File-based JSON persistence, Zod schemas, atomic writes, no migrations                                                         |
-| [docs/upstream/glossary.md](docs/upstream/glossary.md)                                 | Authoritative terminology — UI label wins, no synonyms                                                                         |
-| [docs/GLOSSARY.md](docs/GLOSSARY.md)                                                   | Fork-owned module terms (Routine lane and later); links to the upstream glossary                                               |
-| [docs/upstream/coding-standards.md](docs/upstream/coding-standards.md)                 | Type hygiene, error handling, state design, React patterns, file organization                                                  |
-| [docs/upstream/design.md](docs/upstream/design.md)                                     | Design system — tokens, buttons, hierarchy, density, alignment rails, states, what's forbidden                                 |
-| [docs/upstream/forms.md](docs/upstream/forms.md)                                       | Form architecture — non-React form model, form kit, load-state gating; the schedule form is the golden example                 |
-| [docs/upstream/hover.md](docs/upstream/hover.md)                                       | Hover — the canonical pattern (plain View + onPointerEnter/Leave, separate inner Pressable) and the three ways agents break it |
-| [docs/upstream/unistyles.md](docs/upstream/unistyles.md)                               | Unistyles gotchas — `useUnistyles()` is forbidden, alternatives in order                                                       |
-| [docs/upstream/floating-panels.md](docs/upstream/floating-panels.md)                   | Anchored popovers — Portal/Modal escape for Android, lifecycle gates, keyboard-shared-value, status-bar offset, the flash      |
-| [docs/drag-reorder.md](docs/drag-reorder.md) | Drag to reorder: DraggableList, handles, scroll hosts and testing |
-| [docs/upstream/menus.md](docs/upstream/menus.md)                                       | The menu engine — popover vs sheet, submenu pages, hover intent, when a decision earns a submenu                               |
-| [docs/upstream/expo-router.md](docs/upstream/expo-router.md)                           | Expo Router route ownership, startup restore, and native blank-screen gotchas                                                  |
-| [docs/upstream/notifications.md](docs/upstream/notifications.md)                       | Notification tap ownership, native replay and acknowledgement, startup handoff, and payload QA                                 |
-| [docs/upstream/file-icons.md](docs/upstream/file-icons.md)                             | Material icon theme integration for the file explorer                                                                          |
-| [docs/upstream/providers.md](docs/upstream/providers.md)                               | Adding a new agent provider end-to-end                                                                                         |
-| [docs/upstream/forge-providers.md](docs/upstream/forge-providers.md)                   | Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers                                  |
-| [docs/upstream/custom-providers.md](docs/upstream/custom-providers.md)                 | Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries                                              |
-| [docs/upstream/plugins.md](docs/upstream/plugins.md)                                   | Local plugin manifest, directory source config, RPCs, native surfaces, and attachment sources                                  |
-| [docs/upstream/website-i18n.md](docs/upstream/website-i18n.md)                         | Website languages: locale URLs, translated Markdown pairs, `{#id}` anchors, Chinese style                                      |
-| [docs/upstream/service-proxy.md](docs/upstream/service-proxy.md)                       | Service proxy: exposing workspace scripts at public URLs, DNS setup, reverse proxy config                                      |
-| [docs/upstream/relay-endpoint-security.md](docs/upstream/relay-endpoint-security.md)   | Relay E2EE modes: Noise NK mapping, record framing, negotiation, the `requireProtectedSecurity` flag, close codes              |
-| [docs/upstream/development.md](docs/upstream/development.md)                           | Dev server, build sync gotchas, CLI reference, agent state, Playwright MCP                                                     |
-| [docs/upstream/rpc-namespacing.md](docs/upstream/rpc-namespacing.md)                   | WebSocket RPC naming convention — dotted namespaces and `.request`/`.response` pairs                                           |
-| [docs/upstream/protocol-compatibility.md](docs/upstream/protocol-compatibility.md)     | Why app/daemon versions drift, protocol vs feature contract, capability gating, COMPAT tagging                                 |
-| [docs/upstream/protocol-validation.md](docs/upstream/protocol-validation.md)           | zod-aot generated inbound WebSocket validation, patched compiler regressions, schema-purity rules                              |
-| [docs/upstream/connected-hosts.md](docs/upstream/connected-hosts.md)                   | Daemon-owned host registrations, routed SDK scopes, identity and authority boundaries                                          |
-| [docs/upstream/permissions.md](docs/upstream/permissions.md)                           | Semantic daemon permissions, principals, credentials, pairing invitations, and Hub authority                                   |
-| [docs/upstream/terminal-performance.md](docs/upstream/terminal-performance.md)         | Terminal latency pipeline, coalescing/backpressure invariants, benchmark + perf spec usage                                     |
-| [docs/upstream/agent-stream-performance.md](docs/upstream/agent-stream-performance.md) | Assistant text pipeline — coalescing window, paced reveal, why arrival lumps are smoothed at render                            |
-| [docs/upstream/agent-stream-disclosure.md](docs/upstream/agent-stream-disclosure.md)   | Disclosure anchoring and list strategy ownership                                                                               |
-| [docs/upstream/keyboard-shortcuts.md](docs/upstream/keyboard-shortcuts.md)             | Keyboard shortcut routing and native input ownership                                                                           |
-| [docs/upstream/terminal-rendering.md](docs/upstream/terminal-rendering.md)             | Terminal rendering and cell geometry                                                                                           |
-| [docs/upstream/file-observation.md](docs/upstream/file-observation.md)                 | Recursive watcher ownership, Linux constraints, teardown invariants, and Parcel comparison                                     |
-| [docs/upstream/testing.md](docs/upstream/testing.md)                                   | TDD workflow, determinism, real dependencies over mocks, test organization                                                     |
-| [docs/upstream/qa.md](docs/upstream/qa.md)                                             | QA evidence bar for pull requests — platform matrix, version drift, performance, UI proof                                      |
-| [docs/upstream/mobile-testing.md](docs/upstream/mobile-testing.md)                     | Maestro and mobile test workflows                                                                                              |
-| [docs/upstream/mobile-panels.md](docs/upstream/mobile-panels.md)                       | Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints                           |
-| [docs/upstream/explorer-sidebar.md](docs/upstream/explorer-sidebar.md)                 | Explorer sidebar, side-pane, and compact workspace sheet host contracts, lifecycle, placement, routing preferences             |
-| [docs/upstream/ad-hoc-daemon-testing.md](docs/upstream/ad-hoc-daemon-testing.md)       | Isolated in-process daemon test harness                                                                                        |
-| [docs/upstream/browser-capture-harness.md](docs/upstream/browser-capture-harness.md)   | Real-Electron browser screenshot harness and compositor-surface gotcha                                                         |
-| [docs/upstream/android.md](docs/upstream/android.md)                                   | App variants, local/cloud builds, EAS workflows, version codes, F-Droid source builds and store metadata                       |
-| [docs/upstream/docker.md](docs/upstream/docker.md)                                     | Running the daemon and bundled web UI in Docker, volumes, agent images, security                                               |
-| [docs/upstream/terminal-activity.md](docs/upstream/terminal-activity.md)               | Terminal activity indicators — source-agnostic tracker, agent hook reporting, adding a new hook provider                       |
-| [SECURITY.md](SECURITY.md)                                                             | Relay threat model, E2E encryption, DNS rebinding, agent auth                                                                  |
-| [public-docs/hub/security.md](public-docs/hub/security.md)                             | Public Hub guide — trust boundaries, untrusted triggers, provider controls, and output authority                               |
-
-### Writing docs
-
-- **Integrate, don't append.** Find the doc that owns the subject and rewrite the part that is now wrong. The standard failure is finishing a task and adding a paragraph to the bottom of the closest-looking doc; ten tasks later the doc is a pile of paragraphs in discovery order. `docs/upstream/custom-providers.md` is what that looks like.
-- **Don't document logic.** Prose that restates code drifts from the code and loses. Write down what the code can't tell you: why something is shaped the way it is, the gotcha that cost an afternoon, conventions nothing enforces, constraints that span packages or versions. If a reader could get it in two minutes by opening the file, cut it.
-- **One fact, one doc.** Every other mention is a link. If you are about to write the same paragraph in two docs, one of them is a link.
-- **Respect the layers.** `CONTRIBUTING.md` and this file name things and link out. Activity docs like `docs/upstream/qa.md` and `docs/upstream/testing.md` set the bar for a kind of work. Subject docs like `docs/upstream/unistyles.md` own one thing completely. A layer never re-explains the one below it.
-- **One subject per doc.** If the subject doesn't fit in a sentence, split the doc. A section per provider, vendor, or platform is a table plus one worked example.
-- **Delete.** Obsolete sections go. Prefer a `packages/app/src/thing.ts:120` reference over a pasted block.
-- **New doc?** Add a row to the table above and link it from the docs that should send readers there.
-- Code-level facts belong in comments next to the code, not here.
-
-### Doc voice
-
-Plain and short. Second person. State the rule, then the reason when the reason isn't obvious. Match the doc you're editing.
-
-Do not:
-
-- Write a sentence to land a point. "It's not X, it's Y", "That's not a Z, that's a W", and every other setup-and-punchline shape.
-- Add a clause that only asserts importance: "and that matters", "which is what keeps it working", "this is critical".
-- Use "honest", "robust", "seamless", "powerful", "simply", "just", "delightful".
-- Restate something you already said, in different words, for emphasis.
-- Hedge with "generally", "typically", or "you may want to" when the answer is "do this".
-- Clear your throat: "It's worth noting that", "In order to", "This section covers".
+- **At the start of non-trivial work, read the docs index, [docs/README.md](docs/README.md), and open the entries relevant to the task.**
+- **Before writing or editing a doc or this file, read [docs/writing-docs.md](docs/writing-docs.md).**
 
 ## Quick start
 
@@ -121,9 +40,7 @@ npm run format:check                 # Check formatting without writing
 
 Repo dev commands use checkout-local state by default. In this checkout, `PASEO_HOME` resolves to `.dev/paseo-home`, and `npm run cli -- ...` targets that same dev home automatically. The packaged desktop app and production-style daemon keep using `~/.paseo` on port `6767`.
 
-To build an APK locally, use `npm run build:apk:arm64` for an ARM64 build: writes `artifacts/paseo-dogfood-arm64.apk` with diagnostics without starting a device; `npm run build:apk` builds all four Android architectures.
-
-See [docs/upstream/development.md](docs/upstream/development.md) for full setup, build sync requirements, and debugging.
+See [docs/upstream/development.md](docs/upstream/development.md) for full setup, build sync requirements, and debugging, and [docs/upstream/android.md](docs/upstream/android.md) for APK builds.
 
 ## Release branches
 
@@ -135,82 +52,16 @@ upstream's npm, EAS and store process; never follow or run them in the fork.
 
 ## Critical rules
 
-- **NEVER restart the main Paseo daemon on port 6767 without permission** — it manages all running agents. If you're an agent, restarting it kills your own process.
-- **NEVER assume a timeout means the service needs restarting** — timeouts can be transient.
-- **NEVER add auth checks to tests** — agent providers handle their own auth.
+- **NEVER restart the main Paseo daemon on port 6767 without permission** — it manages all running agents. If you're an agent, restarting it kills your own process. A timeout is often transient and is not a reason to restart.
 - **Before changing app routes, startup routing, remembered workspace restore, or active workspace selection, read [docs/upstream/expo-router.md](docs/upstream/expo-router.md).**
-- **Develop in a disposable dev instance, not on the Mac.** Create the worktree, install dependencies and run checks there, even for a small fix.
-- **NEVER run the full test suite locally.** The test suites are heavy and will freeze the machine, especially if multiple agents run them in parallel. Rules:
-  - Run only the specific test file you changed, using the [package-appropriate command](docs/upstream/testing.md#running-tests-locally).
-  - Never run `npm run test` for an entire workspace unless explicitly asked.
-  - If you must run a broad suite, redirect output to a file and read it afterward; follow [Running tests locally](docs/upstream/testing.md#running-tests-locally).
-  - Never re-run a test suite that another agent already ran and reported green — trust the result.
-  - For full suite verification, push to CI and check GitHub Actions instead.
-- Add tests to existing suites and reuse their npm scripts and CI jobs instead of creating feature-specific ones.
-- **Always run typecheck and lint after every change.**
+- **Before adding platform-specific code, hover UI or layout switches in `packages/app`, read [docs/platform-gating.md](docs/platform-gating.md).** Code is cross-platform by default.
+- Run the [focused tests your change affects](docs/upstream/testing.md#running-tests-locally). Run a whole workspace suite locally only when explicitly asked. Leave full Playwright runs to CI and check which lanes ran on the PR. Redirect broad output to a file. Reuse another agent's green result only for the same revision and inputs.
+- Add tests to existing suites and reuse their npm scripts and CI jobs instead of creating feature-specific ones. Don't add auth checks or skips to tests; providers handle their own auth ([testing.md](docs/upstream/testing.md#agent-authentication-in-tests)).
+- **Always run typecheck and lint after every change, and `npm run format` before committing, through npm scripts only.** Pass file paths for targeted checks (`npm run lint -- <files>`, `npm run format:files -- <files>`); never run `npx eslint`, `npx oxfmt`, `npx oxlint` or package-local binaries. Do not fix formatting by hand.
 - **Keep remote-only checks remote.** When a task assigns verification to another host, verify the same source revision there first, then use `LEFTHOOK=0 git commit` locally. The pre-commit hook otherwise reruns typecheck and can trigger builds on the Mac. Record the remote checks and confirm the staged source matches what passed before skipping the duplicate hook.
-- **Build workspace packages before diagnosing cross-package type errors.** This repo consumes generated declarations across workspaces. If typecheck fails in a package that depends on another workspace, rebuild the owning stack first so `dist` declarations are current. Root `npm run typecheck` runs `build:server` by itself only when a package that `build:server` builds has no `dist` at all, as in a fresh checkout:
-  - `npm run build:client` — rebuild protocol and client declarations.
-  - `npm run build:server` — rebuild highlight, relay, protocol, client, server, and CLI when server/CLI types may be stale.
-  - Do not patch inferred callback parameters or add local duplicate types just to silence stale declaration errors.
-- **Run `npm run format` before committing.** This repo formats with oxfmt (`.oxfmtrc.json`). Do not manually fix formatting — let the formatter handle it.
-- **Always use npm scripts for linting and formatting.** Do not run tools directly with `npx eslint`, `npx oxfmt`, `npx oxlint`, or package-local binaries. For targeted checks, pass file paths through the npm script:
-  - `npm run lint -- packages/app/src/components/message.tsx`
-  - `npm run format:files -- CLAUDE.md packages/app/src/components/message.tsx`
-- **The protocol stays backward-compatible. Features don't have to.** Read [docs/upstream/protocol-compatibility.md](docs/upstream/protocol-compatibility.md) before touching `packages/protocol`. The short version:
-  - **Protocol contract (always):** an old client parses messages from a new daemon, and a new daemon parses messages from an old client. New fields are optional; never narrow, never remove, never require. Wire schemas stay pure — no `.transform()`, `.catch()`, or `.preprocess()`.
-  - **Feature contract (per-feature):** gate the capability once on `server_info.features.*`, then run the feature or tell the user to update the host. No fallback paths, no defensive branches.
-  - **Every shim is tagged.** `// COMPAT(name): added in vX, remove after <date>` at the site that has to be deleted. `rg "COMPAT\("` is the cleanup backlog; untagged back-compat is permanent by accident.
-  - **New RPCs use dotted namespaces with direction suffixes.** Follow [docs/upstream/rpc-namespacing.md](docs/upstream/rpc-namespacing.md): `domain.provider.operation.request` pairs with `domain.provider.operation.response`. Existing flat RPC names will migrate over time; don't add new ones.
-
-## Platform gating
-
-The app runs on iOS, Android, web (browser), and web (Electron desktop). Code is cross-platform by default. Gate only when you must. Import gates from `@/constants/platform`.
-
-### The four gates
-
-| Gate                       | Type      | When to use                                                                                                                 |
-| -------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `isWeb`                    | constant  | DOM APIs — `document`, `window`, `<div>`, `addEventListener`, `ResizeObserver`. This is the **exception**, not the default. |
-| `isNative`                 | constant  | Native-only APIs — Haptics, `StatusBar.currentHeight`, push tokens, camera/scanner, `expo-av`.                              |
-| `getIsElectron()`          | cached fn | Desktop wrapper features — file dialogs, titlebar drag region, daemon management, app updates, dock badges.                 |
-| `useIsCompactFormFactor()` | hook      | Layout decisions — sidebar overlay vs pinned, modal vs full screen, single-panel vs split. From `@/constants/layout`.       |
-
-### Decision matrix
-
-| I need to...                                                   | Use                                                                       |
-| -------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| Access DOM (`document`, `window`, `<div>`, `addEventListener`) | `if (isWeb)`                                                              |
-| Use a native-only API (Haptics, push tokens, camera)           | `if (isNative)`                                                           |
-| Use an Electron bridge (file dialog, titlebar, updates)        | `if (getIsElectron())`                                                    |
-| Switch layout between phone and tablet/desktop                 | `useIsCompactFormFactor()`                                                |
-| Show something on hover, always-visible on native              | `isHovered \|\| isNative \|\| isCompact` (hover only works on web)        |
-| Gate to iOS or Android specifically                            | `Platform.OS === "ios"` / `Platform.OS === "android"` (rare, keep inline) |
-
-### Rules
-
-- **Default is cross-platform.** Don't gate unless you have a specific reason.
-- **Prefer Metro file extensions over `if` statements.** When a module has fundamentally different implementations per platform, use `.web.ts` / `.native.ts` file extensions instead of runtime `if (isWeb)` branches. Metro resolves the correct file at build time — the unused platform code is never bundled. Reserve `if (isWeb)` for small, inline checks (a single line or a few props). If you find yourself writing a large `if (isWeb) { ... } else { ... }` block, split into separate files instead.
-  ```
-  hooks/
-    use-audio-recorder.web.ts    ← uses Web Audio API
-    use-audio-recorder.native.ts ← uses expo-audio
-  ```
-  Import as `@/hooks/use-audio-recorder` — Metro picks the right file automatically.
-- **Use `.electron.ts` / `.electron.tsx` for Electron-only web modules.** Electron is still the Metro `web` platform, but desktop dev/build sets `PASEO_WEB_PLATFORM=electron`, so Metro first looks for `.electron.*` files and falls back to normal `.web.*` files. Use this when the implementation depends on Electron-only behavior such as `webviewTag`, desktop preload APIs, or the Electron bridge. Keep plain browser web in `.web.*`, and keep native fallbacks in the base file or `.native.*`.
-  ```
-  desktop/browser/pane/
-    index.electron.tsx ← Electron <webview> implementation
-    index.web.tsx      ← plain web fallback
-    index.tsx          ← native fallback
-  ```
-  Import as `@/desktop/browser/pane` — Electron desktop gets the `.electron.tsx` file, browser web gets `.web.tsx`, and native gets the native/base implementation.
-- **NEVER use raw DOM APIs without `isWeb` guard.** DOM APIs crash native. Casting a RN ref to `HTMLElement` is a red flag — ensure the block is web-only.
-- **Use `onPointerEnter`/`onPointerLeave` on a plain `View` for hover,** as [docs/upstream/hover.md](docs/upstream/hover.md) describes. They don't fire on native iOS, so hover-revealed UI must also show on native.
-- **Hover only works on web.** React Native's `onHoverIn`/`onHoverOut` on `Pressable` does NOT fire on native iOS/iPad — the underlying W3C pointer events are behind disabled experimental flags. For hover-to-show UI (kebab menus, action buttons), use `isHovered || isNative || isCompact` so the controls are always visible on native and hover-to-show on web.
-- **Don't use Platform.OS as a proxy for layout capabilities.** Use breakpoints for layout decisions, not platform checks.
-- **Import `isWeb`/`isNative` from `@/constants/platform`.** Never write `const isWeb = Platform.OS === "web"` locally.
+- **Build workspace packages before diagnosing cross-package type errors.** Packages consume each other's generated `dist` declarations, and typecheck builds them only when they are missing, not when they are stale. Rebuild the owning stack as [docs/upstream/development.md](docs/upstream/development.md) describes; do not patch inferred callback parameters or add duplicate local types to silence stale declarations.
+- **The protocol stays backward-compatible. Features don't have to.** Before touching `packages/protocol`, adding an RPC, or changing wire schemas, capability negotiation, or behavior across client and daemon versions, read [docs/upstream/protocol-compatibility.md](docs/upstream/protocol-compatibility.md). For a new RPC, also read [docs/upstream/rpc-namespacing.md](docs/upstream/rpc-namespacing.md).
 
 ## Debugging
 
-Find the complete daemon logs and traces in the $PASEO_HOME/daemon.log
+The daemon log is `$PASEO_HOME/daemon.log`. It logs at `info` and rotates; [docs/upstream/development.md](docs/upstream/development.md#daemon-logs) says how to get full traces.
