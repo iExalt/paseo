@@ -118,11 +118,14 @@ test.describe("Question option text", () => {
 
       await dragAcross(page, description);
       await expect.poll(() => selectedText(page)).toBe(DONE_DESCRIPTION);
+      await expectChecked(done, false);
       await description.getByText("Logs are at", { exact: false }).dblclick({
         position: { x: 4, y: 4 },
       });
       await expect.poll(() => selectedText(page)).toBe("Logs");
       await expectCurrentQuestion(page, { index: 1, total: 2, question: LINKED_QUESTION });
+      await expectChecked(done, false);
+      await done.getByText("Done", { exact: true }).click();
       await expectChecked(done, true);
       await continueToNextQuestion(page);
       await expectCurrentQuestion(page, { index: 2, total: 2, question: CHECKS_QUESTION });
@@ -176,10 +179,13 @@ test.describe("Question option text", () => {
 
       await dragAcross(page, description);
       await expect.poll(() => selectedText(page)).toBe(LINT_DESCRIPTION);
+      await expectChecked(lint, false);
       await description.getByText("Rules:", { exact: false }).dblclick({
         position: { x: 4, y: 4 },
       });
       await expect.poll(() => selectedText(page)).toBe("Rules");
+      await expectChecked(lint, false);
+      await lint.getByText("Lint", { exact: true }).click();
       await expectChecked(lint, true);
 
       await typecheck.getByText("Typecheck", { exact: true }).dblclick();
