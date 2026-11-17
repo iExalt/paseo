@@ -949,69 +949,81 @@ describe("ScheduleService", () => {
     ]);
   });
 
-  test("archiveOnFinish=true archives the run workspace through workspace archive", async () => {
-    const {
-      workspaceRegistry,
-      createDirectoryWorkspace: createScheduleDirectoryWorkspace,
-      createArchiveWorkspace,
-    } = await createRegistryBackedScheduleWorkspaceDeps(tempDir);
-    const manager = new AgentManager({
-      logger: createTestLogger(),
-      clients: createTestAgentClients(),
-      registry: agentStorage,
-    });
-    const archiveAgent = manager.archiveAgent.bind(manager);
-    manager.archiveAgent = async (agentId) => {
-      if (!workspaceArchiveInProgress) {
-        throw new Error("scheduled runs must archive workspaces, not agents directly");
-      }
-      return archiveAgent(agentId);
-    };
-    const service = createScheduleService({
-      paseoHome: tempDir,
-      logger: createTestLogger(),
-      agentManager: manager,
-      agentStorage,
-      providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
-      createDirectoryWorkspace: createScheduleDirectoryWorkspace,
-      archiveWorkspace: createArchiveWorkspace({
+  test.each([true, undefined])(
+    "archiveOnFinish=%s archives the run workspace through workspace archive",
+    async (archiveOnFinish) => {
+      const {
+        workspaceRegistry,
+        createDirectoryWorkspace: createScheduleDirectoryWorkspace,
+        createArchiveWorkspace,
+      } = await createRegistryBackedScheduleWorkspaceDeps(tempDir);
+      const manager = new AgentManager({
+        logger: createTestLogger(),
+        clients: createTestAgentClients(),
+        registry: agentStorage,
+      });
+      const archiveAgent = manager.archiveAgent.bind(manager);
+      manager.archiveAgent = async (agentId) => {
+        if (!workspaceArchiveInProgress) {
+          throw new Error("scheduled runs must archive workspaces, not agents directly");
+        }
+        return archiveAgent(agentId);
+      };
+      const service = createScheduleService({
+        paseoHome: tempDir,
+        logger: createTestLogger(),
         agentManager: manager,
         agentStorage,
-      }),
-      now: () => now,
-    });
+        providerSnapshotManager: NO_UNATTENDED_SCHEDULE_POLICY,
+        createDirectoryWorkspace: createScheduleDirectoryWorkspace,
+        archiveWorkspace: createArchiveWorkspace({
+          agentManager: manager,
+          agentStorage,
+        }),
+        now: () => now,
+      });
 
-    const created = await service.create({
-      prompt: "archive the run workspace",
-      cadence: { type: "every", everyMs: 60_000 },
-      target: {
-        type: "new-agent",
-        config: {
-          provider: "claude",
-          model: "test-model",
-          cwd: tempDir,
-          isolation: "local",
+      const created = await service.create({
+        prompt: "archive the run workspace",
+        cadence: { type: "every", everyMs: 60_000 },
+        target: {
+          type: "new-agent",
+          config: {
+            provider: "claude",
+            model: "test-model",
+            cwd: tempDir,
+            isolation: "local",
+            ...(archiveOnFinish === undefined ? {} : { archiveOnFinish }),
+          },
         },
-      },
-      maxRuns: 1,
-    });
+        maxRuns: 1,
+      });
 
-    await service.tick();
+      await service.tick();
 
-    const inspected = await service.inspect(created.id);
-    expect(inspected.runs[0]?.status).toBe("succeeded");
-    const agentId = inspected.runs[0]?.agentId;
-    expect(agentId).toMatch(/^[0-9a-f-]{36}$/);
-    const storedAgent = await agentStorage.get(agentId!);
-    expect(storedAgent?.workspaceId).toMatch(/^wks_/);
-    expect(storedAgent?.archivedAt).toEqual(expect.any(String));
-    expect(await workspaceRegistry.get(storedAgent!.workspaceId!)).toEqual(
-      expect.objectContaining({
-        workspaceId: storedAgent?.workspaceId,
-        archivedAt: expect.any(String),
-      }),
-    );
-  });
+      const inspected = await service.inspect(created.id);
+      expect(inspected.target).toEqual(created.target);
+      expect(inspected.target.config).toStrictEqual({
+        provider: "claude",
+        model: "test-model",
+        cwd: tempDir,
+        isolation: "local",
+        ...(archiveOnFinish === undefined ? {} : { archiveOnFinish }),
+      });
+      expect(inspected.runs[0]?.status).toBe("succeeded");
+      const agentId = inspected.runs[0]?.agentId;
+      expect(agentId).toMatch(/^[0-9a-f-]{36}$/);
+      const storedAgent = await agentStorage.get(agentId!);
+      expect(storedAgent?.workspaceId).toMatch(/^wks_/);
+      expect(storedAgent?.archivedAt).toEqual(expect.any(String));
+      expect(await workspaceRegistry.get(storedAgent!.workspaceId!)).toEqual(
+        expect.objectContaining({
+          workspaceId: storedAgent?.workspaceId,
+          archivedAt: expect.any(String),
+        }),
+      );
+    },
+  );
 
   test("archives the run workspace when scheduled agent creation fails before archive opt-out can preserve an agent", async () => {
     const {
