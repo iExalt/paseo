@@ -20,6 +20,7 @@ import { buildDirectConnectionUri } from "@/components/direct-connection-host";
 import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
 
 const FLEX_ONE_STYLE = { flex: 1 } as const;
+const DIRECT_CONNECTION_SNAP_POINTS = ["90%"];
 
 interface DirectConnectionDraft {
   host: string;
@@ -126,11 +127,6 @@ const styles = StyleSheet.create((theme) => ({
     color: theme.colors.foreground,
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.medium,
-  },
-  actions: {
-    flexDirection: "row",
-    gap: theme.spacing[3],
-    marginTop: theme.spacing[2],
   },
   helper: {
     color: theme.colors.foregroundMuted,
@@ -428,6 +424,31 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
       visible={visible}
       onClose={handleClose}
       testID="add-host-modal"
+      snapPoints={DIRECT_CONNECTION_SNAP_POINTS}
+      footer={
+        <>
+          <Button
+            style={FLEX_ONE_STYLE}
+            variant="secondary"
+            onPress={handleCancel}
+            disabled={isSaving}
+          >
+            {t("pairing.direct.actions.cancel")}
+          </Button>
+          <Button
+            style={FLEX_ONE_STYLE}
+            variant="default"
+            onPress={handleSavePress}
+            disabled={isSaving}
+            leftIcon={connectIcon}
+            testID="direct-host-submit"
+          >
+            {isSaving
+              ? t("pairing.direct.actions.connecting")
+              : t("pairing.direct.actions.connect")}
+          </Button>
+        </>
+      }
     >
       <Text style={styles.helper}>{t("pairing.direct.helper")}</Text>
 
@@ -565,27 +586,6 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
           />
         ) : null}
         {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      </View>
-
-      <View style={styles.actions}>
-        <Button
-          style={FLEX_ONE_STYLE}
-          variant="secondary"
-          onPress={handleCancel}
-          disabled={isSaving}
-        >
-          {t("pairing.direct.actions.cancel")}
-        </Button>
-        <Button
-          style={FLEX_ONE_STYLE}
-          variant="default"
-          onPress={handleSavePress}
-          disabled={isSaving}
-          leftIcon={connectIcon}
-          testID="direct-host-submit"
-        >
-          {isSaving ? t("pairing.direct.actions.connecting") : t("pairing.direct.actions.connect")}
-        </Button>
       </View>
     </AdaptiveModalSheet>
   );
