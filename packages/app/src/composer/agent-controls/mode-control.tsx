@@ -190,7 +190,16 @@ export function AgentModeControl({
 
   return (
     <>
-      <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+      <Tooltip
+        delayDuration={0}
+        enabledOnDesktop
+        enabledOnMobile={false}
+        heldShortcut={
+          isActiveComposer && !disabled && modeOptions.length > 1 ? cycleShortcutKeys : null
+        }
+        heldOffset={36}
+        heldTestID="composer-mode-shortcut-hint"
+      >
         <TooltipTrigger asChild triggerRefProp="ref">
           <AgentControlTrigger
             ref={anchorRef}

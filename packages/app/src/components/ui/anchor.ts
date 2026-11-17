@@ -20,6 +20,24 @@ export interface Size {
   height: number;
 }
 
+/** Native layout may report adjacent pixel-rounded sizes as a centered surface moves. */
+export function sameMeasuredSize(previous: Size | null, next: Size, tolerance: number): boolean {
+  return (
+    previous !== null &&
+    Math.abs(previous.width - next.width) <= tolerance &&
+    Math.abs(previous.height - next.height) <= tolerance
+  );
+}
+
+export function sameMeasuredRect(previous: Rect | null, next: Rect, tolerance: number): boolean {
+  return (
+    previous !== null &&
+    sameMeasuredSize(previous, next, tolerance) &&
+    Math.abs(previous.x - next.x) <= tolerance &&
+    Math.abs(previous.y - next.y) <= tolerance
+  );
+}
+
 /** Gap kept between the surface and the edge of the display area. */
 const EDGE_PADDING = 8;
 
@@ -243,4 +261,20 @@ export function getTransformOrigin(
   // Native theme updates can bypass RN's JS string preprocessing. Supply the native
   // array shape directly; Reanimated's web style builder also accepts this form.
   return [horizontal, vertical, 0];
+}
+
+/** A clipped-away target must not advertise a floating action at the viewport edge. */
+export function isAnchorVisible(anchor: Rect, viewport: Rect): boolean {
+  const x = anchor.x + anchor.width / 2;
+  const y = anchor.y + anchor.height / 2;
+  return (
+    anchor.width > 0 &&
+    anchor.height > 0 &&
+    viewport.width > 0 &&
+    viewport.height > 0 &&
+    x >= viewport.x &&
+    x < viewport.x + viewport.width &&
+    y >= viewport.y &&
+    y < viewport.y + viewport.height
+  );
 }

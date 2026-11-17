@@ -35,6 +35,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
 import { Shortcut } from "@/components/ui/shortcut";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
@@ -108,17 +109,35 @@ export function SidebarWorkspaceArchiveButton({
   onArchive: () => void;
 }) {
   const { t } = useTranslation();
+  const selection = useActiveWorkspaceSelection();
+  const activeWorkspaceId = useWorkspaceFields(
+    selection?.serverId ?? null,
+    selection?.workspaceId ?? null,
+    (workspace) => workspace.id,
+  );
+  const keys = useShortcutKeys("archive-workspace");
+  const activeKey =
+    selection && activeWorkspaceId ? `${selection.serverId}:${activeWorkspaceId}` : null;
   return (
-    <PressHighlight
-      hitSlop={4}
-      style={archiveButtonStyle}
-      onPress={onArchive}
-      accessibilityRole={isWeb ? undefined : "button"}
-      accessibilityLabel={t("sidebar.workspace.actions.archiveWorkspace")}
-      testID={`sidebar-workspace-archive-button-${workspaceKey}`}
+    <Tooltip
+      heldShortcut={workspaceKey === activeKey ? keys : null}
+      heldHostName="chrome-shortcut-hints"
+      heldSide="right"
+      heldTestID={`sidebar-workspace-archive-hint-${workspaceKey}`}
     >
-      {renderArchiveIcon}
-    </PressHighlight>
+      <TooltipTrigger asChild>
+        <PressHighlight
+          hitSlop={4}
+          style={archiveButtonStyle}
+          onPress={onArchive}
+          accessibilityRole={isWeb ? undefined : "button"}
+          accessibilityLabel={t("sidebar.workspace.actions.archiveWorkspace")}
+          testID={`sidebar-workspace-archive-button-${workspaceKey}`}
+        >
+          {renderArchiveIcon}
+        </PressHighlight>
+      </TooltipTrigger>
+    </Tooltip>
   );
 }
 

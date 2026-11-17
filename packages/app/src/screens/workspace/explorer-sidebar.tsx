@@ -38,6 +38,7 @@ interface ExplorerSidebarDockProps extends Pick<
   normalizedServerId: string;
   normalizedWorkspaceId: string;
   isWorkspaceFocused: boolean;
+  isPaneFocused: boolean;
   paneFocusSuspended: boolean;
   closingTabIds: Set<string>;
   onSelectTab: (paneId: string, tabId: string) => void;
@@ -57,6 +58,7 @@ export function ExplorerSidebarDock({
   normalizedServerId,
   normalizedWorkspaceId,
   isWorkspaceFocused,
+  isPaneFocused,
   paneFocusSuspended,
   closingTabIds,
   onSelectTab,
@@ -129,7 +131,7 @@ export function ExplorerSidebarDock({
               <WorkspaceDesktopTabsRow
                 host="explorer"
                 launchPurpose="supporting"
-                isFocused={isWorkspaceFocused}
+                isFocused={isWorkspaceFocused && isPaneFocused}
                 ownsKeyboardShortcuts={false}
                 setHoveredCloseTabKey={setHoveredCloseTabKey}
                 onCopyResumeCommand={onCopyResumeCommand}

@@ -323,7 +323,12 @@ function FooterIconButton({
   buttonRef?: RefObject<View | null>;
 }) {
   return (
-    <Tooltip delayDuration={300}>
+    <Tooltip
+      delayDuration={300}
+      heldShortcut={shortcutKeys}
+      heldHostName="chrome-shortcut-hints"
+      heldTestID={`${testID}-shortcut-hint`}
+    >
       <TooltipTrigger asChild>
         <Pressable
           ref={buttonRef}
