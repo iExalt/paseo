@@ -3392,6 +3392,7 @@ export const en = {
         add: "Add",
         adding: "Adding...",
         failedToSave: "Failed to save model",
+        showInPicker: "Show {{model}} in model pickers",
         removeModel: "Remove {{id}}",
         searchPlaceholder: "Search models",
         loading: "Loading models...",
