@@ -49,9 +49,16 @@ through rebinds. For numeric injection, use AppleScript physical key codes (for 
 Simulator exposes a virtual `GCKeyboard` even with Connect Hardware Keyboard off.
 Verify the iOS absence case on a physical iPhone.
 
-Never register Backspace: it would take deletion away from text fields. Changes
-to the native module require a native rebuild; an over-the-air JavaScript update
-cannot deliver them.
+Never register Backspace as an overlay key: it would take deletion away from text
+fields. Android Settings capture uses a separate synchronous mode so recording
+cannot also submit the composer or activate another shortcut. Backspace edits
+the recorded sequence and Escape cancels only when a text field does not own
+focus. Navigation and text input stay with the focused control; Ctrl and Cmd
+combinations can be recorded. iPad capture remains read-only until its native
+press path has device proof.
+
+Changes to the native module require a native rebuild; an over-the-air JavaScript
+update cannot deliver them.
 
 ## Overlay ownership
 

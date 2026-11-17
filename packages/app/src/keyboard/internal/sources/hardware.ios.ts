@@ -31,3 +31,6 @@ export function subscribeHardwareKeyboardPresence(changed: () => void): () => vo
   const subscription = module.addListener("onHardwareKeyboardPresenceChanged", changed);
   return () => subscription.remove();
 }
+
+/** Android capture is supported first; other native platforms remain read-only. */
+export function setShortcutCaptureActive(_active: boolean): void {}
