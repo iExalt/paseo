@@ -7,7 +7,7 @@ import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { RewindMode } from "./use-rewind-capabilities";
 import { useRewindComposerRestore } from "./composer-restore";
 import { useSessionStore } from "@/stores/session-store";
-import { shouldRestoreComposerForRewindMode } from "./rewind-mode";
+import { runRewind } from "./rewind-mode";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 
 interface UseRewindAgentMutationInput {
@@ -30,30 +30,29 @@ export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
   const { t } = useTranslation();
   const composerRestore = useRewindComposerRestore();
   const { isPending, mutateAsync } = useMutation({
-    mutationFn: async ({ mode }: RewindAgentInput) => {
-      if (!input.client || !input.agentId || !input.messageId) {
-        throw new Error(t("common.errors.daemonClientUnavailable"));
-      }
-      await input.client.rewindAgent(input.agentId, input.messageId, mode);
-      if (mode !== "files") {
-        const cursor = input.serverId
-          ? useSessionStore
-              .getState()
-              .sessions[input.serverId]?.agentTimelineCursor.get(input.agentId)
-          : undefined;
-        if (!input.serverId) throw new Error(t("common.errors.daemonClientUnavailable"));
-        await getHostRuntimeStore().fetchAgentTimeline(input.serverId, input.agentId, {
-          ...planTimelineTailFetch(),
-          ...(cursor ? { cursor: { epoch: cursor.epoch, seq: cursor.endSeq } } : {}),
-        });
-      }
-    },
-    onSuccess: (_data, variables) => {
-      if (!shouldRestoreComposerForRewindMode(variables.mode)) {
-        return;
-      }
-      composerRestore?.completeRewind(variables.rewoundText);
-    },
+    mutationFn: ({ mode, rewoundText }: RewindAgentInput) =>
+      runRewind({
+        mode,
+        rewind: async () => {
+          if (!input.client || !input.agentId || !input.messageId) {
+            throw new Error(t("common.errors.daemonClientUnavailable"));
+          }
+          await input.client.rewindAgent(input.agentId, input.messageId, mode);
+        },
+        refreshTimeline: async () => {
+          if (!input.serverId || !input.agentId) {
+            throw new Error(t("common.errors.daemonClientUnavailable"));
+          }
+          const cursor = useSessionStore
+            .getState()
+            .sessions[input.serverId]?.agentTimelineCursor.get(input.agentId);
+          await getHostRuntimeStore().fetchAgentTimeline(input.serverId, input.agentId, {
+            ...planTimelineTailFetch(),
+            ...(cursor ? { cursor: { epoch: cursor.epoch, seq: cursor.endSeq } } : {}),
+          });
+        },
+        restoreComposer: () => composerRestore?.completeRewind(rewoundText),
+      }),
     onError: (error) => {
       toast.error(error instanceof Error ? error.message : t("rewind.errors.failed"));
     },
