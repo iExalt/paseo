@@ -1,3 +1,4 @@
+import { getE2EWebOrigin } from "../support/web-url";
 import { fork } from "node:child_process";
 import path from "node:path";
 import { expect, type BrowserContext, type Locator, type Page } from "@playwright/test";
@@ -382,9 +383,17 @@ const retryTest = test.extend<{
   questionClient: QuestionRetryControl;
 }>({
   questionClient: async ({ page }, provide, testInfo) => {
+    const metroPort = process.env.E2E_METRO_PORT;
+    if (!metroPort) {
+      throw new Error("E2E_METRO_PORT is not set - globalSetup must run first");
+    }
     const serverDir = path.resolve(__dirname, "../../../server");
     const child = fork(path.join(serverDir, "src/server/test-utils/question-response-daemon.ts"), {
       cwd: serverDir,
+      env: {
+        ...process.env,
+        E2E_WEB_ORIGIN: getE2EWebOrigin(Number(metroPort)),
+      },
       execArgv: ["--import", "tsx"],
       stdio: ["ignore", "pipe", "pipe", "ipc"],
     });
