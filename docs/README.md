@@ -5,6 +5,8 @@ Read the entries relevant to your task before non-trivial work. Fork notes live 
 - [agent-testing.md](agent-testing.md): Ad hoc app testing by agents: Android deep links and their state, reading dumps, desktop and daemon isolation
 - [DEV_UPSTREAM_SUPERSESSION.md](DEV_UPSTREAM_SUPERSESSION.md): Frozen rebase inputs, commit inventory, supersession ledger and retained fork behavior
 - [upstream/rebase-dev.md](upstream/rebase-dev.md): Fork `rebase-dev` workflow: replay rules, rerere resolutions, fixups and deletions
+- [platform-gating.md](platform-gating.md): Platform gates (`isWeb`, `isNative`, Electron, compact layout), Metro platform file extensions and hover on native
+- [writing-docs.md](writing-docs.md): How to write and place docs: integrate, one fact per doc, layers, voice
 - [terminal-worker.md](terminal-worker.md): Terminal worker process: terminals that survive daemon restarts, crashes and upgrades
 - [macos-code-signing.md](macos-code-signing.md): Stable signature for the installed macOS app so privacy grants survive updates; identity, Mac setup, limits
 - [upstream/product.md](upstream/product.md): What Paseo is, who it's for, where it's going
