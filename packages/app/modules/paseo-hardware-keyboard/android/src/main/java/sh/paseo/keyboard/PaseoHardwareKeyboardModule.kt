@@ -24,6 +24,7 @@ private const val TERMINAL_INPUT_NATIVE_ID = "paseo-terminal-input"
 
 internal object HardwareKeyboard {
   var module: PaseoHardwareKeyboardModule? = null
+  val shortcutCapture = ShortcutCaptureKeys()
   @Volatile var overlayKeys: Set<String> = emptySet()
   private val windows = mutableMapOf<Window, KeyboardWindowCallback>()
   val dispatcher = WindowKeyDispatcher<KeyEvent>()
@@ -44,6 +45,7 @@ internal object HardwareKeyboard {
   fun releaseAll() {
     windows.keys.toList().forEach { release(it) }
     consumedPresses.clear()
+    shortcutCapture.reset()
   }
 
   fun dispatch(event: KeyEvent, composing: Boolean, terminalFocused: Boolean, editableFocused: Boolean): Boolean {
@@ -52,7 +54,8 @@ internal object HardwareKeyboard {
     val unmodified = !event.isAltPressed && !event.isCtrlPressed && !event.isMetaPressed && !event.isShiftPressed
     val physical = event.flags and KeyEvent.FLAG_SOFT_KEYBOARD == 0 &&
       event.deviceId != KeyCharacterMap.VIRTUAL_KEYBOARD && event.device?.isVirtual == false
-    val submitted = composerSubmit.dispatch(ComposerSubmitPress(
+    val capturing = shortcutCapture.active
+    val submitted = (!capturing || event.action == KeyEvent.ACTION_UP) && composerSubmit.dispatch(ComposerSubmitPress(
       keyCode = event.keyCode,
       down = event.action == KeyEvent.ACTION_DOWN,
       repeat = event.repeatCount > 0,
@@ -67,6 +70,7 @@ internal object HardwareKeyboard {
     if (submitted) return true
     if (event.flags and KeyEvent.FLAG_SOFT_KEYBOARD != 0) return false
     if (code.isEmpty()) return false
+    if (event.action == KeyEvent.ACTION_DOWN && shortcutCapture.owns(event.keyCode)) return true
     val textModifiers = event.metaState and KeyEvent.META_CTRL_MASK.inv() and KeyEvent.META_META_MASK.inv()
     val character = event.getUnicodeChar(textModifiers)
     val named = !code.startsWith("Key") && !code.startsWith("Digit")
@@ -86,7 +90,14 @@ internal object HardwareKeyboard {
       "repeat" to (event.repeatCount > 0), "isComposing" to composing,
       "phase" to if (event.action == KeyEvent.ACTION_UP) "up" else "down"
     ))
-    if (event.action == KeyEvent.ACTION_UP) return consumedPresses.remove(event.keyCode)
+    if (event.action == KeyEvent.ACTION_UP) return shortcutCapture.release(event.keyCode) || consumedPresses.remove(event.keyCode)
+    if (capturing) {
+      return shortcutCapture.capture(event.keyCode, ShortcutCapturePress(
+        code = code, key = key, ctrl = event.isCtrlPressed, meta = event.isMetaPressed,
+        alt = event.isAltPressed, shift = event.isShiftPressed,
+        composing = composing, editable = editableFocused,
+      ))
+    }
     val overlayOwnsKey = key != "Dead" && key in overlayKeys && !event.isCtrlPressed && !event.isMetaPressed && !event.isAltPressed && !composing
     // Without this the hidden input consumes the arrows as caret movement and
     // its next text change stops being a plain append. Modifiers stay
@@ -185,6 +196,7 @@ class PaseoHardwareKeyboardModule : Module(), ExtraWindowEventListener, InputMan
       registeredReactContext = null
       if (HardwareKeyboard.module === this@PaseoHardwareKeyboardModule) {
         HardwareKeyboard.module = null
+        HardwareKeyboard.shortcutCapture.reset()
         HardwareKeyboard.composerSubmit.reset()
         HardwareKeyboard.overlayKeys = emptySet()
         UiThreadUtil.runOnUiThread { if (HardwareKeyboard.module == null) HardwareKeyboard.releaseAll() }
@@ -194,6 +206,9 @@ class PaseoHardwareKeyboardModule : Module(), ExtraWindowEventListener, InputMan
       HardwareKeyboard.composerSubmit.enabled = enabled
     }
     Function("getHardwareKeyboardPresent") { keyboardPresent() }
+    Function("setShortcutCaptureActive") { active: Boolean ->
+      HardwareKeyboard.shortcutCapture.active = active
+    }
     Function("setOverlayKeys") { keys: List<String> ->
       HardwareKeyboard.overlayKeys = keys.filter { it in setOf("Escape", "Enter", "ArrowUp", "ArrowDown") }.toSet()
     }
