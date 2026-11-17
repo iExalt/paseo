@@ -57,7 +57,7 @@ import type {
   StoredSchedule,
   UpdateScheduleInput,
 } from "@getpaseo/protocol/schedule/types";
-import type { ScheduleService } from "../schedule/service.js";
+import { ScheduleService } from "../schedule/service.js";
 import type { WorkspaceGitService } from "../workspace-git-service.js";
 import {
   createPaseoWorktree as createPaseoWorktreeService,
@@ -5501,6 +5501,50 @@ describe("rename_workspace native tool", () => {
 
 describe("create_schedule native tool", () => {
   const logger = createTestLogger();
+
+  it.each([false, true, undefined])(
+    "persists archiveOnFinish=%s through parsed tool input",
+    async (archiveOnFinish) => {
+      const paseoHome = await mkdtemp(join(tmpdir(), "paseo-schedule-tool-"));
+      onTestFinished(() => rm(paseoHome, { recursive: true, force: true }));
+      const { agentManager, agentStorage } = createTestDeps();
+      const unexpectedRun = async (): Promise<never> => {
+        throw new Error("schedule creation must not execute a run");
+      };
+      const scheduleService = new ScheduleService({
+        paseoHome,
+        logger,
+        agentManager,
+        agentStorage,
+        createAgent: unexpectedRun,
+        createDirectoryWorkspace: unexpectedRun,
+        createPaseoWorktreeWorkspace: unexpectedRun,
+        archiveWorkspace: unexpectedRun,
+      });
+      const server = await createAgentToolCatalog({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        scheduleService,
+        logger,
+      });
+      const response = await invokeToolWithParsedInput(registeredTool(server, "create_schedule"), {
+        prompt: "say hello",
+        cron: "*/5 * * * *",
+        provider: "codex",
+        ...(archiveOnFinish === undefined ? {} : { archiveOnFinish }),
+      });
+      const stored = await scheduleService.inspect(String(response.structuredContent.id));
+      expect(stored.target).toStrictEqual({
+        type: "new-agent",
+        config: {
+          provider: "codex",
+          cwd: process.cwd(),
+          ...(archiveOnFinish === undefined ? {} : { archiveOnFinish }),
+        },
+      });
+    },
+  );
 
   it("requires provider for schedules", async () => {
     const { agentManager, agentStorage } = createTestDeps();
