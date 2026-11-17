@@ -98,6 +98,11 @@ export interface StreamRenderInput {
   isAuthoritativeHistoryReady: boolean;
   isInitialHistoryLoading?: boolean;
   revealInitialHistory?: boolean;
+  /**
+   * Shown at the top of the viewport while the native list hides its rows to place them, so a
+   * notification open keeps showing the preview instead of an empty chat. Web places rows visibly.
+   */
+  placementPlaceholder?: ReactNode;
   onNearBottomChange: (value: boolean) => void;
   // The history row under the top of the viewport, for surfaces that mark where the reader
   // is in the transcript. Web measures row geometry; native reads its list's viewable items.
