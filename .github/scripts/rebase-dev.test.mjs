@@ -1360,6 +1360,9 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
           GITHUB_STEP_SUMMARY: summary,
           FIXTURE_INVOCATION: invocation,
           FIXTURE_MODE: mode,
+          // The parent quality lane also runs this CLI fixture.
+          ROUTINE_LANE: undefined,
+          TESTED_SHA: undefined,
           ...extraEnv,
         },
       },
