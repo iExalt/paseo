@@ -263,6 +263,31 @@ a second.
 For a browser-only check, write a [browser probe](#browser-probes), or start a daemon with
 [`npm run qa:web`](#isolated-daemons).
 
+### Electron journeys in a dev VM
+
+Use a `dev-instance --vm` companion guest for Electron on the ARM64 dev station;
+check that `getconf PAGESIZE` reports `4096` there. The main container has 64 KiB pages.
+Before starting a journey in the default 4 GiB guest:
+
+1. Run required typecheck, lint and builds in the main container on the same source
+   revision. App typecheck has been OOM-killed with exit 137 in the guest.
+2. Check free disk space, then add temporary, task-owned 4 GiB swap in the guest
+   before starting Metro or Electron; leave `/etc/fstab` unchanged. Check `free -h`
+   and `swapon --show`; memory pressure has also left Electron on a blank window.
+   Stop task processes before disabling swap; remove the file only after `swapoff`
+   succeeds. Retain artifacts before disposing of the guest.
+3. Start Metro in the guest, then prewarm it before launching the journey. From the
+   guest checkout root, call the existing `warmMetro` helper in
+   `packages/app/e2e/support/metro-warmup.mjs` with Metro's actual port (8081 below):
+
+   ```sh
+   node --input-type=module -e 'import { warmMetro } from "./packages/app/e2e/support/metro-warmup.mjs"; await warmMetro(8081)'
+   ```
+
+   Wait for successful warmup before launching Electron. Metro's `/status` response
+   does not prove the document and bundles have compiled. If warmup fails, keep the
+   journey blocked and inspect resources and Metro output before retrying.
+
 ### Notification receipts
 
 For an isolated Playwright Electron process, `packages/desktop/e2e/support/notification-receipts.mjs`
