@@ -1310,6 +1310,8 @@ async function runRegression({
     responsiveViewport,
   );
 
+  // Keep reload coverage after the hidden-window assertions: external Playwright CDP
+  // can perturb guest RAF while hidden, so preserve the original guest lifecycle there.
   // Count starts as well as finishes: a second owner can cancel the first reload.
   await page.evaluate(() => {
     globalThis.__paseoShortcutHostSentinel = true;
