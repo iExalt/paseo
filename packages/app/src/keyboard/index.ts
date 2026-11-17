@@ -9,6 +9,8 @@ export {
 } from "./internal/overlay-dispatch";
 export { hasFocusedTextInput } from "./internal/focused-text-input";
 export { useKeyboardFocusSurface } from "./internal/use-focus-surface";
+export { hasFocusedTextInput as hasFocusedKeyboardTextInput } from "./internal/focused-text-input";
+export { setShortcutCaptureActive } from "./internal/sources/hardware";
 export { subscribeHardwareKeyboard } from "./internal/sources/hardware";
 export type { HardwareKeyboardEvent } from "./internal/sources/hardware";
 export { usesDesktopBindings, supportsConfigurableComposerSendKeys } from "./internal/conventions";

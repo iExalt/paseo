@@ -1,12 +1,14 @@
 import { isNative } from "@/constants/platform";
 import {
+  hasFocusedKeyboardTextInput,
+  setShortcutCaptureActive,
   usesDesktopBindings,
   useHardwareKeyboardPresent,
   useOverlayRegistration,
 } from "@/keyboard";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { View, Text, type PressableStateCallbackType } from "react-native";
+import { Platform, View, Text, type PressableStateCallbackType } from "react-native";
 import { useIsFocused } from "expo-router";
 import { MoreHorizontal, Pencil, Undo2, X } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
@@ -31,11 +33,7 @@ import {
   resolveShortcutKeysForAction,
   type KeyboardShortcutHelpRow,
 } from "@/keyboard/keyboard-shortcuts";
-import {
-  comboStringToShortcutKeys,
-  heldModifiersFromEvent,
-  keyboardEventToComboString,
-} from "@/keyboard/shortcut-string";
+import { comboStringToShortcutKeys, normalizeShortcutCapture } from "@/keyboard/shortcut-string";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { useKeyboardShortcutsStore } from "@/stores/keyboard-shortcuts-store";
 import { getShortcutOs } from "@/utils/shortcut-platform";
@@ -395,22 +393,37 @@ export function KeyboardShortcutsSection() {
     manageFocus: false,
     onKeyDown(event) {
       if (capturingBindingId === null) return false;
+      const result = normalizeShortcutCapture(event, hasFocusedKeyboardTextInput());
+      if (result.kind === "pass") return false;
       event.preventDefault();
-      if (event.code === "Backspace" && heldModifiersFromEvent(event) === null) {
-        setCapturedCombos((current) => current.slice(0, -1));
-        return true;
+      switch (result.kind) {
+        case "ignore":
+          break;
+        case "modifiers":
+          setHeldModifiers(result.value);
+          break;
+        case "remove":
+          setCapturedCombos((current) => current.slice(0, -1));
+          break;
+        case "cancel":
+          cancelCapture();
+          break;
+        case "combo":
+          setHeldModifiers(null);
+          setCapturedCombos((current) => [
+            ...current,
+            normalizeCapturedShortcutCombo(capturingBindingId, result.value),
+          ]);
+          break;
       }
-      const comboString = keyboardEventToComboString(event);
-      if (comboString === null) {
-        setHeldModifiers(heldModifiersFromEvent(event));
-        return true;
-      }
-      setHeldModifiers(null);
-      const capturedCombo = normalizeCapturedShortcutCombo(capturingBindingId, comboString);
-      setCapturedCombos((current) => [...current, capturedCombo]);
       return true;
     },
   });
+
+  useLayoutEffect(() => {
+    setShortcutCaptureActive(isFocused && capturingBindingId !== null);
+    return () => setShortcutCaptureActive(false);
+  }, [isFocused, capturingBindingId]);
 
   useEffect(() => {
     return () => {
@@ -475,8 +488,8 @@ export function KeyboardShortcutsSection() {
                       displayChord={displayChord}
                       hasOverride={hasOverride}
                       hasDefault={hasDefault}
-                      // Capture reads DOM key events; native shows the bindings read-only.
-                      isEditable={!isNative}
+                      // Android uses the native window stream; iPad capture remains deferred.
+                      isEditable={!isNative || Platform.OS === "android"}
                       isCapturing={capturingBindingId === bindingId}
                       capturedCombos={
                         capturingBindingId === bindingId ? capturedCombos : EMPTY_CAPTURED_COMBOS

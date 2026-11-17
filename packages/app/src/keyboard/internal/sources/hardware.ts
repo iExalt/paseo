@@ -23,3 +23,6 @@ export function getHardwareKeyboardPresent(): boolean {
 export function subscribeHardwareKeyboardPresence(_changed: () => void): () => void {
   return () => {};
 }
+
+/** Android capture is supported first; other native platforms remain read-only. */
+export function setShortcutCaptureActive(_active: boolean): void {}
