@@ -67,7 +67,13 @@ const AppPreferencesSchema = z.strictObject({
   pullRequestOpenLocation: z.enum(["main", "side", "explorer"]),
 });
 
+export const HiddenModelIdsTransferSchema = z.record(
+  safeIdentifier,
+  z.record(safeIdentifier, z.array(z.string().max(512)).max(2000)),
+);
+
 const CreateAgentPreferencesSchema = z.strictObject({
+  hiddenModelIds: HiddenModelIdsTransferSchema.optional(),
   provider: safeIdentifier.optional(),
   providerPreferences: z
     .record(

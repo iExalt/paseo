@@ -11,6 +11,9 @@ import {
   SheetHeaderIconButton,
   type SheetHeader,
 } from "@/components/adaptive-modal-sheet";
+import { useFormPreferences } from "@/hooks/use-form-preferences";
+import { setModelHidden } from "@/create-agent-preferences/preferences";
+import { Switch } from "@/components/ui/switch";
 import { Button } from "@/components/ui/button";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { ScrollableCodeSurface, SurfaceCard } from "@/components/ui/scrollable-code-surface";
@@ -50,35 +53,91 @@ function rankModels<T>(items: T[], query: string, fields: (item: T) => string[])
   return scored.map((entry) => entry.item);
 }
 
-function DiscoveredModelRow({ model }: { model: AgentModelDefinition }) {
+interface ModelVisibilityProps {
+  serverId: string;
+  provider: string;
+}
+
+function ModelVisibilitySwitch({
+  serverId,
+  provider,
+  model,
+}: ModelVisibilityProps & { model: { id: string; label: string } }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const { preferences, updatePreferences, isLoading } = useFormPreferences();
+  const [saving, setSaving] = useState(false);
+  const hidden = preferences.hiddenModelIds?.[serverId]?.[provider]?.includes(model.id) ?? false;
+  const setVisible = useCallback(
+    (visible: boolean) => {
+      setSaving(true);
+      void updatePreferences((current) =>
+        setModelHidden({
+          preferences: current,
+          serverId,
+          provider,
+          modelId: model.id,
+          hidden: !visible,
+        }),
+      )
+        .catch((error: unknown) =>
+          toast.error(error instanceof Error ? error.message : String(error)),
+        )
+        .finally(() => setSaving(false));
+    },
+    [model.id, provider, serverId, toast, updatePreferences],
+  );
+  return (
+    <Switch
+      value={!hidden}
+      onValueChange={setVisible}
+      disabled={isLoading || saving}
+      accessibilityLabel={t("settings.providers.models.showInPicker", { model: model.label })}
+      testID={`model-visibility-${model.id}`}
+    />
+  );
+}
+
+function DiscoveredModelRow({
+  model,
+  serverId,
+  provider,
+}: ModelVisibilityProps & { model: AgentModelDefinition }) {
   return (
     <View style={sheetStyles.modelRow}>
-      <Text style={sheetStyles.modelTitle} numberOfLines={1}>
-        {model.label}
-      </Text>
-      <Text
-        style={sheetStyles.monoHint}
-        numberOfLines={1}
-        selectable
-        dataSet={CODE_SURFACE_DATASET}
-      >
-        {model.id}
-      </Text>
-      {model.description ? (
-        <Text style={sheetStyles.descriptionInline} numberOfLines={1}>
-          {model.description}
+      <View style={sheetStyles.modelDetails}>
+        <Text style={sheetStyles.modelTitle} numberOfLines={1}>
+          {model.label}
         </Text>
-      ) : null}
+        <Text
+          style={sheetStyles.monoHint}
+          numberOfLines={1}
+          selectable
+          dataSet={CODE_SURFACE_DATASET}
+        >
+          {model.id}
+        </Text>
+        {model.description ? (
+          <Text style={sheetStyles.descriptionInline} numberOfLines={1}>
+            {model.description}
+          </Text>
+        ) : null}
+      </View>
+      <ModelVisibilitySwitch model={model} serverId={serverId} provider={provider} />
     </View>
   );
 }
 
 function CustomModelRow({
   model,
+  serverId,
+  provider,
   deleting,
   onDelete,
 }: {
   model: ProviderProfileModel;
+  serverId: string;
+  provider: string;
   deleting: boolean;
   onDelete: (modelId: string) => void;
 }) {
@@ -96,18 +155,20 @@ function CustomModelRow({
 
   return (
     <View style={sheetStyles.modelRow}>
-      <Text style={[sheetStyles.modelTitle, sheetStyles.customModelText]} numberOfLines={1}>
-        {model.label}
-      </Text>
-      <Text
-        style={[sheetStyles.monoHint, sheetStyles.customModelText]}
-        numberOfLines={1}
-        selectable
-        dataSet={CODE_SURFACE_DATASET}
-      >
-        {model.id}
-      </Text>
-      <View style={sheetStyles.modelRowFiller} />
+      <View style={sheetStyles.modelDetails}>
+        <Text style={[sheetStyles.modelTitle, sheetStyles.customModelText]} numberOfLines={1}>
+          {model.label}
+        </Text>
+        <Text
+          style={[sheetStyles.monoHint, sheetStyles.customModelText]}
+          numberOfLines={1}
+          selectable
+          dataSet={CODE_SURFACE_DATASET}
+        >
+          {model.id}
+        </Text>
+      </View>
+      <ModelVisibilitySwitch model={model} serverId={serverId} provider={provider} />
       <Pressable
         onPress={handleDelete}
         disabled={deleting}
@@ -354,7 +415,7 @@ function DiagnosticSubSheet({
   );
 }
 
-interface ProviderModalBodyProps {
+interface ProviderModalBodyProps extends ModelVisibilityProps {
   discoveredCount: number;
   additionalCount: number;
   providerSnapshotRefreshing: boolean;
@@ -446,6 +507,8 @@ function ProviderUpdatedLabel({
 function ProviderModalBody(props: ProviderModalBodyProps) {
   const { t } = useTranslation();
   const {
+    serverId,
+    provider,
     discoveredCount,
     additionalCount,
     providerSnapshotRefreshing,
@@ -505,7 +568,12 @@ function ProviderModalBody(props: ProviderModalBodyProps) {
           />
           <View style={settingsStyles.card}>
             {filteredDiscovered.map((model) => (
-              <DiscoveredModelRow key={model.id} model={model} />
+              <DiscoveredModelRow
+                key={model.id}
+                model={model}
+                serverId={serverId}
+                provider={provider}
+              />
             ))}
           </View>
         </View>
@@ -519,6 +587,8 @@ function ProviderModalBody(props: ProviderModalBodyProps) {
           <View style={settingsStyles.card}>
             {filteredCustom.map((model) => (
               <CustomModelRow
+                serverId={serverId}
+                provider={provider}
                 key={model.id}
                 model={model}
                 deleting={deletingModelId === model.id}
@@ -651,6 +721,8 @@ export function ProviderDiagnosticSheet({
         snapPoints={MAIN_SNAP_POINTS}
       >
         <ProviderModalBody
+          serverId={serverId}
+          provider={provider}
           discoveredCount={discoveredModels.length}
           additionalCount={additionalModels.length}
           providerSnapshotRefreshing={providerSnapshotRefreshing}
@@ -760,8 +832,10 @@ const sheetStyles = StyleSheet.create((theme) => ({
     flexShrink: 1,
     minWidth: 0,
   },
-  modelRowFiller: {
+  modelDetails: {
     flex: 1,
+    minWidth: 0,
+    gap: theme.spacing[1],
   },
   emptyState: {
     paddingVertical: theme.spacing[8],
