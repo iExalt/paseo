@@ -1587,7 +1587,7 @@ function PermissionRequestCard({
 }) {
   const { t } = useTranslation();
   // While the host reconnects, this card can be a request the agent has already dropped, and an
-  // answer could not be sent anyway. Hold input until the host is back and the card is current.
+  // answer could not be sent anyway. Hold answers, not editing, until the host is back online.
   const hostOnline = useHostRuntimeConnectionStatus(serverId) === "online";
   const isMobile = useIsCompactFormFactor();
 
@@ -1671,6 +1671,7 @@ function PermissionRequestCard({
     isPending: isRespondingMutation,
   } = permissionMutation;
   const isResponding = isRespondingMutation || !hostOnline;
+  const responseHeld = !hostOnline;
 
   const [respondingActionId, setRespondingActionId] = useState<string | null>(null);
 
@@ -1727,7 +1728,8 @@ function PermissionRequestCard({
       <QuestionFormCard
         permission={permission}
         onRespond={handleResponse}
-        isResponding={isResponding}
+        isResponding={isRespondingMutation}
+        responseHeld={responseHeld}
         responseError={responseError}
       />
     );

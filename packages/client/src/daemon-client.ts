@@ -226,6 +226,7 @@ import { TerminalStreamRouter, type TerminalStreamEvent } from "./terminal-strea
 import {
   FOREGROUND_SILENT_WINDOWS,
   FOREGROUND_WINDOW_MS,
+  lateFireSlackMs,
   planForegroundVerification,
   type ForegroundVerificationPlan,
 } from "./foreground-verification.js";
@@ -1241,9 +1242,6 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_LIVENESS_TIMEOUT_MS = 5000;
 const LIVENESS_HEARTBEAT_INTERVAL_MS = 10_000;
 const LIVENESS_HEARTBEAT_TIMEOUT_MS = 15_000;
-// A foreground window whose timer fires this much later than scheduled (wall clock) spanned
-// another suspension or a blocked JS thread, so its silence is no evidence either way.
-const SUSPENDED_WINDOW_SLACK_MS = 2_000;
 const LIVENESS_FAILURE_RECONNECT_THRESHOLD = 2;
 const DEFAULT_FOREGROUND_PLAN: ForegroundVerificationPlan = {
   windowMs: FOREGROUND_WINDOW_MS,
@@ -1639,6 +1637,7 @@ export class DaemonClient {
   private readonly pongWaiters = new Set<PongWaiter>();
   private livenessHeartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private lastLivenessRttMs: number | null = null;
+  private previousConnectionRttMs: number | null = null;
   private consecutiveLivenessFailures = 0;
   // Wall clock, so time the process spent suspended counts as silence.
   private lastInboundAtWallMs = Date.now();
@@ -2836,9 +2835,10 @@ export class DaemonClient {
       probe.reject(error);
       if (
         probe.role === "foreground" &&
-        Date.now() - probe.startedAtWallMs > timeoutMs + SUSPENDED_WINDOW_SLACK_MS
+        Date.now() - probe.startedAtWallMs > timeoutMs + lateFireSlackMs(timeoutMs)
       ) {
-        // The app was suspended again inside this window. Discard it, any frame it saw and
+        // The timer fired late (wall clock): the app was suspended again inside this window,
+        // or the JS thread stalled, so its silence is no evidence either way. Discard it, any frame it saw and
         // the misses before it; the heartbeat tick that owns this probe starts the cycle over.
         probe.receivedActivity = false;
         this.consecutiveLivenessFailures = 0;
@@ -2880,6 +2880,7 @@ export class DaemonClient {
 
   private startLivenessHeartbeat(): void {
     this.stopLivenessHeartbeat();
+    this.previousConnectionRttMs = this.lastLivenessRttMs ?? this.previousConnectionRttMs;
     this.lastLivenessRttMs = null;
     this.scheduleNextLivenessHeartbeat();
   }
@@ -2905,8 +2906,8 @@ export class DaemonClient {
   /**
    * The app came back to the foreground. Start a fresh verification cycle: silent windows back
    * to back, then teardown and an immediate reconnect. planForegroundVerification picks two
-   * five-second windows, or one short window when the socket is already suspect or a user is
-   * waiting. Misses recorded before the app was suspended do not count, and a heartbeat
+   * five-second windows, or one short window when the socket is already suspect, or when a user
+   * is waiting and a heartbeat's worth of time passed without a frame. Misses recorded before the app was suspended do not count, and a heartbeat
    * probe that straddled the suspension measured the suspension, not the socket, so it is
    * dropped without a miss. Latency measurements wait for the next pong, so replacing the
    * probe they joined does not fail them.
@@ -2914,8 +2915,10 @@ export class DaemonClient {
   private verifyConnectionOnForeground(userWaiting: boolean): void {
     const plan = planForegroundVerification({
       silenceMs: Date.now() - this.lastInboundAtWallMs,
+      heartbeatIntervalMs: LIVENESS_HEARTBEAT_INTERVAL_MS,
       suspectSilenceMs: LIVENESS_HEARTBEAT_INTERVAL_MS + LIVENESS_HEARTBEAT_TIMEOUT_MS,
-      lastRttMs: this.lastLivenessRttMs,
+      // The previous connection's round trip is a better guess for this link than none.
+      lastRttMs: this.lastLivenessRttMs ?? this.previousConnectionRttMs,
       userWaiting,
     });
     if (this.pingProbe?.role === "foreground") {

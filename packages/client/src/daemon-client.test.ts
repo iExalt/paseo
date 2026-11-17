@@ -2949,6 +2949,8 @@ test("a tap replaces a silently dead socket after one short window instead of tw
   first.openConnection();
   await connection;
   first.daemonGoesSilent();
+  // The app sat in the background past a heartbeat interval, so the socket may be stale.
+  await suspendFor(15_000);
   client.ensureConnected({ verify: true, userWaiting: true });
   // No round trip measured on this socket yet: the window is the 750 ms floor.
   await vi.advanceTimersByTimeAsync(749);
@@ -2974,6 +2976,7 @@ test("a tap keeps a healthy socket that answers inside the short window", async 
   const connection = client.connect();
   daemon.openConnection();
   await connection;
+  await suspendFor(15_000);
   client.ensureConnected({ verify: true, userWaiting: true });
   await vi.advanceTimersByTimeAsync(5_000);
   expect(daemon.closesFromClient()).toEqual([]);
@@ -3006,12 +3009,52 @@ test("a tap tightens a resume check that is already waiting out its long window"
   first.openConnection();
   await connection;
   first.daemonGoesSilent();
+  // Too short a silence to suspect the socket on resume, long enough to tighten for a tap.
+  await suspendFor(15_000);
   client.ensureConnected({ verify: true });
   await vi.advanceTimersByTimeAsync(100);
   client.ensureConnected({ verify: true, userWaiting: true });
   await vi.advanceTimersByTimeAsync(750);
   expect(first.closesFromClient()).toEqual([{ code: 1001, reason: "Liveness check timed out" }]);
   expect(attempts()).toBe(2);
+});
+
+test("a tap on a socket that spoke within a heartbeat interval keeps the two long windows", async () => {
+  useHeartbeatClock();
+  const first = new FakeDaemon();
+  const second = new FakeDaemon();
+  const { client, attempts } = connectThroughReplacements("tap-recent-socket", [first, second]);
+  const connection = client.connect();
+  first.openConnection();
+  await connection;
+  first.daemonGoesSilent();
+  await suspendFor(3_000);
+  client.ensureConnected({ verify: true, userWaiting: true });
+  await vi.advanceTimersByTimeAsync(9_999);
+  expect(first.closesFromClient()).toEqual([]);
+  await vi.advanceTimersByTimeAsync(1);
+  expect(first.closesFromClient()).toEqual([{ code: 1001, reason: "Liveness check timed out" }]);
+  expect(attempts()).toBe(2);
+});
+
+test("a short window whose timer fires a second late is discarded, not counted as silence", async () => {
+  useHeartbeatClock();
+  const daemon = new FakeDaemon();
+  daemon.daemonGoesSilent();
+  const { client, attempts } = connectThroughReplacements("short-window-stall", [daemon]);
+  const connection = client.connect();
+  daemon.openConnection();
+  await connection;
+  await suspendFor(60_000);
+  client.ensureConnected({ verify: true, userWaiting: true });
+  // The JS thread stalls inside the 750 ms window; the pong waits unread behind the timer.
+  await suspendFor(1_000);
+  daemon.daemonAnswersPingsAfter("fast");
+  await vi.advanceTimersByTimeAsync(750);
+  await vi.advanceTimersByTimeAsync(1_000);
+  expect(daemon.closesFromClient()).toEqual([]);
+  expect(client.getConnectionState()).toEqual({ status: "connected" });
+  expect(attempts()).toBe(1);
 });
 
 test("foreground verification preserves a healthy socket and deduplicates simultaneous checks", async () => {
