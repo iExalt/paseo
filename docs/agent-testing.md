@@ -71,7 +71,6 @@ $A dump                        # id | text | desc | x,y | flags (selected, focus
 $A tap direct-host-input       # refuses (exit 2) unless the package has focus
 $A type 127.0.0.1; $A key ENTER
 $A wait add-host-modal --gone  # or wait for an id to appear; exit 5 on timeout
-$A open --cold 'paseo://settings/general?addHost=1'
 $A switch clock=frozen notifications=skip
 n=$($A turns <agentId>) || n=0   # unknown (exit 3): no line yet; 0 only if the chat was open since launch
 paseo agent send --no-wait <agentId> "…"; $A wait-turn <agentId> --after "$n"
@@ -125,7 +124,9 @@ the Show/Hide state before toggling.
 - Settings rows are `settings-section-<section>` and `settings-host-section-<section>`. The
   direct connection form is `direct-host-input`, `direct-port-input` and
   `direct-password-input`; Enter in the host field moves to the port, and both select their text
-  on focus. Open it with `paseo://settings/general?addHost=1`, then tap `add-host-method-direct`.
+  on focus. To open the form, open Settings (return to its root on compact layouts), tap
+  `settings-host-picker`, then `settings-add-host`. With no hosts, `settings-add-host` is already
+  a row. Select `add-host-method-direct`. The add-host flow has no deep link.
 - The fork updater's row in About is `fork-android-update-row`, with `fork-android-update-status`
   and `fork-android-update-action`, in fork builds only. The tablet guest has network, so a fork
   build there checks and downloads real releases; boot it with `CF_NET=0` for the offline error
