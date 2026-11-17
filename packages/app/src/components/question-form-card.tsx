@@ -30,12 +30,15 @@ import {
   shouldSubmitEmptyOnDismiss,
   type QuestionFormQuestion,
   type QuestionOption,
+  resolveQuestionFormActions,
 } from "./question-form-card-core";
 
 interface QuestionFormCardProps {
   permission: PendingPermission;
   onRespond: (response: AgentPermissionResponse) => void;
   isResponding: boolean;
+  /** Blocks sending an answer while the rest of the card stays usable, e.g. while offline. */
+  responseHeld: boolean;
   responseError: string | null;
 }
 
@@ -386,6 +389,7 @@ export function QuestionFormCard({
   permission,
   onRespond,
   isResponding,
+  responseHeld,
   responseError,
 }: QuestionFormCardProps) {
   const { theme } = useUnistyles();
@@ -461,8 +465,16 @@ export function QuestionFormCard({
     : false;
   const isLastQuestion = questions ? resolvedActiveQuestionIndex === questions.length - 1 : true;
 
+  const { answerBlocked, primaryDisabled } = resolveQuestionFormActions({
+    isResponding,
+    responseHeld,
+    isLastQuestion,
+    allAnswered,
+    activeQuestionAnswered,
+  });
+
   const handleSubmit = useCallback(() => {
-    if (!questions || !allAnswered || isResponding) return;
+    if (!questions || !allAnswered || answerBlocked) return;
     setRespondingAction("submit");
     onRespond({
       behavior: "allow",
@@ -474,7 +486,7 @@ export function QuestionFormCard({
   }, [
     questions,
     allAnswered,
-    isResponding,
+    answerBlocked,
     selections,
     otherTexts,
     onRespond,
@@ -482,7 +494,7 @@ export function QuestionFormCard({
   ]);
 
   const handleDeny = useCallback(() => {
-    if (!questions || isResponding) return;
+    if (!questions || answerBlocked) return;
     setRespondingAction("dismiss");
     if (shouldSubmitEmptyOnDismiss(questions)) {
       onRespond({
@@ -498,7 +510,7 @@ export function QuestionFormCard({
       behavior: "deny",
       message: "Dismissed by user",
     });
-  }, [questions, isResponding, onRespond, otherTexts, permission.request.input, selections]);
+  }, [questions, answerBlocked, onRespond, otherTexts, permission.request.input, selections]);
 
   const handleSelectQuestion = useCallback((index: number) => {
     setActiveQuestionIndex(index);
@@ -532,7 +544,6 @@ export function QuestionFormCard({
   );
 
   const pendingAction = isResponding ? respondingAction : null;
-  const primaryDisabled = isResponding || (isLastQuestion ? !allAnswered : !activeQuestionAnswered);
   const primaryActionLabel = isLastQuestion
     ? t("message.question.submit")
     : t("message.question.next");
@@ -651,7 +662,7 @@ export function QuestionFormCard({
         <Pressable
           style={dismissButtonStyle}
           onPress={handleDeny}
-          disabled={isResponding}
+          disabled={answerBlocked}
           accessibilityRole="button"
           accessibilityLabel={dismissLabel}
           testID="question-form-dismiss"

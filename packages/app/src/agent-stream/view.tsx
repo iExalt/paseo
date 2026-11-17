@@ -85,7 +85,7 @@ import { type NearBottom, useIsNearBottom, useNearBottom } from "./near-bottom";
 import { ChatOutlineRail } from "@/agent-stream/chat-outline/rail";
 import { chatOutlineAvailable } from "@/agent-stream/chat-outline/model";
 import { useChatOutline } from "@/agent-stream/chat-outline/use-chat-outline";
-import { getHostRuntimeStore } from "@/runtime/host-runtime";
+import { getHostRuntimeStore, useHostRuntimeConnectionStatus } from "@/runtime/host-runtime";
 import { planTimelineTailFetch } from "@/timeline/timeline-sync-plan";
 import { useTimelineGapFill } from "./use-timeline-gap-fill";
 import {
@@ -180,6 +180,7 @@ function renderPendingPermissionsNode(input: {
             key={permission.key}
             permission={permission}
             client={input.client}
+            serverId={input.serverId}
           />
         ))}
       </View>
@@ -1578,11 +1579,16 @@ function PermissionActionButton({
 function PermissionRequestCard({
   permission,
   client,
+  serverId,
 }: {
   permission: PendingPermission;
   client: DaemonClient | null;
+  serverId: string;
 }) {
   const { t } = useTranslation();
+  // While the host reconnects, this card can be a request the agent has already dropped, and an
+  // answer could not be sent anyway. Hold answers, not editing, until the host is back online.
+  const hostOnline = useHostRuntimeConnectionStatus(serverId) === "online";
   const isMobile = useIsCompactFormFactor();
 
   const { request } = permission;
@@ -1662,8 +1668,10 @@ function PermissionRequestCard({
   const {
     reset: resetPermissionMutation,
     mutateAsync: respondToPermission,
-    isPending: isResponding,
+    isPending: isRespondingMutation,
   } = permissionMutation;
+  const isResponding = isRespondingMutation || !hostOnline;
+  const responseHeld = !hostOnline;
 
   const [respondingActionId, setRespondingActionId] = useState<string | null>(null);
 
@@ -1720,7 +1728,8 @@ function PermissionRequestCard({
       <QuestionFormCard
         permission={permission}
         onRespond={handleResponse}
-        isResponding={isResponding}
+        isResponding={isRespondingMutation}
+        responseHeld={responseHeld}
         responseError={responseError}
       />
     );

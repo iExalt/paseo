@@ -6,6 +6,7 @@ import {
   parseQuestionFormQuestions,
   questionShowsTextInput,
   resolveDismissLabel,
+  resolveQuestionFormActions,
   shouldSubmitEmptyOnDismiss,
 } from "./question-form-card-core";
 
@@ -186,5 +187,15 @@ describe("question form card core", () => {
     expect(parseImageOnlyPreview("![A](a.png)\n![B](b.png)")).toBeNull();
     expect(parseImageOnlyPreview("+---------+\n| ![x] () |\n+---------+")).toBeNull();
     expect(parseImageOnlyPreview("[![CI](badge.svg)](https://ci)")).toBeNull();
+  });
+
+  test("a held response blocks submit and dismiss but keeps Next", () => {
+    const held = { isResponding: false, responseHeld: true, allAnswered: true };
+    expect(
+      resolveQuestionFormActions({ ...held, isLastQuestion: true, activeQuestionAnswered: true }),
+    ).toEqual({ answerBlocked: true, primaryDisabled: true });
+    expect(
+      resolveQuestionFormActions({ ...held, isLastQuestion: false, activeQuestionAnswered: true }),
+    ).toEqual({ answerBlocked: true, primaryDisabled: false });
   });
 });
