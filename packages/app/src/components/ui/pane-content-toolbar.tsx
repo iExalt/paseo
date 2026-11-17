@@ -65,6 +65,7 @@ interface ToolbarButtonCommonProps extends Omit<
   round?: boolean;
   shortcut?: ShortcutKey[][] | null;
   tooltipSide?: "left" | "right" | "top" | "bottom";
+  shortcutOffset?: number;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -87,6 +88,7 @@ export function ToolbarButton({
   round = false,
   shortcut,
   tooltipSide = "bottom",
+  shortcutOffset,
   style,
   kind = "action",
   onPress,
@@ -117,8 +119,16 @@ export function ToolbarButton({
 
   if (kind === "menu") {
     return (
-      <Tooltip delayDuration={300} enabledOnDesktop enabledOnMobile={false}>
-        <TooltipTrigger asChild triggerRefProp="triggerRef">
+      <Tooltip
+        delayDuration={300}
+        enabledOnDesktop
+        enabledOnMobile={false}
+        heldShortcut={disabled ? null : shortcut}
+        heldSide={tooltipSide}
+        heldOffset={shortcutOffset}
+        heldTestID={testID ? `${testID}-shortcut-hint` : undefined}
+      >
+        <TooltipTrigger asChild>
           <DropdownMenuTrigger
             {...props}
             disabled={disabled}
@@ -137,7 +147,15 @@ export function ToolbarButton({
   }
 
   return (
-    <Tooltip delayDuration={300} enabledOnDesktop enabledOnMobile={false}>
+    <Tooltip
+      delayDuration={300}
+      enabledOnDesktop
+      enabledOnMobile={false}
+      heldShortcut={disabled ? null : shortcut}
+      heldSide={tooltipSide}
+      heldOffset={shortcutOffset}
+      heldTestID={testID ? `${testID}-shortcut-hint` : undefined}
+    >
       <TooltipTrigger
         {...props}
         disabled={disabled}

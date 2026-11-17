@@ -1120,9 +1120,19 @@ function ComposerCancelButton({
   ) : (
     <Square size={discGlyphSize} color="white" fill="white" />
   );
+  const { isActiveComposer } = useComposerKeyboardScope();
   const shortcutNode = agentInterruptKeys ? <Shortcut chord={agentInterruptKeys} /> : null;
   return (
-    <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+    <Tooltip
+      delayDuration={0}
+      enabledOnDesktop
+      enabledOnMobile={false}
+      heldShortcut={
+        isActiveComposer && isConnected && !isCancellingAgent ? agentInterruptKeys : null
+      }
+      heldOffset={36}
+      heldTestID="composer-cancel-shortcut-hint"
+    >
       <TooltipTrigger
         onPress={handleCancelAgent}
         disabled={!isConnected || isCancellingAgent}
@@ -1173,6 +1183,7 @@ function ComposerVoiceModeButton({
   voiceToggleKeys,
   t,
 }: ComposerVoiceModeButtonProps) {
+  const { isActiveComposer } = useComposerKeyboardScope();
   const shortcutNode = voiceToggleKeys ? <Shortcut chord={voiceToggleKeys} /> : null;
   const renderTriggerContent = useCallback(
     ({ hovered }: PressableStateCallbackType & { hovered?: boolean }) => {
@@ -1197,7 +1208,13 @@ function ComposerVoiceModeButton({
     [glyph, isVoiceSwitching],
   );
   return (
-    <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+    <Tooltip
+      delayDuration={0}
+      enabledOnDesktop
+      enabledOnMobile={false}
+      heldShortcut={isActiveComposer && isConnected && !isVoiceSwitching ? voiceToggleKeys : null}
+      heldTestID="composer-voice-shortcut-hint"
+    >
       <TooltipTrigger
         onPress={handleToggleRealtimeVoice}
         disabled={!isConnected || isVoiceSwitching}

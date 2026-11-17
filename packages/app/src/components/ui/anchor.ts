@@ -244,3 +244,19 @@ export function getTransformOrigin(
   // array shape directly; Reanimated's web style builder also accepts this form.
   return [horizontal, vertical, 0];
 }
+
+/** A clipped-away target must not advertise a floating action at the viewport edge. */
+export function isAnchorVisible(anchor: Rect, viewport: Rect): boolean {
+  const x = anchor.x + anchor.width / 2;
+  const y = anchor.y + anchor.height / 2;
+  return (
+    anchor.width > 0 &&
+    anchor.height > 0 &&
+    viewport.width > 0 &&
+    viewport.height > 0 &&
+    x >= viewport.x &&
+    x < viewport.x + viewport.width &&
+    y >= viewport.y &&
+    y < viewport.y + viewport.height
+  );
+}

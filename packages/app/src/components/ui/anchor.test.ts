@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   computePosition,
+  isAnchorVisible,
   fitSurfaceWidth,
   getTransformOrigin,
   holdSurfaceEdge,
@@ -165,5 +166,15 @@ describe("fitSurfaceWidth", () => {
       minWidth: 134,
       maxWidth: 134,
     });
+  });
+});
+
+describe("floating hint anchor visibility", () => {
+  it("rejects scrolled-out and empty targets instead of clamping hints into view", () => {
+    const rail = { x: 200, y: 50, width: 300, height: 40 };
+    expect(isAnchorVisible({ x: 220, y: 55, width: 80, height: 30 }, rail)).toBe(true);
+    expect(isAnchorVisible({ x: 80, y: 55, width: 80, height: 30 }, rail)).toBe(false);
+    expect(isAnchorVisible({ x: 520, y: 55, width: 80, height: 30 }, rail)).toBe(false);
+    expect(isAnchorVisible({ x: 220, y: 55, width: 0, height: 30 }, rail)).toBe(false);
   });
 });
