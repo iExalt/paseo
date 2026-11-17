@@ -93,7 +93,8 @@ const CODEX_MODES: AgentProviderModeDefinition[] = [
   {
     id: "full-access",
     label: "Full Access",
-    description: "Edit files, run commands, and access the network without additional prompts.",
+    description:
+      "Edit files, run commands, and access the network. Flagged commands use auto-review when available; unresolved approvals are declined.",
     icon: "ShieldOff",
     colorTier: "dangerous",
     isUnattended: true,

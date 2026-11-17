@@ -1092,6 +1092,174 @@ process.stdin.on("data", (chunk) => {
 }
 
 describe("Codex app-server provider", () => {
+  test.each([false, true])(
+    "mode presets apply gated policies to thread and turn starts (auto-review: %s)",
+    async (autoReviewEnabled) => {
+      // Unsupported old-Codex auto-review is a direct-session wire-policy regression.
+      for (const [modeId, sandbox, sandboxType] of [
+        ["auto", "workspace-write", "workspaceWrite"],
+        ["read-only", "read-only", "readOnly"],
+        ["auto-review", "workspace-write", "workspaceWrite"],
+        ["full-access", "danger-full-access", "dangerFullAccess"],
+      ]) {
+        for (const override of [undefined, "never", "on-request"] as const) {
+          const requests: Array<{ method: string; params: unknown }> = [];
+          const session = createSession(
+            {
+              modeId,
+              thinkingOptionId: "medium",
+              providerOptions: override ? { approval_policy: override } : {},
+            },
+            { autoReviewEnabled },
+          );
+          session.currentThreadId = null;
+          session.activeForegroundTurnId = null;
+          session.client = {
+            async request(method, params) {
+              requests.push({ method, params });
+              if (method === "thread/start") {
+                return {
+                  thread: { id: "full-access-thread" },
+                  approvalsReviewer:
+                    modeId === "full-access" || modeId === "auto-review" ? "auto_review" : "user",
+                };
+              }
+              if (method === "turn/start") return {};
+              throw new Error(`Unexpected request: ${method}`);
+            },
+          };
+          await session.startTurn("start Full Access");
+          const thread = requests.find((request) => request.method === "thread/start")?.params;
+          const turn = requests.find((request) => request.method === "turn/start")?.params;
+          expect(thread).toMatchObject({ sandbox });
+          expect(turn).toMatchObject({ sandboxPolicy: { type: sandboxType } });
+          for (const params of [thread, turn]) {
+            if (override) {
+              expect(params).not.toHaveProperty("approvalPolicy");
+              expect(params).not.toHaveProperty("approvalsReviewer");
+              expect(params).toMatchObject({ config: { approval_policy: override } });
+            } else {
+              expect(params).toMatchObject({
+                approvalPolicy:
+                  modeId === "full-access" && !autoReviewEnabled ? "never" : "on-request",
+                approvalsReviewer:
+                  modeId === "auto-review" || (modeId === "full-access" && autoReviewEnabled)
+                    ? "auto_review"
+                    : "user",
+              });
+            }
+          }
+          await expect(session.getCurrentMode()).resolves.toBe(modeId);
+        }
+      }
+    },
+  );
+
+  test.each(["command", "file"] as const)(
+    "Full Access declines and surfaces unexpected %s approvals without waiting",
+    async (kind) => {
+      const appServer = createFakeCodexAppServer({});
+      const session = new CodexAppServerAgentSession(
+        createConfig({ modeId: "full-access", providerOptions: { approval_policy: "on-request" } }),
+        null,
+        createTestLogger(),
+        async () => appServer.child,
+      );
+      const events: AgentStreamEvent[] = [];
+      session.subscribe((event) => events.push(event));
+      try {
+        await session.connect();
+        const params = {
+          itemId: "unattended",
+          threadId: "thread-1",
+          turnId: "turn-1",
+          reason: "Reviewer unavailable",
+        };
+        if (kind === "command") {
+          appServer.requestCommandApproval({
+            ...params,
+            command: "rm -rf scratch",
+            cwd: "/workspace",
+          });
+        } else {
+          appServer.requestFileChangeApproval(params);
+        }
+        await expect(appServer.waitForApprovalDecision("unattended")).resolves.toEqual({
+          decision: "decline",
+        });
+        expect(session.getPendingPermissions()).toEqual([]);
+        expect(events.some((event) => event.type === "permission_requested")).toBe(false);
+        expect(events).toContainEqual(
+          expect.objectContaining({
+            type: "timeline",
+            item: expect.objectContaining({
+              type: "tool_call",
+              status: "failed",
+              error: { message: "Approval declined: Full Access cannot wait for user approval." },
+              metadata: expect.objectContaining({ denied: true }),
+            }),
+          }),
+        );
+        appServer.assertNoErrors();
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
+  test.each([
+    ["auto", "full-access", false],
+    ["full-access", "auto", true],
+  ] as const)(
+    "mode changes from %s to %s apply approval handling on the next turn",
+    async (initialMode, requestedMode, initiallyDeclined) => {
+      const appServer = createFakeCodexAppServer({});
+      const session = new CodexAppServerAgentSession(
+        createConfig({ modeId: initialMode }),
+        null,
+        createTestLogger(),
+        async () => appServer.child,
+      );
+      try {
+        await session.connect();
+        await session.startTurn("first");
+        await session.setMode(requestedMode);
+        for (const [itemId, declined] of [
+          ["first", initiallyDeclined],
+          ["second", !initiallyDeclined],
+        ] as const) {
+          if (itemId === "second") {
+            const completed = waitForNextEvent(session, "turn_completed");
+            appServer.completeTurn({ threadId: session.id! });
+            await completed;
+            await session.startTurn("second");
+          }
+          const pending = declined ? null : waitForNextPermission(session);
+          appServer.requestCommandApproval({
+            itemId,
+            threadId: session.id!,
+            turnId: itemId,
+            command: "git restore README.md",
+            cwd: "/workspace",
+            reason: "approval needed",
+          });
+          if (pending) {
+            const event = await pending;
+            expect(session.getPendingPermissions()).toHaveLength(1);
+            await session.respondToPermission(event.request.id, { behavior: "allow" });
+          }
+          await expect(appServer.waitForApprovalDecision(itemId)).resolves.toEqual({
+            decision: declined ? "decline" : "accept",
+          });
+          expect(session.getPendingPermissions()).toEqual([]);
+        }
+        appServer.assertNoErrors();
+      } finally {
+        await session.close();
+      }
+    },
+  );
+
   test("refreshes changed skills without interrupting the active turn", async () => {
     const session = createSession();
     let skills = [
