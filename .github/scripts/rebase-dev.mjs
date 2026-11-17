@@ -1449,7 +1449,7 @@ export async function rebaseDev({
   }
 }
 
-async function checkedTree(repositoryPath, expectedSha) {
+export async function checkedTree(repositoryPath, expectedSha) {
   const sha = (await gitChecked(repositoryPath, ["rev-parse", "HEAD"])).trim();
   if (expectedSha !== undefined && sha !== expectedSha)
     throw new Error("HEAD differs from the tested SHA");
@@ -1501,9 +1501,11 @@ async function checkedTree(repositoryPath, expectedSha) {
   return sha;
 }
 
-function runRoutine(repositoryPath) {
+function runRoutine(repositoryPath, lane) {
   return new Promise((resolveRun, reject) => {
-    const child = spawn("mise", ["run", "--skip-tools", "ci:routine"], {
+    const args = ["run", "--skip-tools", "ci:routine"];
+    if (lane) args.push("--lane", lane);
+    const child = spawn("mise", args, {
       cwd: repositoryPath,
       stdio: "inherit",
     });
@@ -1515,7 +1517,13 @@ function runRoutine(repositoryPath) {
   });
 }
 
-export async function validateRebase({ repositoryPath, runChecks = runRoutine, reportInputs }) {
+export async function validateRebase({
+  repositoryPath,
+  runChecks = runRoutine,
+  reportInputs,
+  expectedSha,
+  lane,
+}) {
   if (reportInputs) {
     const inputs = {};
     for (const name of ["dev", "upstream", "resolutions"]) {
@@ -1529,8 +1537,8 @@ export async function validateRebase({ repositoryPath, runChecks = runRoutine, r
     }
     reportInputs(inputs);
   }
-  const testedSha = await checkedTree(repositoryPath);
-  await runChecks(repositoryPath);
+  const testedSha = await checkedTree(repositoryPath, expectedSha);
+  await runChecks(repositoryPath, lane);
   await checkedTree(repositoryPath, testedSha);
   return testedSha;
 }
@@ -1601,11 +1609,18 @@ async function main() {
     }
     return;
   }
-  if (process.argv[2] === "validate") {
-    const testedSha = await validateRebase({
-      repositoryPath,
-      reportInputs: (inputs) => console.log(`Captured inputs: ${JSON.stringify(inputs)}`),
-    });
+  if (["validate", "check-tree"].includes(process.argv[2])) {
+    const treeOnly = process.argv[2] === "check-tree";
+    if (treeOnly && !/^[0-9a-f]{40}$/.test(process.env.TESTED_SHA ?? ""))
+      throw new Error("A tested SHA is required");
+    const testedSha = treeOnly
+      ? await checkedTree(repositoryPath, process.env.TESTED_SHA)
+      : await validateRebase({
+          repositoryPath,
+          expectedSha: process.env.TESTED_SHA,
+          lane: process.env.ROUTINE_LANE,
+          reportInputs: (inputs) => console.log(`Captured inputs: ${JSON.stringify(inputs)}`),
+        });
     if (process.env.GITHUB_OUTPUT)
       await appendFile(process.env.GITHUB_OUTPUT, `tested-sha=${testedSha}\n`);
     if (process.env.GITHUB_STEP_SUMMARY) {
@@ -1614,10 +1629,12 @@ async function main() {
       ).trim();
       await appendFile(
         process.env.GITHUB_STEP_SUMMARY,
-        `\n## Routine validation passed\n\nTested SHA: ${testedSha}\n\nTested tree: ${testedTree}\n`,
+        `\n## ${treeOnly ? "Validated candidate tree" : "Routine validation passed"}\n\nTested SHA: ${testedSha}\n\nTested tree: ${testedTree}\n`,
       );
     }
-    console.log(`Routine verification passed for ${testedSha}`);
+    console.log(
+      `${treeOnly ? "Validated candidate tree" : "Routine verification passed"} for ${testedSha}`,
+    );
     return;
   }
   const signingKey = process.env.PASEO_REBASE_SSH_SIGNING_KEY;

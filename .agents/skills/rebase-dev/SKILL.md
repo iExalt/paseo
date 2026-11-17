@@ -172,10 +172,10 @@ use the repository activity API for any SHA available only in the job summary:
 Read every page covering the full run interval. Require the last push before the
 run to end at the frozen SHA and no ref change through completion. Preserve the
 activity response and interval as the binding evidence; current refs alone do not
-prove the captured input. Capture the run ID and its starting SHAs. Require the rebase job and actual
-validation step to run successfully with a tested SHA; skipped jobs do not pass. Watch with a deadline and stop on first
-failure. Require the actual `validateRebase()` entry point: it runs routine checks
-and asserts the exact tested tree stays clean afterward. Running only the checks
+prove the captured input. Capture the run ID and its starting SHAs. Require the rebase job, every routine lane and the final
+validation job to run successfully with a tested SHA; skipped jobs do not pass. Watch with a deadline and stop on first
+failure. Require the actual `validateRebase()` entry point in every lane: it runs the selected routine checks
+and asserts the captured candidate SHA stays clean before and afterward. The final validation job must depend on every lane and emit its tested SHA only after a fresh tree check. The Git bundle transports candidate commits and captured refs, never installed dependencies or build output. Running only the checks
 misses generated `.artifacts/diff-subscription/` files. Do not ignore a new dirty
 path globally; identify its writer and fix the owning rule or producer. Check
 newer upstream fixes before treating a failed test as an unexplained flake.
