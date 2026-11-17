@@ -6,6 +6,8 @@ import {
 } from "@/components/ui/autocomplete-utils";
 import {
   applySlashCommandReplacement,
+  applySkillMentionReplacement,
+  findActiveSkillMention,
   filterAndRankCommandAutocompleteEntries,
   filterInlineSkillCommandEntries,
   findActiveSlashCommand,
@@ -183,5 +185,63 @@ describe("filterInlineSkillCommandEntries", () => {
     expect(filterInlineSkillCommandEntries(entries).map((entry) => entry.command.name)).toEqual([
       "taste",
     ]);
+  });
+});
+
+describe("findActiveSkillMention", () => {
+  it.each(["$5.00", "echo $HOME", "a$b", '"$"', "$H", "$", "use $", "use\n$skill:docs"])(
+    "applies the token-start rule to %s",
+    (text) => {
+      const valid = text === "$" || text === "use $" || text === "use\n$skill:docs";
+      const start = text.lastIndexOf("$");
+      expect(findActiveSkillMention({ text, cursorIndex: text.length })).toEqual(
+        valid
+          ? {
+              start,
+              end: text.length,
+              query: text.slice(start + 1),
+              position: start === 0 ? "start" : "inline",
+            }
+          : null,
+      );
+    },
+  );
+  it("uses the cursor and leaves following text intact", () => {
+    expect(findActiveSkillMention({ text: "use $docs later", cursorIndex: 9 })).toEqual({
+      start: 4,
+      end: 9,
+      query: "docs",
+      position: "inline",
+    });
+    expect(findActiveSkillMention({ text: "$docs later", cursorIndex: 11 })).toBeNull();
+    expect(findActiveSkillMention({ text: "$docs", cursorIndex: -1 })).toBeNull();
+  });
+});
+
+describe("applySkillMentionReplacement", () => {
+  it.each([
+    ["codex", "$docs"],
+    ["claude", "/docs"],
+    ["pi", "/docs"],
+    [undefined, "/docs"],
+  ])("inserts native syntax for %s", (provider, expected) => {
+    expect(
+      applySkillMentionReplacement({
+        text: "use $do",
+        command: { start: 4, end: 7, query: "do", position: "inline" },
+        commandName: "docs",
+        provider,
+      }),
+    ).toBe(`use ${expected} `);
+  });
+  it("preserves the suffix and provider-qualified skill name", () => {
+    expect(
+      applySkillMentionReplacement({
+        text: "$sk later",
+        command: { start: 0, end: 3, query: "sk", position: "start" },
+        commandName: "skill:docs",
+        provider: "pi",
+      }),
+    ).toBe("/skill:docs later");
   });
 });

@@ -106,7 +106,7 @@ interface PopoverFrameRecorderWindow extends Window {
 }
 
 interface ListCommandsReply {
-  commands: readonly { name: string; description: string; argumentHint: string }[];
+  commands: readonly { name: string; description: string; argumentHint: string; kind?: string }[];
   error: string | null;
 }
 
@@ -121,7 +121,12 @@ async function installListCommandsStub(
   source:
     | (() => ListCommandsReply | Promise<ListCommandsReply>)
     | {
-        commands?: () => readonly { name: string; description: string; argumentHint: string }[];
+        commands?: () => readonly {
+          name: string;
+          description: string;
+          argumentHint: string;
+          kind?: string;
+        }[];
         onSocket?: (send: (message: string) => void) => void;
       } = () => TEST_COMMANDS_REPLY,
 ): Promise<void> {
@@ -411,6 +416,48 @@ function expectPopoverDoesNotDisappearAfterFirstVisible(frames: PopoverFrame[]):
 }
 
 test.describe("Composer autocomplete", () => {
+  test("filters dollar mentions to skills and submits unmatched text on Enter", async ({
+    page,
+  }, testInfo) => {
+    await installListCommandsStub(page, () => ({
+      commands: [
+        { name: "skill:docs", description: "Read project docs", argumentHint: "", kind: "skill" },
+        { name: "compact", description: "Compact conversation", argumentHint: "", kind: "command" },
+      ],
+      error: null,
+    }));
+    const session = await openReadyMockAgent(page);
+    try {
+      const input = composerLocator(page);
+      const menu = page.getByTestId("composer-autocomplete-popover");
+      await input.fill("$");
+      await expect(
+        menu.getByRole("button", { name: "/skill:docs, Read project docs", exact: true }),
+      ).toBeVisible();
+      await expect(menu.getByText("/compact", { exact: true })).toHaveCount(0);
+      await expect(menu.getByText("/exit", { exact: true })).toHaveCount(0);
+      await input.press("Enter");
+      await expect(input).toHaveValue("/skill:docs ");
+      await input.fill("use $sk");
+      await menu
+        .getByRole("button", { name: "/skill:docs, Read project docs", exact: true })
+        .click();
+      await expect(input).toHaveValue("use /skill:docs ");
+      await input.fill("/compact");
+      await expect(menu.getByText("/compact", { exact: true })).toBeVisible();
+      await input.fill("$zzzzunmatched");
+      await expect(menu).toContainText("No commands found");
+      await page.screenshot({ path: testInfo.outputPath("dollar-no-matches.png") });
+      await input.press("Enter");
+      await expect(
+        page.getByTestId("user-message").filter({ hasText: "$zzzzunmatched" }),
+      ).toBeVisible();
+      await expect(input).toHaveValue("");
+    } finally {
+      await session.cleanup();
+    }
+  });
+
   test("inserts suggested commands from assistant messages without sending", async ({ page }) => {
     const requests = recordCommandRequestsByAgentId(page);
     const session = await seedMockAgentWorkspace({
@@ -494,7 +541,9 @@ test.describe("Composer autocomplete", () => {
       await expect(input).toBeEditable();
       await input.fill("/live_");
       const menu = page.getByTestId("composer-autocomplete-popover");
-      await expect(menu.getByRole("button", { name: "/live_before", exact: true })).toBeVisible();
+      await expect(
+        menu.getByRole("button", { name: "/live_before, Original skill", exact: true }),
+      ).toBeVisible();
       const changed = () => {
         expect(send).toBeDefined();
         send!(
@@ -509,19 +558,25 @@ test.describe("Composer autocomplete", () => {
       };
       catalog = [{ name: "live_after", description: "Updated skill", argumentHint: "" }];
       changed();
-      await expect(menu.getByRole("button", { name: "/live_after", exact: true })).toBeVisible();
-      await expect(menu.getByRole("button", { name: "/live_before", exact: true })).toHaveCount(0);
+      await expect(
+        menu.getByRole("button", { name: "/live_after, Updated skill", exact: true }),
+      ).toBeVisible();
+      await expect(
+        menu.getByRole("button", { name: "/live_before, Original skill", exact: true }),
+      ).toHaveCount(0);
       await expect(input).toHaveValue("/live_");
       await expect(input).toBeFocused();
       catalog = [{ name: "live_after", description: "Edited description", argumentHint: "" }];
       changed();
-      await expect(menu.getByRole("button", { name: "/live_after", exact: true })).toContainText(
-        "Edited description",
-      );
+      await expect(
+        menu.getByRole("button", { name: "/live_after, Edited description", exact: true }),
+      ).toContainText("Edited description");
       await page.screenshot({ path: testInfo.outputPath("live-skills-menu.png") });
       catalog = [];
       changed();
-      await expect(menu.getByRole("button", { name: "/live_after", exact: true })).toHaveCount(0);
+      await expect(
+        menu.getByRole("button", { name: "/live_after, Edited description", exact: true }),
+      ).toHaveCount(0);
       await expect(input).toHaveValue("/live_");
       await expect(input).toBeFocused();
     } finally {
