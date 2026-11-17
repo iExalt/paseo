@@ -96,6 +96,14 @@ export interface WorkspaceCommandCenterShortcuts {
   newTerminal?: ShortcutKey[][];
   splitRight?: ShortcutKey[][];
   splitDown?: ShortcutKey[][];
+  focusPaneLeft?: ShortcutKey[][];
+  focusPaneRight?: ShortcutKey[][];
+  focusPaneUp?: ShortcutKey[][];
+  focusPaneDown?: ShortcutKey[][];
+  moveTabLeft?: ShortcutKey[][];
+  moveTabRight?: ShortcutKey[][];
+  moveTabUp?: ShortcutKey[][];
+  moveTabDown?: ShortcutKey[][];
   archiveWorkspace?: ShortcutKey[][];
   previousTab?: ShortcutKey[][];
   nextTab?: ShortcutKey[][];
@@ -420,6 +428,7 @@ function buildPaneContributions(source: WorkspaceCommandCenterSource): CommandCe
       id: "pane:focus-left",
       rank: 52,
       title: source.labels.focusPaneLeft,
+      shortcutKeys: source.shortcuts.focusPaneLeft,
       keywords: ["pane", "focus", "left"],
       icon: source.icons.focusPane,
       action: { id: "workspace.pane.focus.left", scope: "workspace" },
@@ -428,6 +437,7 @@ function buildPaneContributions(source: WorkspaceCommandCenterSource): CommandCe
       id: "pane:focus-right",
       rank: 53,
       title: source.labels.focusPaneRight,
+      shortcutKeys: source.shortcuts.focusPaneRight,
       keywords: ["pane", "focus", "right"],
       icon: source.icons.focusPane,
       action: { id: "workspace.pane.focus.right", scope: "workspace" },
@@ -436,6 +446,7 @@ function buildPaneContributions(source: WorkspaceCommandCenterSource): CommandCe
       id: "pane:focus-up",
       rank: 54,
       title: source.labels.focusPaneUp,
+      shortcutKeys: source.shortcuts.focusPaneUp,
       keywords: ["pane", "focus", "up"],
       icon: source.icons.focusPane,
       action: { id: "workspace.pane.focus.up", scope: "workspace" },
@@ -444,6 +455,7 @@ function buildPaneContributions(source: WorkspaceCommandCenterSource): CommandCe
       id: "pane:focus-down",
       rank: 55,
       title: source.labels.focusPaneDown,
+      shortcutKeys: source.shortcuts.focusPaneDown,
       keywords: ["pane", "focus", "down"],
       icon: source.icons.focusPane,
       action: { id: "workspace.pane.focus.down", scope: "workspace" },
@@ -452,6 +464,7 @@ function buildPaneContributions(source: WorkspaceCommandCenterSource): CommandCe
       id: "pane:move-tab-left",
       rank: 56,
       title: source.labels.moveTabLeft,
+      shortcutKeys: source.shortcuts.moveTabLeft,
       keywords: ["pane", "tab", "move", "left"],
       icon: source.icons.moveTab,
       action: { id: "workspace.pane.move-tab.left", scope: "workspace" },
@@ -460,6 +473,7 @@ function buildPaneContributions(source: WorkspaceCommandCenterSource): CommandCe
       id: "pane:move-tab-right",
       rank: 57,
       title: source.labels.moveTabRight,
+      shortcutKeys: source.shortcuts.moveTabRight,
       keywords: ["pane", "tab", "move", "right"],
       icon: source.icons.moveTab,
       action: { id: "workspace.pane.move-tab.right", scope: "workspace" },
@@ -468,6 +482,7 @@ function buildPaneContributions(source: WorkspaceCommandCenterSource): CommandCe
       id: "pane:move-tab-up",
       rank: 58,
       title: source.labels.moveTabUp,
+      shortcutKeys: source.shortcuts.moveTabUp,
       keywords: ["pane", "tab", "move", "up"],
       icon: source.icons.moveTab,
       action: { id: "workspace.pane.move-tab.up", scope: "workspace" },
@@ -476,6 +491,7 @@ function buildPaneContributions(source: WorkspaceCommandCenterSource): CommandCe
       id: "pane:move-tab-down",
       rank: 59,
       title: source.labels.moveTabDown,
+      shortcutKeys: source.shortcuts.moveTabDown,
       keywords: ["pane", "tab", "move", "down"],
       icon: source.icons.moveTab,
       action: { id: "workspace.pane.move-tab.down", scope: "workspace" },
