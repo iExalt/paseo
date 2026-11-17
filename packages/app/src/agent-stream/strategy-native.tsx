@@ -120,6 +120,7 @@ function distanceFromEnd(input: {
   return Math.max(0, input.contentHeight - input.viewportHeight - input.offsetY);
 }
 const viewportStyle: ViewStyle = { flex: 1 };
+const placementPlaceholderStyle: ViewStyle = { position: "absolute", top: 0, right: 0, left: 0 };
 const initialFillStyle: ViewStyle = {
   position: "absolute",
   top: 0,
@@ -148,6 +149,7 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     isAuthoritativeHistoryReady,
     isInitialHistoryLoading,
     revealInitialHistory,
+    placementPlaceholder,
     onNearBottomChange,
     onReadingPositionChange,
     onNearHistoryStart,
@@ -437,6 +439,15 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
     () => [baseListContentContainerStyle, { paddingTop: topOverlayInset }],
     [baseListContentContainerStyle, topOverlayInset],
   );
+  // The preview leaves the stream once authoritative history lands, which can be before the list
+  // has placed and shown that history. Keep the last one until the rows are on screen. An empty
+  // authoritative list never reports placed, so it ends the placeholder too.
+  const latchedPlaceholderRef = useRef<ReactNode>(null);
+  const rowsOnScreen = isListPlaced && historyStartPaginationState.visible;
+  const nothingToPlace = isAuthoritativeHistoryReady && rows.length === 0;
+  if (rowsOnScreen || nothingToPlace) latchedPlaceholderRef.current = null;
+  else if (placementPlaceholder) latchedPlaceholderRef.current = placementPlaceholder;
+  const shownPlaceholder = latchedPlaceholderRef.current;
 
   useEffect(() => {
     const frame = requestAnimationFrame(() => {
@@ -843,6 +854,15 @@ function NativeStreamViewport(props: StreamRenderInput & { strategy: StreamStrat
         scrollEnabled={scrollEnabled}
         showsVerticalScrollIndicator
       />
+      {shownPlaceholder ? (
+        <View
+          pointerEvents="none"
+          testID="agent-placement-placeholder"
+          style={[placementPlaceholderStyle, listContentContainerStyle]}
+        >
+          {shownPlaceholder}
+        </View>
+      ) : null}
       {!historyStartPaginationState.visible ? (
         <View pointerEvents="none" testID="agent-initial-fill" style={initialFillStyle}>
           <ThemedLoadingSpinner size="large" uniProps={foregroundMutedColorMapping} />

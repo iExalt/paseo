@@ -1285,6 +1285,14 @@ const AgentStreamViewComponent = forwardRef<AgentStreamViewHandle, AgentStreamVi
                     isAuthoritativeHistoryReady: effectivePreviewPresentation.isContentReady,
                     isInitialHistoryLoading,
                     revealInitialHistory,
+                    // Only while the preview is projected: the receipt outlives the open.
+                    placementPlaceholder:
+                      effectivePreviewPresentation.receipt &&
+                      effectivePreviewPresentation.previewId !== null ? (
+                        <NotificationMessagePreview
+                          receipt={effectivePreviewPresentation.receipt}
+                        />
+                      ) : null,
                     onNearBottomChange: nearBottom.set,
                     onReadingPositionChange: handleReadingPositionChange,
                     onNearHistoryStart: loadOlder,
