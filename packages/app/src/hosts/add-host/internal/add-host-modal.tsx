@@ -127,11 +127,6 @@ const styles = StyleSheet.create((theme) => ({
     fontSize: theme.fontSize.base,
     fontWeight: theme.fontWeight.medium,
   },
-  actions: {
-    flexDirection: "row",
-    gap: theme.spacing[3],
-    marginTop: theme.spacing[2],
-  },
   helper: {
     color: theme.colors.foregroundMuted,
     fontSize: theme.fontSize.base,
@@ -428,6 +423,30 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
       visible={visible}
       onClose={handleClose}
       testID="add-host-modal"
+      footer={
+        <>
+          <Button
+            style={FLEX_ONE_STYLE}
+            variant="secondary"
+            onPress={handleCancel}
+            disabled={isSaving}
+          >
+            {t("pairing.direct.actions.cancel")}
+          </Button>
+          <Button
+            style={FLEX_ONE_STYLE}
+            variant="default"
+            onPress={handleSavePress}
+            disabled={isSaving}
+            leftIcon={connectIcon}
+            testID="direct-host-submit"
+          >
+            {isSaving
+              ? t("pairing.direct.actions.connecting")
+              : t("pairing.direct.actions.connect")}
+          </Button>
+        </>
+      }
     >
       <Text style={styles.helper}>{t("pairing.direct.helper")}</Text>
 
@@ -565,27 +584,6 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
           />
         ) : null}
         {errorMessage ? <Text style={styles.error}>{errorMessage}</Text> : null}
-      </View>
-
-      <View style={styles.actions}>
-        <Button
-          style={FLEX_ONE_STYLE}
-          variant="secondary"
-          onPress={handleCancel}
-          disabled={isSaving}
-        >
-          {t("pairing.direct.actions.cancel")}
-        </Button>
-        <Button
-          style={FLEX_ONE_STYLE}
-          variant="default"
-          onPress={handleSavePress}
-          disabled={isSaving}
-          leftIcon={connectIcon}
-          testID="direct-host-submit"
-        >
-          {isSaving ? t("pairing.direct.actions.connecting") : t("pairing.direct.actions.connect")}
-        </Button>
       </View>
     </AdaptiveModalSheet>
   );
