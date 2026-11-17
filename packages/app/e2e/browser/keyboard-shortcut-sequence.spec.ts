@@ -156,12 +156,19 @@ async function readShortcutContrast(locator: Locator) {
   });
 }
 
-test("shortcut badges meet contrast requirements in light and dark themes", async ({
+test("shortcut badge contrast and developer chrome meet the capture contract", async ({
   page,
   withWorkspace,
 }, testInfo) => {
   const workspace = await withWorkspace({ prefix: "shortcut-contrast-" });
   await workspace.navigateTo();
+  await page.evaluate(() => {
+    const indicator = document.createElement("div");
+    indicator.className = "__expo_fast_refresh";
+    indicator.dataset.testid = "fast-refresh-capture-fixture";
+    indicator.textContent = "Fast refresh";
+    document.body.append(indicator);
+  });
   const badge = page
     .getByTestId("sidebar-search")
     .locator("..")
@@ -181,6 +188,8 @@ test("shortcut badges meet contrast requirements in light and dark themes", asyn
       );
       await page.screenshot({ path: testInfo.outputPath(`shortcut-contrast-${theme}.png`) });
       expect(metrics.ratio, JSON.stringify(metrics)).toBeGreaterThanOrEqual(4.5);
+      await expect(page.getByTestId("fast-refresh-capture-fixture")).toHaveCount(1);
+      await expect(page.getByTestId("fast-refresh-capture-fixture")).toBeHidden();
     } finally {
       await page.keyboard.up("Alt");
     }
