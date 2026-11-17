@@ -294,7 +294,8 @@ const CODEX_MODES: AgentMode[] = [
   {
     id: "full-access",
     label: "Full Access",
-    description: "Edit files, run commands, and access the network without additional prompts.",
+    description:
+      "Edit files, run commands, and access the network. Flagged commands use auto-review when available; unresolved approvals are declined.",
   },
 ];
 
@@ -3597,6 +3598,7 @@ export class CodexAppServerAgentSession implements AgentSession {
   private readonly asyncQuestions: CodexAsyncQuestions;
   private readonly codexHome: string;
   private currentMode: string;
+  private appliedMode: string;
   private hasWorkflowModeOverride: boolean;
   private providerOptions: CodexProviderOptions;
   private resolvedWorkspaceWrite: NonNullable<
@@ -3764,6 +3766,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     }
     this.hasWorkflowModeOverride = config.modeId !== undefined;
     this.currentMode = config.modeId ?? DEFAULT_CODEX_MODE_ID;
+    this.appliedMode = this.currentMode;
     this.providerOptions =
       validateProviderOptions("codex", CodexProviderOptionsSchema, config.providerOptions) ?? {};
     this.config = config;
@@ -4464,7 +4467,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     hasCodexConfig: boolean;
   }> {
     const input = await this.buildUserInput(prompt);
-    const preset = MODE_PRESETS[this.currentMode] ?? MODE_PRESETS[DEFAULT_CODEX_MODE_ID];
+    this.appliedMode = this.currentMode;
+    const preset = this.resolveModePreset();
     const params: Record<string, unknown> = {
       threadId: this.currentThreadId,
       input,
@@ -4514,6 +4518,17 @@ export class CodexAppServerAgentSession implements AgentSession {
     };
   }
 
+  private resolveModePreset(): CodexModePreset {
+    if (this.currentMode === "full-access" && this.autoReviewEnabled) {
+      return {
+        approvalPolicy: "on-request",
+        sandbox: "danger-full-access",
+        approvalsReviewer: "auto_review",
+      };
+    }
+    return MODE_PRESETS[this.currentMode] ?? MODE_PRESETS[DEFAULT_CODEX_MODE_ID];
+  }
+
   private applyTurnWorkflowPolicy(
     params: Record<string, unknown>,
     preset: CodexModePreset,
@@ -4536,7 +4551,7 @@ export class CodexAppServerAgentSession implements AgentSession {
           ? this.resolvedSandboxPolicy
           : toSandboxPolicy(sandboxPolicyType, workspaceWrite);
     }
-    if (this.hasWorkflowModeOverride) {
+    if (this.hasWorkflowModeOverride && this.providerOptions.approval_policy === undefined) {
       params.approvalsReviewer = preset.approvalsReviewer;
     }
     return { approvalPolicy, sandboxPolicyType };
@@ -5840,7 +5855,8 @@ export class CodexAppServerAgentSession implements AgentSession {
     approvalPolicy?: string;
     sandbox?: string;
   } {
-    const preset = MODE_PRESETS[this.currentMode] ?? MODE_PRESETS[DEFAULT_CODEX_MODE_ID];
+    this.appliedMode = this.currentMode;
+    const preset = this.resolveModePreset();
     const approvalPolicy = this.hasWorkflowModeOverride ? preset.approvalPolicy : undefined;
     const sandbox = this.hasWorkflowModeOverride ? preset.sandbox : undefined;
     const innerConfig = this.buildCodexInnerConfig();
@@ -5859,7 +5875,7 @@ export class CodexAppServerAgentSession implements AgentSession {
       ...(innerConfig ? { config: innerConfig } : {}),
       ...(this.ephemeral ? { ephemeral: true } : {}),
     };
-    if (this.hasWorkflowModeOverride) {
+    if (this.hasWorkflowModeOverride && this.providerOptions.approval_policy === undefined) {
       params.approvalsReviewer = preset.approvalsReviewer;
     }
     return { params, approvalPolicy, sandbox };
@@ -7699,6 +7715,18 @@ export class CodexAppServerAgentSession implements AgentSession {
         turnId: parsed.turnId,
       },
     };
+    // Full Access stays unattended even when a provider approval-policy override is set.
+    if (this.appliedMode === "full-access") {
+      this.emitDeniedToolCallTimelineEvent({
+        requestId,
+        pendingRequest: request,
+        response: {
+          behavior: "deny",
+          message: "Approval declined: Full Access cannot wait for user approval.",
+        },
+      });
+      return Promise.resolve({ decision: "decline" });
+    }
     this.pendingPermissions.set(requestId, request);
     this.emitEvent({ type: "permission_requested", provider: CODEX_PROVIDER, request });
     return new Promise((resolve) => {
@@ -7742,6 +7770,18 @@ export class CodexAppServerAgentSession implements AgentSession {
         turnId: parsed.turnId,
       },
     };
+    // Full Access stays unattended even when a provider approval-policy override is set.
+    if (this.appliedMode === "full-access") {
+      this.emitDeniedToolCallTimelineEvent({
+        requestId,
+        pendingRequest: request,
+        response: {
+          behavior: "deny",
+          message: "Approval declined: Full Access cannot wait for user approval.",
+        },
+      });
+      return Promise.resolve({ decision: "decline" });
+    }
     this.pendingPermissions.set(requestId, request);
     this.emitEvent({ type: "permission_requested", provider: CODEX_PROVIDER, request });
     return new Promise((resolve) => {
