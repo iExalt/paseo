@@ -3461,6 +3461,7 @@ export const ptBR: TranslationResources = {
         add: "Adicionar",
         adding: "Adicionando...",
         failedToSave: "Falha ao salvar modelo",
+        showInPicker: "Mostrar {{model}} nos seletores de modelos",
         removeModel: "Remover {{id}}",
         searchPlaceholder: "Buscar modelos",
         loading: "Carregando modelos...",

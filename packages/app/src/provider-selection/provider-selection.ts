@@ -390,3 +390,26 @@ export function resolveSubmissionReadiness(input: {
   }
   return { ok: true };
 }
+
+export function filterHiddenProviderModels(input: {
+  providers: ProviderSelectorProvider[];
+  hiddenModelIds: Record<string, string[]> | undefined;
+  selectedProvider: string;
+  selectedModel: string;
+}): ProviderSelectorProvider[] {
+  return input.providers.map((provider) => {
+    if (provider.modelSelection.kind !== "models") return provider;
+    const hidden = new Set(input.hiddenModelIds?.[provider.id]);
+    return {
+      ...provider,
+      modelSelection: {
+        ...provider.modelSelection,
+        rows: provider.modelSelection.rows.filter(
+          (row) =>
+            !hidden.has(row.modelId) ||
+            (row.provider === input.selectedProvider && row.modelId === input.selectedModel),
+        ),
+      },
+    };
+  });
+}

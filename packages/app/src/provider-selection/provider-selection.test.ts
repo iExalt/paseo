@@ -9,6 +9,8 @@ import {
   buildSelectedTriggerLabel,
   buildSelectorProvider,
   filterAndRankModelRows,
+  filterHiddenProviderModels,
+  getAllProviderModelRows,
   matchesModelSearch,
   resolveEffectiveComposerModeId,
   resolveSelectedModelLabel,
@@ -563,5 +565,88 @@ describe("resolveEffectiveComposerModeId", () => {
     expect(
       resolveEffectiveComposerModeId({ ...selection, modeId: "build", modeOptions: [] }, true),
     ).toBe("build");
+  });
+});
+
+describe("hidden model choices", () => {
+  const providers = buildProviderSelectorProviders({
+    providerDefinitions: [
+      { id: "a", label: "A" },
+      { id: "b", label: "B" },
+    ] as AgentProviderDefinition[],
+    modelsByProvider: new Map([
+      [
+        "a",
+        [
+          { provider: "a", id: "same", label: "A same" },
+          { provider: "a", id: "keep", label: "Keep" },
+        ],
+      ],
+      ["b", [{ provider: "b", id: "same", label: "B same" }]],
+    ]),
+  });
+  it("hides only provider-qualified choices and preserves the exact selected model", () => {
+    const visible = filterHiddenProviderModels({
+      providers,
+      hiddenModelIds: { a: ["same"], b: ["same"] },
+      selectedProvider: "a",
+      selectedModel: "same",
+    });
+    expect(getAllProviderModelRows(visible).map((row) => row.favoriteKey)).toEqual([
+      "a:same",
+      "a:keep",
+    ]);
+    expect(getAllProviderModelRows(providers).map((row) => row.favoriteKey)).toEqual([
+      "a:same",
+      "a:keep",
+      "b:same",
+    ]);
+    expect(
+      filterAndRankModelRows(
+        getAllProviderModelRows(
+          filterHiddenProviderModels({
+            providers,
+            hiddenModelIds: { a: ["same"], b: ["same"] },
+            selectedProvider: "a",
+            selectedModel: "keep",
+          }),
+        ),
+        "same",
+      ),
+    ).toEqual([]);
+  });
+  it("preserves loading and errors and exempts the selected synthetic default", () => {
+    const defaults = buildProviderSelectorProviders({
+      providerDefinitions: [{ id: "a", label: "A" }] as AgentProviderDefinition[],
+      modelsByProvider: new Map([["a", []]]),
+    });
+    const pending = {
+      id: "loading",
+      label: "Loading",
+      modelSelection: { kind: "loading" as const },
+    };
+    const failed = {
+      id: "failed",
+      label: "Failed",
+      modelSelection: { kind: "error" as const, message: "offline" },
+    };
+    expect(
+      filterHiddenProviderModels({
+        providers: [...defaults, pending, failed],
+        hiddenModelIds: { a: [""] },
+        selectedProvider: "a",
+        selectedModel: "",
+      }),
+    ).toEqual([...defaults, pending, failed]);
+    expect(
+      getAllProviderModelRows(
+        filterHiddenProviderModels({
+          providers: defaults,
+          hiddenModelIds: { a: [""] },
+          selectedProvider: "b",
+          selectedModel: "",
+        }),
+      ),
+    ).toEqual([]);
   });
 });

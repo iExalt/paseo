@@ -3443,6 +3443,7 @@ export const ja: TranslationResources = {
         add: "追加",
         adding: "追加中...",
         failedToSave: "モデルの保存に失敗しました",
+        showInPicker: "モデル選択に {{model}} を表示",
         removeModel: "{{id}}を削除",
         searchPlaceholder: "モデルを検索",
         loading: "モデルを読み込み中...",

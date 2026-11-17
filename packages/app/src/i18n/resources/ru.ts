@@ -3473,6 +3473,7 @@ export const ru: TranslationResources = {
         add: "Добавить",
         adding: "Добавление...",
         failedToSave: "Не удалось сохранить модель.",
+        showInPicker: "Показывать {{model}} в списках моделей",
         removeModel: "Удалить {{id}}",
         searchPlaceholder: "Поиск моделей",
         loading: "Загрузка моделей...",
