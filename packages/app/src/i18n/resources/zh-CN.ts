@@ -3099,6 +3099,7 @@ export const zhCN: TranslationResources = {
         add: "添加",
         adding: "正在添加...",
         failedToSave: "保存 Model 失败",
+        showInPicker: "在模型选择器中显示 {{model}}",
         removeModel: "移除 {{id}}",
         searchPlaceholder: "搜索 Models",
         loading: "正在加载 Models...",

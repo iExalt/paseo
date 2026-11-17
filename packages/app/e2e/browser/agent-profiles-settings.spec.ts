@@ -1,4 +1,6 @@
-import { test } from "../support/fixtures";
+import { openAgentRoute, seedMockAgentWorkspace } from "../support/helpers/mock-agent";
+import { openModelPicker, closeModelPicker } from "../support/helpers/agent-profiles";
+import { expect, test } from "../support/fixtures";
 import {
   createAgentProfile,
   createAgentProfileFromEmptyState,
@@ -16,9 +18,82 @@ import {
   stageLegacyFavoritesForHostMigration,
 } from "../support/helpers/agent-profiles";
 
+function modelControlFitsViewport(element: Element): boolean {
+  const control = element.getBoundingClientRect();
+  return (
+    control.left >= 0 &&
+    control.right <= window.innerWidth &&
+    control.top >= 0 &&
+    control.bottom <= window.innerHeight &&
+    control.width > 0 &&
+    control.height > 0
+  );
+}
+
 const MOCK_PROVIDER_LABEL = "Mock Load Test";
 
 test.describe("Agent profiles settings", () => {
+  test("hides unused models across reopen and search while retaining the selected model", async ({
+    page,
+  }, testInfo) => {
+    const session = await seedMockAgentWorkspace({
+      repoPrefix: "model-visibility-",
+      title: "Model visibility",
+      model: "ten-second-stream",
+    });
+    try {
+      await openAgentRoute(page, session);
+      await openModelPicker(page);
+      const picker = page.getByTestId("combobox-desktop-container");
+      const search = picker.getByTestId(/^model-search(?:-all)?-input$/);
+      const settings = page.getByTestId("provider-settings-sheet");
+      await page.getByTestId("selector-header-settings-mock").click();
+      await expect(settings).toBeVisible();
+      await settings.getByTestId("provider-settings-search").fill("one-minute-stream");
+      const unused = settings.getByTestId("model-visibility-one-minute-stream");
+      await expect(unused).toBeChecked();
+      await unused.click();
+      await expect(unused).not.toBeChecked();
+      await settings.getByTestId("provider-settings-search").fill("ten-second-stream");
+      const selected = settings.getByTestId("model-visibility-ten-second-stream");
+      await expect(selected).toBeVisible();
+      await selected.click();
+      await expect(selected).not.toBeChecked();
+      await page.screenshot({ path: testInfo.outputPath("model-settings-hidden.png") });
+      await page.setViewportSize({ width: 390, height: 844 });
+      const phoneSelected = page.getByRole("switch", {
+        name: "Show Ten second stream in model pickers",
+        exact: true,
+      });
+      await expect(phoneSelected).toBeVisible();
+      await expect.poll(() => phoneSelected.evaluate(modelControlFitsViewport)).toBe(true);
+      await page.screenshot({ path: testInfo.outputPath("model-settings-phone.png") });
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await expect(selected).toBeVisible();
+      await settings.getByLabel("Close", { exact: true }).click();
+      await expect(settings).not.toBeVisible();
+      await closeModelPicker(page);
+      await openModelPicker(page);
+      await search.fill("one-minute-stream");
+      await expect(picker.getByText("No models match your search", { exact: true })).toBeVisible();
+      await expect(picker.getByTestId("model-row-mock-one-minute-stream")).toHaveCount(0);
+      await search.fill("ten-second-stream");
+      await expect(picker.getByTestId("model-row-mock-ten-second-stream")).toBeVisible();
+      await page.getByTestId("selector-header-settings-mock").click();
+      await expect(settings).toBeVisible();
+      await settings.getByTestId("provider-settings-search").fill("one-minute-stream");
+      await expect(unused).not.toBeChecked();
+      await unused.click();
+      await expect(unused).toBeChecked();
+      await settings.getByLabel("Close", { exact: true }).click();
+      await expect(settings).not.toBeVisible();
+      await search.fill("one-minute-stream");
+      await expect(picker.getByTestId("model-row-mock-one-minute-stream")).toBeVisible();
+    } finally {
+      await session.cleanup();
+    }
+  });
+
   test("legacy model favourites migrate into provider-and-model-only host profiles", async ({
     page,
   }) => {

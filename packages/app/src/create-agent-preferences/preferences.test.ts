@@ -5,6 +5,7 @@ import {
   mergeCreateAgentSelectionPreferences,
   mergeProviderPreferences,
   parseFormPreferences,
+  setModelHidden,
 } from "./preferences";
 import { FakeCreateAgentPreferenceStorage } from "./test-utils/fake-preference-storage";
 
@@ -329,5 +330,41 @@ describe("create agent preferences", () => {
 
   it("rejects an unknown launch target kind as invalid stored preferences", () => {
     expect(parseFormPreferences({ launchTarget: { kind: "shell" } })).toEqual({});
+  });
+});
+
+describe("per-host model visibility preferences", () => {
+  it("round-trips optional model IDs and preserves other hosts/providers and existing choices", () => {
+    const preferences = {
+      provider: "pi",
+      hiddenModelIds: {
+        hostA: { pi: ["anthropic/sonnet", ""], codex: ["gpt"] },
+        hostB: { pi: ["other"] },
+      },
+    };
+    const hidden = setModelHidden({
+      preferences,
+      serverId: "hostA",
+      provider: "pi",
+      modelId: "new",
+      hidden: true,
+    });
+    expect(parseFormPreferences(JSON.parse(JSON.stringify(hidden)))).toEqual({
+      ...preferences,
+      hiddenModelIds: {
+        ...preferences.hiddenModelIds,
+        hostA: { pi: ["anthropic/sonnet", "", "new"], codex: ["gpt"] },
+      },
+    });
+    expect(
+      setModelHidden({
+        preferences: hidden,
+        serverId: "hostA",
+        provider: "pi",
+        modelId: "new",
+        hidden: false,
+      }),
+    ).toEqual(preferences);
+    expect(parseFormPreferences({ provider: "pi" })).toEqual({ provider: "pi" });
   });
 });

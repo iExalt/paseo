@@ -3210,6 +3210,7 @@ export const fr: TranslationResources = {
         add: "Ajouter",
         adding: "Ajout…",
         failedToSave: "Impossible d’enregistrer le modèle",
+        showInPicker: "Afficher {{model}} dans les sélecteurs de modèles",
         removeModel: "Supprimer {{id}}",
         searchPlaceholder: "Rechercher des modèles",
         loading: "Chargement des modèles…",
