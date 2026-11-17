@@ -35,6 +35,9 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { Shortcut } from "@/components/ui/shortcut";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
+import { useActiveWorkspaceSelection } from "@/stores/navigation-active-workspace-store";
+import { useWorkspaceFields } from "@/stores/session-store-hooks";
 import { OpenInFileManagerMenuItem } from "@/workspace/open-in-file-manager/menu-item";
 import { resolveSidebarWorkspaceAccessibilityLabel } from "@/components/sidebar/sidebar-workspace-title";
 import { bySizing } from "@/components/ui/control-geometry";
@@ -164,6 +167,17 @@ function WorkspaceMenuItem({
   return <DropdownMenuItem {...props}>{children}</DropdownMenuItem>;
 }
 
+function usePinShortcutKeys(serverId: string | undefined, workspaceId: string | undefined) {
+  const selection = useActiveWorkspaceSelection();
+  const activeWorkspaceId = useWorkspaceFields(
+    selection?.serverId ?? null,
+    selection?.workspaceId ?? null,
+    (workspace) => workspace.id,
+  );
+  const keys = useShortcutKeys("pin-workspace");
+  return selection?.serverId === serverId && activeWorkspaceId === workspaceId ? keys : null;
+}
+
 function SidebarWorkspaceMenuItems({
   surface,
   workspaceKey,
@@ -184,6 +198,11 @@ function SidebarWorkspaceMenuItems({
   openInFileManagerPath,
 }: SidebarWorkspaceMenuItemsProps & { surface: MenuSurface }): ReactNode {
   const { t } = useTranslation();
+  const pinShortcutKeys = usePinShortcutKeys(serverId, workspaceId);
+  const pinTrailing = useMemo(
+    () => (pinShortcutKeys ? <Shortcut chord={pinShortcutKeys} /> : null),
+    [pinShortcutKeys],
+  );
   const archiveTrailing = useMemo(
     () => (archiveShortcutKeys ? <Shortcut chord={archiveShortcutKeys} /> : null),
     [archiveShortcutKeys],
@@ -265,6 +284,7 @@ function SidebarWorkspaceMenuItems({
           surface={surface}
           testID={`sidebar-workspace-menu-pin-${workspaceKey}`}
           leading={isPinned ? unpinLeadingIcon : pinLeadingIcon}
+          trailing={pinTrailing}
           onSelect={onTogglePin}
         >
           {isPinned ? t("sidebar.workspace.actions.unpin") : t("sidebar.workspace.actions.pin")}

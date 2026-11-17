@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { View } from "react-native";
 import { Activity, CircleHelp, Gift, Keyboard } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
@@ -13,6 +13,8 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
+import { Shortcut } from "@/components/ui/shortcut";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { SidebarFooterMenuTrigger } from "./sidebar-footer-menu-trigger";
 import { useAppDiagnosticStore } from "@/diagnostics/store";
 import { useHardwareKeyboardPresent } from "@/keyboard";
@@ -97,6 +99,11 @@ export function SidebarHelpMenu() {
 export function SidebarHelpMenuItems() {
   const { t } = useTranslation();
   const shortcutsAvailable = useHardwareKeyboardPresent();
+  const shortcutKeys = useShortcutKeys("show-shortcuts");
+  const shortcutTrailing = useMemo(
+    () => (shortcutKeys ? <Shortcut chord={shortcutKeys} /> : null),
+    [shortcutKeys],
+  );
   const openAppDiagnostic = useAppDiagnosticStore((state) => state.open);
   const setShortcutsDialogOpen = useKeyboardShortcutsStore((state) => state.setShortcutsDialogOpen);
   const version = formatVersionWithPrefix(resolveAppVersion());
@@ -121,6 +128,7 @@ export function SidebarHelpMenuItems() {
         <DropdownMenuItem
           testID="sidebar-help-shortcuts"
           leading={shortcutsLeadingIcon}
+          trailing={shortcutTrailing}
           onSelect={openKeyboardShortcuts}
         >
           {t("sidebar.help.shortcuts")}

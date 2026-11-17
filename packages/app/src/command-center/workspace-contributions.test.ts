@@ -430,4 +430,33 @@ describe("workspace command center contributions", () => {
       { name: "urgent", assigned: true },
     ]);
   });
+  it("renders each pane focus and move shortcut in its existing command row", () => {
+    const fixture = source({ primary: null, secondary: [], menu: [] });
+    fixture.value.shortcuts = {
+      focusPaneLeft: [["mod", "1"]],
+      focusPaneRight: [["mod", "2"]],
+      focusPaneUp: [["mod", "3"]],
+      focusPaneDown: [["mod", "4"]],
+      moveTabLeft: [["mod", "5"]],
+      moveTabRight: [["mod", "6"]],
+      moveTabUp: [["mod", "7"]],
+      moveTabDown: [["mod", "8"]],
+    };
+    const contributions = buildWorkspaceCommandCenterContributions(fixture.value);
+    const expected = [
+      ["pane:focus-left", fixture.value.shortcuts.focusPaneLeft],
+      ["pane:focus-right", fixture.value.shortcuts.focusPaneRight],
+      ["pane:focus-up", fixture.value.shortcuts.focusPaneUp],
+      ["pane:focus-down", fixture.value.shortcuts.focusPaneDown],
+      ["pane:move-tab-left", fixture.value.shortcuts.moveTabLeft],
+      ["pane:move-tab-right", fixture.value.shortcuts.moveTabRight],
+      ["pane:move-tab-up", fixture.value.shortcuts.moveTabUp],
+      ["pane:move-tab-down", fixture.value.shortcuts.moveTabDown],
+    ] as const;
+    for (const [id, shortcutKeys] of expected) {
+      expect(contributions.find((item) => item.id === id)?.presentation).toMatchObject({
+        shortcutKeys,
+      });
+    }
+  });
 });
