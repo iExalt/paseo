@@ -6,21 +6,32 @@ export function shouldRestoreComposerForRewindMode(mode: RewindMode): boolean {
 }
 
 /**
+ * Owned-subscription daemons send `agent.timeline.replacement` to every modern client,
+ * the rewinding one included.
+ */
+export function daemonSendsRewindReplacement(
+  features: { ownedSubscriptions?: boolean } | null | undefined,
+): boolean {
+  return features?.ownedSubscriptions === true;
+}
+
+/**
  * Once the daemon accepts a conversation rewind, the rewound message exists only in
  * `rewoundText`, so the composer gets it back even when the timeline refresh fails.
- * The rewind's own timeline reset starts a newer request that supersedes the refresh;
- * that newer request delivers the rewound timeline, so supersession is not an error.
+ * Omit `refreshTimeline` when the daemon pushes `agent.timeline.replacement` to the
+ * rewinding client; its handler fetches the rewound timeline. A superseded refresh
+ * lost a race with that fetch, which delivers the same timeline, so it is not an error.
  */
 export async function runRewind(input: {
   mode: RewindMode;
   rewind: () => Promise<void>;
-  refreshTimeline: () => Promise<unknown>;
+  refreshTimeline?: () => Promise<unknown>;
   restoreComposer: () => void;
 }): Promise<void> {
   await input.rewind();
   if (!shouldRestoreComposerForRewindMode(input.mode)) return;
   try {
-    await input.refreshTimeline();
+    await input.refreshTimeline?.();
   } catch (error) {
     if (!(error instanceof TimelineRequestSupersededError)) throw error;
   } finally {

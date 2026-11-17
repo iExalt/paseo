@@ -1,7 +1,11 @@
 import { describe, expect, test } from "vitest";
 import { restoreComposerTextIfEmpty } from "./composer-restore";
 import { TimelineRequestSupersededError } from "@/timeline/timeline-request";
-import { runRewind, shouldRestoreComposerForRewindMode } from "./rewind-mode";
+import {
+  daemonSendsRewindReplacement,
+  runRewind,
+  shouldRestoreComposerForRewindMode,
+} from "./rewind-mode";
 
 describe("restoreComposerTextIfEmpty", () => {
   test("restores the rewound message when the composer is empty", () => {
@@ -82,5 +86,23 @@ describe("runRewind", () => {
     await result;
     expect(refreshed).toBe(false);
     expect(restored).toEqual([]);
+  });
+
+  test("restores the rewound message without a refresh when the daemon pushes the replacement", async () => {
+    const restored: string[] = [];
+    await runRewind({
+      mode: "conversation",
+      rewind: async () => {},
+      restoreComposer: () => restored.push("rewound message"),
+    });
+    expect(restored).toEqual(["rewound message"]);
+  });
+});
+
+describe("daemonSendsRewindReplacement", () => {
+  test("only owned-subscription daemons push the replacement to the rewinding client", () => {
+    expect(daemonSendsRewindReplacement({ ownedSubscriptions: true })).toBe(true);
+    expect(daemonSendsRewindReplacement({})).toBe(false);
+    expect(daemonSendsRewindReplacement(undefined)).toBe(false);
   });
 });
