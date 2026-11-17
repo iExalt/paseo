@@ -36,8 +36,6 @@ interface NotificationOpenRouterDeps {
 
 export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
   const handledIds = new Set<string>();
-  let launchTaken = false;
-  let liveTapReceived = false;
   let pendingTap = 0;
   let cancelPreparation: (() => void) | undefined;
   async function receive(tap: NotificationTap) {
@@ -72,22 +70,27 @@ export function createNotificationOpenRouter(deps: NotificationOpenRouterDeps) {
   }
   return {
     start() {
+      let active = true;
+      let liveTapReceived = false;
       const unsubscribe = deps.source.subscribe((tap) => {
+        if (!active || handledIds.has(tap.id)) return;
         liveTapReceived = true;
         void receive(tap);
       });
-      if (!launchTaken) {
-        launchTaken = true;
-        void deps.source.takeLaunchTap().then((tap) => {
-          if (tap && liveTapReceived && !handledIds.has(tap.id)) {
-            handledIds.add(tap.id);
-            deps.source.acknowledge(tap);
-            return;
-          }
-          return tap ? receive(tap) : undefined;
-        });
-      }
-      return unsubscribe;
+      // Android can recreate its Activity in this JS context, so recover each mount.
+      void deps.source.takeLaunchTap().then((tap) => {
+        if (!active) return;
+        if (tap && liveTapReceived && !handledIds.has(tap.id)) {
+          handledIds.add(tap.id);
+          deps.source.acknowledge(tap);
+          return;
+        }
+        return tap ? receive(tap) : undefined;
+      });
+      return () => {
+        active = false;
+        unsubscribe();
+      };
     },
   };
 }
