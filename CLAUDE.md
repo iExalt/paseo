@@ -139,6 +139,7 @@ upstream's npm, EAS and store process; never follow or run them in the fork.
 - **NEVER assume a timeout means the service needs restarting** — timeouts can be transient.
 - **NEVER add auth checks to tests** — agent providers handle their own auth.
 - **Before changing app routes, startup routing, remembered workspace restore, or active workspace selection, read [docs/upstream/expo-router.md](docs/upstream/expo-router.md).**
+- **Develop in a disposable dev instance, not on the Mac.** Create the worktree, install dependencies and run checks there, even for a small fix.
 - **NEVER run the full test suite locally.** The test suites are heavy and will freeze the machine, especially if multiple agents run them in parallel. Rules:
   - Run only the specific test file you changed: `npx vitest run <file>`
   - Never run `npm run test` for an entire workspace unless explicitly asked.
