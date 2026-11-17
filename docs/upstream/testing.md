@@ -183,10 +183,25 @@ Codex MultiAgentV2 real tests use local Codex authentication rather than the Ope
 
 Test suites in this repo are heavy. Running them in bulk freezes the machine, especially with multiple agents in parallel.
 
-- Run only the file you changed: `npx vitest run <path> --bail=1`
+Run only the file you changed. From the repository root, use the app workspace for an app unit test; its path is relative to `packages/app`:
+
+```bash
+npm run test --workspace=@getpaseo/app -- src/provider-selection/provider-selection.test.ts --project unit --bail=1
+```
+
+The app runner loads its Vitest plugins, including lazy i18n resource bundling. Running an app test through the root Vitest config bypasses those plugins and can fail loading locale resources.
+
+For other packages, pass the repository-relative test path to the root runner:
+
+```bash
+npx vitest run <path> --bail=1
+```
+
+Build workspace dependencies first in a fresh checkout; see [development setup](development.md#built-workspace-packages).
+
 - When changing CLI registration, update and run `packages/cli/src/cli-surface.test.ts` before pushing.
 - Never run `npm run test` for a whole workspace unless asked.
-- For a broad sweep, redirect to a file and read it after: `npx vitest run <path> --bail=1 > /tmp/test-output.txt 2>&1`
+- For a broad sweep, append `> /tmp/test-output.txt 2>&1` to the appropriate command above and read the file afterward.
 - Never re-run a suite another agent already reported green.
 - For full-suite confidence, push to CI and check GitHub Actions.
 - Never run the full Playwright E2E suite locally — defer whole-suite verification to CI. Targeted Playwright specs are allowed when you changed or need to prove that specific flow.
