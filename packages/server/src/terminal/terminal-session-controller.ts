@@ -1048,10 +1048,9 @@ export class TerminalSessionController {
           // past the byte threshold. outputBytesSinceSnapshot keeps accumulating
           // in that case — it's harmless, it only gates the snapshot decision at
           // the instant backpressure appears, and trySendSnapshot resets it to 0.
-          // A null reading means the transport exposes no backpressure signal
-          // (e.g. the multiplexed relay socket); there we can't tell a slow client
-          // from a fast one, so fall back unconditionally at the byte threshold to
-          // keep a slow relay client from falling unboundedly behind.
+          // A null reading means the transport exposes no backpressure signal.
+          // Fall back at the byte threshold so an unmeasured slow client cannot
+          // fall unboundedly behind.
           const clientBufferedAmount = this.getClientBufferedAmount(owner.source);
           if (
             !activeStream.exiting &&
