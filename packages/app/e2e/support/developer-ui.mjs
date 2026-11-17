@@ -1,4 +1,4 @@
-const HIDE_DEVELOPER_TOASTS = "#error-toast { display: none !important; }";
+const HIDE_DEVELOPER_TOASTS = "#error-toast, .__expo_fast_refresh { display: none !important; }";
 
 /** @param {import('@playwright/test').Page} page */
 export async function hideDeveloperToasts(page) {
