@@ -134,3 +134,26 @@ export function applySlashCommandReplacement(input: ApplySlashCommandReplacement
   const replacement = `${before}/${input.commandName}${after}`;
   return input.command.end === input.text.length ? `${replacement} ` : replacement;
 }
+
+export function findActiveSkillMention(
+  input: FindActiveSlashCommandInput,
+): SlashCommandRange | null {
+  const cursor = Math.max(0, Math.min(input.cursorIndex, input.text.length));
+  const beforeCursor = input.text.slice(0, cursor);
+  const start = beforeCursor.lastIndexOf("$");
+  if (start < 0 || (start > 0 && !/\s/.test(input.text[start - 1]))) return null;
+  const query = beforeCursor.slice(start + 1);
+  // Uppercase-leading tokens belong to shell variables, including while the user types them.
+  if (query !== "" && !/^[a-z][a-zA-Z0-9:_-]*$/.test(query)) return null;
+  return { start, end: cursor, query, position: start === 0 ? "start" : "inline" };
+}
+
+export function applySkillMentionReplacement(
+  input: ApplySlashCommandReplacementInput & { provider: string | undefined },
+): string {
+  if (input.provider !== "codex") return applySlashCommandReplacement(input);
+  const before = input.text.slice(0, input.command.start);
+  const after = input.text.slice(input.command.end);
+  const replacement = `${before}$${input.commandName}${after}`;
+  return input.command.end === input.text.length ? `${replacement} ` : replacement;
+}
