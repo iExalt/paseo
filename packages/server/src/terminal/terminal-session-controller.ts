@@ -103,7 +103,7 @@ export interface TerminalSessionControllerOptions {
   // constant 0 (no backpressure signal) so callers without a transport always
   // stream.
   // Bytes queued on the client transport but not yet sent, or null when the
-  // transport exposes no backpressure signal (e.g. the multiplexed relay socket).
+  // transport exposes no backpressure signal.
   getClientBufferedAmount?: (source: object) => number | null;
 }
 
