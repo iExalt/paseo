@@ -1,3 +1,5 @@
+import { writeFile } from "node:fs/promises";
+import type { Locator } from "@playwright/test";
 import { expect, test, type Page } from "../support/fixtures";
 
 // "Toggle command center" recorded as a two-key sequence. Both platform
@@ -112,4 +114,85 @@ test.describe("Multi-key shortcut sequences", () => {
 
     await expectCommandCenterOpen(page);
   });
+});
+
+async function readShortcutContrast(locator: Locator) {
+  return locator.evaluate((element) => {
+    const rgba = (value: string) => {
+      const values = value.match(/[\d.]+/g)!.map(Number);
+      return [values[0], values[1], values[2], values[3] ?? 1];
+    };
+    const blend = (base: number[], fill: number[], opacity = 1) => {
+      const alpha = fill[3] * opacity;
+      return fill.slice(0, 3).map((value, index) => value * alpha + base[index] * (1 - alpha));
+    };
+    const ancestors: Element[] = [];
+    for (let node = element.parentElement; node; node = node.parentElement) ancestors.unshift(node);
+    let background = [255, 255, 255];
+    for (const node of ancestors)
+      background = blend(background, rgba(getComputedStyle(node).backgroundColor));
+    const fill = element.parentElement?.firstElementChild;
+    if (fill && fill !== element) {
+      const style = getComputedStyle(fill);
+      background = blend(background, rgba(style.backgroundColor), Number(style.opacity));
+    }
+    const foreground = rgba(getComputedStyle(element).color).slice(0, 3);
+    const luminance = (color: number[]) => {
+      const channels = color
+        .map((value) => value / 255)
+        .map((value) => (value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
+      return channels[0] * 0.2126 + channels[1] * 0.7152 + channels[2] * 0.0722;
+    };
+    const foregroundLuminance = luminance(foreground),
+      backgroundLuminance = luminance(background);
+    return {
+      foreground,
+      background,
+      dark: backgroundLuminance < 0.5,
+      ratio:
+        (Math.max(foregroundLuminance, backgroundLuminance) + 0.05) /
+        (Math.min(foregroundLuminance, backgroundLuminance) + 0.05),
+    };
+  });
+}
+
+test("shortcut badge contrast and developer chrome meet the capture contract", async ({
+  page,
+  withWorkspace,
+}, testInfo) => {
+  const workspace = await withWorkspace({ prefix: "shortcut-contrast-" });
+  await workspace.navigateTo();
+  await page.evaluate(() => {
+    const indicator = document.createElement("div");
+    indicator.className = "__expo_fast_refresh";
+    indicator.dataset.testid = "fast-refresh-capture-fixture";
+    indicator.textContent = "Fast refresh";
+    document.body.append(indicator);
+  });
+  const badge = page
+    .getByTestId("sidebar-search")
+    .locator("..")
+    .getByText(process.platform === "darwin" ? "⌘K" : "Ctrl+K", { exact: true });
+  for (const theme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme: theme });
+    await page.keyboard.down("Alt");
+    try {
+      await expect(badge).toBeVisible();
+      await expect
+        .poll(async () => (await readShortcutContrast(badge)).dark)
+        .toBe(theme === "dark");
+      const metrics = await readShortcutContrast(badge);
+      await writeFile(
+        testInfo.outputPath(`shortcut-contrast-${theme}.json`),
+        JSON.stringify(metrics, null, 2),
+      );
+      await page.screenshot({ path: testInfo.outputPath(`shortcut-contrast-${theme}.png`) });
+      expect(metrics.ratio, JSON.stringify(metrics)).toBeGreaterThanOrEqual(4.5);
+      await expect(page.getByTestId("fast-refresh-capture-fixture")).toHaveCount(1);
+      await expect(page.getByTestId("fast-refresh-capture-fixture")).toBeHidden();
+    } finally {
+      await page.keyboard.up("Alt");
+    }
+    await expect(badge).toBeHidden();
+  }
 });
