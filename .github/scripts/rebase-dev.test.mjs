@@ -618,30 +618,58 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
   );
   assert.equal("GIT_COMMITTER_NAME" in rebaseStep.env, false);
   assert.equal("GIT_COMMITTER_EMAIL" in rebaseStep.env, false);
-  const steps = workflow.jobs.rebase.steps;
+  const captureSteps = workflow.jobs.rebase.steps;
+  const bundle = captureSteps.find((step) => step.id === "bundle");
+  assert.match(bundle.run, /ci-routine\.mjs --matrix/);
+  assert.doesNotMatch(bundle.run, /--changed-from/);
+  assert.match(bundle.run, /git bundle create/);
+  assert.match(bundle.run, /refs\/codex\/snapshot\/resolutions/);
+  const artifact = captureSteps.find((step) => /upload-artifact@/.test(step.uses ?? ""));
+  assert.equal(artifact.with.name, "rebased-${{ github.run_attempt }}");
+  assert.equal(artifact.with.path, "${{ runner.temp }}/rebased.bundle");
+  assert.equal(artifact.with["if-no-files-found"], "error");
+  assert.equal(workflow.jobs.routine.needs, "rebase");
+  assert.equal(
+    workflow.jobs.routine.strategy.matrix,
+    "${{ fromJSON(needs.rebase.outputs.matrix) }}",
+  );
+  const lane = workflow.jobs.routine.steps.at(-1);
+  assert.equal(lane.run, "node .github/scripts/rebase-dev.mjs validate");
+  assert.equal(lane.env.ROUTINE_LANE, "${{ matrix.lane }}");
+  assert.equal(lane.env.TESTED_SHA, "${{ needs.rebase.outputs.candidate-sha }}");
+  assert.deepEqual(workflow.jobs.validate.needs, ["rebase", "routine"]);
+  assert.equal(workflow.jobs.validate.if, undefined, "default success() gates every dependency");
+  const steps = workflow.jobs.validate.steps;
   const publishIndex = steps.findIndex(
     (step) => step.name === "Publish backup and rebased dev atomically",
   );
-  const rebaseIndex = steps.indexOf(rebaseStep);
-  const setupIndex = steps.findIndex((step) => step.name === "Configure pinned npm installation");
-  const installIndex = steps.findIndex((step) => step.run === "time npm ci --prefer-offline");
   const validateIndex = steps.findIndex((step) => step.id === "validate");
-  assert.ok(rebaseIndex < setupIndex && setupIndex < installIndex);
-  assert.ok(installIndex < validateIndex && validateIndex < publishIndex);
-  assert.equal(steps[validateIndex].run, "node .github/scripts/rebase-dev.mjs validate");
+  assert.ok(validateIndex < publishIndex);
+  assert.equal(steps[validateIndex].run, "node .github/scripts/rebase-dev.mjs check-tree");
+  assert.equal(steps[validateIndex].env.TESTED_SHA, "${{ needs.rebase.outputs.candidate-sha }}");
   assert.equal(steps[publishIndex].env.TESTED_SHA, "${{ steps.validate.outputs.tested-sha }}");
   assert.equal(steps[publishIndex].env.GH_TOKEN, "${{ steps.token.outputs.token }}");
   const tokenStep = steps[publishIndex - 1];
   assert.equal(tokenStep.id, "token");
   assert.match(tokenStep.uses, /^actions\/create-github-app-token@/);
   assert.equal(tokenStep.with["permission-workflows"], "write");
-  assert.equal(steps[0].with["persist-credentials"], false);
-  assert.equal(workflow.jobs.rebase["runs-on"], "ubuntu-26.04");
-  for (const [index, step] of steps.entries()) {
-    if (index !== rebaseIndex) assert.equal(step.env?.PASEO_REBASE_SSH_SIGNING_KEY, undefined);
-    if (index !== publishIndex) assert.equal(step.env?.GH_TOKEN, undefined);
-    assert.doesNotMatch(step.uses ?? "", /actions\/(?:cache|upload-artifact)/);
-    assert.doesNotMatch(step.run ?? "", /npm run (?:build:server|typecheck|test)/);
+  for (const job of [workflow.jobs.routine, workflow.jobs.validate]) {
+    assert.deepEqual(job.permissions, { contents: "read" });
+    assert.equal(job.steps[0].with.ref, "${{ needs.rebase.outputs.dev-sha }}");
+    assert.equal(job.steps[0].with["persist-credentials"], false);
+    const download = job.steps.find((step) => /download-artifact@/.test(step.uses ?? ""));
+    assert.equal(download.with.name, artifact.with.name);
+    assert.equal(download.with.path, "${{ runner.temp }}/rebase-input");
+    const restore = job.steps.find((step) => step.name === "Restore the captured candidate");
+    assert.match(restore.run, /git checkout --detach/);
+    assert.equal(restore.env.CANDIDATE_SHA, "${{ needs.rebase.outputs.candidate-sha }}");
+  }
+  for (const job of Object.values(workflow.jobs)) {
+    for (const step of job.steps) {
+      if (step !== rebaseStep) assert.equal(step.env?.PASEO_REBASE_SSH_SIGNING_KEY, undefined);
+      if (step !== steps[publishIndex]) assert.equal(step.env?.GH_TOKEN, undefined);
+      assert.doesNotMatch(step.run ?? "", /npm run (?:build:server|typecheck|test)/);
+    }
   }
   assert.match(steps[publishIndex].run, /::add-mask::/);
   assert.match(steps[publishIndex].run, /GIT_CONFIG_COUNT=1/);
@@ -649,7 +677,7 @@ test("workflow is manual, actor/repository/ref guarded, and gates publication on
     steps[publishIndex].run,
     /GIT_CONFIG_KEY_0=http\.https:\/\/github\.com\/\.extraheader/,
   );
-  const diagnostics = steps.at(-1);
+  const diagnostics = captureSteps.at(-1);
   assert.equal(diagnostics.if, "failure()");
   assert.match(diagnostics.run, /head -c 16000/);
   assert.match(steps[publishIndex].run, /rebase-dev\.mjs publish/);
@@ -662,7 +690,7 @@ test("validate-only skips publication and never requests a write-capable token",
   const workflow = yaml.load(
     readFileSync(new URL("../workflows/rebase-dev.yml", import.meta.url), "utf8"),
   );
-  const steps = workflow.jobs.rebase.steps;
+  const steps = workflow.jobs.validate.steps;
   const guarded = steps.filter((step) => step.if === "${{ !inputs.validate_only }}");
   assert.deepEqual(
     guarded.map((step) => step.id ?? step.name),
@@ -676,7 +704,7 @@ test("validate-only skips publication and never requests a write-capable token",
   assert.equal(token.with["permission-contents"], "write");
   assert.equal(token.with["permission-workflows"], "write");
   assert.deepEqual(workflow.permissions, {});
-  assert.deepEqual(workflow.jobs.rebase.permissions, { contents: "read" });
+  assert.deepEqual(workflow.jobs.validate.permissions, { contents: "read" });
   assert.deepEqual(
     steps.filter((step) => /create-github-app-token/.test(step.uses ?? "")),
     [token],
@@ -1315,13 +1343,13 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
 `,
   );
   chmodSync(fakeMise, 0o755);
-  const invoke = (mode = "success") => {
+  const invoke = (mode = "success", extraEnv = {}, subcommand = "validate") => {
     rmSync(output, { force: true });
     rmSync(summary, { force: true });
     rmSync(invocation, { force: true });
     return spawnSync(
       process.execPath,
-      [fileURLToPath(new URL("./rebase-dev.mjs", import.meta.url)), "validate"],
+      [fileURLToPath(new URL("./rebase-dev.mjs", import.meta.url)), subcommand],
       {
         cwd: repositoryPath,
         encoding: "utf8",
@@ -1332,6 +1360,10 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
           GITHUB_STEP_SUMMARY: summary,
           FIXTURE_INVOCATION: invocation,
           FIXTURE_MODE: mode,
+          // The parent quality lane also runs this CLI fixture.
+          ROUTINE_LANE: undefined,
+          TESTED_SHA: undefined,
+          ...extraEnv,
         },
       },
     );
@@ -1347,13 +1379,31 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
     readFileSync(summary, "utf8"),
     `\n## Routine validation passed\n\nTested SHA: ${originalSha}\n\nTested tree: ${git(repositoryPath, "rev-parse", `${originalSha}^{tree}`)}\n`,
   );
+  assert.equal(invoke("success", { ROUTINE_LANE: "quality", TESTED_SHA: originalSha }).status, 0);
+  assert.deepEqual(JSON.parse(readFileSync(invocation, "utf8")).args, [
+    "run",
+    "--skip-tools",
+    "ci:routine",
+    "--lane",
+    "quality",
+  ]);
+  const wrongHead = invoke("success", { ROUTINE_LANE: "quality", TESTED_SHA: "f".repeat(40) });
+  assert.equal(wrongHead.status, 1);
+  assert.match(wrongHead.stderr, /HEAD differs/);
+  assert.equal(existsSync(invocation), false, "wrong candidate fails before running checks");
+  assert.equal(existsSync(output), false);
+  assert.equal(invoke("success", { TESTED_SHA: originalSha }, "check-tree").status, 0);
+  assert.equal(existsSync(invocation), false, "final gate must not rerun routine");
+  assert.equal(readFileSync(output, "utf8"), `tested-sha=${originalSha}\n`);
+  assert.equal(invoke("success", { TESTED_SHA: "" }, "check-tree").status, 1);
+  assert.equal(existsSync(output), false);
   for (const [mode, error] of [
     ["fail", /Routine verification failed \(17\)/],
     ["dirty", /clean tracked/],
     ["override", /Local environment override/],
     ["move", /HEAD differs/],
   ]) {
-    const result = invoke(mode);
+    const result = invoke(mode, { ROUTINE_LANE: "quality", TESTED_SHA: originalSha });
     assert.equal(result.status, 1, result.stderr);
     assert.match(
       result.stdout,
@@ -1389,6 +1439,49 @@ if (process.env.FIXTURE_MODE === "move") cp.execFileSync("git", ["-c", "commit.g
     assert.equal(existsSync(override), true);
     unlinkSync(override);
   }
+  const workflow = yaml.load(
+    readFileSync(new URL("../workflows/rebase-dev.yml", import.meta.url), "utf8"),
+  );
+  const bundleStep = workflow.jobs.rebase.steps.find((step) => step.id === "bundle");
+  const restoreStep = workflow.jobs.routine.steps.find(
+    (step) => step.name === "Restore the captured candidate",
+  );
+  const transfer = join(root, "bundle-transfer");
+  mkdirSync(join(transfer, "rebase-input"), { recursive: true });
+  writeFileSync(join(repositoryPath, "candidate.txt"), "candidate only\n");
+  commit(repositoryPath, "candidate for lane transfer");
+  const candidateSha = git(repositoryPath, "rev-parse", "HEAD");
+  git(repositoryPath, "tag", "candidate-tag");
+  execFileSync(
+    "bash",
+    ["-euc", bundleStep.run.slice(bundleStep.run.indexOf("git bundle create"))],
+    { cwd: repositoryPath, env: { ...process.env, RUNNER_TEMP: join(transfer, "rebase-input") } },
+  );
+  const receiver = join(root, "bundle-receiver");
+  initRepo(receiver);
+  execFileSync("bash", ["-euc", restoreStep.run], {
+    cwd: receiver,
+    env: { ...process.env, RUNNER_TEMP: transfer, CANDIDATE_SHA: candidateSha },
+  });
+  assert.equal(git(receiver, "rev-parse", "HEAD"), candidateSha);
+  assert.equal(
+    git(receiver, "rev-parse", "HEAD^{tree}"),
+    git(repositoryPath, "rev-parse", "HEAD^{tree}"),
+  );
+  for (const name of ["dev", "upstream", "resolutions"])
+    assert.equal(git(receiver, "rev-parse", `refs/codex/snapshot/${name}`), originalSha);
+  assert.equal(git(receiver, "rev-parse", "refs/tags/candidate-tag"), candidateSha);
+  await validateRebase({
+    repositoryPath: receiver,
+    expectedSha: candidateSha,
+    reportInputs: (inputs) =>
+      assert.deepEqual(inputs, {
+        dev: originalSha,
+        upstream: originalSha,
+        resolutions: originalSha,
+      }),
+    runChecks: async () => {},
+  });
 });
 
 test("ledger drops exact stable identities and preserves retained signatures and release mapping", async () => {
