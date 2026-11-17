@@ -3,13 +3,13 @@ import path from "node:path";
 import { createTestPaseoDaemon } from "./paseo-daemon.js";
 
 async function main(): Promise<void> {
-  const metroPort = process.env.E2E_METRO_PORT;
-  if (!metroPort) {
-    throw new Error("E2E_METRO_PORT is not set");
+  const webOrigin = process.env.E2E_WEB_ORIGIN;
+  if (!webOrigin) {
+    throw new Error("E2E_WEB_ORIGIN is not set");
   }
 
   const daemon = await createTestPaseoDaemon({
-    corsAllowedOrigins: [`http://localhost:${metroPort}`],
+    corsAllowedOrigins: [webOrigin],
     daemonVersion: "0.0.0",
     desktopManaged: process.env.E2E_DESKTOP_MANAGED === "1",
     daemonStatusRpcCapability: process.env.E2E_DAEMON_STATUS_RPC_CAPABILITY !== "0",
