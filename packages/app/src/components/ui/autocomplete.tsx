@@ -121,6 +121,7 @@ const AutocompleteRow = memo(function AutocompleteRow({
 
   return (
     <Pressable
+      accessibilityRole="button"
       onPress={handlePress}
       style={pressableStyle}
       // Name and description only; the hint and tag repeat what the name implies.
