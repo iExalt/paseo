@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.30.0](https://github.com/iExalt/paseo/compare/paseo-v0.29.1...paseo-v0.30.0) (2026-11-17)
+
+
+### Features
+
+* **app:** enable Android keyboard shortcut rebinding ([#538](https://github.com/iExalt/paseo/issues/538)) ([ff98fc4](https://github.com/iExalt/paseo/commit/ff98fc4a9d7751f001feb61898c4a66ee1055ede))
+* **app:** hide unused models in host pickers ([#527](https://github.com/iExalt/paseo/issues/527)) ([1fe1887](https://github.com/iExalt/paseo/commit/1fe188738deba1e0cd495dcfb428fc0f3371e48b))
+* **app:** reveal shortcuts beside controls on modifier hold ([#546](https://github.com/iExalt/paseo/issues/546)) ([acb4bf9](https://github.com/iExalt/paseo/commit/acb4bf9c38ad890e5ce8502f90c98cc16c09446e))
+* **app:** trigger skills autocomplete with dollar mentions ([#524](https://github.com/iExalt/paseo/issues/524)) ([6ed4974](https://github.com/iExalt/paseo/commit/6ed4974f5f79e0a0f1fcd727f7a68f40a9e5ee30))
+
+
+### Bug Fixes
+
+* **app:** expose autocomplete rows as buttons ([#530](https://github.com/iExalt/paseo/issues/530)) ([989b646](https://github.com/iExalt/paseo/commit/989b646b1b9c5329201257c7d0aa90c4213ce0bd))
+* **app:** improve shortcut badge contrast and hide refresh chrome ([#540](https://github.com/iExalt/paseo/issues/540)) ([6e7c49f](https://github.com/iExalt/paseo/commit/6e7c49f9b74733335eacd421f9debf1445589cde))
+* **app:** keep direct host actions above Android navigation ([#537](https://github.com/iExalt/paseo/issues/537)) ([8b2cbb1](https://github.com/iExalt/paseo/commit/8b2cbb1a3d186eba982276369952f942fa084acc))
+* **app:** keep the notification preview on screen while the chat list places its rows ([#541](https://github.com/iExalt/paseo/issues/541)) ([3389a0a](https://github.com/iExalt/paseo/commit/3389a0a84cf00a49db9badc4e7eb2e3ab475e9b4))
+* **app:** keep the rewound message when the timeline refresh is superseded ([#514](https://github.com/iExalt/paseo/issues/514)) ([d6bd219](https://github.com/iExalt/paseo/commit/d6bd2196a9b8a784ba145fd002228dc3b3195d17))
+* **app:** load the bundled terminal font on Android ([#512](https://github.com/iExalt/paseo/issues/512)) ([a9e22f8](https://github.com/iExalt/paseo/commit/a9e22f8dd9c7f046e9e67e852acfed0acd14db5e))
+* **app:** recover notification taps after Android Back ([#543](https://github.com/iExalt/paseo/issues/543)) ([3306f55](https://github.com/iExalt/paseo/commit/3306f558d721a6ab83f54b97ba33ffa3f29d5262))
+* **app:** reveal existing shortcut hints on modifier hold ([#536](https://github.com/iExalt/paseo/issues/536)) ([fcb581a](https://github.com/iExalt/paseo/commit/fcb581a82e08e3623aae7fc7563284707781dba3))
+* **client:** replace a silent socket after one short check when a user is waiting ([#539](https://github.com/iExalt/paseo/issues/539)) ([da085b7](https://github.com/iExalt/paseo/commit/da085b7ed79982791376abe45d0537974491bbc9))
+* **codex:** route full-access commands through auto-review ([#518](https://github.com/iExalt/paseo/issues/518)) ([d64aec1](https://github.com/iExalt/paseo/commit/d64aec1def0a22f5c9726ac1c0c909829497d95a))
+* **rebase:** refuse stale inputs and incorporated targets ([#528](https://github.com/iExalt/paseo/issues/528)) ([4b0e43d](https://github.com/iExalt/paseo/commit/4b0e43d51b5f399e19e9431269b2295a60d9a1bd))
+* **schedules:** honor archive on finish in agent tool ([#522](https://github.com/iExalt/paseo/issues/522)) ([d718908](https://github.com/iExalt/paseo/commit/d718908e9c5caedf53219151240787f71712fa4e))
+
+
+### Performance Improvements
+
+* **app:** skip the rewind's own timeline refresh on owned-subscription daemons ([#516](https://github.com/iExalt/paseo/issues/516)) ([819b621](https://github.com/iExalt/paseo/commit/819b621f625c6bce5f52c4c08c05d8bb446ef07c))
+
 ## [0.29.1](https://github.com/iExalt/paseo/compare/paseo-v0.29.0...paseo-v0.29.1) (2026-11-16)
 
 
