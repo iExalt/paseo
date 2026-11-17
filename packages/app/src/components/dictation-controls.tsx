@@ -4,6 +4,9 @@ import { View, Text, Pressable } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { X, ArrowUp, RefreshCcw, Check, Mic, Pencil } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
+import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
+import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { VolumeMeter } from "./volume-meter";
 import { FOOTER_HEIGHT } from "@/constants/layout";
 import type { DictationStatus } from "@/hooks/use-dictation";
@@ -46,6 +49,8 @@ export function DictationControls({
 }: DictationControlsProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
+  const confirmKeys = useShortcutKeys("message-input-dictation-confirm-enter");
+  const { isActiveComposer } = useComposerKeyboardScope();
   const isFailed = status === "failed";
   const showActiveState = isRecording || isProcessing || isFailed;
   const actionsDisabled = isProcessing;
@@ -122,13 +127,18 @@ export function DictationControls({
             >
               <Check size={theme.iconSize.sm} color={theme.colors.foreground} />
             </Pressable>
-            <Pressable
-              onPress={onAcceptAndSend}
-              accessibilityLabel={t("message.dictation.insertAndSend")}
-              style={[styles.actionButton, styles.actionButtonConfirm]}
+            <Tooltip
+              heldShortcut={isActiveComposer ? confirmKeys : null}
+              heldTestID="dictation-confirm-shortcut-hint"
             >
-              <ArrowUp size={theme.iconSize.sm} color={theme.colors.surface0} />
-            </Pressable>
+              <TooltipTrigger
+                onPress={onAcceptAndSend}
+                accessibilityLabel={t("message.dictation.insertAndSend")}
+                style={[styles.actionButton, styles.actionButtonConfirm]}
+              >
+                <ArrowUp size={theme.iconSize.sm} color={theme.colors.surface0} />
+              </TooltipTrigger>
+            </Tooltip>
           </>
         ) : null}
       </View>
@@ -155,6 +165,9 @@ export function DictationOverlay({
 }: Omit<DictationControlsProps, "onStart" | "disabled" | "transcript"> & { errorText?: string }) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
+  const confirmKeys = useShortcutKeys("message-input-dictation-confirm-enter");
+  const cancelKeys = useShortcutKeys("agent-interrupt");
+  const { isActiveComposer } = useComposerKeyboardScope();
   const isFailed = status === "failed";
   const showActiveState = isRecording || isProcessing || isFailed;
   const actionsDisabled = isProcessing;
@@ -191,15 +204,22 @@ export function DictationOverlay({
 
   return (
     <View style={containerStyle}>
-      <Pressable
-        onPress={handleCancel}
-        disabled={actionsDisabled && !isFailed}
-        accessibilityRole="button"
-        accessibilityLabel={t("message.dictation.cancel")}
-        style={overlayCancelButtonStyle}
+      <Tooltip
+        heldShortcut={
+          isActiveComposer && isRecording && !actionsDisabled && !isFailed ? cancelKeys : null
+        }
+        heldTestID="dictation-cancel-shortcut-hint"
       >
-        <X size={theme.iconSize.lg} color={theme.colors.accentForeground} strokeWidth={2.5} />
-      </Pressable>
+        <TooltipTrigger
+          onPress={handleCancel}
+          disabled={actionsDisabled && !isFailed}
+          accessibilityRole="button"
+          accessibilityLabel={t("message.dictation.cancel")}
+          style={overlayCancelButtonStyle}
+        >
+          <X size={theme.iconSize.lg} color={theme.colors.accentForeground} strokeWidth={2.5} />
+        </TooltipTrigger>
+      </Tooltip>
 
       <View style={overlayStyles.centerContainer}>
         <View style={overlayStyles.meterRow}>
@@ -256,14 +276,19 @@ export function DictationOverlay({
                 strokeWidth={2.5}
               />
             </Pressable>
-            <Pressable
-              onPress={onAcceptAndSend}
-              accessibilityRole="button"
-              accessibilityLabel={t("message.dictation.insertAndSend")}
-              style={overlayConfirmButtonStyle}
+            <Tooltip
+              heldShortcut={isActiveComposer ? confirmKeys : null}
+              heldTestID="dictation-confirm-shortcut-hint"
             >
-              <ArrowUp size={theme.iconSize.lg} color={theme.colors.accent} strokeWidth={2.5} />
-            </Pressable>
+              <TooltipTrigger
+                onPress={onAcceptAndSend}
+                accessibilityRole="button"
+                accessibilityLabel={t("message.dictation.insertAndSend")}
+                style={overlayConfirmButtonStyle}
+              >
+                <ArrowUp size={theme.iconSize.lg} color={theme.colors.accent} strokeWidth={2.5} />
+              </TooltipTrigger>
+            </Tooltip>
           </>
         ) : null}
       </View>

@@ -12,18 +12,42 @@ import {
   useState,
   type PropsWithChildren,
   type ReactElement,
+  type RefObject,
 } from "react";
 import { createPortal } from "react-dom";
 import {
   Dimensions,
   Platform,
+  PixelRatio,
   Pressable,
   View,
+  useWindowDimensions,
   type PressableProps,
+  type LayoutChangeEvent,
+  type ScrollView,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { FadeIn, FadeOut } from "react-native-reanimated";
+import { FadeIn, FadeOut, useAnimatedReaction } from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
+import { Portal } from "@gorhom/portal";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardTranslateView, useKeyboardAnchor, useKeyboardShift } from "@/keyboard/shift";
+import {
+  measureFloatingPanelPortalHost,
+  useFloatingPanelPortalHostName,
+} from "./floating-panel-portal";
+import { useHardwareKeyboardPresent } from "@/keyboard";
+import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
+import { Shortcut } from "./shortcut";
+import { normalizeDisplayChord } from "./normalize-display-chord";
+import {
+  isAnchorVisible,
+  computePosition as computeAnchoredPosition,
+  sameMeasuredSize,
+  sameMeasuredRect,
+} from "./anchor";
+import type { ShortcutKey } from "@/utils/format-shortcut";
 import { StyleSheet } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { FloatingSurface } from "@/components/ui/floating";
@@ -42,7 +66,7 @@ interface Rect {
   height: number;
 }
 
-type TooltipTriggerElement = View | HTMLElement;
+type TooltipTriggerElement = View | ScrollView | HTMLElement;
 
 interface TooltipContextValue {
   open: boolean;
@@ -51,9 +75,19 @@ interface TooltipContextValue {
   enabled: boolean;
   openOnPress: boolean;
   delayDuration: number;
+  held: boolean;
+  onAnchorLayout: () => void;
 }
 
 const TooltipContext = createContext<TooltipContextValue | null>(null);
+const HintEnabledContext = createContext(true);
+export const ShortcutHintEnabledProvider = HintEnabledContext.Provider;
+const HintLayoutContext = createContext<string | number>(0);
+export const ShortcutHintLayoutProvider = HintLayoutContext.Provider;
+const HintBoundaryContext = createContext<RefObject<TooltipTriggerElement | null> | null>(null);
+export const ShortcutHintBoundaryProvider = HintBoundaryContext.Provider;
+const HintClipContext = createContext<RefObject<TooltipTriggerElement | null> | null>(null);
+export const ShortcutHintClipProvider = HintClipContext.Provider;
 
 function useTooltipContext(componentName: string): TooltipContextValue {
   const ctx = useContext(TooltipContext);
@@ -89,11 +123,11 @@ function isCallable(fn: unknown): fn is (...args: unknown[]) => void {
   return typeof fn === "function";
 }
 
-function composeEventHandlers(
+function composeEventHandlers<Event>(
   original: unknown,
-  injected: (event: unknown) => void,
-): (event: unknown) => void {
-  return (event: unknown) => {
+  injected: (event: Event) => void,
+): (event: Event) => void {
+  return (event: Event) => {
     if (isCallable(original)) {
       original(event);
     }
@@ -242,7 +276,17 @@ export function Tooltip({
   enabledOnDesktop = true,
   enabledOnMobile = false,
   children,
+  heldShortcut,
+  heldSide = "top",
+  heldOffset = 8,
+  heldHostName,
+  heldTestID,
 }: PropsWithChildren<{
+  heldShortcut?: ShortcutKey[][] | null;
+  heldSide?: Side;
+  heldOffset?: number;
+  heldHostName?: string;
+  heldTestID?: string;
   open?: boolean;
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -259,6 +303,15 @@ export function Tooltip({
 
   const isCompact = useIsCompactFormFactor();
   const active = useRetainedPanelActive();
+  const scopeEnabled = useContext(HintEnabledContext);
+  const showBadges = useShowShortcutBadges();
+  const hardwarePresent = useHardwareKeyboardPresent();
+  const heldChord = normalizeDisplayChord(heldShortcut ?? undefined);
+  const held = active && scopeEnabled && showBadges && hardwarePresent && Boolean(heldChord);
+  const [anchorVersion, setAnchorVersion] = useState(0);
+  const onAnchorLayout = useCallback(() => {
+    if (held) setAnchorVersion((version) => version + 1);
+  }, [held]);
   const opensOnPress = isNative || isCompact;
   const enabled = active && (opensOnPress ? enabledOnMobile : enabledOnDesktop);
 
@@ -276,11 +329,29 @@ export function Tooltip({
       enabled,
       openOnPress: opensOnPress,
       delayDuration,
+      held,
+      onAnchorLayout,
     }),
-    [isOpen, setIsOpen, enabled, opensOnPress, delayDuration],
+    [isOpen, setIsOpen, enabled, opensOnPress, delayDuration, held, onAnchorLayout],
   );
 
-  return <TooltipContext.Provider value={value}>{children}</TooltipContext.Provider>;
+  return (
+    <TooltipContext.Provider value={value}>
+      {children}
+      {held && heldChord ? (
+        <HeldShortcutBadge
+          key={JSON.stringify(heldChord)}
+          anchorVersion={anchorVersion}
+          anchorRef={triggerRef}
+          chord={heldChord}
+          side={heldSide}
+          offset={heldOffset}
+          hostName={heldHostName}
+          testID={heldTestID}
+        />
+      ) : null}
+    </TooltipContext.Provider>
+  );
 }
 
 export function TooltipTrigger({
@@ -291,6 +362,7 @@ export function TooltipTrigger({
   onFocus,
   onBlur,
   onPress,
+  onLayout,
   asChild = false,
   triggerRefProp = "ref",
   ...props
@@ -393,6 +465,19 @@ export function TooltipTrigger({
     [clearOpenTimer, close, ctx, disabled, onPress],
   );
 
+  const lastNativeLayout = useRef<Rect | null>(null);
+  const handleAnchorLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      onLayout?.(event);
+      if (isNative) {
+        const next = event.nativeEvent.layout;
+        if (sameMeasuredRect(lastNativeLayout.current, next, 1 / PixelRatio.get())) return;
+        lastNativeLayout.current = next;
+      }
+      ctx.onAnchorLayout();
+    },
+    [onLayout, ctx],
+  );
   const triggerProps = {
     ...props,
     disabled,
@@ -401,6 +486,7 @@ export function TooltipTrigger({
     onFocus: handleFocus,
     onBlur: handleBlur,
     onPress: handlePress,
+    onLayout: handleAnchorLayout,
     ...(isWeb
       ? ({
           // RN Web's hover handling can vary across environments; pointer events are the most reliable.
@@ -431,6 +517,7 @@ export function TooltipTrigger({
       onFocus: composeEventHandlers(Reflect.get(rawProps, "onFocus"), handleFocus),
       onBlur: composeEventHandlers(Reflect.get(rawProps, "onBlur"), handleBlur),
       onPress: composeEventHandlers(Reflect.get(rawProps, "onPress"), handlePress),
+      onLayout: composeEventHandlers(Reflect.get(rawProps, "onLayout"), handleAnchorLayout),
       onPointerEnter: composeEventHandlers(Reflect.get(rawProps, "onPointerEnter"), handleHoverIn),
       onPointerLeave: composeEventHandlers(Reflect.get(rawProps, "onPointerLeave"), handleHoverOut),
       onMouseEnter: composeEventHandlers(Reflect.get(rawProps, "onMouseEnter"), handleHoverIn),
@@ -532,7 +619,7 @@ export function TooltipContent({
 
   const handleDismiss = useCallback(() => ctx.setOpen(false), [ctx]);
 
-  if (!ctx.open || !ctx.enabled) return null;
+  if (!ctx.open || !ctx.enabled || ctx.held) return null;
 
   // On web, avoid React Native's <Modal/> implementation (it uses <dialog> and can
   // steal focus / disrupt hover). Rendering via Portal + position:fixed keeps the
@@ -589,7 +676,200 @@ export function TooltipContent({
   );
 }
 
+/** Passive decoration: never creates a modal, registers an overlay, or takes focus. */
+function HeldShortcutBadge({
+  anchorRef,
+  anchorVersion,
+  chord,
+  side,
+  offset,
+  hostName,
+  testID,
+}: {
+  anchorRef: RefObject<TooltipTriggerElement | null>;
+  anchorVersion: number;
+  chord: ShortcutKey[][];
+  side: Side;
+  offset: number;
+  hostName?: string;
+  testID?: string;
+}) {
+  "use no memo";
+  const ownerLayout = useContext(HintLayoutContext);
+  const boundaryRef = useContext(HintBoundaryContext);
+  const clipRef = useContext(HintClipContext);
+  const inheritedHost = useFloatingPanelPortalHostName();
+  const selectedHost = hostName ?? inheritedHost;
+  const windowSize = useWindowDimensions();
+  const insets = useSafeAreaInsets();
+  const anchor = useKeyboardAnchor();
+  const { measureAtRest } = anchor;
+  const { isMoving } = useKeyboardShift();
+  const [rect, setRect] = useState<Rect | null>(null);
+  const [hostRect, setHostRect] = useState<Rect | null>(null);
+  const [size, setSize] = useState<{ width: number; height: number } | null>(null);
+  const generation = useRef(0);
+  const measuredHost = useRef(selectedHost);
+  const geometryTolerance = isNative ? 1 / PixelRatio.get() : 0;
+  const remeasure = useCallback(() => {
+    const element = anchorRef.current;
+    if (!element) {
+      setRect(null);
+      return;
+    }
+    const current = generation.current;
+    let clipMeasurement: Promise<Rect | null> = Promise.resolve(null);
+    const clipElement = clipRef?.current;
+    if (clipElement)
+      clipMeasurement = isWeb ? measureElement(clipElement) : measureAtRest(clipElement as View);
+    let boundaryMeasurement: Promise<Rect | null> = Promise.resolve(null);
+    const boundaryElement = boundaryRef?.current;
+    if (boundaryElement)
+      boundaryMeasurement = isWeb
+        ? measureElement(boundaryElement)
+        : measureAtRest(boundaryElement as View);
+    void Promise.all([
+      isWeb ? measureElement(element) : measureAtRest(element as View),
+      isWeb
+        ? Promise.resolve({ x: 0, y: 0, width: windowSize.width, height: windowSize.height })
+        : measureFloatingPanelPortalHost(selectedHost),
+      boundaryMeasurement,
+      clipMeasurement,
+    ]).then(([nextRect, nextHost, boundary, clip]) => {
+      if (current !== generation.current) return undefined;
+      if (!nextRect || !nextHost) {
+        setRect(null);
+        return undefined;
+      }
+      if (!isAnchorVisible(nextRect, nextHost) || (clip && !isAnchorVisible(nextRect, clip))) {
+        setRect(null);
+        return undefined;
+      }
+      const positionedRect =
+        boundary && side === "top"
+          ? { ...nextRect, y: Math.min(nextRect.y, boundary.y) }
+          : nextRect;
+      setRect((previous) =>
+        sameMeasuredRect(previous, positionedRect, geometryTolerance) ? previous : positionedRect,
+      );
+      setHostRect((previous) =>
+        sameMeasuredRect(previous, nextHost, geometryTolerance) ? previous : nextHost,
+      );
+      return undefined;
+    });
+  }, [
+    anchorRef,
+    boundaryRef,
+    clipRef,
+    side,
+    measureAtRest,
+    selectedHost,
+    windowSize.width,
+    windowSize.height,
+    geometryTolerance,
+  ]);
+  useEffect(() => {
+    generation.current += 1;
+    // Keep a measured portal mounted during routine layout updates. Removing it
+    // before measuring can feed another native layout event back into this effect.
+    if (isWeb) setRect(null);
+    if (measuredHost.current !== selectedHost) {
+      measuredHost.current = selectedHost;
+      setRect(null);
+      setHostRect(null);
+    }
+    remeasure();
+    const raf = requestAnimationFrame(remeasure);
+    let observer: ResizeObserver | undefined;
+    if (isWeb) {
+      window.addEventListener("scroll", remeasure, true);
+      if (anchorRef.current instanceof HTMLElement) {
+        observer = new ResizeObserver(remeasure);
+        observer.observe(anchorRef.current);
+      }
+    }
+    return () => {
+      generation.current += 1;
+      cancelAnimationFrame(raf);
+      observer?.disconnect();
+      if (isWeb) window.removeEventListener("scroll", remeasure, true);
+    };
+  }, [remeasure, ownerLayout, anchorRef, anchorVersion, selectedHost]);
+  useAnimatedReaction(
+    () => isMoving.value,
+    (moving, previous) => {
+      if (previous && !moving) scheduleOnRN(remeasure);
+    },
+    [isMoving, remeasure],
+  );
+  const position =
+    rect && size && hostRect
+      ? computeAnchoredPosition({
+          triggerRect: rect,
+          contentSize: size,
+          displayArea: {
+            x: Math.max(hostRect.x, insets.left),
+            y: Math.max(hostRect.y, insets.top),
+            width: Math.min(hostRect.width, windowSize.width - insets.left - insets.right),
+            height: Math.min(hostRect.height, windowSize.height - insets.top - insets.bottom),
+          },
+          placement: side,
+          alignment: "center",
+          offset,
+        })
+      : null;
+  const handleBadgeLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { width, height } = event.nativeEvent.layout;
+      const next = { width, height };
+      setSize((previous) =>
+        sameMeasuredSize(previous, next, geometryTolerance) ? previous : next,
+      );
+    },
+    [geometryTolerance],
+  );
+  if (!rect || !hostRect || measuredHost.current !== selectedHost) return null;
+  const badge = (
+    <View pointerEvents="none" style={[StyleSheet.absoluteFill, { zIndex: OVERLAY_Z.tooltip }]}>
+      <View
+        pointerEvents="none"
+        testID={testID ?? "held-shortcut-badge"}
+        onLayout={handleBadgeLayout}
+        style={[
+          styles.heldBadge,
+          {
+            maxWidth: windowSize.width - 16,
+            opacity: position && hostRect ? 1 : 0,
+            left: position && hostRect ? position.x - hostRect.x : 0,
+            top: position && hostRect ? position.y - hostRect.y : 0,
+          },
+        ]}
+      >
+        <Shortcut chord={chord} />
+      </View>
+    </View>
+  );
+  if (isWeb) return createPortal(badge, getOverlayRoot());
+  return (
+    <Portal hostName={selectedHost}>
+      <KeyboardTranslateView
+        {...anchor.translation}
+        pointerEvents="none"
+        style={StyleSheet.absoluteFill}
+      >
+        {badge}
+      </KeyboardTranslateView>
+    </Portal>
+  );
+}
+
 const styles = StyleSheet.create((theme) => ({
+  heldBadge: {
+    position: "absolute",
+    backgroundColor: theme.colors.popover,
+    borderRadius: theme.borderRadius.md,
+    zIndex: OVERLAY_Z.tooltip,
+  },
   overlay: { flex: 1 },
   portalOverlay: {
     position: "absolute",

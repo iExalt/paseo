@@ -1,16 +1,20 @@
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { Pressable, View } from "react-native";
+import { View } from "react-native";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { Mic, MicOff, Square } from "lucide-react-native";
 import { FOOTER_HEIGHT } from "@/constants/layout";
 import { useVoiceTelemetry } from "@/contexts/voice-context";
+import { Tooltip, TooltipTrigger } from "@/components/ui/tooltip";
+import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
+import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
 import { VolumeMeter } from "./volume-meter";
 
 interface RealtimeVoiceOverlayProps {
   isMuted: boolean;
   isSwitching: boolean;
+  stopShortcutEnabled: boolean;
   onToggleMute: () => void;
   onStop: () => void;
 }
@@ -21,11 +25,15 @@ const OVERLAY_VERTICAL_PADDING = (FOOTER_HEIGHT - OVERLAY_BUTTON_SIZE) / 2;
 export function RealtimeVoiceOverlay({
   isMuted,
   isSwitching,
+  stopShortcutEnabled,
   onToggleMute,
   onStop,
 }: RealtimeVoiceOverlayProps) {
   const { theme } = useUnistyles();
   const { t } = useTranslation();
+  const muteKeys = useShortcutKeys("voice-mute-toggle");
+  const stopKeys = useShortcutKeys("voice-toggle");
+  const { isActiveComposer } = useComposerKeyboardScope();
   const { volume, isSpeaking } = useVoiceTelemetry();
   const muteButtonStyle = useMemo(
     () => [
@@ -52,40 +60,55 @@ export function RealtimeVoiceOverlay({
       </View>
 
       <View style={styles.actionsContainer}>
-        <Pressable
-          onPress={onToggleMute}
-          disabled={isSwitching}
-          accessibilityRole="button"
-          accessibilityLabel={
-            isMuted ? t("realtimeVoice.actions.unmute") : t("realtimeVoice.actions.mute")
-          }
-          style={muteButtonStyle}
+        <Tooltip
+          heldShortcut={isActiveComposer && !isSwitching ? muteKeys : null}
+          heldOffset={36}
+          heldTestID="voice-overlay-mute-shortcut-hint"
         >
-          {isMuted ? (
-            <MicOff size={theme.iconSize.lg} color={theme.colors.palette.white} strokeWidth={2.5} />
-          ) : (
-            <Mic size={theme.iconSize.lg} color={theme.colors.foreground} strokeWidth={2.5} />
-          )}
-        </Pressable>
+          <TooltipTrigger
+            onPress={onToggleMute}
+            disabled={isSwitching}
+            accessibilityRole="button"
+            accessibilityLabel={
+              isMuted ? t("realtimeVoice.actions.unmute") : t("realtimeVoice.actions.mute")
+            }
+            style={muteButtonStyle}
+          >
+            {isMuted ? (
+              <MicOff
+                size={theme.iconSize.lg}
+                color={theme.colors.palette.white}
+                strokeWidth={2.5}
+              />
+            ) : (
+              <Mic size={theme.iconSize.lg} color={theme.colors.foreground} strokeWidth={2.5} />
+            )}
+          </TooltipTrigger>
+        </Tooltip>
 
-        <Pressable
-          onPress={onStop}
-          disabled={isSwitching}
-          accessibilityRole="button"
-          accessibilityLabel={t("realtimeVoice.actions.stop")}
-          style={stopButtonStyle}
+        <Tooltip
+          heldShortcut={isActiveComposer && !isSwitching && stopShortcutEnabled ? stopKeys : null}
+          heldTestID="voice-overlay-stop-shortcut-hint"
         >
-          {isSwitching ? (
-            <LoadingSpinner size="small" color={theme.colors.palette.white} />
-          ) : (
-            <Square
-              size={theme.iconSize.lg}
-              color={theme.colors.palette.white}
-              fill={theme.colors.palette.white}
-              strokeWidth={2.5}
-            />
-          )}
-        </Pressable>
+          <TooltipTrigger
+            onPress={onStop}
+            disabled={isSwitching}
+            accessibilityRole="button"
+            accessibilityLabel={t("realtimeVoice.actions.stop")}
+            style={stopButtonStyle}
+          >
+            {isSwitching ? (
+              <LoadingSpinner size="small" color={theme.colors.palette.white} />
+            ) : (
+              <Square
+                size={theme.iconSize.lg}
+                color={theme.colors.palette.white}
+                fill={theme.colors.palette.white}
+                strokeWidth={2.5}
+              />
+            )}
+          </TooltipTrigger>
+        </Tooltip>
       </View>
     </View>
   );

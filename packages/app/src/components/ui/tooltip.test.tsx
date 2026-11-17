@@ -23,6 +23,16 @@ vi.mock("@gorhom/bottom-sheet", () => ({
   useBottomSheetModalInternal: () => null,
 }));
 
+vi.mock("@/keyboard", () => ({
+  useHardwareKeyboardPresent: () => false,
+}));
+
+vi.mock("@/keyboard/shift", () => ({
+  KeyboardTranslateView: ({ children }: { children: React.ReactNode }) => children,
+  useKeyboardAnchor: vi.fn(),
+  useKeyboardShift: vi.fn(),
+}));
+
 vi.mock("react-native-reanimated", () => ({
   default: {
     View: "div",

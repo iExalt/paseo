@@ -1481,3 +1481,16 @@ describe("shortcut capture completion", () => {
     expect(isShortcutCaptureComplete("show-shortcuts", ["Ctrl+0"])).toBe(true);
   });
 });
+
+describe("shortcut hints for bindings without settings rows", () => {
+  it("uses the effective binding for dictation confirm", () => {
+    const platform = { isMac: false, usesDesktopBindings: true };
+    const id = "message-input-dictation-confirm-enter";
+    expect(resolveShortcutKeysForAction(id, {}, platform)).toEqual([["Enter"]]);
+    expect(resolveShortcutKeysForAction(id, { [id]: "Ctrl+J K" }, platform)).toEqual([
+      ["ctrl", "J"],
+      ["K"],
+    ]);
+    expect(resolveShortcutKeysForAction(id, { [id]: null }, platform)).toBeNull();
+  });
+});

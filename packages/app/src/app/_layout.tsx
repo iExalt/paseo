@@ -568,6 +568,7 @@ function AppContainer({ children, chromeEnabled: chromeEnabledOverride }: AppCon
           {themedSidebarChrome}
         </CompactSidebarHost>
       ) : null}
+      <FloatingPanelPortalHost name="chrome-shortcut-hints" />
       <AppearanceStyleBoundary>
         <DownloadToast />
         <RosettaCalloutSource />
