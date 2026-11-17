@@ -1310,6 +1310,65 @@ async function runRegression({
     responsiveViewport,
   );
 
+  // Keep reload coverage after the hidden-window assertions: external Playwright CDP
+  // can perturb guest RAF while hidden, so preserve the original guest lifecycle there.
+  // Count starts as well as finishes: a second owner can cancel the first reload.
+  await page.evaluate(() => {
+    globalThis.__paseoShortcutHostSentinel = true;
+  });
+  await evaluateDesktopWindow(
+    inspectorPort,
+    `
+    const guest = process.mainModule.require('electron').webContents.fromId(${firstGuest.webContentsId});
+    guest.focus();
+    globalThis.__paseoShortcutReloads = { starts: 0, finishes: 0 };
+    guest.on('did-start-navigation', (_event, _url, isInPlace, isMainFrame) => {
+      if (isMainFrame && !isInPlace) globalThis.__paseoShortcutReloads.starts++;
+    });
+    guest.on('did-finish-load', () => { globalThis.__paseoShortcutReloads.finishes++; });
+    const modifiers = [process.platform === 'darwin' ? 'meta' : 'control'];
+    guest.sendInputEvent({ type: 'keyDown', keyCode: 'L', modifiers });
+    guest.sendInputEvent({ type: 'keyUp', keyCode: 'L', modifiers });
+  `,
+  );
+  const urlInput = originalDeck.getByRole("textbox", { name: "Browser URL", exact: true });
+  await expect(urlInput).toBeFocused();
+  await expect(urlInput).toHaveValue(targetUrl);
+  assert(
+    await page.evaluate((id) => window.paseoDesktop.browser.focus(id), browserId),
+    "Browser guest did not regain focus before Mod+R",
+  );
+  await evaluateDesktopWindow(
+    inspectorPort,
+    `
+    const guest = process.mainModule.require('electron').webContents.fromId(${firstGuest.webContentsId});
+    const modifiers = [process.platform === 'darwin' ? 'meta' : 'control'];
+    guest.sendInputEvent({ type: 'keyDown', keyCode: 'R', modifiers });
+    guest.sendInputEvent({ type: 'keyUp', keyCode: 'R', modifiers });
+  `,
+  );
+  await expect
+    .poll(
+      () =>
+        evaluateDesktopWindow(inspectorPort, "return globalThis.__paseoShortcutReloads.finishes;"),
+      { timeout: timeoutMs },
+    )
+    .toBe(1);
+  assert(
+    JSON.stringify(
+      await evaluateDesktopWindow(inspectorPort, "return globalThis.__paseoShortcutReloads;"),
+    ) === JSON.stringify({ starts: 1, finishes: 1 }),
+    "One Mod+R press did not produce exactly one browser reload",
+  );
+  assert(
+    (await page.evaluate(() => globalThis.__paseoShortcutHostSentinel)) === true,
+    "Browser Mod+R reloaded the surrounding Paseo app",
+  );
+  assert(
+    (await readGuest(page, browserId))?.webContentsId === firstGuest.webContentsId,
+    "Browser shortcut replaced the guest WebContents",
+  );
+
   const annotateButton = originalDeck.getByRole("button", { name: "Annotate element" });
   await page.evaluate((id) => {
     const webview = document.querySelector(`[data-paseo-browser-id="${id}"]`);
