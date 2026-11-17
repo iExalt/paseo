@@ -1,3 +1,4 @@
+import { getE2EWebOrigin } from "../web-url";
 import { fork, type ChildProcess } from "node:child_process";
 import path from "node:path";
 import { killProcessTree } from "./spawn-node";
@@ -37,7 +38,7 @@ export async function startOutdatedDaemon(options?: {
     {
       env: {
         ...process.env,
-        E2E_METRO_PORT: metroPort,
+        E2E_WEB_ORIGIN: getE2EWebOrigin(Number(metroPort)),
         E2E_DESKTOP_MANAGED: options?.desktopManaged === true ? "1" : "0",
         E2E_DAEMON_STATUS_RPC_CAPABILITY: options?.daemonStatusRpcCapability === false ? "0" : "1",
         E2E_RELAY_CONFIG_CAPABILITY: options?.relayConfigCapability === false ? "0" : "1",

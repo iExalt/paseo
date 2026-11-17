@@ -348,7 +348,9 @@ export async function openDesktopSettings(page: Page, serverId: string): Promise
 export async function openDesktopAboutSettings(page: Page): Promise<void> {
   await openSettings(page);
   await openSettingsSection(page, "about");
-  await expect(page.getByText("App updates", { exact: true })).toBeVisible();
+  await expect(
+    page.getByTestId("desktop-fork-update-row").getByText("Fork updates", { exact: true }),
+  ).toBeVisible();
 }
 
 export async function expectUpdateBanner(page: Page, version: string): Promise<void> {
@@ -358,26 +360,28 @@ export async function expectUpdateBanner(page: Page, version: string): Promise<v
 }
 
 export async function clickCheckForUpdates(page: Page): Promise<void> {
-  await page.getByRole("button", { name: "Check" }).click();
+  await page.getByTestId("desktop-fork-update-row").getByRole("button", { name: "Check" }).click();
 }
 
 export async function expectPendingUpdateCheckResult(page: Page, version: string): Promise<void> {
+  const row = page.getByTestId("desktop-fork-update-row");
   const normalizedVersion = `v${version.replace(/^v/i, "")}`;
   await expect(
-    page.getByText(
+    row.getByText(
       new RegExp(`Update found: ${escapeRegex(normalizedVersion)}\\. Downloading\\.\\.\\.`),
     ),
   ).toBeVisible();
-  await expect(page.getByText(`Ready to install: ${normalizedVersion}`)).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Update" })).toBeDisabled();
+  await expect(row.getByText(`Update ready: ${normalizedVersion}`)).toHaveCount(0);
+  await expect(row.getByRole("button", { name: "Update" })).toBeDisabled();
 }
 
 export async function expectReadyUpdateCheckResult(page: Page, version: string): Promise<void> {
+  const row = page.getByTestId("desktop-fork-update-row");
   const normalizedVersion = `v${version.replace(/^v/i, "")}`;
-  await expect(page.getByText(`Ready to install: ${normalizedVersion}`)).toBeVisible({
+  await expect(row.getByText(`Update ready: ${normalizedVersion}`)).toBeVisible({
     timeout: 15_000,
   });
-  await expect(page.getByRole("button", { name: `Update to ${normalizedVersion}` })).toBeEnabled();
+  await expect(row.getByRole("button", { name: `Update to ${normalizedVersion}` })).toBeEnabled();
 }
 
 export async function clickInstallUpdate(page: Page): Promise<void> {
