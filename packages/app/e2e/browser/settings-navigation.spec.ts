@@ -10,6 +10,7 @@ import {
 import { openCompactSidebar } from "../support/helpers/usage-sidebar-item";
 import { gotoAppShell, openSettings } from "../support/helpers/app";
 import { getE2EDaemonPort } from "../support/helpers/daemon-port";
+import { waitForSettledPosition } from "../support/helpers/sheet-layout";
 import {
   closeCompactSettings,
   captureCompactSidebarReturn,
@@ -371,6 +372,38 @@ test.describe("Settings sidebar navigation", () => {
     await expect(page.getByTestId("direct-port-input")).toBeFocused();
     await page.keyboard.type("6790");
     await expect(page.getByTestId("direct-port-input")).toHaveValue("6790");
+  });
+
+  test("direct connection actions stay visible when a compact form shows an error", async ({
+    page,
+  }) => {
+    await gotoAppShell(page);
+    await openSettings(page);
+    await openAddHostFlow(page);
+    await selectHostConnectionType(page, "direct");
+    await page.setViewportSize({ width: 360, height: 640 });
+    await expect(page.getByTestId("direct-password-input")).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("direct-host-advanced-toggle")).toBeInViewport({ ratio: 1 });
+    await fillDirectHostAddress(page, "127.0.0.1", "0");
+
+    const submit = page.getByTestId("direct-host-submit");
+    await waitForSettledPosition(submit);
+    const initial = await submit.boundingBox();
+    expect(initial).not.toBeNull();
+    expect(initial!.height).toBeGreaterThan(0);
+    expect(initial!.y).toBeGreaterThanOrEqual(0);
+    expect(initial!.y + initial!.height).toBeLessThanOrEqual(640);
+
+    await page.getByTestId("direct-port-input").press("Enter");
+    await expect(page.getByText("Port must be between 1 and 65535", { exact: true })).toBeVisible();
+    await expect
+      .poll(async () => {
+        const box = await submit.boundingBox();
+        return box ? Math.abs(box.y - initial!.y) : Infinity;
+      })
+      .toBeLessThanOrEqual(0.5);
+    await page.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(page.getByTestId("add-host-modal")).toHaveCount(0);
   });
 
   test("Escape lets settings dropdowns and modals close before leaving settings", async ({
