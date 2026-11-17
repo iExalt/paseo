@@ -2,6 +2,7 @@ import { useCallback, useMemo, type ReactNode, type Ref } from "react";
 import { View, type ViewProps } from "react-native";
 import { Maximize2, Minimize2 } from "lucide-react-native";
 import { useTranslation } from "react-i18next";
+import { ShortcutHintEnabledProvider } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { ComposerFullscreenBody, ComposerFullscreenFooter } from "@/composer/dock";
 import { useComposerKeyboardScope } from "@/composer/keyboard-scope";
@@ -106,36 +107,40 @@ export function ComposerInputPresentation({
         </View>
       ) : null}
       <ComposerFullscreenBody fullscreen={fullscreen}>
-        <View
-          ref={inputWrapperRef}
-          style={fullscreen ? styles.fullscreenInputWrapper : inputWrapperStyle}
-          pointerEvents={inputPointerEvents}
-        >
-          {fullscreen ? null : attachmentSlot}
-          <View style={fullscreen ? styles.fullscreenTextSurface : styles.inlineTextSurface}>
-            {surface}
-            {showFullscreenButton && !fullscreen ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                accessibilityLabel={t("composer.input.fullscreen")}
-                leftIcon={maximizeIcon}
-                onPointerDown={keepEditorFocused}
-                onPress={onEnter}
-                style={enterStyle}
-                hitSlop={8}
-              >
-                {null}
-              </Button>
-            ) : null}
+        <ShortcutHintEnabledProvider value={inputPointerEvents !== "none"}>
+          <View
+            ref={inputWrapperRef}
+            style={fullscreen ? styles.fullscreenInputWrapper : inputWrapperStyle}
+            pointerEvents={inputPointerEvents}
+          >
+            {fullscreen ? null : attachmentSlot}
+            <View style={fullscreen ? styles.fullscreenTextSurface : styles.inlineTextSurface}>
+              {surface}
+              {showFullscreenButton && !fullscreen ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  accessibilityLabel={t("composer.input.fullscreen")}
+                  leftIcon={maximizeIcon}
+                  onPointerDown={keepEditorFocused}
+                  onPress={onEnter}
+                  style={enterStyle}
+                  hitSlop={8}
+                >
+                  {null}
+                </Button>
+              ) : null}
+            </View>
+            {fullscreen ? null : toolbar}
           </View>
-          {fullscreen ? null : toolbar}
-        </View>
+        </ShortcutHintEnabledProvider>
       </ComposerFullscreenBody>
       {fullscreen ? (
         <ComposerFullscreenFooter style={styles.footer}>
-          {error}
-          <View style={styles.sendRow}>{send}</View>
+          <ShortcutHintEnabledProvider value={inputPointerEvents !== "none"}>
+            {error}
+            <View style={styles.sendRow}>{send}</View>
+          </ShortcutHintEnabledProvider>
         </ComposerFullscreenFooter>
       ) : null}
       {overlay}

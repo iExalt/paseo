@@ -56,7 +56,15 @@ export function HeaderToggleButton({
   });
 
   return (
-    <Tooltip delayDuration={tooltipDelayDuration} enabledOnDesktop enabledOnMobile={false}>
+    <Tooltip
+      delayDuration={tooltipDelayDuration}
+      enabledOnDesktop
+      enabledOnMobile={false}
+      heldShortcut={disabled || tooltipChord === null ? null : (tooltipChord ?? [tooltipKeys])}
+      heldSide={tooltipSide}
+      heldHostName="chrome-shortcut-hints"
+      heldTestID={props.testID ? `${props.testID}-shortcut-hint` : undefined}
+    >
       <TooltipTrigger
         {...props}
         {...ariaExpandedProps}
