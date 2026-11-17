@@ -1,0 +1,60 @@
+# Docs index
+
+Read the entries relevant to your task before non-trivial work. Fork notes live at the top level of `docs/`; Paseo's bundled docs live in `docs/upstream/`. When you add a doc, add it here; [writing-docs.md](writing-docs.md) has the rules.
+
+- [agent-testing.md](agent-testing.md): Ad hoc app testing by agents: Android deep links and their state, reading dumps, desktop and daemon isolation
+- [DEV_UPSTREAM_SUPERSESSION.md](DEV_UPSTREAM_SUPERSESSION.md): Frozen rebase inputs, commit inventory, supersession ledger and retained fork behavior
+- [upstream/rebase-dev.md](upstream/rebase-dev.md): Fork `rebase-dev` workflow: replay rules, rerere resolutions, fixups and deletions
+- [platform-gating.md](platform-gating.md): Platform gates (`isWeb`, `isNative`, Electron, compact layout), Metro platform file extensions and hover on native
+- [writing-docs.md](writing-docs.md): How to write and place docs: integrate, one fact per doc, layers, voice
+- [terminal-worker.md](terminal-worker.md): Terminal worker process: terminals that survive daemon restarts, crashes and upgrades
+- [macos-code-signing.md](macos-code-signing.md): Stable signature for the installed macOS app so privacy grants survive updates; identity, Mac setup, limits
+- [upstream/product.md](upstream/product.md): What Paseo is, who it's for, where it's going
+- [upstream/architecture.md](upstream/architecture.md): System design, package layering, WebSocket protocol, agent lifecycle, data flow
+- [upstream/agent-lifecycle.md](upstream/agent-lifecycle.md): Agent states, parent/child relationships, archive semantics, tabs vs archive, subagents track
+- [markdown-renderer.md](markdown-renderer.md): Shared Markdown engine, native selection, links, images and library constraints
+- [native-text-selection.md](native-text-selection.md): Native diagram grouping, selection boundaries and leading inline image limitations
+- [upstream/data-model.md](upstream/data-model.md): File-based JSON persistence, Zod schemas, atomic writes, no migrations
+- [upstream/glossary.md](upstream/glossary.md): Authoritative terminology — UI label wins, no synonyms
+- [GLOSSARY.md](GLOSSARY.md): Fork-owned module terms (Routine lane and later); links to the upstream glossary
+- [upstream/coding-standards.md](upstream/coding-standards.md): Type hygiene, error handling, state design, React patterns, file organization
+- [upstream/design.md](upstream/design.md): Design system — tokens, buttons, hierarchy, density, alignment rails, states, what's forbidden
+- [upstream/forms.md](upstream/forms.md): Form architecture — non-React form model, form kit, load-state gating; the schedule form is the golden example
+- [upstream/hover.md](upstream/hover.md): Hover — the canonical pattern (plain View + onPointerEnter/Leave, separate inner Pressable) and the three ways agents break it
+- [upstream/unistyles.md](upstream/unistyles.md): Unistyles gotchas — `useUnistyles()` is forbidden, alternatives in order
+- [upstream/floating-panels.md](upstream/floating-panels.md): Anchored popovers — Portal/Modal escape for Android, lifecycle gates, keyboard-shared-value, status-bar offset, the flash
+- [upstream/menus.md](upstream/menus.md): The menu engine — popover vs sheet, submenu pages, hover intent, when a decision earns a submenu
+- [upstream/expo-router.md](upstream/expo-router.md): Expo Router route ownership, startup restore, and native blank-screen gotchas
+- [upstream/notifications.md](upstream/notifications.md): Notification tap ownership, native replay and acknowledgement, startup handoff, and payload QA
+- [upstream/file-icons.md](upstream/file-icons.md): Material icon theme integration for the file explorer
+- [upstream/providers.md](upstream/providers.md): Adding a new agent provider end-to-end
+- [upstream/forge-providers.md](upstream/forge-providers.md): Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers
+- [upstream/custom-providers.md](upstream/custom-providers.md): Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries
+- [upstream/plugins.md](upstream/plugins.md): Local plugin manifest, directory source config, RPCs, native surfaces, and attachment sources
+- [upstream/website-i18n.md](upstream/website-i18n.md): Website languages: locale URLs, translated Markdown pairs, `{#id}` anchors, Chinese style
+- [upstream/service-proxy.md](upstream/service-proxy.md): Service proxy: exposing workspace scripts at public URLs, DNS setup, reverse proxy config
+- [upstream/relay-endpoint-security.md](upstream/relay-endpoint-security.md): Relay E2EE modes: Noise NK mapping, record framing, negotiation, the `requireProtectedSecurity` flag, close codes
+- [upstream/development.md](upstream/development.md): Dev server, build sync gotchas, CLI reference, agent state, Playwright MCP
+- [upstream/rpc-namespacing.md](upstream/rpc-namespacing.md): WebSocket RPC naming convention — dotted namespaces and `.request`/`.response` pairs
+- [upstream/protocol-compatibility.md](upstream/protocol-compatibility.md): Why app/daemon versions drift, protocol vs feature contract, capability gating, COMPAT tagging
+- [upstream/protocol-validation.md](upstream/protocol-validation.md): zod-aot generated inbound WebSocket validation, patched compiler regressions, schema-purity rules
+- [upstream/connected-hosts.md](upstream/connected-hosts.md): Daemon-owned host registrations, routed SDK scopes, identity and authority boundaries
+- [upstream/permissions.md](upstream/permissions.md): Semantic daemon permissions, principals, credentials, pairing invitations, and Hub authority
+- [upstream/terminal-performance.md](upstream/terminal-performance.md): Terminal latency pipeline, coalescing/backpressure invariants, benchmark + perf spec usage
+- [upstream/agent-stream-performance.md](upstream/agent-stream-performance.md): Assistant text pipeline — coalescing window, paced reveal, why arrival lumps are smoothed at render
+- [upstream/agent-stream-disclosure.md](upstream/agent-stream-disclosure.md): Disclosure anchoring and list strategy ownership
+- [upstream/keyboard-shortcuts.md](upstream/keyboard-shortcuts.md): Keyboard shortcut routing and native input ownership
+- [upstream/terminal-rendering.md](upstream/terminal-rendering.md): Terminal rendering and cell geometry
+- [upstream/file-observation.md](upstream/file-observation.md): Recursive watcher ownership, Linux constraints, teardown invariants, and Parcel comparison
+- [upstream/testing.md](upstream/testing.md): TDD workflow, determinism, real dependencies over mocks, test organization
+- [upstream/qa.md](upstream/qa.md): QA evidence bar for pull requests — platform matrix, version drift, performance, UI proof
+- [upstream/mobile-testing.md](upstream/mobile-testing.md): Maestro and mobile test workflows
+- [upstream/mobile-panels.md](upstream/mobile-panels.md): Compact left/center/right panel ownership, worklet motion, gesture revisions, and Fabric constraints
+- [upstream/explorer-sidebar.md](upstream/explorer-sidebar.md): Explorer sidebar, side-pane, and compact workspace sheet host contracts, lifecycle, placement, routing preferences
+- [upstream/ad-hoc-daemon-testing.md](upstream/ad-hoc-daemon-testing.md): Isolated in-process daemon test harness
+- [upstream/browser-capture-harness.md](upstream/browser-capture-harness.md): Real-Electron browser screenshot harness and compositor-surface gotcha
+- [upstream/android.md](upstream/android.md): App variants, local/cloud builds, EAS workflows, version codes, F-Droid source builds and store metadata
+- [upstream/docker.md](upstream/docker.md): Running the daemon and bundled web UI in Docker, volumes, agent images, security
+- [upstream/terminal-activity.md](upstream/terminal-activity.md): Terminal activity indicators — source-agnostic tracker, agent hook reporting, adding a new hook provider
+- [../SECURITY.md](../SECURITY.md): Relay threat model, E2E encryption, DNS rebinding, agent auth
+- [../public-docs/hub/security.md](../public-docs/hub/security.md): Public Hub guide — trust boundaries, untrusted triggers, provider controls, and output authority
