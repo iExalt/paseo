@@ -1019,9 +1019,8 @@ describe("terminal-session-controller backpressure snapshot fallback", () => {
   });
 
   test("falls back to a snapshot at the byte threshold when no backpressure signal exists", async () => {
-    // A null reading means the transport (e.g. the multiplexed relay socket) gives
-    // no signal; we can't distinguish a slow client from a fast one, so we keep the
-    // unconditional catch-up so a slow relay client can't fall unboundedly behind.
+    // Without a transport reading, catch up at the byte threshold so an
+    // unmeasured slow client cannot fall unboundedly behind.
     const { pushOutput, frames } = await setup(() => null);
 
     pushOutput("r".repeat(300 * 1024));

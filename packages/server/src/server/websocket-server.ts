@@ -1716,10 +1716,9 @@ export class VoiceAssistantWebSocketServer {
           return null;
         }
         if (source) return this.socketBufferedAmount(source as WebSocketLike);
-        // Relay-attached sockets are a WebSocketLike that doesn't expose
-        // bufferedAmount. Return null when no socket gives a signal so the
-        // terminal fallback can't mistake "no signal" for "client keeping up";
-        // a direct ws reports its real buffered bytes (0 when drained).
+        // Direct and encrypted relay sockets report their queued transport bytes.
+        // Preserve null when no socket exposes a reading so terminal catch-up
+        // cannot mistake a missing signal for a drained transport.
         let maxBuffered: number | null = null;
         for (const socket of connection.sockets) {
           const buffered = this.socketBufferedAmount(socket);
