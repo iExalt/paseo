@@ -7,7 +7,7 @@ import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import type { RewindMode } from "./use-rewind-capabilities";
 import { useRewindComposerRestore } from "./composer-restore";
 import { useSessionStore } from "@/stores/session-store";
-import { runRewind } from "./rewind-mode";
+import { daemonSendsRewindReplacement, runRewind } from "./rewind-mode";
 import { getHostRuntimeStore } from "@/runtime/host-runtime";
 
 interface UseRewindAgentMutationInput {
@@ -39,18 +39,25 @@ export function useRewindAgentMutation(input: UseRewindAgentMutationInput): {
           }
           await input.client.rewindAgent(input.agentId, input.messageId, mode);
         },
-        refreshTimeline: async () => {
-          if (!input.serverId || !input.agentId) {
-            throw new Error(t("common.errors.daemonClientUnavailable"));
-          }
-          const cursor = useSessionStore
-            .getState()
-            .sessions[input.serverId]?.agentTimelineCursor.get(input.agentId);
-          await getHostRuntimeStore().fetchAgentTimeline(input.serverId, input.agentId, {
-            ...planTimelineTailFetch(),
-            ...(cursor ? { cursor: { epoch: cursor.epoch, seq: cursor.endSeq } } : {}),
-          });
-        },
+        // COMPAT(ownedSubscriptions): daemons without owned subscriptions don't send the
+        // rewinding client agent.timeline.replacement, so it fetches the rewound timeline
+        // itself. Remove after 2027-03-11 with the legacy subscription path.
+        refreshTimeline: daemonSendsRewindReplacement(
+          input.client?.getLastServerInfoMessage()?.features,
+        )
+          ? undefined
+          : async () => {
+              if (!input.serverId || !input.agentId) {
+                throw new Error(t("common.errors.daemonClientUnavailable"));
+              }
+              const cursor = useSessionStore
+                .getState()
+                .sessions[input.serverId]?.agentTimelineCursor.get(input.agentId);
+              await getHostRuntimeStore().fetchAgentTimeline(input.serverId, input.agentId, {
+                ...planTimelineTailFetch(),
+                ...(cursor ? { cursor: { epoch: cursor.epoch, seq: cursor.endSeq } } : {}),
+              });
+            },
         restoreComposer: () => composerRestore?.completeRewind(rewoundText),
       }),
     onError: (error) => {
