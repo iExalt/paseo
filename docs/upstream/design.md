@@ -272,7 +272,7 @@ New status pills use `<StatusBadge>`. Identity, shortcut, and interactive link b
 - The word "checkout" in UI strings or identifiers. The term is "workspace".
 - New color tokens or hardcoded hex outside the palette. The identity color table is the documented exception (§13), not a license.
 - Placeholder text dimmed beyond `foregroundMuted`, except the composer's empty placeholder, which uses `foregroundExtraMuted`. No extra opacity, no italics, no ghost-text.
-- `onPointerEnter` and `onPointerLeave`. They do not fire on native iOS. Hover uses Pressable's `onHoverIn`/`onHoverOut` gated with `isHovered || isCompact || isNative`.
+- Hover tracking that ignores the [canonical hover pattern](hover.md).
 - Raw DOM APIs without an `isWeb` guard.
 - Spacing values outside the scale. `padding: 20` and `gap: 10` are wrong.
 - Color changes for disabled state. Opacity only.
