@@ -2715,13 +2715,28 @@ function createToolCatalog(
           ),
           cwd: z.string().optional(),
           isolation: z.enum(["local", "worktree"]).optional(),
+          archiveOnFinish: z
+            .boolean()
+            .optional()
+            .describe("Archive the run workspace when the agent finishes. Defaults to true."),
           maxRuns: z.number().int().positive().optional(),
           expiresIn: scheduleDurationInputSchema.optional(),
         })
         .superRefine(addScheduleCadenceIssue),
       outputSchema: ScheduleSummarySchema.shape,
     },
-    async ({ prompt, cron, timezone, name, provider, cwd, isolation, maxRuns, expiresIn }) => {
+    async ({
+      prompt,
+      cron,
+      timezone,
+      name,
+      provider,
+      cwd,
+      isolation,
+      archiveOnFinish,
+      maxRuns,
+      expiresIn,
+    }) => {
       if (!scheduleService) {
         throw new Error("Schedule service is not configured");
       }
@@ -2735,7 +2750,7 @@ function createToolCatalog(
         }),
         target: resolveNewAgentScheduleTarget({
           callerAgent: resolveCallerAgent(),
-          overrides: { provider, cwd, isolation },
+          overrides: { provider, cwd, isolation, archiveOnFinish },
         }),
         ...(name?.trim() ? { name: name.trim() } : {}),
         ...(maxRuns === undefined ? {} : { maxRuns }),
