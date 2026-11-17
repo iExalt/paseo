@@ -1,3 +1,4 @@
+import { sameMeasuredSize, sameMeasuredRect } from "./anchor";
 import { describe, expect, it } from "vitest";
 import {
   computePosition,
@@ -176,5 +177,22 @@ describe("floating hint anchor visibility", () => {
     expect(isAnchorVisible({ x: 80, y: 55, width: 80, height: 30 }, rail)).toBe(false);
     expect(isAnchorVisible({ x: 520, y: 55, width: 80, height: 30 }, rail)).toBe(false);
     expect(isAnchorVisible({ x: 220, y: 55, width: 0, height: 30 }, rail)).toBe(false);
+  });
+});
+
+describe("native measured geometry stability", () => {
+  it("retains adjacent pixel-rounded measurements but accepts real layout changes", () => {
+    const pixel = 1 / 1.5;
+    const size = { width: 80.66667175292969, height: 22.66666603088379 };
+    expect(
+      sameMeasuredSize(size, { width: 81.33332824707031, height: 22.666667938232422 }, pixel),
+    ).toBe(true);
+    expect(sameMeasuredSize(size, { width: 83, height: 22.66666603088379 }, pixel)).toBe(false);
+    expect(sameMeasuredSize(size, { ...size, height: 45 }, pixel)).toBe(false);
+    expect(sameMeasuredSize(null, size, pixel)).toBe(false);
+    expect(sameMeasuredSize(size, { ...size, width: size.width + 0.1 }, 0)).toBe(false);
+    const rect = { x: 1142, y: 609, ...size };
+    expect(sameMeasuredRect(rect, { ...rect, x: rect.x + 0.5 }, pixel)).toBe(true);
+    expect(sameMeasuredRect(rect, { ...rect, y: rect.y + 2 }, pixel)).toBe(false);
   });
 });

@@ -18,6 +18,7 @@ import { createPortal } from "react-dom";
 import {
   Dimensions,
   Platform,
+  PixelRatio,
   Pressable,
   View,
   useWindowDimensions,
@@ -40,7 +41,12 @@ import { useHardwareKeyboardPresent } from "@/keyboard";
 import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import { Shortcut } from "./shortcut";
 import { normalizeDisplayChord } from "./normalize-display-chord";
-import { isAnchorVisible, computePosition as computeAnchoredPosition } from "./anchor";
+import {
+  isAnchorVisible,
+  computePosition as computeAnchoredPosition,
+  sameMeasuredSize,
+  sameMeasuredRect,
+} from "./anchor";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 import { StyleSheet } from "react-native-unistyles";
 import { useIsCompactFormFactor } from "@/constants/layout";
@@ -459,9 +465,15 @@ export function TooltipTrigger({
     [clearOpenTimer, close, ctx, disabled, onPress],
   );
 
+  const lastNativeLayout = useRef<Rect | null>(null);
   const handleAnchorLayout = useCallback(
     (event: LayoutChangeEvent) => {
       onLayout?.(event);
+      if (isNative) {
+        const next = event.nativeEvent.layout;
+        if (sameMeasuredRect(lastNativeLayout.current, next, 1 / PixelRatio.get())) return;
+        lastNativeLayout.current = next;
+      }
       ctx.onAnchorLayout();
     },
     [onLayout, ctx],
@@ -697,9 +709,14 @@ function HeldShortcutBadge({
   const [hostRect, setHostRect] = useState<Rect | null>(null);
   const [size, setSize] = useState<{ width: number; height: number } | null>(null);
   const generation = useRef(0);
+  const measuredHost = useRef(selectedHost);
+  const geometryTolerance = isNative ? 1 / PixelRatio.get() : 0;
   const remeasure = useCallback(() => {
     const element = anchorRef.current;
-    if (!element) return;
+    if (!element) {
+      setRect(null);
+      return;
+    }
     const current = generation.current;
     let clipMeasurement: Promise<Rect | null> = Promise.resolve(null);
     const clipElement = clipRef?.current;
@@ -719,17 +736,25 @@ function HeldShortcutBadge({
       boundaryMeasurement,
       clipMeasurement,
     ]).then(([nextRect, nextHost, boundary, clip]) => {
-      if (current !== generation.current || !nextRect || !nextHost) return undefined;
+      if (current !== generation.current) return undefined;
+      if (!nextRect || !nextHost) {
+        setRect(null);
+        return undefined;
+      }
       if (!isAnchorVisible(nextRect, nextHost) || (clip && !isAnchorVisible(nextRect, clip))) {
         setRect(null);
         return undefined;
       }
-      setRect(
+      const positionedRect =
         boundary && side === "top"
           ? { ...nextRect, y: Math.min(nextRect.y, boundary.y) }
-          : nextRect,
+          : nextRect;
+      setRect((previous) =>
+        sameMeasuredRect(previous, positionedRect, geometryTolerance) ? previous : positionedRect,
       );
-      setHostRect(nextHost);
+      setHostRect((previous) =>
+        sameMeasuredRect(previous, nextHost, geometryTolerance) ? previous : nextHost,
+      );
       return undefined;
     });
   }, [
@@ -741,10 +766,18 @@ function HeldShortcutBadge({
     selectedHost,
     windowSize.width,
     windowSize.height,
+    geometryTolerance,
   ]);
   useEffect(() => {
     generation.current += 1;
-    setRect(null);
+    // Keep a measured portal mounted during routine layout updates. Removing it
+    // before measuring can feed another native layout event back into this effect.
+    if (isWeb) setRect(null);
+    if (measuredHost.current !== selectedHost) {
+      measuredHost.current = selectedHost;
+      setRect(null);
+      setHostRect(null);
+    }
     remeasure();
     const raf = requestAnimationFrame(remeasure);
     let observer: ResizeObserver | undefined;
@@ -761,7 +794,7 @@ function HeldShortcutBadge({
       observer?.disconnect();
       if (isWeb) window.removeEventListener("scroll", remeasure, true);
     };
-  }, [remeasure, ownerLayout, anchorRef, anchorVersion]);
+  }, [remeasure, ownerLayout, anchorRef, anchorVersion, selectedHost]);
   useAnimatedReaction(
     () => isMoving.value,
     (moving, previous) => {
@@ -785,13 +818,17 @@ function HeldShortcutBadge({
           offset,
         })
       : null;
-  const handleBadgeLayout = useCallback((event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    setSize((previous) =>
-      previous?.width === width && previous.height === height ? previous : { width, height },
-    );
-  }, []);
-  if (!rect || !hostRect) return null;
+  const handleBadgeLayout = useCallback(
+    (event: LayoutChangeEvent) => {
+      const { width, height } = event.nativeEvent.layout;
+      const next = { width, height };
+      setSize((previous) =>
+        sameMeasuredSize(previous, next, geometryTolerance) ? previous : next,
+      );
+    },
+    [geometryTolerance],
+  );
+  if (!rect || !hostRect || measuredHost.current !== selectedHost) return null;
   const badge = (
     <View pointerEvents="none" style={[StyleSheet.absoluteFill, { zIndex: OVERLAY_Z.tooltip }]}>
       <View

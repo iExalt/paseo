@@ -20,6 +20,24 @@ export interface Size {
   height: number;
 }
 
+/** Native layout may report adjacent pixel-rounded sizes as a centered surface moves. */
+export function sameMeasuredSize(previous: Size | null, next: Size, tolerance: number): boolean {
+  return (
+    previous !== null &&
+    Math.abs(previous.width - next.width) <= tolerance &&
+    Math.abs(previous.height - next.height) <= tolerance
+  );
+}
+
+export function sameMeasuredRect(previous: Rect | null, next: Rect, tolerance: number): boolean {
+  return (
+    previous !== null &&
+    sameMeasuredSize(previous, next, tolerance) &&
+    Math.abs(previous.x - next.x) <= tolerance &&
+    Math.abs(previous.y - next.y) <= tolerance
+  );
+}
+
 /** Gap kept between the surface and the edge of the display area. */
 const EDGE_PADDING = 8;
 
