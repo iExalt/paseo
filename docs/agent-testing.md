@@ -30,6 +30,16 @@ Grant notifications before the first launch, or the permission prompt takes focu
 `adb shell pm grant <package> android.permission.POST_NOTIFICATIONS`. In a build with
 [debug switches](#debug-switches), `--es paseo.notifications skip` also keeps it away.
 
+Before using `adb shell am broadcast`, check the receiver's required permission (Firebase's receiver
+requires `com.google.android.c2dm.permission.SEND`); `result=0` does not prove delivery.
+Confirm dispatch or policy denial with `adb shell dumpsys activity broadcasts` and verify the
+expected effect, such as the posted notification row in `adb shell dumpsys notification`.
+Retain stderr and the exit code for each adb step. Scope pending-intent dumps to the package
+(`adb shell dumpsys activity intents <package>`); an unscoped dump can reset the `kubectl exec` stream.
+For tap-routing proof, tap the actual posted row in the notification shade and retain its
+PendingIntent evidence; a synthetic `am start` can take a different path. Follow the
+[notification verification matrix](upstream/notifications.md#startup-and-verification).
+
 ### Deep links
 
 Checked on the Android 17 tablet with `sh.paseo` 0.16.0 on 2026-10-30, and again on a build of
