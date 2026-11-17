@@ -5,6 +5,7 @@ import { StyleSheet } from "react-native-unistyles";
 import { HEADER_INNER_HEIGHT, HEADER_INNER_HEIGHT_MOBILE } from "@/constants/layout";
 import { DensityIcon } from "@/components/ui/density-icon";
 import { Shortcut } from "@/components/ui/shortcut";
+import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import { density, densityIconBox } from "@/styles/density";
 import type { ShortcutKey } from "@/utils/format-shortcut";
 
@@ -29,7 +30,7 @@ interface SidebarHeaderRowProps {
    * sidebar footer.
    */
   variant?: SidebarHeaderRowVariant;
-  /** Shown in the right slot while the row is hovered, when `trailing` is not set. */
+  /** Shown on hover or modifier hold in the right slot, when `trailing` is not set. */
   shortcutKeys?: ShortcutKey[][] | null;
   /**
    * The right slot. A sibling of the row's button, never inside it (web cannot nest buttons). A
@@ -53,6 +54,7 @@ export function SidebarHeaderRow({
   rowRef,
 }: SidebarHeaderRowProps) {
   const [isHovered, setIsHovered] = useState(false);
+  const showShortcutBadges = useShowShortcutBadges();
   const handlePointerEnter = useCallback(() => setIsHovered(true), []);
   const handlePointerLeave = useCallback(() => setIsHovered(false), []);
   // The button and its trailing slot are siblings, so the row owns the pressed fill for both.
@@ -63,7 +65,7 @@ export function SidebarHeaderRow({
   const iconSize = variant === "header" ? "md" : "sm";
 
   let right = trailing ?? null;
-  if (right === null && shortcutKeys && isHovered) {
+  if (right === null && shortcutKeys && (isHovered || showShortcutBadges)) {
     right = <Shortcut chord={shortcutKeys} />;
   }
 

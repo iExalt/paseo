@@ -42,6 +42,56 @@ test.describe("Multi-key shortcut sequences", () => {
     const workspace = await withWorkspace({ prefix: "shortcut-sequence-" });
     await workspace.navigateTo();
 
+    // Plain browser uses Alt for the existing sidebar hold state.
+    const modifier = "Alt";
+    const searchHint = page
+      .getByTestId("sidebar-search")
+      .locator("..")
+      .getByText(process.platform === "darwin" ? "⌘K" : "Ctrl+K", {
+        exact: true,
+      });
+    await expect(searchHint).toBeHidden();
+    await page.keyboard.down(modifier);
+    try {
+      await expect(searchHint).toBeVisible();
+    } finally {
+      await page.keyboard.up(modifier);
+      await page.mouse.move(0, 0);
+    }
+    await expect(searchHint).toBeHidden();
+
+    const otherWorkspace = await withWorkspace({ prefix: "shortcut-hint-other-" });
+    const currentRow = page.getByTestId(
+      new RegExp(`^sidebar-workspace-row-.*:${workspace.workspaceId}$`),
+    );
+    await currentRow.click({ button: "right" });
+    const currentPin = page.getByTestId(
+      new RegExp(`^sidebar-workspace-menu-pin-.*:${workspace.workspaceId}$`),
+    );
+    await expect(currentPin).toBeVisible();
+    await expect(
+      currentPin.getByText(process.platform === "darwin" ? "⇧⌘P" : "Ctrl+Shift+P", { exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    const otherRow = page.getByTestId(
+      new RegExp(`^sidebar-workspace-row-.*:${otherWorkspace.workspaceId}$`),
+    );
+    await otherRow.click({ button: "right" });
+    const otherPin = page.getByTestId(
+      new RegExp(`^sidebar-workspace-menu-pin-.*:${otherWorkspace.workspaceId}$`),
+    );
+    await expect(otherPin).toBeVisible();
+    await expect(
+      otherPin.getByText(process.platform === "darwin" ? "⇧⌘P" : "Ctrl+Shift+P", { exact: true }),
+    ).toBeHidden();
+    await page.keyboard.press("Escape");
+
+    await page.getByTestId("sidebar-help").click();
+    await expect(
+      page.getByTestId("sidebar-help-shortcuts").getByText("?", { exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+
     await page.keyboard.press(SEQUENCE_PREFIX);
     await page.keyboard.press(SEQUENCE_FINAL_KEY);
 
