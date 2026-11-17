@@ -141,9 +141,9 @@ upstream's npm, EAS and store process; never follow or run them in the fork.
 - **Before changing app routes, startup routing, remembered workspace restore, or active workspace selection, read [docs/upstream/expo-router.md](docs/upstream/expo-router.md).**
 - **Develop in a disposable dev instance, not on the Mac.** Create the worktree, install dependencies and run checks there, even for a small fix.
 - **NEVER run the full test suite locally.** The test suites are heavy and will freeze the machine, especially if multiple agents run them in parallel. Rules:
-  - Run only the specific test file you changed: `npx vitest run <file>`
+  - Run only the specific test file you changed, using the [package-appropriate command](docs/upstream/testing.md#running-tests-locally).
   - Never run `npm run test` for an entire workspace unless explicitly asked.
-  - If you must run a broad suite, pipe output to a file and read it afterward: `npx vitest run <file> > /tmp/test-output.txt 2>&1` then read the file.
+  - If you must run a broad suite, redirect output to a file and read it afterward; follow [Running tests locally](docs/upstream/testing.md#running-tests-locally).
   - Never re-run a test suite that another agent already ran and reported green — trust the result.
   - For full suite verification, push to CI and check GitHub Actions instead.
 - Add tests to existing suites and reuse their npm scripts and CI jobs instead of creating feature-specific ones.
