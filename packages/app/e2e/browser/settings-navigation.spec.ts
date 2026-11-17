@@ -361,6 +361,8 @@ test.describe("Settings sidebar navigation", () => {
     await openAddHostFlow(page);
     await selectHostConnectionType(page, "direct");
     await page.setViewportSize({ width: 360, height: 640 });
+    await expect(page.getByTestId("direct-password-input")).toBeInViewport({ ratio: 1 });
+    await expect(page.getByTestId("direct-host-advanced-toggle")).toBeInViewport({ ratio: 1 });
     await fillDirectHostAddress(page, "127.0.0.1", "0");
 
     const submit = page.getByTestId("direct-host-submit");

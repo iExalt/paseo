@@ -20,6 +20,7 @@ import { buildDirectConnectionUri } from "@/components/direct-connection-host";
 import type { EditingTextInputHandle } from "@/components/ui/text-input/types";
 
 const FLEX_ONE_STYLE = { flex: 1 } as const;
+const DIRECT_CONNECTION_SNAP_POINTS = ["90%"];
 
 interface DirectConnectionDraft {
   host: string;
@@ -423,6 +424,7 @@ function AddHostModalContent({ visible, onClose, onCancel, onSaved }: AddHostMod
       visible={visible}
       onClose={handleClose}
       testID="add-host-modal"
+      snapPoints={DIRECT_CONNECTION_SNAP_POINTS}
       footer={
         <>
           <Button
