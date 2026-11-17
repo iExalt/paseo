@@ -67,7 +67,13 @@ import {
 import type { ComposerAttachment } from "@/attachments/types";
 import type { ImageAttachment, MessagePayload, TextReplacement } from "@/composer/types";
 import { focusWithRetries } from "@/utils/web-focus";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  ShortcutHintLayoutProvider,
+  ShortcutHintBoundaryProvider,
+} from "@/components/ui/tooltip";
 import { Shortcut } from "@/components/ui/shortcut";
 import {
   DropdownMenu,
@@ -612,6 +618,7 @@ function MessageInputAutoFocus({
 function MessageInputOverlay({
   showDictationOverlay,
   showRealtimeOverlay,
+  stopShortcutEnabled,
   voice,
   dictationVolume,
   dictationDuration,
@@ -628,6 +635,7 @@ function MessageInputOverlay({
 }: {
   showDictationOverlay: boolean;
   showRealtimeOverlay: boolean;
+  stopShortcutEnabled: boolean;
   voice:
     | {
         isMuted: boolean;
@@ -671,6 +679,7 @@ function MessageInputOverlay({
       <RealtimeVoiceOverlay
         isMuted={voice.isMuted}
         isSwitching={voice.isVoiceSwitching}
+        stopShortcutEnabled={stopShortcutEnabled}
         onToggleMute={voice.toggleMute}
         onStop={onRealtimeVoiceStop}
       />
@@ -832,10 +841,18 @@ function VoiceButtonTooltip({
   voiceMuteToggleKeys: ShortcutChord | null | undefined;
   dictationToggleKeys: ShortcutChord | null | undefined;
 }) {
+  const { isActiveComposer } = useComposerKeyboardScope();
   const shortcut = isRealtimeVoiceForCurrentAgent ? voiceMuteToggleKeys : dictationToggleKeys;
   if (!visible) return null;
   return (
-    <Tooltip delayDuration={0} enabledOnDesktop enabledOnMobile={false}>
+    <Tooltip
+      delayDuration={0}
+      enabledOnDesktop
+      enabledOnMobile={false}
+      heldShortcut={isActiveComposer && isDictationStartEnabled ? shortcut : null}
+      heldOffset={36}
+      heldTestID="composer-dictation-shortcut-hint"
+    >
       <TooltipTrigger
         onPress={onVoicePress}
         disabled={!isDictationStartEnabled}
@@ -972,6 +989,15 @@ interface ToggleRealtimeVoiceContext {
   toast: { error: (msg: string) => void };
   interruptBeforeVoiceMessage: string;
   exitFullscreen: () => void;
+}
+
+function canUseVoiceStopShortcut(
+  ctx: Pick<
+    ToggleRealtimeVoiceContext,
+    "voiceServerId" | "voiceAgentId" | "isConnected" | "disabled"
+  >,
+): boolean {
+  return Boolean(ctx.voiceServerId && ctx.voiceAgentId && ctx.isConnected && !ctx.disabled);
 }
 
 function toggleRealtimeVoiceImpl(ctx: ToggleRealtimeVoiceContext): void {
@@ -1304,6 +1330,17 @@ function shouldShowFullscreenControl(
   return compact && !readOnly && !overlayVisible && renderedLines > 2;
 }
 
+function focusHintKeys(input: {
+  active: boolean;
+  focused: boolean;
+  readOnly: boolean;
+  overlay: boolean;
+  keys: ShortcutChord | null | undefined;
+}) {
+  if (!input.active || input.focused || input.readOnly || input.overlay) return null;
+  return input.keys;
+}
+
 export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
   function MessageInput(props, ref) {
     const {
@@ -1352,7 +1389,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       textReplacement,
       submitLabel,
     } = resolveMessageInputProps(props);
-    const { isPaneFocused } = useComposerKeyboardScope();
+    const { isPaneFocused, isActiveComposer } = useComposerKeyboardScope();
     const mode = resolveComposerInputMode(inputMode);
     const { t } = useTranslation();
     const isCompact = useIsCompactFormFactor();
@@ -2344,6 +2381,12 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         sendButton,
       ],
     );
+    const stopShortcutEnabled = canUseVoiceStopShortcut({
+      voiceServerId,
+      voiceAgentId,
+      isConnected,
+      disabled,
+    });
     const voiceOverlay = useMemo(
       () => (
         <View
@@ -2353,6 +2396,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
           <MessageInputOverlay
             showDictationOverlay={showDictationOverlay}
             showRealtimeOverlay={showRealtimeOverlay}
+            stopShortcutEnabled={stopShortcutEnabled}
             voice={voice}
             dictationVolume={dictationVolume}
             dictationDuration={dictationDuration}
@@ -2374,6 +2418,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
         surfacePresentation.overlay.pointerEvents,
         showDictationOverlay,
         showRealtimeOverlay,
+        stopShortcutEnabled,
         voice,
         dictationVolume,
         dictationDuration,
@@ -2390,43 +2435,66 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
       ],
     );
     return (
-      <View
-        ref={rootRef}
-        style={
-          isFullscreen
-            ? styles.fullscreenContainer
-            : [styles.container, Platform.OS === "ios" && isCompact && styles.inputWrapperCompact]
-        }
-        testID="message-input-root"
-        onLayout={handleComposerLayout}
+      <ShortcutHintLayoutProvider
+        value={`${renderedLines}:${value}:${showDictationOverlay}:${showRealtimeOverlay}`}
       >
-        <MessageInputAutoFocus
-          enabled={autoFocus}
-          autoFocusKey={autoFocusKey}
-          textInputRef={textInputRef}
-        />
-        <ComposerInputPresentation
-          fullscreen={isFullscreen}
-          controlSizing={controlSizing}
-          surface={textSurface}
-          toolbar={toolbar}
-          send={sendButton}
-          error={props.submissionError}
-          onExit={exitFullscreen}
-          inputWrapperRef={inputWrapperRef}
-          inputWrapperStyle={inputWrapperCombinedStyle}
-          inputPointerEvents={surfacePresentation.input.pointerEvents}
-          attachmentSlot={attachmentSlot}
-          showFullscreenButton={shouldShowFullscreenControl(
-            isCompact,
-            readOnly,
-            showOverlay,
-            renderedLines,
-          )}
-          onEnter={enterFullscreen}
-          overlay={voiceOverlay}
-        />
-      </View>
+        <ShortcutHintBoundaryProvider value={rootRef}>
+          <Tooltip
+            heldShortcut={focusHintKeys({
+              active: isActiveComposer,
+              focused: isInputFocused,
+              readOnly: readOnly || Boolean(disabled),
+              overlay: showOverlay,
+              keys: focusInputKeys,
+            })}
+            heldOffset={64}
+            heldTestID="message-input-focus-shortcut-hint"
+          >
+            <TooltipTrigger asChild>
+              <View
+                ref={rootRef}
+                style={
+                  isFullscreen
+                    ? styles.fullscreenContainer
+                    : [
+                        styles.container,
+                        Platform.OS === "ios" && isCompact && styles.inputWrapperCompact,
+                      ]
+                }
+                testID="message-input-root"
+                onLayout={handleComposerLayout}
+              >
+                <MessageInputAutoFocus
+                  enabled={autoFocus}
+                  autoFocusKey={autoFocusKey}
+                  textInputRef={textInputRef}
+                />
+                <ComposerInputPresentation
+                  fullscreen={isFullscreen}
+                  controlSizing={controlSizing}
+                  surface={textSurface}
+                  toolbar={toolbar}
+                  send={sendButton}
+                  error={props.submissionError}
+                  onExit={exitFullscreen}
+                  inputWrapperRef={inputWrapperRef}
+                  inputWrapperStyle={inputWrapperCombinedStyle}
+                  inputPointerEvents={surfacePresentation.input.pointerEvents}
+                  attachmentSlot={attachmentSlot}
+                  showFullscreenButton={shouldShowFullscreenControl(
+                    isCompact,
+                    readOnly,
+                    showOverlay,
+                    renderedLines,
+                  )}
+                  onEnter={enterFullscreen}
+                  overlay={voiceOverlay}
+                />
+              </View>
+            </TooltipTrigger>
+          </Tooltip>
+        </ShortcutHintBoundaryProvider>
+      </ShortcutHintLayoutProvider>
     );
   },
 );

@@ -12,7 +12,7 @@ import React, {
   type Dispatch,
   type SetStateAction,
 } from "react";
-import { Pressable, Text, View, type LayoutChangeEvent, type ScrollView } from "react-native";
+import { Text, View, type LayoutChangeEvent, type ScrollView } from "react-native";
 import { useFilePanelOpenWithMenu } from "@/file-panels";
 import {
   CopyX,
@@ -31,7 +31,11 @@ import {
   X,
 } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
-import Animated from "react-native-reanimated";
+import Animated, {
+  useAnimatedScrollHandler,
+  useComposedEventHandler,
+} from "react-native-reanimated";
+import { scheduleOnRN } from "react-native-worklets";
 import { useTranslation } from "react-i18next";
 import { SortableInlineList } from "@/components/sortable-inline-list";
 import type {
@@ -47,11 +51,18 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  ShortcutHintLayoutProvider,
+  ShortcutHintClipProvider,
+} from "@/components/ui/tooltip";
 import { useShortcutKeys } from "@/hooks/use-shortcut-keys";
 import { WORKSPACE_SECONDARY_HEADER_HEIGHT, useIsCompactFormFactor } from "@/constants/layout";
 import { CONTROL_HEIGHTS } from "@/components/ui/control-geometry";
 import type { ShortcutKey } from "@/utils/format-shortcut";
+import { useShowShortcutBadges } from "@/hooks/use-show-shortcut-badges";
 import { Shortcut } from "@/components/ui/shortcut";
 import { useWorkspaceTabLayout } from "@/screens/workspace/use-workspace-tab-layout";
 import { retainWorkspaceTabMeasuredWidth } from "@/screens/workspace/workspace-tab-layout";
@@ -254,6 +265,7 @@ function WorkspaceNewTabButton({
         label={tooltipText}
         shortcut={shortcutKeys}
         testID="workspace-new-tab-button"
+        shortcutOffset={64}
         style={placement === "inline" ? styles.inlineNewTabButton : undefined}
       >
         <ThemedPlus size={TAB_RAIL_GLYPH_SIZE} uniProps={extraMutedColorMapping} />
@@ -728,6 +740,10 @@ function TabHandleContent({
   );
 }
 
+function activeHintKeys(active: boolean, keys: ShortcutKey[][] | null) {
+  return active ? keys : null;
+}
+
 function TabChip({
   serverId,
   workspaceId,
@@ -735,6 +751,7 @@ function TabChip({
   isActive,
   isDragging,
   isFocused,
+  indexShortcut,
   resolvedTabWidth,
   showLabel,
   showCloseButton,
@@ -756,6 +773,7 @@ function TabChip({
   isActive: boolean;
   isDragging: boolean;
   isFocused: boolean;
+  indexShortcut: ShortcutKey[][] | null;
   resolvedTabWidth: number;
   showLabel: boolean;
   showCloseButton: boolean;
@@ -774,6 +792,7 @@ function TabChip({
 }) {
   const { closeButtonTestId, contextMenuTestId, menuEntries } = resolvedTab;
   const { t } = useTranslation();
+  const closeKeys = useShortcutKeys("workspace-tab-close-current");
   const openWith = useFilePanelOpenWithMenu(
     { serverId, workspaceId, tabId: tab.tabId },
     contextMenuTestId,
@@ -869,7 +888,15 @@ function TabChip({
       onPointerLeave={handleTabPointerLeave}
     >
       <ContextMenu key={tab.key}>
-        <Tooltip delayDuration={400} enabledOnDesktop enabledOnMobile={false}>
+        <Tooltip
+          delayDuration={400}
+          enabledOnDesktop
+          enabledOnMobile={false}
+          heldShortcut={activeHintKeys(isFocused, indexShortcut)}
+          heldSide="bottom"
+          heldOffset={8}
+          heldTestID={`workspace-tab-index-hint-${testIdentity}`}
+        >
           <TooltipTrigger asChild triggerRefProp="triggerRef">
             <ContextMenuTrigger
               {...(dragHandleProps?.attributes as object | undefined)}
@@ -922,36 +949,46 @@ function TabChip({
             ]}
           >
             <TrailingActionScrim backdrop={chipBackdrop} />
-            <Pressable
-              {...(closeButtonDragBlockers as object | undefined)}
-              testID={closeButtonTestId}
-              accessibilityRole="button"
-              accessibilityLabel={t("workspace.tabs.menu.close")}
-              disabled={isClosingTab}
-              onPressIn={handleCloseButtonPressIn}
-              onHoverIn={handleCloseButtonHoverIn}
-              onHoverOut={handleCloseButtonHoverOut}
-              onPress={handleCloseButtonPress}
-              style={styles.tabCloseButton}
+            <Tooltip
+              heldShortcut={activeHintKeys(
+                isActiveFocused && showCloseControl && !isClosingTab,
+                closeKeys,
+              )}
+              heldSide="bottom"
+              heldOffset={36}
+              heldTestID={`workspace-tab-close-hint-${testIdentity}`}
             >
-              {({ hovered: closeHovered, pressed }) => {
-                const highlighted = closeHovered || pressed;
-                if (isClosingTab) {
+              <TooltipTrigger
+                {...(closeButtonDragBlockers as object | undefined)}
+                testID={closeButtonTestId}
+                accessibilityRole="button"
+                accessibilityLabel={t("workspace.tabs.menu.close")}
+                disabled={isClosingTab}
+                onPressIn={handleCloseButtonPressIn}
+                onHoverIn={handleCloseButtonHoverIn}
+                onHoverOut={handleCloseButtonHoverOut}
+                onPress={handleCloseButtonPress}
+                style={styles.tabCloseButton}
+              >
+                {({ hovered: closeHovered, pressed }) => {
+                  const highlighted = closeHovered || pressed;
+                  if (isClosingTab) {
+                    return (
+                      <ThemedLoadingSpinner
+                        size={12}
+                        uniProps={highlighted ? foregroundColorMapping : mutedColorMapping}
+                      />
+                    );
+                  }
                   return (
-                    <ThemedLoadingSpinner
+                    <ThemedX
                       size={12}
                       uniProps={highlighted ? foregroundColorMapping : mutedColorMapping}
                     />
                   );
-                }
-                return (
-                  <ThemedX
-                    size={12}
-                    uniProps={highlighted ? foregroundColorMapping : mutedColorMapping}
-                  />
-                );
-              }}
-            </Pressable>
+                }}
+              </TooltipTrigger>
+            </Tooltip>
           </View>
         ) : null}
 
@@ -1111,11 +1148,21 @@ function ResolvedWorkspaceDesktopTabsRow({
 }: ResolvedWorkspaceDesktopTabsRowProps) {
   const { t } = useTranslation();
   const isCompact = useIsCompactFormFactor();
-  const newTabKeys = useShortcutKeys("workspace-tab-new");
+  const effectiveNewTabKeys = useShortcutKeys("workspace-tab-new");
+  const newTabKeys = isFocused ? effectiveNewTabKeys : null;
   const [tabsContainerWidth, setTabsContainerWidth] = useState<number>(0);
   const tabsScrollRef = useRef<ScrollView>(null);
   const [exitFocusModeWidth, setExitFocusModeWidth] = useState<number>(0);
   const tabScrollBoundary = useHorizontalScrollBoundary();
+  const showHintBadges = useShowShortcutBadges();
+  const [hintScrollX, setHintScrollX] = useState(0);
+  const onHintScroll = useAnimatedScrollHandler(
+    (event) => {
+      if (showHintBadges) scheduleOnRN(setHintScrollX, event.contentOffset.x);
+    },
+    [showHintBadges],
+  );
+  const handleHintScroll = useComposedEventHandler([tabScrollBoundary.onScroll, onHintScroll]);
   const measurementCache = useContext(TabMeasurementCache);
   const [labelMeasurements, setLabelMeasurements] = useState(() => new Map(measurementCache ?? []));
   useLayoutEffect(() => {
@@ -1406,92 +1453,98 @@ function ResolvedWorkspaceDesktopTabsRow({
   );
 
   const row = (
-    <View
-      style={[styles.tabsContainer, onSidebar && styles.tabsContainerSidebar]}
-      testID="workspace-tabs-row"
-      onLayout={handleTabsContainerLayout}
+    <ShortcutHintLayoutProvider
+      value={`${tabsContainerWidth}:${hintScrollX}:${displayedTabs.map((item) => item.tab.tabId).join(":")}`}
     >
       <View
-        style={styles.tabLabelMeasurements}
-        pointerEvents="none"
-        accessibilityElementsHidden
-        importantForAccessibility="no-hide-descendants"
+        style={[styles.tabsContainer, onSidebar && styles.tabsContainerSidebar]}
+        testID="workspace-tabs-row"
+        onLayout={handleTabsContainerLayout}
       >
-        {tabLabels.map(({ key, label }) => (
-          <TabLabelMeasurement
-            key={`${key}:${label}`}
-            tabKey={key}
-            label={label}
-            onMeasure={handleTabLabelLayout}
-          />
-        ))}
-      </View>
-      <WorkspaceExitFocusModeButton
-        visible={focusModeEnabled}
-        onPress={onExitFocusMode}
-        onLayout={handleExitFocusModeLayout}
-      />
-      <View style={styles.tabsScrollContainer}>
-        <Animated.ScrollView
-          ref={tabsScrollRef}
-          horizontal
-          scrollEnabled={layout.requiresHorizontalScrollFallback}
-          testID="workspace-tabs-scroll"
-          style={tabsScrollStyle}
-          contentContainerStyle={styles.tabsContent}
-          showsHorizontalScrollIndicator={false}
-          onLayout={tabScrollBoundary.onLayout}
-          onContentSizeChange={tabScrollBoundary.onContentSizeChange}
-          onScroll={tabScrollBoundary.onScroll}
-          scrollEventThrottle={16}
+        <View
+          style={styles.tabLabelMeasurements}
+          pointerEvents="none"
+          accessibilityElementsHidden
+          importantForAccessibility="no-hide-descendants"
         >
-          <SortableInlineList
-            data={displayedTabs}
-            keyExtractor={tabKeyExtractor}
-            useDragHandle
-            disabled={!externalDndContext && displayedTabs.length < 2}
-            onDragEnd={handleDragEnd}
-            externalDndContext={externalDndContext}
-            activeId={activeDragTabId}
-            getItemData={getTabDragData}
-            renderItem={renderTab}
-          />
-          {!layout.requiresHorizontalScrollFallback ? (
-            <WorkspaceNewTabButton
-              panePanelKinds={panePanelKinds}
-              host={host}
-              launchPurpose={launchPurpose}
-              placement="inline"
-              serverId={normalizedServerId}
-              paneId={paneId}
-              shortcutKeys={newTabKeys}
+          {tabLabels.map(({ key, label }) => (
+            <TabLabelMeasurement
+              key={`${key}:${label}`}
+              tabKey={key}
+              label={label}
+              onMeasure={handleTabLabelLayout}
             />
-          ) : null}
-        </Animated.ScrollView>
-        <HorizontalScrollBoundaryShades
-          visible={layout.requiresHorizontalScrollFallback}
-          backdrop={rail}
-          testIDPrefix="workspace-tabs-scroll-shade"
-          leftStyle={tabScrollBoundary.leftShadeStyle}
-          rightStyle={tabScrollBoundary.rightShadeStyle}
+          ))}
+        </View>
+        <WorkspaceExitFocusModeButton
+          visible={focusModeEnabled}
+          onPress={onExitFocusMode}
+          onLayout={handleExitFocusModeLayout}
+        />
+        <View style={styles.tabsScrollContainer}>
+          <ShortcutHintClipProvider value={tabsScrollRef}>
+            <Animated.ScrollView
+              ref={tabsScrollRef}
+              horizontal
+              scrollEnabled={layout.requiresHorizontalScrollFallback}
+              testID="workspace-tabs-scroll"
+              style={tabsScrollStyle}
+              contentContainerStyle={styles.tabsContent}
+              showsHorizontalScrollIndicator={false}
+              onLayout={tabScrollBoundary.onLayout}
+              onContentSizeChange={tabScrollBoundary.onContentSizeChange}
+              onScroll={handleHintScroll}
+              scrollEventThrottle={16}
+            >
+              <SortableInlineList
+                data={displayedTabs}
+                keyExtractor={tabKeyExtractor}
+                useDragHandle
+                disabled={!externalDndContext && displayedTabs.length < 2}
+                onDragEnd={handleDragEnd}
+                externalDndContext={externalDndContext}
+                activeId={activeDragTabId}
+                getItemData={getTabDragData}
+                renderItem={renderTab}
+              />
+              {!layout.requiresHorizontalScrollFallback ? (
+                <WorkspaceNewTabButton
+                  panePanelKinds={panePanelKinds}
+                  host={host}
+                  launchPurpose={launchPurpose}
+                  placement="inline"
+                  serverId={normalizedServerId}
+                  paneId={paneId}
+                  shortcutKeys={newTabKeys}
+                />
+              ) : null}
+            </Animated.ScrollView>
+          </ShortcutHintClipProvider>
+          <HorizontalScrollBoundaryShades
+            visible={layout.requiresHorizontalScrollFallback}
+            backdrop={rail}
+            testIDPrefix="workspace-tabs-scroll-shade"
+            leftStyle={tabScrollBoundary.leftShadeStyle}
+            rightStyle={tabScrollBoundary.rightShadeStyle}
+          />
+        </View>
+        <WorkspacePaneToolbarActions
+          panePanelKinds={panePanelKinds}
+          host={host}
+          launchPurpose={launchPurpose}
+          showNewTabButton={layout.requiresHorizontalScrollFallback}
+          showSplitActions={showPaneSplitActions}
+          showMaximizeAction={showPaneMaximizeAction}
+          paneMaximized={paneMaximized}
+          serverId={normalizedServerId}
+          paneId={paneId}
+          newTabShortcutKeys={newTabKeys}
+          onSplitRight={onSplitRight}
+          onSplitDown={onSplitDown}
+          onTogglePaneMaximized={onTogglePaneMaximized}
         />
       </View>
-      <WorkspacePaneToolbarActions
-        panePanelKinds={panePanelKinds}
-        host={host}
-        launchPurpose={launchPurpose}
-        showNewTabButton={layout.requiresHorizontalScrollFallback}
-        showSplitActions={showPaneSplitActions}
-        showMaximizeAction={showPaneMaximizeAction}
-        paneMaximized={paneMaximized}
-        serverId={normalizedServerId}
-        paneId={paneId}
-        newTabShortcutKeys={newTabKeys}
-        onSplitRight={onSplitRight}
-        onSplitDown={onSplitDown}
-        onTogglePaneMaximized={onTogglePaneMaximized}
-      />
-    </View>
+    </ShortcutHintLayoutProvider>
   );
 
   return <RenderProfile id="WorkspaceDesktopTabsRow">{row}</RenderProfile>;
@@ -1553,6 +1606,14 @@ function ResolvedDesktopTabChip({
   showDropIndicatorBefore: boolean;
   showDropIndicatorAfter: boolean;
 }) {
+  const indexKeys = useShortcutKeys("workspace-tab-jump-index");
+  const digit = index < 9 ? String(index + 1) : null;
+  const indexShortcut =
+    digit && indexKeys?.some((combo) => combo.includes("1-9") || combo.includes("Digit"))
+      ? indexKeys.map((combo) =>
+          combo.map((key) => (key === "1-9" || key === "Digit" ? digit : key)),
+        )
+      : null;
   const { t } = useTranslation();
   const presentation = item.presentation;
   const resolvedTab = useMemo(
@@ -1614,6 +1675,7 @@ function ResolvedDesktopTabChip({
         isActive={item.isActive}
         isDragging={isDragging}
         isFocused={isFocused}
+        indexShortcut={indexShortcut}
         resolvedTabWidth={resolvedTabWidth}
         showLabel={showLabel}
         showCloseButton={showCloseButton}

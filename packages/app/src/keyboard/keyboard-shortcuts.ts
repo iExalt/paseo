@@ -1685,7 +1685,7 @@ export function getBindingIdForAction(
   platform: { isMac: boolean; usesDesktopBindings: boolean },
 ): string | null {
   for (const binding of DEFAULT_BINDINGS) {
-    if (binding.help?.id !== actionId) {
+    if (binding.help?.id !== actionId && binding.id !== actionId) {
       continue;
     }
     if (!helpMatchesPlatform(binding.when, platform)) {
@@ -1724,7 +1724,7 @@ export function getDefaultKeysForAction(
   bindings: readonly ParsedShortcutBinding[] = DEFAULT_BINDINGS,
 ): ShortcutKey[][] | null {
   for (const binding of bindings) {
-    if (binding.help?.id !== actionId) {
+    if (binding.help?.id !== actionId && binding.id !== actionId) {
       continue;
     }
     if (!helpMatchesPlatform(binding.when, platform)) {

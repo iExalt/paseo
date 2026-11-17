@@ -1,3 +1,5 @@
+import type { Locator, TestInfo } from "@playwright/test";
+import { writeFile } from "node:fs/promises";
 import { expect, test, type Page } from "../support/fixtures";
 import { gotoAppShell } from "../support/helpers/app";
 import { daemonWsRoutePattern } from "../support/helpers/daemon-port";
@@ -219,7 +221,7 @@ async function startDictationWithShortcut(page: Page): Promise<void> {
 
 test("dictation shortcut leaves retained fullscreen and exposes recording controls", async ({
   page,
-}) => {
+}, testInfo) => {
   const agent = await seedMockAgentWorkspace({
     repoPrefix: "fullscreen-dictation-",
     title: "Fullscreen dictation shortcut",
@@ -245,6 +247,9 @@ test("dictation shortcut leaves retained fullscreen and exposes recording contro
     await expect(
       page.getByRole("button", { name: "Insert transcription and send", exact: true }),
     ).toBeVisible();
+    for (const theme of ["light", "dark"] as const) {
+      await expectDictationHints(page, testInfo, theme);
+    }
     await page.getByRole("button", { name: "Cancel dictation", exact: true }).click();
     await expect(composerLocator(page)).toBeEditable();
     await expect(composerLocator(page)).toHaveValue(draft);
@@ -340,3 +345,81 @@ test("shows dictation failure when the terminal prompt starts it by shortcut", a
     await workspace.cleanup();
   }
 });
+
+async function expectDictationHints(page: Page, testInfo: TestInfo, theme: "light" | "dark") {
+  await page.emulateMedia({ colorScheme: theme });
+  await page.keyboard.down("Alt");
+  try {
+    const hint = page.getByTestId("dictation-confirm-shortcut-hint");
+    await expect(hint).toBeVisible();
+    await expect
+      .poll(async () =>
+        hint.evaluate((element) => {
+          const values = getComputedStyle(element)
+            .backgroundColor.match(/[\d.]+/g)!
+            .map(Number);
+          return (values[0] + values[1] + values[2]) / 3 < 128;
+        }),
+      )
+      .toBe(theme === "dark");
+    for (const hidden of [
+      "composer-mode-shortcut-hint",
+      "composer-voice-shortcut-hint",
+      "composer-dictation-shortcut-hint",
+      "message-input-focus-shortcut-hint",
+    ]) {
+      await expect(page.getByTestId(hidden)).toHaveCount(0);
+    }
+    const cancelHint = page.getByTestId("dictation-cancel-shortcut-hint");
+    await expect(cancelHint).toBeVisible();
+    await expect(cancelHint).toHaveText("Esc");
+    const metrics = [];
+    for (const target of [hint, cancelHint])
+      metrics.push(await readDictationHintGeometry(page, target));
+    const [confirm, cancel] = metrics;
+    expect(
+      Math.max(
+        0,
+        Math.min(confirm.rect.x + confirm.rect.width, cancel.rect.x + cancel.rect.width) -
+          Math.max(confirm.rect.x, cancel.rect.x),
+      ) *
+        Math.max(
+          0,
+          Math.min(confirm.rect.y + confirm.rect.height, cancel.rect.y + cancel.rect.height) -
+            Math.max(confirm.rect.y, cancel.rect.y),
+        ),
+    ).toBe(0);
+    await writeFile(
+      testInfo.outputPath(`dictation-hints-${theme}.json`),
+      JSON.stringify(metrics, null, 2),
+    );
+    await page.screenshot({ path: testInfo.outputPath(`dictation-hints-${theme}.png`) });
+  } finally {
+    await page.keyboard.up("Alt");
+  }
+  await expect(page.getByTestId("dictation-confirm-shortcut-hint")).toHaveCount(0);
+  await expect(page.getByTestId("dictation-cancel-shortcut-hint")).toHaveCount(0);
+}
+
+async function readDictationHintGeometry(page: Page, hint: Locator) {
+  const rect = await hint.boundingBox();
+  expect(rect).not.toBeNull();
+  const viewport = page.viewportSize()!;
+  expect(rect!.x).toBeGreaterThanOrEqual(0);
+  expect(rect!.y).toBeGreaterThanOrEqual(0);
+  expect(rect!.x + rect!.width).toBeLessThanOrEqual(viewport.width);
+  expect(rect!.y + rect!.height).toBeLessThanOrEqual(viewport.height);
+  const covered: string[] = [];
+  for (const control of await page.getByRole("button").all()) {
+    if (!(await control.isVisible())) continue;
+    const box = await control.boundingBox();
+    if (
+      box &&
+      Math.min(rect!.x + rect!.width, box.x + box.width) > Math.max(rect!.x, box.x) &&
+      Math.min(rect!.y + rect!.height, box.y + box.height) > Math.max(rect!.y, box.y)
+    )
+      covered.push((await control.getAttribute("aria-label")) ?? (await control.innerText()));
+  }
+  expect(covered).toEqual([]);
+  return { id: await hint.getAttribute("data-testid"), rect: rect!, viewport, covered };
+}
