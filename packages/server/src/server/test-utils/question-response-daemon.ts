@@ -43,11 +43,16 @@ class RetryQuestionClient extends MockLoadTestAgentClient {
 }
 
 async function main(): Promise<void> {
+  const webOrigin = process.env.E2E_WEB_ORIGIN;
+  if (!webOrigin) {
+    throw new Error("E2E_WEB_ORIGIN is not set");
+  }
+
   const daemon = await createTestPaseoDaemon({
     agentClients: { mock: new RetryQuestionClient() },
     isDev: true,
     mcpEnabled: false,
-    corsAllowedOrigins: [`http://localhost:${process.env.E2E_METRO_PORT}`],
+    corsAllowedOrigins: [webOrigin],
   });
   process.on("message", (message: unknown) => {
     if (message === "release") firstResponse.resolve();
