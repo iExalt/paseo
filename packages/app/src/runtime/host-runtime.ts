@@ -3175,7 +3175,9 @@ export class HostRuntimeStore {
       .then(() => {
         if (cancelled || !this.getSnapshot(serverId)) return;
         recordNotificationOpenStage(serverId, agentId, "runtime");
-        this.getSnapshot(serverId)?.client?.ensureConnected({ verify: true });
+        // Someone tapped to see this agent: one short liveness window, not the resume check's two
+        // five-second windows, before a silent socket is replaced.
+        this.getSnapshot(serverId)?.client?.ensureConnected({ verify: true, userWaiting: true });
         void this.prepareAgentTimeline(serverId, agentId)
           .then(() => {
             if (!cancelled) recordNotificationOpenStage(serverId, agentId, "cache");

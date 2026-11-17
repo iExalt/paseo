@@ -160,3 +160,21 @@ export function resolveDismissLabel(
 ): string {
   return questions.find((question) => question.dismissLabel)?.dismissLabel ?? fallbackLabel;
 }
+
+/**
+ * A held response (the host is offline) blocks Submit and Dismiss but not Next: moving between
+ * questions sends nothing.
+ */
+export function resolveQuestionFormActions(input: {
+  isResponding: boolean;
+  responseHeld: boolean;
+  isLastQuestion: boolean;
+  allAnswered: boolean;
+  activeQuestionAnswered: boolean;
+}): { answerBlocked: boolean; primaryDisabled: boolean } {
+  const answerBlocked = input.isResponding || input.responseHeld;
+  const primaryDisabled = input.isLastQuestion
+    ? answerBlocked || !input.allAnswered
+    : input.isResponding || !input.activeQuestionAnswered;
+  return { answerBlocked, primaryDisabled };
+}
