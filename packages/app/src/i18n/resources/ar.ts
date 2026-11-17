@@ -3443,6 +3443,7 @@ export const ar: TranslationResources = {
         add: "يضيف",
         adding: "جارٍ الإضافة...",
         failedToSave: "فشل حفظ النموذج",
+        showInPicker: "إظهار {{model}} في قوائم اختيار النماذج",
         removeModel: "إزالة{{id}}",
         searchPlaceholder: "نماذج البحث",
         loading: "جارٍ تحميل النماذج...",

@@ -3425,6 +3425,7 @@ export const ko: TranslationResources = {
         add: "추가",
         adding: "추가 중...",
         failedToSave: "모델을 저장하지 못했습니다",
+        showInPicker: "모델 선택기에 {{model}} 표시",
         removeModel: "{{id}} 제거",
         searchPlaceholder: "모델 검색",
         loading: "모델 불러오는 중...",

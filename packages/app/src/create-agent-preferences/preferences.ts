@@ -16,6 +16,8 @@ export type LaunchTarget = { kind: "chat" } | { kind: "terminal"; profileId: str
 export interface FormPreferences {
   provider?: string;
   providerPreferences?: Record<string, ProviderPreferences>;
+  /** Host -> provider -> model IDs hidden from model pickers. */
+  hiddenModelIds?: Record<string, Record<string, string[]>>;
   favoriteModels?: Array<{ provider: string; modelId: string }>;
   isolation?: "local" | "worktree";
   launchTarget?: LaunchTarget;
@@ -64,6 +66,7 @@ const launchTargetSchema: z.ZodType<LaunchTarget> = z.discriminatedUnion("kind",
 
 export const FormPreferencesSchema = z.strictObject({
   provider: z.string().optional(),
+  hiddenModelIds: z.record(z.string(), z.record(z.string(), z.array(z.string()))).optional(),
   providerPreferences: z
     .record(z.string(), providerPreferencesSchema)
     .transform(convertLegacyCodexOptions)
@@ -251,4 +254,25 @@ export function applyAgentProfilePreferences(args: {
       options: args.options,
     },
   });
+}
+
+export function setModelHidden(input: {
+  preferences: FormPreferences;
+  serverId: string;
+  provider: string;
+  modelId: string;
+  hidden: boolean;
+}): FormPreferences {
+  const hosts = input.preferences.hiddenModelIds ?? {};
+  const providers = hosts[input.serverId] ?? {};
+  const models = new Set(providers[input.provider] ?? []);
+  if (input.hidden) models.add(input.modelId);
+  else models.delete(input.modelId);
+  return {
+    ...input.preferences,
+    hiddenModelIds: {
+      ...hosts,
+      [input.serverId]: { ...providers, [input.provider]: [...models] },
+    },
+  };
 }

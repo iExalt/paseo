@@ -3483,6 +3483,7 @@ export const es: TranslationResources = {
         add: "Agregar",
         adding: "Añadiendo...",
         failedToSave: "No se pudo guardar el modelo",
+        showInPicker: "Mostrar {{model}} en los selectores de modelos",
         removeModel: "Quitar{{id}}",
         searchPlaceholder: "Buscar modelos",
         loading: "Cargando modelos...",

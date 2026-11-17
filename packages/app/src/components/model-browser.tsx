@@ -9,6 +9,7 @@ import {
   useState,
   type RefObject,
 } from "react";
+import { useFormPreferences } from "@/hooks/use-form-preferences";
 import { useTranslation } from "react-i18next";
 import {
   FlatList,
@@ -67,6 +68,7 @@ import { useHardwareKeyboardPresent, type KeyboardInputEvent } from "@/keyboard"
 import {
   buildProviderQualifiedDescription,
   buildSelectedTriggerLabel,
+  filterHiddenProviderModels,
   getAllProviderModelRows,
   getProviderModelRows,
   resolveSelectedModelLabel,
@@ -362,7 +364,7 @@ function resolveDesktopFixedHeight(
 }
 
 export function useModelBrowser({
-  providers,
+  providers: allProviders,
   selectedProvider,
   selectedModel,
   isLoading,
@@ -371,6 +373,19 @@ export function useModelBrowser({
   serverId = null,
 }: ModelBrowserInput): ModelBrowserState {
   const { t } = useTranslation();
+  const { preferences } = useFormPreferences();
+  const hiddenModelIds = serverId ? preferences.hiddenModelIds?.[serverId] : undefined;
+  const providers = useMemo(
+    () =>
+      filterHiddenProviderModels({
+        providers: allProviders,
+        hiddenModelIds,
+        selectedProvider,
+        selectedModel,
+      }),
+    [allProviders, hiddenModelIds, selectedProvider, selectedModel],
+  );
+
   const [view, setView] = useState<ModelBrowserView>({ kind: "all" });
   const [searchQuery, setSearchQuery] = useState("");
   const [isSearchFocused, setIsSearchFocused] = useState(false);

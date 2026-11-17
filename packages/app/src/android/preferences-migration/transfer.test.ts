@@ -317,3 +317,51 @@ describe("portable preferences projection", () => {
     expect(normalizeAppSettings(JSON.parse(written)).chatDisplay).toBe("collapseToolCalls");
   });
 });
+
+it("transfers hidden model IDs only for matching hosts and preserves destination hosts", async () => {
+  const source = new MemoryStorage();
+  source.values.set(
+    "@paseo:create-agent-preferences",
+    JSON.stringify({
+      hiddenModelIds: {
+        hostA: { pi: ["anthropic/sonnet", "", "Model (local)", 42] },
+        notExported: { codex: ["Model (local)", null] },
+      },
+    }),
+  );
+  const transfer = parseTransferForPreview(
+    await createPreferencesTransfer({
+      storage: source,
+      configuredDaemonIds: ["hostA"],
+      sourceLabel: "Test",
+    }),
+  );
+  expect(transfer.createAgent.hiddenModelIds).toEqual({
+    hostA: { pi: ["anthropic/sonnet", "", "Model (local)"] },
+  });
+  const destination = new MemoryStorage();
+  destination.values.set(
+    "@paseo:create-agent-preferences",
+    JSON.stringify({ provider: "pi", hiddenModelIds: { hostB: { codex: ["keep"] } } }),
+  );
+  const writes = await buildSelectedPreferencesImport({
+    storage: destination,
+    transfer,
+    destinationDaemonIds: ["hostA", "hostB"],
+    selected: ["defaults"],
+  });
+  expect(JSON.parse(writes[0].value)).toEqual({
+    provider: "pi",
+    hiddenModelIds: {
+      hostA: { pi: ["anthropic/sonnet", "", "Model (local)"] },
+      hostB: { codex: ["keep"] },
+    },
+  });
+  const unmatched = await buildSelectedPreferencesImport({
+    storage: destination,
+    transfer,
+    destinationDaemonIds: ["hostB"],
+    selected: ["defaults"],
+  });
+  expect(JSON.parse(unmatched[0].value).hiddenModelIds).toEqual({ hostB: { codex: ["keep"] } });
+});

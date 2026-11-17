@@ -5,6 +5,7 @@ import {
   MAX_PREFERENCES_TRANSFER_BYTES,
   parsePreferencesTransfer,
   PreferencesTransferSchema,
+  HiddenModelIdsTransferSchema,
   type PreferencesTransfer,
 } from "./schema";
 import { PREFERENCE_MIGRATION_KEYS, type PreferenceStorage } from "./journal";
@@ -257,8 +258,28 @@ function projectAppPreferences(rawApp: string | null, daemonIds: ReadonlySet<str
   };
 }
 
-function projectCreateAgentPreferences(rawDefaults: string | null) {
+function projectHiddenModelIds(value: unknown, daemonIds: ReadonlySet<string>) {
+  const hosts = daemonScopedEntries<unknown>(value, daemonIds);
+  return Object.fromEntries(
+    Object.entries(hosts).map(([host, providers]) => {
+      if (!providers || typeof providers !== "object" || Array.isArray(providers))
+        return [host, {}];
+      const entries = Object.entries(providers).flatMap(([provider, models]) => {
+        if (!Array.isArray(models)) return [];
+        const ids = models
+          .filter((model): model is string => typeof model === "string" && model.length <= 512)
+          .slice(0, 2000);
+        const parsed = HiddenModelIdsTransferSchema.safeParse({ [host]: { [provider]: ids } });
+        return parsed.success ? [[provider, ids]] : [];
+      });
+      return [host, Object.fromEntries(entries)];
+    }),
+  );
+}
+
+function projectCreateAgentPreferences(rawDefaults: string | null, daemonIds: ReadonlySet<string>) {
   const defaults = parseObject(rawDefaults);
+  const hiddenModelIds = projectHiddenModelIds(defaults.hiddenModelIds, daemonIds);
   const rawPreferences = defaults.providerPreferences;
   const providerPreferences = Object.fromEntries(
     Object.entries(
@@ -317,6 +338,7 @@ function projectCreateAgentPreferences(rawDefaults: string | null) {
       : {}),
     ...(Object.keys(providerPreferences).length ? { providerPreferences } : {}),
     ...(favoriteModels ? { favoriteModels } : {}),
+    ...(hiddenModelIds ? { hiddenModelIds } : {}),
     ...(defaults.isolation === "local" || defaults.isolation === "worktree"
       ? { isolation: defaults.isolation }
       : {}),
@@ -490,7 +512,7 @@ export async function createPreferencesTransfer(input: {
     sourceLabel: input.sourceLabel,
     daemonIds,
     app: projectAppPreferences(rawApp, daemonSet),
-    createAgent: projectCreateAgentPreferences(rawDefaults),
+    createAgent: projectCreateAgentPreferences(rawDefaults, daemonSet),
     changes: projectChangesPreferences(rawChanges),
     preferredEditor: rawEditor && /^[A-Za-z0-9._:-]{1,160}$/.test(rawEditor) ? rawEditor : null,
     keyboardOverrides: projectKeyboardOverrides(rawShortcuts),
@@ -800,6 +822,22 @@ async function appendWorkspaceImport(context: PreferenceImportContext): Promise<
   context.writes.push({ key: KEYS.layout, value });
 }
 
+async function appendDefaultsImport(context: PreferenceImportContext): Promise<void> {
+  const raw = await context.storage.getItem(KEYS.defaults);
+  const current = parseObject(raw);
+  const { hiddenModelIds, ...defaults } = context.transfer.createAgent;
+  const updates = hiddenModelIds
+    ? {
+        ...defaults,
+        hiddenModelIds: {
+          ...(current.hiddenModelIds as Record<string, unknown> | undefined),
+          ...daemonScopedEntries(hiddenModelIds, context.matched),
+        },
+      }
+    : defaults;
+  await appendObjectImport(context, KEYS.defaults, updates);
+}
+
 export async function buildSelectedPreferencesImport(input: {
   storage: PreferenceStorage;
   transfer: PreferencesTransfer;
@@ -815,7 +853,7 @@ export async function buildSelectedPreferencesImport(input: {
   const selected = new Set(input.selected);
   const appenders: Record<TransferSection, () => Promise<void>> = {
     appearance: () => appendAppearanceImport(context),
-    defaults: () => appendObjectImport(context, KEYS.defaults, input.transfer.createAgent),
+    defaults: () => appendDefaultsImport(context),
     changes: () => appendObjectImport(context, KEYS.changes, input.transfer.changes),
     editor: async () => {
       context.writes.push({ key: KEYS.editor, value: input.transfer.preferredEditor ?? "" });
