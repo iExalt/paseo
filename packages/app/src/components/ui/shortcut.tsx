@@ -82,6 +82,6 @@ const styles = StyleSheet.create((theme) => ({
   text: {
     fontSize: theme.fontSize.sm,
     fontWeight: theme.fontWeight.normal,
-    color: theme.colors.foregroundMuted,
+    color: theme.colors.foreground,
   },
 }));
