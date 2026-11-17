@@ -223,6 +223,12 @@ import {
   usesLegacyProviderOptions,
 } from "./compat/legacy-provider-options.js";
 import { TerminalStreamRouter, type TerminalStreamEvent } from "./terminal-stream-router.js";
+import {
+  FOREGROUND_SILENT_WINDOWS,
+  FOREGROUND_WINDOW_MS,
+  planForegroundVerification,
+  type ForegroundVerificationPlan,
+} from "./foreground-verification.js";
 import type {
   BrowserAutomationExecuteRequest,
   BrowserAutomationExecuteResponse,
@@ -1235,13 +1241,14 @@ const DEFAULT_CONNECT_TIMEOUT_MS = 15_000;
 const DEFAULT_LIVENESS_TIMEOUT_MS = 5000;
 const LIVENESS_HEARTBEAT_INTERVAL_MS = 10_000;
 const LIVENESS_HEARTBEAT_TIMEOUT_MS = 15_000;
-// Window of each check after the app returns to the foreground. A socket that silently died
-// while the app was suspended stays OPEN and accepts sends, so only inbound frames prove it.
-const FOREGROUND_LIVENESS_TIMEOUT_MS = 5_000;
 // A foreground window whose timer fires this much later than scheduled (wall clock) spanned
 // another suspension or a blocked JS thread, so its silence is no evidence either way.
 const SUSPENDED_WINDOW_SLACK_MS = 2_000;
 const LIVENESS_FAILURE_RECONNECT_THRESHOLD = 2;
+const DEFAULT_FOREGROUND_PLAN: ForegroundVerificationPlan = {
+  windowMs: FOREGROUND_WINDOW_MS,
+  silentWindows: FOREGROUND_SILENT_WINDOWS,
+};
 
 /** Default timeout for waiting for connection before sending queued messages */
 const DEFAULT_SEND_QUEUE_TIMEOUT_MS = DEFAULT_SESSION_RPC_TIMEOUT_MS;
@@ -1633,6 +1640,9 @@ export class DaemonClient {
   private livenessHeartbeatTimer: ReturnType<typeof setTimeout> | null = null;
   private lastLivenessRttMs: number | null = null;
   private consecutiveLivenessFailures = 0;
+  // Wall clock, so time the process spent suspended counts as silence.
+  private lastInboundAtWallMs = Date.now();
+  private foregroundPlan: ForegroundVerificationPlan = DEFAULT_FOREGROUND_PLAN;
 
   constructor(private config: DaemonClientConfig) {
     this.logger = config.logger ?? consoleLogger;
@@ -1970,7 +1980,12 @@ export class DaemonClient {
     );
   }
 
-  ensureConnected(options?: { verify?: boolean }): void {
+  /**
+   * `verify` checks a connected socket the way a resumed app must (see
+   * verifyConnectionOnForeground). `userWaiting` says someone is looking at the screen for fresh
+   * data, as after a notification tap, so a silent socket is replaced after one short window.
+   */
+  ensureConnected(options?: { verify?: boolean; userWaiting?: boolean }): void {
     if (this.connectionState.status === "disposed") {
       return;
     }
@@ -1978,7 +1993,7 @@ export class DaemonClient {
       this.shouldReconnect = true;
     }
     if (this.connectionState.status === "connected") {
-      if (options?.verify) this.verifyConnectionOnForeground();
+      if (options?.verify) this.verifyConnectionOnForeground(options.userWaiting === true);
       return;
     }
     if (this.connectionState.status === "connecting") return;
@@ -1993,6 +2008,7 @@ export class DaemonClient {
 
   private recordTransportActivity(): void {
     this.consecutiveLivenessFailures = 0;
+    this.lastInboundAtWallMs = Date.now();
     if (this.pingProbe) this.pingProbe.receivedActivity = true;
   }
 
@@ -2887,16 +2903,32 @@ export class DaemonClient {
   }
 
   /**
-   * The app came back to the foreground. Start a fresh verification cycle: two
-   * FOREGROUND_LIVENESS_TIMEOUT_MS windows back to back, then teardown and an immediate
-   * reconnect. Misses recorded before the app was suspended do not count, and a heartbeat
+   * The app came back to the foreground. Start a fresh verification cycle: silent windows back
+   * to back, then teardown and an immediate reconnect. planForegroundVerification picks two
+   * five-second windows, or one short window when the socket is already suspect or a user is
+   * waiting. Misses recorded before the app was suspended do not count, and a heartbeat
    * probe that straddled the suspension measured the suspension, not the socket, so it is
    * dropped without a miss. Latency measurements wait for the next pong, so replacing the
    * probe they joined does not fail them.
    */
-  private verifyConnectionOnForeground(): void {
-    // A cycle already running keeps its deadline and its window count.
-    if (this.pingProbe?.role === "foreground") return;
+  private verifyConnectionOnForeground(userWaiting: boolean): void {
+    const plan = planForegroundVerification({
+      silenceMs: Date.now() - this.lastInboundAtWallMs,
+      suspectSilenceMs: LIVENESS_HEARTBEAT_INTERVAL_MS + LIVENESS_HEARTBEAT_TIMEOUT_MS,
+      lastRttMs: this.lastLivenessRttMs,
+      userWaiting,
+    });
+    if (this.pingProbe?.role === "foreground") {
+      // A running cycle keeps its deadline and window count, unless this request is stricter:
+      // a tap during a long resume check must not wait out the long windows.
+      if (plan.windowMs >= this.foregroundPlan.windowMs) return;
+      this.foregroundPlan = plan;
+      this.rejectPingProbe(new Error("Foreground check tightened"));
+      this.consecutiveLivenessFailures = 0;
+      this.tickLivenessHeartbeat("foreground");
+      return;
+    }
+    this.foregroundPlan = plan;
     if (this.pingProbe?.role === "heartbeat") {
       this.rejectPingProbe(new Error("Heartbeat superseded by foreground check"));
     }
@@ -2913,7 +2945,7 @@ export class DaemonClient {
     if (this.connectionState.status !== "connected" || !transport) return;
     const probe = this.ensurePingProbe({
       timeoutMs:
-        check === "foreground" ? FOREGROUND_LIVENESS_TIMEOUT_MS : LIVENESS_HEARTBEAT_TIMEOUT_MS,
+        check === "foreground" ? this.foregroundPlan.windowMs : LIVENESS_HEARTBEAT_TIMEOUT_MS,
       role: check,
     });
     void probe.promise
@@ -8534,10 +8566,15 @@ export class DaemonClient {
 
   private recordLivenessFailure(error: Error, role: PingProbeRole): void {
     this.consecutiveLivenessFailures += 1;
-    if (this.consecutiveLivenessFailures < LIVENESS_FAILURE_RECONNECT_THRESHOLD) {
+    const threshold =
+      role === "foreground"
+        ? this.foregroundPlan.silentWindows
+        : LIVENESS_FAILURE_RECONNECT_THRESHOLD;
+    if (this.consecutiveLivenessFailures < threshold) {
       return;
     }
     this.consecutiveLivenessFailures = 0;
+    this.foregroundPlan = DEFAULT_FOREGROUND_PLAN;
     this.lastErrorValue = error.message;
     this.disposeTransport(1001, "Liveness check timed out");
     this.scheduleReconnect({
