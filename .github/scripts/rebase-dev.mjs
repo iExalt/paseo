@@ -1291,6 +1291,16 @@ export async function rebaseDev({
     const status = await gitChecked(repositoryPath, ["status", "--porcelain"]);
     if (status) throw new Error("Refusing to rebase a worktree with local changes");
     snapshots = await snapshotRefs(repositoryPath, remote);
+    const incorporated = await git(repositoryPath, [
+      "merge-base",
+      "--is-ancestor",
+      snapshots.upstream,
+      snapshots.dev,
+    ]);
+    if (incorporated.code === 0)
+      throw new Error("Captured dev already incorporates captured upstream; no rebase is needed");
+    if (incorporated.code !== 1)
+      throw new Error(`Cannot check captured upstream ancestry: ${incorporated.stderr.trim()}`);
     const before = await inspectForkRelease((file) =>
       gitChecked(repositoryPath, ["show", `${snapshots.dev}:${file}`]),
     );
@@ -1547,16 +1557,35 @@ export async function publishRebase({
   repositoryPath,
   remote = "origin",
   devSha,
+  upstreamSha,
+  resolutionsSha,
   testedSha,
   runId,
   runAttempt = "1",
 }) {
-  if (!/^[0-9a-f]{40}$/.test(devSha ?? "")) throw new Error("A captured dev SHA is required");
+  for (const [name, sha] of Object.entries({
+    dev: devSha,
+    upstream: upstreamSha,
+    resolutions: resolutionsSha,
+  })) {
+    if (!/^[0-9a-f]{40}$/.test(sha ?? "")) throw new Error(`A captured ${name} SHA is required`);
+  }
   if (!/^[0-9a-f]{40}$/.test(testedSha ?? "")) throw new Error("A tested SHA is required");
   if (!/^\d+$/.test(runId ?? "") || !/^\d+$/.test(runAttempt))
     throw new Error("Run id and attempt must be numeric");
   const backupRef = `refs/heads/backup/rebase-dev/${runId}-${runAttempt}`;
   const rewritten = await checkedTree(repositoryPath, testedSha);
+  const current = parseLsRemote(
+    await gitChecked(repositoryPath, ["ls-remote", "--refs", remote, UPSTREAM_REF, RESOLUTION_REF]),
+  );
+  // These reads check freshness; only dev and backup are part of the atomic push.
+  for (const [name, ref, captured] of [
+    ["upstream", UPSTREAM_REF, upstreamSha],
+    ["resolutions", RESOLUTION_REF, resolutionsSha],
+  ]) {
+    if (current.get(ref) !== captured)
+      throw new Error(`Captured ${name} ref moved or is missing; rebase again before publishing`);
+  }
   const command = await git(repositoryPath, [
     "push",
     "--atomic",
@@ -1589,6 +1618,8 @@ async function main() {
       const result = await publishRebase({
         repositoryPath,
         devSha: process.env.DEV_SHA,
+        upstreamSha: process.env.UPSTREAM_SHA,
+        resolutionsSha: process.env.RESOLUTIONS_SHA,
         testedSha: process.env.TESTED_SHA,
         runId: process.env.RUN_ID,
         runAttempt: process.env.RUN_ATTEMPT,
