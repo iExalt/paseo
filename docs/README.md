@@ -31,7 +31,9 @@ Read the entries relevant to your task before non-trivial work. Fork notes live 
 - [upstream/forge-providers.md](upstream/forge-providers.md): Adding a git forge: registry/manifest, drop-in checklist, self-host/GHES, the two facts tiers
 - [upstream/custom-providers.md](upstream/custom-providers.md): Custom provider config: Z.AI, Alibaba/Qwen, ACP agents, profiles, custom binaries
 - [upstream/plugins.md](upstream/plugins.md): Local plugin manifest, directory source config, RPCs, native surfaces, and attachment sources
+- [upstream/i18n.md](upstream/i18n.md): App UI translations, supported locales and translation keys
 - [upstream/website-i18n.md](upstream/website-i18n.md): Website languages: locale URLs, translated Markdown pairs, `{#id}` anchors, Chinese style
+- [upstream/hub.md](upstream/hub.md): Daemon enrollment, CLI login and trigger configuration for Paseo Hub
 - [upstream/service-proxy.md](upstream/service-proxy.md): Service proxy: exposing workspace scripts at public URLs, DNS setup, reverse proxy config
 - [upstream/relay-endpoint-security.md](upstream/relay-endpoint-security.md): Relay E2EE modes: Noise NK mapping, record framing, negotiation, the `requireProtectedSecurity` flag, close codes
 - [upstream/development.md](upstream/development.md): Dev server, build sync gotchas, CLI reference, agent state, Playwright MCP
@@ -41,6 +43,7 @@ Read the entries relevant to your task before non-trivial work. Fork notes live 
 - [upstream/connected-hosts.md](upstream/connected-hosts.md): Daemon-owned host registrations, routed SDK scopes, identity and authority boundaries
 - [upstream/permissions.md](upstream/permissions.md): Semantic daemon permissions, principals, credentials, pairing invitations, and Hub authority
 - [upstream/terminal-performance.md](upstream/terminal-performance.md): Terminal latency pipeline, coalescing/backpressure invariants, benchmark + perf spec usage
+- [upstream/timeline-sync.md](upstream/timeline-sync.md): Live chat delivery, authoritative history and reconnect sequencing
 - [upstream/agent-stream-performance.md](upstream/agent-stream-performance.md): Assistant text pipeline — coalescing window, paced reveal, why arrival lumps are smoothed at render
 - [upstream/agent-stream-disclosure.md](upstream/agent-stream-disclosure.md): Disclosure anchoring and list strategy ownership
 - [upstream/keyboard-shortcuts.md](upstream/keyboard-shortcuts.md): Keyboard shortcut routing and native input ownership

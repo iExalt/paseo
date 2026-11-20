@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Paseo is a mobile app for monitoring and controlling your local AI coding agents from anywhere. Your dev environment, in your pocket. Connects directly to your actual development environment — your code stays on your machine.
+Paseo is a mobile app for monitoring and controlling your local AI coding agents from anywhere. It connects directly to your actual development environment — your code stays on your machine.
 
 **Supported agents:** Claude Code, Codex, GitHub Copilot, OpenCode, Pi, Oh My Pi, Antigravity, and Muse Code.
 
@@ -55,12 +55,12 @@ upstream's npm, EAS and store process; never follow or run them in the fork.
 - **NEVER restart the main Paseo daemon on port 6767 without permission** — it manages all running agents. If you're an agent, restarting it kills your own process. A timeout is often transient and is not a reason to restart.
 - **Before changing app routes, startup routing, remembered workspace restore, or active workspace selection, read [docs/upstream/expo-router.md](docs/upstream/expo-router.md).**
 - **Before adding platform-specific code, hover UI or layout switches in `packages/app`, read [docs/platform-gating.md](docs/platform-gating.md).** Code is cross-platform by default.
-- **NEVER run a full test suite locally unless asked.** The suites are heavy and freeze the machine, especially with several agents running them. Run the focused tests your change affects with the [package-appropriate command](docs/upstream/testing.md#running-tests-locally), redirecting broad output to a file. Full suites run in CI. Reuse another agent's green result only when it ran on the same revision and inputs.
+- Run the [focused tests your change affects](docs/upstream/testing.md#running-tests-locally). Run a whole workspace suite locally only when explicitly asked. Leave full Playwright runs to CI and check which lanes ran on the PR. Redirect broad output to a file. Reuse another agent's green result only for the same revision and inputs.
 - Add tests to existing suites and reuse their npm scripts and CI jobs instead of creating feature-specific ones. Don't add auth checks or skips to tests; providers handle their own auth ([testing.md](docs/upstream/testing.md#agent-authentication-in-tests)).
 - **Always run typecheck and lint after every change, and `npm run format` before committing, through npm scripts only.** Pass file paths for targeted checks (`npm run lint -- <files>`, `npm run format:files -- <files>`); never run `npx eslint`, `npx oxfmt`, `npx oxlint` or package-local binaries. Do not fix formatting by hand.
 - **Keep remote-only checks remote.** When a task assigns verification to another host, verify the same source revision there first, then use `LEFTHOOK=0 git commit` locally. The pre-commit hook otherwise reruns typecheck and can trigger builds on the Mac. Record the remote checks and confirm the staged source matches what passed before skipping the duplicate hook.
 - **Build workspace packages before diagnosing cross-package type errors.** Packages consume each other's generated `dist` declarations, and typecheck builds them only when they are missing, not when they are stale. Rebuild the owning stack as [docs/upstream/development.md](docs/upstream/development.md) describes; do not patch inferred callback parameters or add duplicate local types to silence stale declarations.
-- **The protocol stays backward-compatible. Features don't have to.** Before touching `packages/protocol` or adding an RPC, read [docs/upstream/protocol-compatibility.md](docs/upstream/protocol-compatibility.md) and [docs/upstream/rpc-namespacing.md](docs/upstream/rpc-namespacing.md).
+- **The protocol stays backward-compatible. Features don't have to.** Before touching `packages/protocol`, adding an RPC, or changing wire schemas, capability negotiation, or behavior across client and daemon versions, read [docs/upstream/protocol-compatibility.md](docs/upstream/protocol-compatibility.md). For a new RPC, also read [docs/upstream/rpc-namespacing.md](docs/upstream/rpc-namespacing.md).
 
 ## Debugging
 
