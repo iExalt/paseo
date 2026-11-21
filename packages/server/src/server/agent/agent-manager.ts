@@ -7212,7 +7212,7 @@ export class AgentManager {
       : { enabled: false };
     const launchConfig = this.applyDaemonAppendSystemPrompt(
       storedConfig,
-      this.shouldExposePaseoCli(paseoToolPolicy),
+      this.shouldExposePaseoCli(storedConfig.provider, paseoToolPolicy),
     );
     return { storedConfig, launchConfig, paseoToolPolicy };
   }
@@ -7248,8 +7248,12 @@ export class AgentManager {
       : next;
   }
 
-  private shouldExposePaseoCli(paseoToolPolicy: ProviderPaseoToolsPolicy | undefined): boolean {
+  private shouldExposePaseoCli(
+    provider: AgentProvider,
+    paseoToolPolicy: ProviderPaseoToolsPolicy | undefined,
+  ): boolean {
     return (
+      this.clients.get(provider)?.capabilities.supportsPaseoCli !== false &&
       this.agentToolsEnabled &&
       this.paseoCliPath !== null &&
       isPaseoToolPolicyEnabled(paseoToolPolicy)
@@ -7312,7 +7316,7 @@ export class AgentManager {
       // launchAgent discards this open when the wrap is refused, so a running session keeps its tools.
       if (wrap) await requireLaunchWrap(client);
     }
-    const exposePaseoCli = this.shouldExposePaseoCli(paseoToolPolicy);
+    const exposePaseoCli = this.shouldExposePaseoCli(client.provider, paseoToolPolicy);
     const launchEnv: Record<string, string> = {
       ...env,
       ...agentIdentityEnv({ agentId, cwd, opening }),
