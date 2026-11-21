@@ -74,20 +74,52 @@ function fixture() {
 }
 
 describe("Cursor SDK provider", () => {
-  it("requires its daemon credential without loading the SDK or changing process.env", async () => {
-    const before = process.env.CURSOR_API_KEY;
-    const { config, load } = fixture();
-    const client = new CursorSdkAgentClient({ env: { CURSOR_API_KEY: "" } }, load);
-    const manager = new AgentManager({
-      clients: { [provider]: client },
-      logger: pino({ level: "silent" }),
-    });
-    await expect(
-      manager.createAgent(config, undefined, { workspaceId: undefined }),
-    ).rejects.toThrow("Cursor SDK requires CURSOR_API_KEY");
-    await expect(client.createSession(config)).rejects.toThrow("Set it in the daemon environment");
-    expect(load).not.toHaveBeenCalled();
-    expect(process.env.CURSOR_API_KEY).toBe(before);
+  it("requires a credential before opening an agent", async () => {
+    vi.stubEnv("CURSOR_API_KEY", "");
+    try {
+      const { config, load } = fixture();
+      const client = new CursorSdkAgentClient(undefined, load, undefined, async () => undefined);
+      const manager = new AgentManager({
+        clients: { [provider]: client },
+        logger: pino({ level: "silent" }),
+      });
+      await expect(
+        manager.createAgent(config, undefined, { workspaceId: undefined }),
+      ).rejects.toThrow("Sign in to Cursor SDK");
+      await expect(client.createSession(config)).rejects.toThrow("Sign in to Cursor SDK");
+      expect(load).not.toHaveBeenCalled();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("uses a new stored sign-in for discovery, create, and resume on the same client", async () => {
+    vi.stubEnv("CURSOR_API_KEY", "");
+    try {
+      let storedKey: string | undefined;
+      const { config, load, modelList, sdk } = fixture();
+      const client = new CursorSdkAgentClient(undefined, load, modelList, async () => storedKey);
+      await expect(client.isAvailable()).rejects.toThrow("Sign in to Cursor SDK");
+      storedKey = "stored-key";
+      expect(await client.isAvailable()).toBe(true);
+      const session = await client.createSession(config);
+      expect(modelList).toHaveBeenCalledWith(storedKey, expect.any(AbortSignal));
+      expect(sdk.Agent.create).toHaveBeenCalledWith(expect.objectContaining({ apiKey: storedKey }));
+      await session.close();
+      storedKey = "new-stored-key";
+      const resumed = await client.resumeSession({
+        provider,
+        sessionId: agentId,
+        metadata: { cwd: config.cwd },
+      });
+      expect(sdk.Agent.resume).toHaveBeenCalledWith(
+        agentId,
+        expect.objectContaining({ apiKey: storedKey }),
+      );
+      await resumed.close();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("rejects other modes and cloud handles before opening the SDK agent", async () => {
