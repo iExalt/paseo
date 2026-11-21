@@ -3419,6 +3419,19 @@ export const ru: TranslationResources = {
       },
     },
     providers: {
+      cursorSdk: {
+        title: "Аккаунт Cursor",
+        checking: "Проверка входа…",
+        signedIn: "Вход в Cursor выполнен",
+        apiKey: "Используется ключ API Cursor на хосте",
+        signedOut: "Войдите, чтобы загрузить модели Cursor на этом хосте.",
+        pending: "Завершите вход в браузере и вернитесь в Paseo.",
+        signIn: "Войти через Cursor",
+        openBrowser: "Открыть страницу входа",
+        statusFailed: "Не удалось проверить вход в Cursor.",
+        startFailed: "Не удалось начать вход в Cursor.",
+        browserFailed: "Не удалось открыть браузер. Попробуйте снова открыть страницу входа.",
+      },
       title: "Провайдеры",
       addProvider: "Добавить провайдера",
       list: {

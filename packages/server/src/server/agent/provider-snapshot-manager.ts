@@ -29,6 +29,11 @@ import {
 import type { ManagedAgent } from "./agent-manager.js";
 import type { WorkspaceGitService } from "../workspace-git-service.js";
 import type { ManagedProcessRegistry } from "../managed-processes/managed-processes.js";
+import {
+  CURSOR_SDK_PROVIDER,
+  CursorSdkSignIn,
+  getCursorSdkEnvKey,
+} from "./providers/cursor-sdk-auth.js";
 import type { OpenCodeBridge } from "./providers/opencode/bridge.js";
 import type {
   AgentProviderRuntimeSettingsMap,
@@ -346,6 +351,18 @@ export class ProviderSnapshotManager {
       : null;
     this.refreshSchedule?.setProviders(this.getBackgroundRefreshProviderIds());
   }
+
+  readonly cursorSdkSignIn = new CursorSdkSignIn(
+    () =>
+      Boolean(
+        getCursorSdkEnvKey(
+          this.generation.definitions[CURSOR_SDK_PROVIDER]?.configuration?.runtimeSettings,
+        ),
+      ),
+    () => {
+      void this.refreshSettingsSnapshot({ providers: [CURSOR_SDK_PROVIDER] });
+    },
+  );
 
   getSnapshot(cwd?: string): ProviderSnapshot {
     const target = resolveProviderSnapshotTarget(cwd);
@@ -904,6 +921,7 @@ export class ProviderSnapshotManager {
     this.destroyed = true;
     this.refreshSchedule?.dispose();
     this.installations.close();
+    this.cursorSdkSignIn.close();
     for (const state of this.generation.providerStates.values()) state.discoveryLimit.clearQueue();
     this.stopped.abort(new Error("Provider snapshot manager stopped"));
   }

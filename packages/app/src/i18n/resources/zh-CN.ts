@@ -3314,6 +3314,19 @@ export const zhCN: TranslationResources = {
       },
     },
     providers: {
+      cursorSdk: {
+        title: "Cursor 账号",
+        checking: "正在检查登录状态…",
+        signedIn: "已登录 Cursor",
+        apiKey: "正在使用主机的 Cursor API 密钥",
+        signedOut: "登录后可在此主机上加载 Cursor 模型。",
+        pending: "在浏览器中完成登录，然后返回 Paseo。",
+        signIn: "使用 Cursor 登录",
+        openBrowser: "打开登录页面",
+        statusFailed: "无法检查 Cursor 登录状态。",
+        startFailed: "无法启动 Cursor 登录。",
+        browserFailed: "无法打开浏览器。请重试打开登录页面。",
+      },
       title: "Providers",
       addProvider: "添加 Provider",
       list: {

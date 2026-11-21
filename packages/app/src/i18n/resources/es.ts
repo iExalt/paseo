@@ -3430,6 +3430,20 @@ export const es: TranslationResources = {
       },
     },
     providers: {
+      cursorSdk: {
+        title: "Cuenta de Cursor",
+        checking: "Comprobando la sesión…",
+        signedIn: "Sesión iniciada en Cursor",
+        apiKey: "Se está usando la clave de API de Cursor del servidor",
+        signedOut: "Inicia sesión para cargar los modelos de Cursor en este servidor.",
+        pending: "Completa el inicio de sesión en el navegador y vuelve a Paseo.",
+        signIn: "Iniciar sesión con Cursor",
+        openBrowser: "Abrir página de inicio de sesión",
+        statusFailed: "No se pudo comprobar la sesión de Cursor.",
+        startFailed: "No se pudo iniciar el acceso a Cursor.",
+        browserFailed:
+          "No se pudo abrir el navegador. Intenta abrir de nuevo la página de inicio de sesión.",
+      },
       title: "Proveedores",
       addProvider: "Agregar proveedor",
       list: {
