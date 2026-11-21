@@ -1,11 +1,6 @@
-import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { constants } from "node:fs";
-import { access, mkdtemp, realpath, rm, writeFile } from "node:fs/promises";
-import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import { promisify } from "node:util";
+import { realpath } from "node:fs/promises";
+import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import type {
   AgentOptions,
@@ -49,7 +44,7 @@ import { runProviderRefreshActivity } from "../provider-refresh-deadline.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 
 const PROVIDER = "cursor-sdk";
-const MODE = "sandboxed";
+const MODE = "unrestricted";
 const MODES = getAgentProviderDefinition(PROVIDER).modes;
 const DEFAULT_MODEL = "auto";
 const PARAMETER_PREFIX = "cursor_model_";
@@ -67,10 +62,7 @@ const CAPABILITIES = {
   supportsToolInvocations: true,
 };
 
-type CursorSdk = Pick<
-  typeof import("@cursor/sdk"),
-  "Agent" | "JsonlLocalAgentStore" | "createAgentPlatform"
->;
+type CursorSdk = Pick<typeof import("@cursor/sdk"), "Agent" | "JsonlLocalAgentStore">;
 
 function modelId(id?: string | null): string {
   return id?.trim() || DEFAULT_MODEL;
@@ -107,7 +99,7 @@ function selectModel(
 
 function assertMode(mode?: string): void {
   if (mode && mode !== MODE) {
-    throw new Error("Cursor SDK supports only Sandboxed mode.");
+    throw new Error("Cursor SDK supports only Unrestricted mode.");
   }
 }
 
@@ -188,47 +180,6 @@ function assertNoInheritedAgentIdentity(): void {
   }
 }
 
-async function verifyNativeSandbox(cwd: string): Promise<void> {
-  const require = createRequire(createRequire(import.meta.url).resolve("@cursor/sdk"));
-  const platformPackage = require.resolve(
-    `@cursor/sdk-${process.platform}-${process.arch}/package.json`,
-  );
-  const directory = dirname(platformPackage);
-  const binary = join(
-    directory,
-    "bin",
-    process.platform === "win32" ? "cursorsandbox.exe" : "cursorsandbox",
-  );
-  await access(binary, constants.X_OK);
-  if (process.platform !== "darwin") {
-    return; // SDK prewarm runs the native sandbox probe on Linux.
-  }
-  // The SDK checks the presence of sandbox-exec on macOS but does not apply a profile.
-  const temporary = await mkdtemp(join(tmpdir(), "paseo-cursor-sandbox-"));
-  try {
-    const policy = join(temporary, "policy.json");
-    await writeFile(
-      policy,
-      JSON.stringify({
-        sandbox: {
-          type: "workspace_readwrite",
-          cwd,
-          readBoundary: "system",
-          networkAccess: false,
-          additionalReadwritePaths: [],
-          disableTmpWrite: false,
-        },
-      }),
-      { mode: 0o600 },
-    );
-    await promisify(execFile)(binary, ["--policy", policy, "--", "/usr/bin/true"], {
-      timeout: 5_000,
-    });
-  } finally {
-    await rm(temporary, { recursive: true, force: true });
-  }
-}
-
 export class CursorSdkAgentClient implements AgentClient {
   readonly provider = PROVIDER;
   readonly capabilities = CAPABILITIES;
@@ -241,7 +192,6 @@ export class CursorSdkAgentClient implements AgentClient {
   constructor(
     runtimeSettings?: ProviderRuntimeSettings,
     private readonly loadSdk: () => Promise<CursorSdk> = () => import("@cursor/sdk"),
-    private readonly verifySandbox: (cwd: string) => Promise<void> = verifyNativeSandbox,
     private readonly listModels = listCursorModels,
   ) {
     this.apiKey = (runtimeSettings?.env?.CURSOR_API_KEY ?? process.env.CURSOR_API_KEY)?.trim();
@@ -356,55 +306,37 @@ export class CursorSdkAgentClient implements AgentClient {
     const store = (this.store ??= new sdk.JsonlLocalAgentStore(this.storePath));
     const id = modelId(config.model);
     const providerOptions = config.providerOptions ?? {};
+    const controls = await this.getControls(id);
     const options: AgentOptions = {
       apiKey,
+      model: selectModel(id, providerOptions, controls),
       name: config.title ?? undefined,
       local: {
         cwd,
         store,
         settingSources: [],
-        sandboxOptions: { enabled: true },
+        sandboxOptions: { enabled: false },
         autoReview: false,
       },
       mcpServers: { ...config.mcpServers, ...launchContext?.mcpServers },
     };
 
-    let release: () => Promise<void>;
-    try {
-      await this.verifySandbox(cwd);
-      const platform = await sdk.createAgentPlatform({ localStore: store, workspaceRef: cwd });
-      release = await platform.prewarmLocalWorkspace(options);
-    } catch (error) {
-      throw new Error(
-        "Cursor SDK could not initialize its local shell sandbox. Check the native Cursor SDK helper and your host's sandbox support.",
-        { cause: error },
-      );
+    if (nativeId && !historyOnly) {
+      await clearUnusedCursorReservation(sdk.Agent, store, nativeId, cwd);
     }
-
-    try {
-      const controls = await this.getControls(id);
-      options.model = selectModel(id, providerOptions, controls);
-      if (nativeId && !historyOnly) {
-        await clearUnusedCursorReservation(sdk.Agent, store, nativeId, cwd);
-      }
-      const agent = nativeId
-        ? await sdk.Agent.resume(nativeId, options)
-        : await sdk.Agent.create(options);
-      return new CursorSdkAgent(
-        agent,
-        cwd,
-        id,
-        providerOptions,
-        controls,
-        (model) => this.getControls(model),
-        composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
-        (cursor) => sdk.Agent.listRuns(agent.agentId, { runtime: "local", cwd, store, cursor }),
-        release,
-      );
-    } catch (error) {
-      await release();
-      throw error;
-    }
+    const agent = nativeId
+      ? await sdk.Agent.resume(nativeId, options)
+      : await sdk.Agent.create(options);
+    return new CursorSdkAgent(
+      agent,
+      cwd,
+      id,
+      providerOptions,
+      controls,
+      (model) => this.getControls(model),
+      composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
+      (cursor) => sdk.Agent.listRuns(agent.agentId, { runtime: "local", cwd, store, cursor }),
+    );
   }
 }
 
@@ -544,7 +476,6 @@ class CursorSdkAgent implements AgentSession {
     private readonly getControls: (model: string) => Promise<AgentOptionSelectControl[]>,
     private readonly instructions: string | undefined,
     private readonly listRuns: (cursor?: string) => Promise<{ items: Run[]; nextCursor?: string }>,
-    private readonly release: () => Promise<void>,
   ) {
     this.id = agent.agentId;
   }
@@ -794,7 +725,6 @@ class CursorSdkAgent implements AgentSession {
     try {
       await this.agent[Symbol.asyncDispose]();
     } finally {
-      await this.release();
       this.listeners.clear();
     }
   }

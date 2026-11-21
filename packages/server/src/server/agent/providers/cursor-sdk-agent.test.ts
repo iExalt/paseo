@@ -2,14 +2,7 @@ import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BroadcastChannel } from "node:worker_threads";
-import type {
-  AgentOptions,
-  RunResult,
-  SDKMessage,
-  SDKModel,
-  SDKUserMessage,
-  SendOptions,
-} from "@cursor/sdk";
+import type { RunResult, SDKMessage, SDKModel, SDKUserMessage, SendOptions } from "@cursor/sdk";
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 import { AgentManager } from "../agent-manager.js";
@@ -52,13 +45,11 @@ function makeRun(messages: SDKMessage[], result: RunResult) {
 }
 
 function fixture() {
-  const prewarm = vi.fn(async (_options: AgentOptions) => vi.fn(async () => {}));
   const modelList = vi.fn(async (_apiKey: string) => [model]);
   const sdk = {
     JsonlLocalAgentStore: class {
       readonly agents = { get: async () => null };
     },
-    createAgentPlatform: async () => ({ prewarmLocalWorkspace: prewarm }),
     Agent: {
       create: vi.fn(),
       resume: vi.fn(),
@@ -73,14 +64,9 @@ function fixture() {
   const load = vi.fn(async () => sdk) as unknown as NonNullable<
     ConstructorParameters<typeof CursorSdkAgentClient>[1]
   >;
-  const client = new CursorSdkAgentClient(
-    { env: { CURSOR_API_KEY: "test-key" } },
-    load,
-    async () => {},
-    modelList,
-  );
+  const client = new CursorSdkAgentClient({ env: { CURSOR_API_KEY: "test-key" } }, load, modelList);
   const config: AgentSessionConfig = { provider, cwd: process.cwd(), model: "model" };
-  return { client, config, sdk, load, prewarm, send, modelList };
+  return { client, config, sdk, load, send, modelList };
 }
 
 describe("Cursor SDK provider", () => {
@@ -100,26 +86,20 @@ describe("Cursor SDK provider", () => {
     expect(process.env.CURSOR_API_KEY).toBe(before);
   });
 
-  it("fails both create and local resume before opening the SDK agent when prewarm rejects", async () => {
-    const { client, config, sdk, prewarm } = fixture();
-    prewarm.mockRejectedValue(new Error("sandbox unavailable"));
+  it("rejects other modes and cloud handles before opening the SDK agent", async () => {
+    const { client, config, load } = fixture();
     const handle = { provider, sessionId: agentId, metadata: { cwd: config.cwd } };
-    await expect(client.createSession(config)).rejects.toThrow(
-      "could not initialize its local shell sandbox",
-    );
-    await expect(client.resumeSession(handle, config)).rejects.toThrow(
-      "could not initialize its local shell sandbox",
-    );
+    const otherMode = { ...config, modeId: "sandboxed" };
+    await expect(client.createSession(otherMode)).rejects.toThrow("only Unrestricted mode");
+    await expect(client.resumeSession(handle, otherMode)).rejects.toThrow("only Unrestricted mode");
     await expect(
       client.resumeSession({ ...handle, sessionId: "bc-cloud" }, config),
     ).rejects.toThrow("saved local agent");
-    expect(sdk.Agent.create).not.toHaveBeenCalled();
-    expect(sdk.Agent.resume).not.toHaveBeenCalled();
-    expect(prewarm).toHaveBeenCalledTimes(2);
+    expect(load).not.toHaveBeenCalled();
   });
 
   it("discovers model parameters and reapplies effective MCP, instructions and selections after a resume", async () => {
-    const { client, config, sdk, prewarm, send, modelList } = fixture();
+    const { client, config, sdk, send, modelList } = fixture();
     const catalog = await client.fetchCatalog({ scope: "global", force: true });
     expect(catalog.models).toEqual([
       {
@@ -141,6 +121,12 @@ describe("Cursor SDK provider", () => {
     } satisfies AgentSessionConfig;
     const launch = { mcpServers: { runtime: { type: "stdio" as const, command: "runtime-mcp" } } };
     const session = await client.createSession(configured, launch);
+    expect(sdk.Agent.create).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        local: expect.objectContaining({ sandboxOptions: { enabled: false }, autoReview: false }),
+      }),
+    );
+    expect(await session.getCurrentMode()).toBe("unrestricted");
     const handle = session.describePersistence()!;
     expect(handle).toEqual({
       provider,
@@ -154,14 +140,14 @@ describe("Cursor SDK provider", () => {
       { ...configured, daemonAppendSystemPrompt: "Updated" },
       launch,
     );
-    expect(prewarm).toHaveBeenCalledTimes(2);
     expect(sdk.Agent.resume).toHaveBeenCalledExactlyOnceWith(
       agentId,
       expect.objectContaining({
         apiKey: "test-key",
         local: expect.objectContaining({
           cwd,
-          sandboxOptions: { enabled: true },
+          sandboxOptions: { enabled: false },
+          autoReview: false,
           settingSources: [],
         }),
         mcpServers: { ...configured.mcpServers, ...launch.mcpServers },
@@ -352,7 +338,7 @@ it("aborts a stalled model catalog worker", async () => {
   }
 });
 
-it("clears an SDK first turn reservation on interactive resume without clearing a started run", async () => {
+it("clears an SDK first turn reservation on interactive resume without clearing a later run", async () => {
   const { Agent, JsonlLocalAgentStore, createAgentPlatform } = await import("@cursor/sdk");
   const root = await mkdtemp(join(tmpdir(), "paseo-cursor-reservation-"));
   try {

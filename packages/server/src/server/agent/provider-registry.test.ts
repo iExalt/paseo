@@ -585,7 +585,15 @@ test("Cursor SDK is an opt-in provider distinct from Cursor ACP", async () => {
     id: "cursor-sdk",
     label: "Cursor SDK",
     enabled: false,
-    defaultModeId: "sandboxed",
+    defaultModeId: "unrestricted",
+    modes: [
+      {
+        id: "unrestricted",
+        label: "Unrestricted",
+        colorTier: "dangerous",
+        isUnattended: true,
+      },
+    ],
     supportsExactMcpPreapproval: false,
   });
   const enabled = buildProviderRegistry(logger, {

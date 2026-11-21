@@ -66,11 +66,9 @@ Set `CURSOR_API_KEY` in the daemon's environment or under
 provider settings or set `agents.providers.cursor-sdk.enabled` to `true` in that file.
 Pick **Cursor SDK** to start a chat. Existing Cursor CLI chats still open with the **Cursor** provider.
 
-The SDK runs tools on the daemon host and sends inference requests to Cursor. **Sandboxed**
-mode requires a working Cursor shell sandbox. Its default policy limits shell writes to the
-workspace and temporary files and blocks outbound shell traffic. Reads can extend beyond the
-workspace. Cursor's sandbox configuration can grant additional access. Explicitly configured
-MCP servers use their own permissions. Cursor SDK offers no interactive approvals.
+**Unrestricted** is the only mode. Cursor runs tools as the daemon user, with access to the
+files and network that user can reach. Tools run without a sandbox or interactive approval
+prompts. Inference requests go to Cursor.
 
 Paseo passes its instructions as context with the prompt so Cursor retains its built-in
 instructions. Resume uses the same native conversation and workspace. The daemon keeps its
