@@ -12,7 +12,7 @@ For the concept and how Paseo manages providers, see [Providers](/docs/providers
 
 ## Native support
 
-Work out of the box once the underlying CLI is installed and authenticated.
+CLI-based providers require their CLI to be installed and authenticated on the daemon host.
 
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code). Anthropic's coding agent with MCP support, streaming, and deep reasoning.
 - [Codex](/docs/codex). OpenAI's workspace agent with sandbox controls and optional network access.
@@ -20,6 +20,7 @@ Work out of the box once the underlying CLI is installed and authenticated.
 - [Pi](https://pi.dev). Minimal terminal-based coding agent with multi-provider LLM support.
 - [Antigravity](#antigravity). Uses your installed `agy` CLI through a built-in provider plugin.
 - [Muse Code](/docs/muse-code). Meta's terminal coding agent, bundled as a provider plugin.
+- [Cursor SDK](#cursor-sdk). An opt-in local agent using Cursor's TypeScript SDK.
 
 ### Antigravity
 
@@ -57,6 +58,21 @@ for provider-specific environment variables:
 ```
 
 See [Custom providers](/docs/custom-providers) for command and environment overrides.
+
+### Cursor SDK
+
+Set `CURSOR_API_KEY` in the daemon's environment or under
+`agents.providers.cursor-sdk.env` in its `config.json`. Enable **Cursor SDK** in the host's
+provider settings or set `agents.providers.cursor-sdk.enabled` to `true` in that file.
+Pick **Cursor SDK** to start a chat. Existing Cursor CLI chats still open with the **Cursor** provider.
+
+**Unrestricted** is the only mode. Cursor runs tools as the daemon user, with access to the
+files and network that user can reach. Tools run without a sandbox or interactive approval
+prompts. Inference requests go to Cursor.
+
+Paseo passes its instructions as context with the prompt so Cursor retains its built-in
+instructions. Resume uses the same native conversation and workspace. The daemon keeps its
+Cursor SDK state under `$PASEO_HOME/cursor-sdk`.
 
 ## ACP catalog
 

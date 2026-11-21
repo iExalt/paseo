@@ -61,6 +61,19 @@ function resolvedPackageFiles(importer, specifier) {
   return path.join(path.dirname(manifest), "**");
 }
 
+const cursorSdkImporter = "packages/server/dist/server/server/agent/providers/cursor-sdk-agent.js";
+const cursorSdkEntry = requireFrom(cursorSdkImporter).resolve("@cursor/sdk");
+const cursorSdkDirectory = path.dirname(cursorSdkEntry);
+const cursorPlatformDir = path.dirname(
+  createRequire(cursorSdkEntry).resolve(
+    `@cursor/sdk-${process.platform}-${process.arch}/package.json`,
+  ),
+);
+// The SDK loads its local runtime and model catalog through generated chunk names.
+const cursorSdkChunks = await Array.fromAsync(
+  glob(path.resolve(cursorSdkDirectory, "../esm/*.js")),
+);
+
 // Let node-pty select the native build it actually loads. npm hoisting and
 // prebuild/build layout are owned by the package, not this trace. Its Darwin
 // spawn-helper lives beside the selected addon; retain the files in that dir.
@@ -77,6 +90,7 @@ const ptyNativeFiles = (await readdir(ptyNativeRoot, { withFileTypes: true }))
 // them separately. The desktop derivation opts into tracing its Electron main
 // process and preloads as well.
 const entries = [
+  ...cursorSdkChunks.map((file) => path.relative(REPO_ROOT, file)),
   "packages/cli/dist/index.js",
   "packages/server/dist/scripts/supervisor-entrypoint.js",
   "packages/server/dist/server/terminal/terminal-worker-process.js",
@@ -93,6 +107,8 @@ const entries = [
 // Files read at runtime via fs APIs rather than `require`. nft only
 // traces the module graph; data files have to be listed explicitly.
 const additionalInputs = [
+  cursorSdkEntry,
+  path.join(cursorPlatformDir, "**"),
   // Agent orchestration skill catalog loaded through filesystem paths
   "packages/server/dist/server/skills/**",
   "packages/server/dist/server/builtin-plugins/**",

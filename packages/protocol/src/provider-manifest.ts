@@ -249,6 +249,23 @@ export const AGENT_PROVIDER_DEFINITIONS: AgentProviderDefinition[] = [
     modes: [],
   },
   {
+    id: "cursor-sdk",
+    label: "Cursor SDK",
+    description: "Cursor's local SDK agent with unrestricted tool execution",
+    enabledByDefault: false,
+    defaultModeId: "unrestricted",
+    modes: [
+      {
+        id: "unrestricted",
+        label: "Unrestricted",
+        description: "Run tools as the daemon user without sandboxing or approval prompts.",
+        icon: "ShieldOff",
+        colorTier: "dangerous",
+        isUnattended: true,
+      },
+    ],
+  },
+  {
     id: "omp",
     label: "Oh My Pi",
     description: "Multi-provider coding agent with native approvals, host tools, and subagents",
