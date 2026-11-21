@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { cp, mkdtemp, rm } from "node:fs/promises";
+import { access, cp, mkdtemp, rm } from "node:fs/promises";
+import { constants } from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -29,6 +31,19 @@ test("traced daemon closure loads its bridge plugins and RE2 runtime asset", asy
   const outRoot = await mkdtemp(path.join(os.tmpdir(), "trace-daemon-dist-"));
   try {
     await installTracedDaemon(outRoot);
+    const tracedRequire = createRequire(path.join(outRoot, "package.json"));
+    const cursorSdk = tracedRequire.resolve("@cursor/sdk");
+    const sdkRequire = createRequire(cursorSdk);
+    const cursorPlatform = sdkRequire.resolve(
+      `@cursor/sdk-${process.platform}-${process.arch}/package.json`,
+    );
+    await access(path.join(path.dirname(cursorPlatform), "bin", "cursorsandbox"), constants.X_OK);
+    const { Agent, Cursor } = await import(
+      pathToFileURL(path.resolve(path.dirname(cursorSdk), "../esm/index.js")).href
+    );
+    assert.equal(typeof Agent.create, "function");
+    assert.equal(typeof Cursor.models.list, "function");
+
     const installedBridgeUrl = pathToFileURL(path.join(outRoot, bridgeModule)).href;
     const { loadOpenCodeBridgePluginArtifact } = await import(installedBridgeUrl);
 

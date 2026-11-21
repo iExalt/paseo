@@ -86,12 +86,7 @@ function pruneSharpLibvips(nodeModules, platform, arch) {
   }
 }
 
-function pruneNativeModules(appOutDir, platform, arch) {
-  const resourcesDir =
-    platform === "darwin"
-      ? path.join(appOutDir, `${EXECUTABLE_NAME}.app`, "Contents", "Resources")
-      : path.join(appOutDir, "resources");
-
+function pruneNativeModules(resourcesDir, platform, arch) {
   const nodeModules = path.join(resourcesDir, "app.asar.unpacked", "node_modules");
   if (!fs.existsSync(nodeModules)) return;
 
@@ -126,7 +121,27 @@ exports.default = async function afterPack(context) {
   const platform = context.electronPlatformName;
   const arch = ARCH_MAP[context.arch] || process.arch;
 
-  pruneNativeModules(context.appOutDir, platform, arch);
+  const resourcesDir =
+    platform === "darwin"
+      ? path.join(context.appOutDir, `${EXECUTABLE_NAME}.app`, "Contents", "Resources")
+      : path.join(context.appOutDir, "resources");
+
+  if (platform !== "win32") {
+    const cursorBin = path.join(
+      resourcesDir,
+      "node_modules",
+      "@cursor",
+      `sdk-${platform}-${arch}`,
+      "bin",
+    );
+    if (fs.existsSync(cursorBin)) {
+      for (const executable of ["cursorsandbox", "rg"]) {
+        fs.chmodSync(path.join(cursorBin, executable), 0o755);
+      }
+    }
+  }
+
+  pruneNativeModules(resourcesDir, platform, arch);
 
   if (platform === "linux") {
     installLinuxLauncher(context.appOutDir);
