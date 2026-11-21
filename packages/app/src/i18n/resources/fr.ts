@@ -3173,6 +3173,20 @@ export const fr: TranslationResources = {
       },
     },
     providers: {
+      cursorSdk: {
+        title: "Compte Cursor",
+        checking: "Vérification de la connexion…",
+        signedIn: "Connecté à Cursor",
+        apiKey: "La clé API Cursor de l’hôte est utilisée",
+        signedOut: "Connectez-vous pour charger les modèles Cursor sur cet hôte.",
+        pending: "Terminez la connexion dans votre navigateur, puis revenez à Paseo.",
+        signIn: "Se connecter avec Cursor",
+        openBrowser: "Ouvrir la page de connexion",
+        statusFailed: "Impossible de vérifier la connexion à Cursor.",
+        startFailed: "Impossible de lancer la connexion à Cursor.",
+        browserFailed:
+          "Impossible d’ouvrir le navigateur. Essayez de rouvrir la page de connexion.",
+      },
       title: "Fournisseurs",
       addProvider: "Ajouter un fournisseur",
       providerDetails: "Détails du fournisseur {{name}}",

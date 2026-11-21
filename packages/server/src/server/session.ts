@@ -4057,6 +4057,33 @@ export class Session {
     switch (msg.type) {
       case "provider.inspect.request":
         return this.handleProviderInspectRequest(msg);
+      case "provider.cursor_sdk.auth.get_status.request":
+        return this.providerSnapshotManager.cursorSdkSignIn
+          .getStatus(msg.attemptId)
+          .then((result) =>
+            this.emit({
+              type: "provider.cursor_sdk.auth.get_status.response",
+              payload: { requestId: msg.requestId, ...result },
+            }),
+          );
+      case "provider.cursor_sdk.auth.start_sign_in.request":
+        return this.providerSnapshotManager.cursorSdkSignIn
+          .start(() => !this.isCleanedUp && this.authorization.allowsPermission("daemon.manage"))
+          .then((result) =>
+            this.emit({
+              type: "provider.cursor_sdk.auth.start_sign_in.response",
+              payload: { requestId: msg.requestId, ...result },
+            }),
+          );
+      case "provider.cursor_sdk.auth.cancel_sign_in.request":
+        this.emit({
+          type: "provider.cursor_sdk.auth.cancel_sign_in.response",
+          payload: {
+            requestId: msg.requestId,
+            ...this.providerSnapshotManager.cursorSdkSignIn.cancel(msg.attemptId),
+          },
+        });
+        return undefined;
       case "list_provider_models_request":
         return this.providerCatalogSession.handleListProviderModelsRequest(msg);
       case "list_provider_modes_request":

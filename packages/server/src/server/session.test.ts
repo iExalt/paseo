@@ -52,7 +52,7 @@ import { DownloadTokenStore } from "./file-download/token-store.js";
 import { StructuredAgentFallbackError } from "./agent/agent-response-loop.js";
 import type { StoredAgentRecord } from "./agent/agent-storage.js";
 import type { AgentManagerEvent } from "./agent/agent-manager.js";
-import type { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
+import { ProviderSnapshotManager } from "./agent/provider-snapshot-manager.js";
 import { WorkspaceLabelError, type WorkspaceLabelService } from "./workspace-labels/index.js";
 import { createPersistedProjectRecord } from "./workspace-registry.js";
 import { deriveProjectKey } from "./project-key.js";
@@ -825,6 +825,53 @@ test("routes plugin requests and releases its owned catalog subscription on clea
   await session.cleanup();
   expect(listeners.size).toBe(0);
   expect(releasePluginSubscription).toHaveBeenCalledOnce();
+});
+
+test("Cursor SDK sign-in is scoped to its source and rechecks daemon authority before saving", async () => {
+  const providerSnapshotManager = new ProviderSnapshotManager({
+    logger: pino({ level: "silent" }),
+  });
+  const result = { attemptId: "attempt", url: "https://cursor.com/loginDeepControl", error: null };
+  const start = vi
+    .spyOn(providerSnapshotManager.cursorSdkSignIn, "start")
+    .mockResolvedValue(result);
+  const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+  const session = createSessionForTest({ providerSnapshotManager, targetedMessages });
+  const source = {};
+  const otherSource = {};
+  session.updateClientCapabilities({ [CLIENT_CAPS.ownedSubscriptions]: true }, source);
+  session.updateClientCapabilities(null, otherSource);
+  const request = {
+    type: "provider.cursor_sdk.auth.start_sign_in.request",
+    requestId: "start",
+  } as const;
+
+  await session.handleMessage(request, source);
+  expect(targetedMessages).toEqual([
+    {
+      source,
+      message: {
+        type: "provider.cursor_sdk.auth.start_sign_in.response",
+        payload: { ...result, requestId: "start" },
+      },
+    },
+  ]);
+  const [canSave] = start.mock.calls[0];
+  expect(canSave()).toBe(true);
+
+  session.setPermissions(["daemon.read"]);
+  expect(canSave()).toBe(false);
+  await session.handleMessage(request, otherSource);
+  expect(start).toHaveBeenCalledOnce();
+  expect(targetedMessages.at(-1)).toMatchObject({
+    source: otherSource,
+    message: { type: "rpc_error", payload: { code: "access_denied" } },
+  });
+
+  session.setPermissions(OWNER_PERMISSIONS);
+  await session.cleanup();
+  expect(canSave()).toBe(false);
+  providerSnapshotManager.destroy();
 });
 
 test("losing daemon.manage releases the session's plugin subscriptions", async () => {

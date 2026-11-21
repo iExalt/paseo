@@ -13,14 +13,23 @@ import {
   useAcpProviderCatalog,
   type AcpProviderCatalogItem,
 } from "@/hooks/use-acp-provider-catalog";
-import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
+import { ACP_PROVIDER_ICON_SVGS } from "@/assets/acp-provider-icons";
 import { SPACING, type Theme } from "@/styles/theme";
 import { settingsStyles } from "@/styles/settings";
 
+const CURSOR_SDK_CATALOG_ENTRY = {
+  id: "cursor-sdk",
+  title: "Cursor SDK",
+  iconSvg: ACP_PROVIDER_ICON_SVGS.cursor,
+};
+
+export type ProviderCatalogEntry = AcpProviderCatalogItem | typeof CURSOR_SDK_CATALOG_ENTRY;
+
 interface ProviderCatalogListProps {
-  serverId: string;
+  installedIds: ReadonlySet<string>;
+  supportsCursorSdk: boolean;
   installingProviderId: string | null;
-  onInstall: (entry: AcpProviderCatalogItem) => Promise<void> | void;
+  onInstall: (entry: ProviderCatalogEntry) => Promise<void> | void;
 }
 
 const PROVIDER_FALLBACK_ICON_SIZE = 20;
@@ -41,11 +50,11 @@ function columnCountForWidth(width: number): number {
 }
 
 interface CatalogTileProps {
-  entry: AcpProviderCatalogItem;
+  entry: ProviderCatalogEntry;
   /** `undefined` until the grid is measured, or in a single column; the tile fills the row. */
   width: number | undefined;
   installing: boolean;
-  onInstall: (entry: AcpProviderCatalogItem) => void;
+  onInstall: (entry: ProviderCatalogEntry) => void;
 }
 
 function CatalogTile({ entry, width, installing, onInstall }: CatalogTileProps) {
@@ -77,15 +86,19 @@ function CatalogTile({ entry, width, installing, onInstall }: CatalogTileProps) 
           {entry.title}
         </Text>
         <View style={styles.metaRow}>
-          {/* The catalog is the ACP registry, so every entry it offers is an ACP provider. */}
-          <StatusBadge label={t("providerCatalog.types.acp")} size="xs" />
-          <ExternalLink
-            href={entry.installLink}
-            label={t("providerCatalog.actions.installInstructions")}
-            accessibilityLabel={t("providerCatalog.actions.installInstructionsFor", {
-              provider: entry.title,
-            })}
+          <StatusBadge
+            label={"command" in entry ? t("providerCatalog.types.acp") : "SDK"}
+            size="xs"
           />
+          {"installLink" in entry ? (
+            <ExternalLink
+              href={entry.installLink}
+              label={t("providerCatalog.actions.installInstructions")}
+              accessibilityLabel={t("providerCatalog.actions.installInstructionsFor", {
+                provider: entry.title,
+              })}
+            />
+          ) : null}
         </View>
       </View>
       <Button
@@ -105,29 +118,25 @@ function CatalogTile({ entry, width, installing, onInstall }: CatalogTileProps) 
 }
 
 export function ProviderCatalogList({
-  serverId,
+  installedIds,
+  supportsCursorSdk,
   installingProviderId,
   onInstall,
 }: ProviderCatalogListProps) {
   const { t } = useTranslation();
   const { entries: catalogEntries } = useAcpProviderCatalog();
-  const { entries: providerEntries } = useProvidersSnapshot(serverId);
   const [search, setSearch] = useState("");
   const [gridWidth, setGridWidth] = useState<number | null>(null);
 
-  const installedIds = useMemo(
-    () => new Set(providerEntries?.map((entry) => entry.provider) ?? []),
-    [providerEntries],
-  );
-
-  const availableEntries = useMemo(
-    () =>
-      rankProviderCatalog(
-        catalogEntries.filter((entry) => !installedIds.has(entry.id)),
-        search,
-      ),
-    [catalogEntries, installedIds, search],
-  );
+  const availableEntries = useMemo(() => {
+    const entries = supportsCursorSdk
+      ? [...catalogEntries, CURSOR_SDK_CATALOG_ENTRY]
+      : catalogEntries;
+    return rankProviderCatalog(
+      entries.filter((entry) => !installedIds.has(entry.id)),
+      search,
+    );
+  }, [catalogEntries, installedIds, search, supportsCursorSdk]);
 
   const handleGridLayout = useCallback((event: LayoutChangeEvent) => {
     setGridWidth(event.nativeEvent.layout.width);

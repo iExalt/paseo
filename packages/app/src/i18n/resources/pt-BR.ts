@@ -3147,6 +3147,20 @@ export const ptBR: TranslationResources = {
       },
     },
     providers: {
+      cursorSdk: {
+        title: "Conta do Cursor",
+        checking: "Verificando o login…",
+        signedIn: "Conectado ao Cursor",
+        apiKey: "Usando a chave de API do Cursor do host",
+        signedOut: "Entre para carregar os modelos do Cursor neste host.",
+        pending: "Conclua o login no navegador e volte ao Paseo.",
+        signIn: "Entrar com Cursor",
+        openBrowser: "Abrir página de login",
+        statusFailed: "Não foi possível verificar o login do Cursor.",
+        startFailed: "Não foi possível iniciar o login do Cursor.",
+        browserFailed:
+          "Não foi possível abrir o navegador. Tente abrir a página de login novamente.",
+      },
       title: "Provedores",
       addProvider: "Adicionar provedor",
       providerDetails: "Detalhes do provedor {{name}}",

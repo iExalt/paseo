@@ -25,6 +25,8 @@ import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { useTimeAgo } from "@/hooks/use-time-ago";
 import { useHostRuntimeClient } from "@/runtime/host-runtime";
+import { useHostFeature } from "@/runtime/host-features";
+import { CursorSdkAccount } from "./cursor-sdk-account";
 import { settingsStyles } from "@/styles/settings";
 import { resolveProviderLabel } from "@/utils/provider-definitions";
 import { compareMatchScores, scoreTextFields } from "@getpaseo/protocol/search/text-match";
@@ -612,6 +614,7 @@ export function ProviderDiagnosticSheet({
   const { theme } = useUnistyles();
   const isCompact = useIsCompactFormFactor();
   const { entries: snapshotEntries, refresh, isRefreshing } = useProvidersSnapshot(serverId);
+  const supportsCursorSdkAuth = useHostFeature(serverId, "cursorSdkAuth");
   const { config, patchConfig } = useDaemonConfig(serverId);
   const [query, setQuery] = useState("");
   const [addSheetOpen, setAddSheetOpen] = useState(false);
@@ -720,6 +723,9 @@ export function ProviderDiagnosticSheet({
         })}
         snapPoints={MAIN_SNAP_POINTS}
       >
+        {provider === "cursor-sdk" && supportsCursorSdkAuth ? (
+          <CursorSdkAccount serverId={serverId} visible={visible} />
+        ) : null}
         <ProviderModalBody
           serverId={serverId}
           provider={provider}
