@@ -579,6 +579,34 @@ test("built-in override applies env", () => {
   });
 });
 
+test("Cursor SDK is an opt-in provider distinct from Cursor ACP", async () => {
+  const disabled = buildProviderRegistry(logger);
+  expect(disabled["cursor-sdk"]).toMatchObject({
+    id: "cursor-sdk",
+    label: "Cursor SDK",
+    enabled: false,
+    defaultModeId: "unrestricted",
+    modes: [
+      {
+        id: "unrestricted",
+        label: "Unrestricted",
+        colorTier: "dangerous",
+        isUnattended: true,
+      },
+    ],
+    supportsExactMcpPreapproval: false,
+  });
+  const enabled = buildProviderRegistry(logger, {
+    providerOverrides: {
+      cursor: { extends: "acp", label: "Cursor", command: ["cursor-agent", "acp"] },
+      "cursor-sdk": { enabled: true, env: { CURSOR_API_KEY: "test-key" } },
+    },
+  });
+  expect(enabled["cursor-sdk"].enabled).toBe(true);
+  expect(await enabled["cursor-sdk"].createClient(logger).isAvailable()).toBe(true);
+  expect(enabled.cursor.createClient(logger).provider).toBe("cursor");
+});
+
 test("OMP is a disabled built-in backed by the real OMP adapter", async () => {
   const omp = new FakeOmp();
   const registry = buildProviderRegistry(logger, { ompRuntime: omp });

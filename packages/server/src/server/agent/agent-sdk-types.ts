@@ -174,6 +174,8 @@ export interface AgentCapabilityFlags {
   supportsDynamicModes: boolean;
   supportsMcpServers: boolean;
   supportsNativePaseoTools?: boolean;
+  /** False when the adapter cannot pass scoped Paseo CLI environment to its tools. */
+  supportsPaseoCli?: boolean;
   supportsReasoningStream: boolean;
   supportsToolInvocations: boolean;
   supportsRewindConversation?: boolean;
