@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.31.0](https://github.com/iExalt/paseo/compare/paseo-v0.30.0...paseo-v0.31.0) (2026-11-21)
+
+
+### Features
+
+* **agent:** add Cursor SDK browser sign-in ([#550](https://github.com/iExalt/paseo/issues/550)) ([019a734](https://github.com/iExalt/paseo/commit/019a734215c457df5324c1c863a6fc057bec9dc5))
+* **agent:** add native Cursor SDK provider ([#548](https://github.com/iExalt/paseo/issues/548)) ([5c11f37](https://github.com/iExalt/paseo/commit/5c11f3714aace5eadefcaec922b0d45ae691dd1e))
+
 ## [0.30.0](https://github.com/iExalt/paseo/compare/paseo-v0.29.1...paseo-v0.30.0) (2026-11-17)
 
 
