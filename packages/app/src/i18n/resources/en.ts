@@ -3611,6 +3611,19 @@ export const en = {
       },
     },
     providers: {
+      cursorSdk: {
+        title: "Cursor account",
+        checking: "Checking sign-in…",
+        signedIn: "Signed in to Cursor",
+        apiKey: "Using the host’s Cursor API key",
+        signedOut: "Sign in to load Cursor models on this host.",
+        pending: "Complete sign-in in your browser, then return to Paseo.",
+        signIn: "Sign in with Cursor",
+        openBrowser: "Open sign-in page",
+        statusFailed: "Could not check Cursor sign-in.",
+        startFailed: "Could not start Cursor sign-in.",
+        browserFailed: "Could not open the browser. Try opening the sign-in page again.",
+      },
       title: "Providers",
       addProvider: "Add provider",
       list: {

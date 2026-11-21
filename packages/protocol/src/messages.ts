@@ -1791,6 +1791,23 @@ export const AgentSkillsImportLegacySelectionRequestSchema = z
   })
   .strict();
 
+export const CursorSdkAuthStatusRequestSchema = z.object({
+  type: z.literal("provider.cursor_sdk.auth.get_status.request"),
+  requestId: z.string(),
+  attemptId: z.string().optional(),
+});
+
+export const CursorSdkStartSignInRequestSchema = z.object({
+  type: z.literal("provider.cursor_sdk.auth.start_sign_in.request"),
+  requestId: z.string(),
+});
+
+export const CursorSdkCancelSignInRequestSchema = z.object({
+  type: z.literal("provider.cursor_sdk.auth.cancel_sign_in.request"),
+  requestId: z.string(),
+  attemptId: z.string(),
+});
+
 export const GetDaemonConfigRequestMessageSchema = z.object({
   type: z.literal("get_daemon_config_request"),
   requestId: z.string(),
@@ -3955,6 +3972,9 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   AgentSkillsSaveSelectionRequestSchema,
   AgentSkillsImportLegacySelectionRequestSchema,
   GetDaemonConfigRequestMessageSchema,
+  CursorSdkAuthStatusRequestSchema,
+  CursorSdkStartSignInRequestSchema,
+  CursorSdkCancelSignInRequestSchema,
   AgentDirectoryQueryRequestMessageSchema,
   AgentStatusGetRequestMessageSchema,
   AgentActivityGetRequestMessageSchema,
@@ -4565,6 +4585,7 @@ export const ServerInfoStatusPayloadSchema = z
         diffSubscription: z.boolean().optional(),
         binaryChunkingV1: z.boolean().optional(),
         workspaceSetupObservation: z.boolean().optional(),
+        cursorSdkAuth: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
@@ -5954,6 +5975,33 @@ export const WaitForFinishResponseMessageSchema = z.object({
     final: AgentSnapshotPayloadSchema.nullable(),
     error: z.string().nullable(),
     lastMessage: z.string().nullable(),
+  }),
+});
+
+export const CursorSdkAuthStatusResponseSchema = z.object({
+  type: z.literal("provider.cursor_sdk.auth.get_status.response"),
+  payload: z.object({
+    requestId: z.string(),
+    status: z.enum(["signed_in", "signed_out", "api_key", "pending"]),
+    error: z.string().nullable(),
+  }),
+});
+
+export const CursorSdkStartSignInResponseSchema = z.object({
+  type: z.literal("provider.cursor_sdk.auth.start_sign_in.response"),
+  payload: z.object({
+    requestId: z.string(),
+    attemptId: z.string().nullable(),
+    url: z.string().nullable(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const CursorSdkCancelSignInResponseSchema = z.object({
+  type: z.literal("provider.cursor_sdk.auth.cancel_sign_in.response"),
+  payload: z.object({
+    requestId: z.string(),
+    error: z.string().nullable(),
   }),
 });
 
@@ -8357,6 +8405,9 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   HubManagementDaemonPermissionsUpdateResponseSchema,
   DiagnosticsResponseSchema,
   GetDaemonConfigResponseMessageSchema,
+  CursorSdkAuthStatusResponseSchema,
+  CursorSdkStartSignInResponseSchema,
+  CursorSdkCancelSignInResponseSchema,
   AgentDirectoryQueryResponseMessageSchema,
   AgentStatusGetResponseMessageSchema,
   AgentActivityGetResponseMessageSchema,

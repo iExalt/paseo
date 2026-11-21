@@ -3390,6 +3390,19 @@ export const ar: TranslationResources = {
       },
     },
     providers: {
+      cursorSdk: {
+        title: "حساب Cursor",
+        checking: "جارٍ التحقق من تسجيل الدخول…",
+        signedIn: "تم تسجيل الدخول إلى Cursor",
+        apiKey: "يُستخدم مفتاح واجهة Cursor البرمجية على المضيف",
+        signedOut: "سجّل الدخول لتحميل نماذج Cursor على هذا المضيف.",
+        pending: "أكمِل تسجيل الدخول في المتصفح، ثم عُد إلى Paseo.",
+        signIn: "تسجيل الدخول باستخدام Cursor",
+        openBrowser: "فتح صفحة تسجيل الدخول",
+        statusFailed: "تعذّر التحقق من تسجيل الدخول إلى Cursor.",
+        startFailed: "تعذّر بدء تسجيل الدخول إلى Cursor.",
+        browserFailed: "تعذّر فتح المتصفح. حاول فتح صفحة تسجيل الدخول مرة أخرى.",
+      },
       title: "مقدمي الخدمات",
       addProvider: "إضافة مزود",
       list: {

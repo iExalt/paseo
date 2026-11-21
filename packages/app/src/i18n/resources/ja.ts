@@ -3390,6 +3390,19 @@ export const ja: TranslationResources = {
       },
     },
     providers: {
+      cursorSdk: {
+        title: "Cursor アカウント",
+        checking: "ログイン状態を確認中…",
+        signedIn: "Cursor にログイン済み",
+        apiKey: "ホストの Cursor API キーを使用中",
+        signedOut: "ログインしてこのホストで Cursor のモデルを読み込みます。",
+        pending: "ブラウザーでログインを完了し、Paseo に戻ってください。",
+        signIn: "Cursor でログイン",
+        openBrowser: "ログインページを開く",
+        statusFailed: "Cursor のログイン状態を確認できませんでした。",
+        startFailed: "Cursor へのログインを開始できませんでした。",
+        browserFailed: "ブラウザーを開けませんでした。ログインページをもう一度開いてください。",
+      },
       title: "プロバイダー",
       addProvider: "プロバイダーを追加",
       list: {

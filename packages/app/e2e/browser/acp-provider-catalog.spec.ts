@@ -11,6 +11,7 @@ import { expect, test } from "../support/fixtures";
 import { gotoAppShell, openSettings } from "../support/helpers/app";
 import { connectDaemonClient } from "../support/helpers/daemon-client-loader";
 import { getServerId } from "../support/helpers/server-id";
+import { daemonWsRoutePattern } from "../support/helpers/daemon-port";
 import {
   expectProviderInstalledInSettings,
   findAcpCatalogProvider,
@@ -253,3 +254,178 @@ async function addGooseFromSettings(page: import("@playwright/test").Page, serve
   await installAcpCatalogProvider(page, "goose");
   await expectProviderInstalledInSettings(page, "goose");
 }
+
+test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
+  page,
+}, testInfo) => {
+  const provider = "cursor-sdk";
+  const nextAttempt = () => "cursor-sdk-fixture-attempt-" + startCount;
+  const signInUrl = "https://cursor.example.test/sign-in";
+  let authStatus: "signed_out" | "pending" | "signed_in" = "signed_out";
+  let startCount = 0;
+  let canceledAttempt: string | undefined;
+  const checkedAttempts: (string | undefined)[] = [];
+  let sentModels = false;
+  const authPrefix = "provider.cursor_sdk.auth.";
+  const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+    clientIdPrefix: "cursor-sdk-catalog-e2e",
+  });
+
+  await page.addInitScript(() => {
+    window.open = (url) => {
+      document.documentElement.dataset["cursorSignInUrl"] = String(url);
+      return null; // Simulate a browser blocking an asynchronous popup.
+    };
+  });
+  await page.routeWebSocket(daemonWsRoutePattern(), (browser) => {
+    const server = browser.connectToServer();
+    const snapshotRequests = new Set<string>();
+    let snapshotSubscriptionId: string | undefined;
+    server.onMessage((message) => {
+      if (typeof message === "string") {
+        const reply = (
+          JSON.parse(message) as {
+            message?: { type: string; payload?: { requestId: string; subscriptionId?: string } };
+          }
+        ).message;
+        if (
+          reply?.type === "session.events.set_subscription.response" &&
+          reply.payload &&
+          snapshotRequests.delete(reply.payload.requestId)
+        ) {
+          snapshotSubscriptionId = reply.payload.subscriptionId;
+        }
+      }
+      browser.send(message);
+    });
+    browser.onMessage((message) => {
+      if (typeof message !== "string") {
+        server.send(message);
+        return;
+      }
+      const request = (
+        JSON.parse(message) as {
+          message?: { type: string; requestId: string; attemptId?: string; events?: string[] };
+        }
+      ).message;
+      if (
+        request?.type === "session.events.set_subscription.request" &&
+        request.events?.includes("providers_snapshot_update")
+      ) {
+        snapshotRequests.add(request.requestId);
+      }
+      const respond = (payload: Record<string, unknown>) => {
+        if (!request) throw new Error("Expected a sign-in request");
+        browser.send(
+          JSON.stringify({
+            type: "session",
+            message: {
+              type: request.type.replace(/\.request$/, ".response"),
+              payload: { requestId: request.requestId, error: null, ...payload },
+            },
+          }),
+        );
+      };
+      switch (request?.type) {
+        case authPrefix + "get_status.request":
+          checkedAttempts.push(request.attemptId);
+          respond({ status: authStatus });
+          if (authStatus === "signed_in" && snapshotSubscriptionId && !sentModels) {
+            sentModels = true;
+            browser.send(
+              JSON.stringify({
+                type: "session",
+                message: {
+                  type: "providers_snapshot_update",
+                  payload: {
+                    subscriptionId: snapshotSubscriptionId,
+                    generatedAt: new Date().toISOString(),
+                    entries: [
+                      {
+                        provider,
+                        status: "ready",
+                        enabled: true,
+                        label: "Cursor SDK",
+                        models: [{ provider, id: "cursor-fixture", label: "Cursor fixture model" }],
+                      },
+                    ],
+                  },
+                },
+              }),
+            );
+          }
+          return;
+        case authPrefix + "start_sign_in.request":
+          startCount += 1;
+          authStatus = "pending";
+          respond({ attemptId: nextAttempt(), url: signInUrl });
+          return;
+        case authPrefix + "cancel_sign_in.request":
+          canceledAttempt = request.attemptId;
+          authStatus = "signed_out";
+          respond({});
+          return;
+        default:
+          server.send(message);
+      }
+    });
+  });
+
+  try {
+    await client.patchDaemonConfig({ removeProviders: [provider] });
+    await gotoAppShell(page);
+    await openSettings(page);
+    await openSettingsHost(page, getServerId());
+    await openSettingsHostSection(page, getServerId(), "providers");
+    await openAddProvider(page);
+    const settingsRow = page.getByRole("button", {
+      name: "Cursor SDK provider details",
+      exact: true,
+    });
+    const tile = page.getByTestId("provider-catalog-row-cursor-sdk");
+    await page.getByRole("textbox", { name: "Search providers" }).fill("Cursor");
+    await expect(tile.getByText("SDK", { exact: true })).toBeVisible();
+    await expect(settingsRow).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("cursor-sdk-catalog.png") });
+
+    await tile.getByRole("button", { name: "Add Cursor SDK", exact: true }).click();
+    const account = page.getByTestId("cursor-sdk-account");
+    const signIn = account.getByRole("button", { name: "Sign in with Cursor", exact: true });
+    await expect(signIn).toBeEnabled();
+    expect((await client.getDaemonConfig()).config.providers?.[provider]).toEqual({
+      enabled: true,
+    });
+    await expect(tile).toHaveCount(0);
+
+    await signIn.click();
+    const openPage = account.getByRole("button", { name: "Open sign-in page", exact: true });
+    await expect(openPage).toBeEnabled();
+    await expect(page.locator("html")).toHaveAttribute("data-cursor-sign-in-url", signInUrl);
+    await page
+      .locator("html")
+      .evaluate((element) => element.removeAttribute("data-cursor-sign-in-url"));
+    await openPage.click();
+    await expect(page.locator("html")).toHaveAttribute("data-cursor-sign-in-url", signInUrl);
+    await account.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(signIn).toBeEnabled();
+    expect(canceledAttempt).toBe(nextAttempt());
+
+    await signIn.click();
+    await expect(openPage).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath("cursor-sdk-pending.png") });
+    expect(startCount).toBe(2);
+    authStatus = "signed_in";
+    await expect(account.getByText("Signed in to Cursor", { exact: true })).toBeVisible();
+    await expect(openPage).toHaveCount(0);
+    expect(checkedAttempts).toContain(nextAttempt());
+    await expect(
+      page.getByRole("switch", {
+        name: "Show Cursor fixture model in model pickers",
+        exact: true,
+      }),
+    ).toBeVisible();
+  } finally {
+    await client.patchDaemonConfig({ removeProviders: [provider] }).catch(() => undefined);
+    await client.close();
+  }
+});
