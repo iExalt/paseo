@@ -16,6 +16,7 @@ import type {
 } from "@cursor/sdk";
 import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
+import { z } from "zod";
 import { resolvePaseoHome } from "../../paseo-home.js";
 import type {
   AgentClient,
@@ -28,6 +29,7 @@ import type {
   AgentRunResult,
   AgentRuntimeInfo,
   AgentResumeSessionOptions,
+  AgentRunOptions,
   AgentSession,
   AgentSessionConfig,
   AgentStreamEvent,
@@ -63,6 +65,16 @@ const CAPABILITIES = {
 };
 
 type CursorSdk = Pick<typeof import("@cursor/sdk"), "Agent" | "JsonlLocalAgentStore">;
+
+// The public SDK messages API returns the checkpoint turn as an opaque value.
+const checkpointPromptSchema = z.object({
+  turn: z.object({
+    case: z.literal("agentConversationTurn"),
+    value: z.object({
+      userMessage: z.object({ text: z.string(), messageId: z.string(), startedAtMs: z.bigint() }),
+    }),
+  }),
+});
 
 function modelId(id?: string | null): string {
   return id?.trim() || DEFAULT_MODEL;
@@ -114,7 +126,7 @@ function mapUsage(usage: TokenUsage | undefined): AgentUsage | undefined {
   };
 }
 
-function makePrompt(input: AgentPromptInput, instructions: string | undefined): SDKUserMessage {
+function makePrompt(input: AgentPromptInput): SDKUserMessage {
   const images: SDKUserMessage["images"] = [];
   const text =
     typeof input === "string"
@@ -128,10 +140,7 @@ function makePrompt(input: AgentPromptInput, instructions: string | undefined): 
             return [block.type === "text" ? block.text : renderPromptAttachmentAsText(block)];
           })
           .join("\n\n");
-  const promptText = instructions
-    ? RUN_INSTRUCTIONS_START + instructions + RUN_INSTRUCTIONS_END + text
-    : text;
-  return images.length ? { text: promptText, images } : { text: promptText };
+  return images.length ? { text, images } : { text };
 }
 
 function historyPrompt(text: string): string {
@@ -335,7 +344,8 @@ export class CursorSdkAgentClient implements AgentClient {
       controls,
       (model) => this.getControls(model),
       composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
-      (cursor) => sdk.Agent.listRuns(agent.agentId, { runtime: "local", cwd, store, cursor }),
+      sdk.Agent,
+      store,
     );
   }
 }
@@ -369,8 +379,8 @@ function mapTool(
     name: message.name,
     detail: {
       type: "unknown" as const,
-      input: message.args ?? prior?.input,
-      output: message.result ?? prior?.output,
+      input: message.args ?? prior?.input ?? null,
+      output: message.result ?? prior?.output ?? null,
     },
   };
   if (message.status === "error") {
@@ -401,7 +411,7 @@ function streamItems(
     }
     case "user": {
       if (!history) {
-        return []; // Paseo has already recorded the original prompt.
+        return []; // The adapter already emitted the submitted prompt for this run.
       }
       const text = historyPrompt(message.message.content.map((block) => block.text).join(""));
       return text ? [{ type: "user_message", text }] : [];
@@ -475,7 +485,8 @@ class CursorSdkAgent implements AgentSession {
     private modelControls: AgentOptionSelectControl[],
     private readonly getControls: (model: string) => Promise<AgentOptionSelectControl[]>,
     private readonly instructions: string | undefined,
-    private readonly listRuns: (cursor?: string) => Promise<{ items: Run[]; nextCursor?: string }>,
+    private readonly sdkAgent: CursorSdk["Agent"],
+    private readonly store: LocalAgentStore,
   ) {
     this.id = agent.agentId;
   }
@@ -495,7 +506,7 @@ class CursorSdkAgent implements AgentSession {
     }
   }
 
-  private begin(prompt: AgentPromptInput): Turn {
+  private begin(prompt: AgentPromptInput, options?: AgentRunOptions): Turn {
     if (this.closed || this.closing) {
       throw new Error("Cursor SDK session is closing or closed.");
     }
@@ -504,26 +515,42 @@ class CursorSdkAgent implements AgentSession {
     }
     assertNoInheritedAgentIdentity();
     const id = randomUUID();
+    const input = makePrompt(prompt);
+    const text = this.instructions
+      ? RUN_INSTRUCTIONS_START + this.instructions + RUN_INSTRUCTIONS_END + input.text
+      : input.text;
     const native = Promise.resolve().then(() =>
-      this.agent.send(makePrompt(prompt, this.instructions), {
-        model: selectModel(this.model, this.options, this.modelControls),
-      }),
+      this.agent.send(
+        { ...input, text },
+        {
+          model: selectModel(this.model, this.options, this.modelControls),
+        },
+      ),
     );
-    const turn: Turn = { id, native, completion: this.consume(id, native), stopping: false };
+    const completion = this.consume(id, native, input.text, options?.clientMessageId);
+    const turn: Turn = { id, native, completion, stopping: false };
     this.active = turn;
     void turn.completion.catch(() => {});
     return turn;
   }
 
-  async run(prompt: AgentPromptInput): Promise<AgentRunResult> {
-    return this.begin(prompt).completion;
+  async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
+    return this.begin(prompt, options).completion;
   }
 
-  async startTurn(prompt: AgentPromptInput): Promise<{ turnId: string }> {
-    return { turnId: this.begin(prompt).id };
+  async startTurn(
+    prompt: AgentPromptInput,
+    options?: AgentRunOptions,
+  ): Promise<{ turnId: string }> {
+    return { turnId: this.begin(prompt, options).id };
   }
 
-  private async consume(turnId: string, native: Promise<Run>): Promise<AgentRunResult> {
+  private async consume(
+    turnId: string,
+    native: Promise<Run>,
+    text: string,
+    clientMessageId?: string,
+  ): Promise<AgentRunResult> {
     const provider = PROVIDER;
     const timeline: AgentTimelineItem[] = [];
     const tools = new Map<string, ToolCallTimelineItem>();
@@ -540,6 +567,7 @@ class CursorSdkAgent implements AgentSession {
       await Promise.resolve();
       this.emit({ type: "turn_started", provider, turnId });
       const run = await native;
+      emitItem({ type: "user_message", text, ...(clientMessageId ? { clientMessageId } : {}) });
       let streamError: unknown;
       try {
         for await (const message of run.stream()) {
@@ -583,10 +611,11 @@ class CursorSdkAgent implements AgentSession {
   }
 
   async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
+    const local = { runtime: "local" as const, cwd: this.cwd, store: this.store };
     let cursor: string | undefined;
     const runs = new Map<string, Run>();
     do {
-      const page = await this.listRuns(cursor);
+      const page = await this.sdkAgent.listRuns(this.id, { ...local, cursor });
       for (const run of page.items) {
         if (run.status !== "running") {
           runs.set(run.id, run);
@@ -595,6 +624,7 @@ class CursorSdkAgent implements AgentSession {
       cursor = page.nextCursor;
     } while (cursor);
     const ordered = [...runs.values()].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
+    const prompts = await this.checkpointPromptsByRun(ordered);
     for (const run of ordered) {
       const turnId = run.id;
       const timestamp =
@@ -606,6 +636,10 @@ class CursorSdkAgent implements AgentSession {
         for (const item of streamItems(message, tools, true)) {
           writeHistoryItem(items, positions, item);
         }
+      }
+      const prompt = prompts.get(run.id);
+      if (prompt && !items.some((item) => item.type === "user_message")) {
+        items.unshift(prompt);
       }
       const result = await run.wait();
       for (const item of terminalTools(tools, result.status)) {
@@ -621,6 +655,46 @@ class CursorSdkAgent implements AgentSession {
         yield { type: "timeline", item, provider: PROVIDER, turnId, timestamp };
       }
     }
+  }
+
+  private async checkpointPromptsByRun(runs: Run[]) {
+    const byRun = new Map<string, Extract<AgentTimelineItem, { type: "user_message" }>>();
+    if (runs.length === 0) return byRun;
+    const messages = await this.sdkAgent.messages.list(this.id, {
+      runtime: "local",
+      cwd: this.cwd,
+      store: this.store,
+    });
+    const prompts = messages
+      .flatMap(({ message }) => {
+        const parsed = checkpointPromptSchema.safeParse(message);
+        if (!parsed.success) return [];
+        const { text, messageId, startedAtMs } = parsed.data.turn.value.userMessage;
+        const time = Number(startedAtMs);
+        return Number.isSafeInteger(time) && time > 0
+          ? [{ text: historyPrompt(text), messageId, time }]
+          : [];
+      })
+      .sort((a, b) => a.time - b.time);
+    // The SDK checkpoint contains prompts but no run IDs. Only use a single
+    // prompt inside the run's time window, and consume each checkpoint once.
+    let nextPrompt = 0;
+    for (const run of runs) {
+      if (nextPrompt >= prompts.length) break;
+      const stored = await this.store.runs.get({ agentId: this.id, runId: run.id });
+      if (stored?.endedAt == null) continue;
+      const start = stored.startedAt ?? stored.createdAt;
+      while (nextPrompt < prompts.length && prompts[nextPrompt].time < start) nextPrompt++;
+      const first = nextPrompt;
+      while (nextPrompt < prompts.length && prompts[nextPrompt].time <= stored.endedAt) {
+        nextPrompt++;
+      }
+      if (nextPrompt === first + 1) {
+        const { text, messageId } = prompts[first];
+        byRun.set(run.id, { type: "user_message", text, messageId });
+      }
+    }
+    return byRun;
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {

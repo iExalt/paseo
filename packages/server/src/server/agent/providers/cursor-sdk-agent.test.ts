@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BroadcastChannel } from "node:worker_threads";
 import type { RunResult, SDKMessage, SDKModel, SDKUserMessage, SendOptions } from "@cursor/sdk";
+import { AgentTimelineItemPayloadSchema } from "@getpaseo/protocol/messages";
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
 import { AgentManager } from "../agent-manager.js";
@@ -30,10 +31,10 @@ const model: SDKModel = {
   variants: [{ params: [{ id: "reasoning", value: "low" }], displayName: "Low", isDefault: true }],
 };
 
-function makeRun(messages: SDKMessage[], result: RunResult) {
+function makeRun(messages: SDKMessage[], result: RunResult, createdAt = Date.UTC(2026, 10, 21)) {
   return {
     id: result.id,
-    createdAt: Date.UTC(2026, 10, 21),
+    createdAt,
     status: result.status,
     supports: () => true,
     stream: async function* () {
@@ -46,14 +47,17 @@ function makeRun(messages: SDKMessage[], result: RunResult) {
 
 function fixture() {
   const modelList = vi.fn(async (_apiKey: string) => [model]);
+  const getRun = vi.fn();
   const sdk = {
     JsonlLocalAgentStore: class {
       readonly agents = { get: async () => null };
+      readonly runs = { get: getRun };
     },
     Agent: {
       create: vi.fn(),
       resume: vi.fn(),
       listRuns: vi.fn(),
+      messages: { list: vi.fn().mockResolvedValue([]) },
     },
   };
   const send = vi.fn<(_message: SDKUserMessage, _options: SendOptions) => Promise<unknown>>();
@@ -66,7 +70,7 @@ function fixture() {
   >;
   const client = new CursorSdkAgentClient({ env: { CURSOR_API_KEY: "test-key" } }, load, modelList);
   const config: AgentSessionConfig = { provider, cwd: process.cwd(), model: "model" };
-  return { client, config, sdk, load, send, modelList };
+  return { client, config, sdk, load, send, modelList, getRun };
 }
 
 describe("Cursor SDK provider", () => {
@@ -230,12 +234,13 @@ describe("Cursor SDK provider", () => {
     });
     const live = events.flatMap((event) => (event.type === "timeline" ? [event.item] : []));
     expect(live.map((item) => item.type)).toEqual([
+      "user_message",
       "reasoning",
       "tool_call",
       "tool_call",
       "assistant_message",
     ]);
-    expect(live[2]).toMatchObject({
+    expect(live[3]).toMatchObject({
       callId: runId + ":call",
       status: "completed",
       detail: { input: { command: "pwd" }, output: "done" },
@@ -244,13 +249,79 @@ describe("Cursor SDK provider", () => {
       event.type === "timeline" ? [event.item] : [],
     );
     expect(replay).toEqual([
-      { type: "user_message", text: "prompt" },
-      live[0],
-      live[2],
-      live[3],
+      ...live.filter((item) => item.type !== "tool_call" || item.status !== "running"),
       { type: "error", message: error.message },
     ]);
     expect(sdk.Agent.listRuns).toHaveBeenCalledTimes(2);
+    await session.close();
+  });
+
+  it("records CLI and desktop prompts once when Cursor omits user events, including after resume", async () => {
+    const { client, config, sdk, send, getRun } = fixture();
+    const manager = new AgentManager({
+      clients: { [provider]: client },
+      logger: pino({ level: "silent" }),
+    });
+    const prompt = "Repeat this prompt";
+    const first = makeRun([], { id: "first", status: "finished", result: "first answer" }, 1000);
+    const second = makeRun([], { id: "second", status: "finished", result: "second answer" }, 2000);
+    send.mockResolvedValueOnce(first).mockResolvedValueOnce(second);
+    const agent = await manager.createAgent(
+      { ...config, systemPrompt: "Do not show this instruction" },
+      undefined,
+      { workspaceId: undefined },
+    );
+    await manager.runAgent(agent.id, prompt);
+    await manager.runAgent(agent.id, prompt, { clientMessageId: "ui-prompt" });
+    expect(manager.getTimeline(agent.id)).toEqual([
+      { type: "user_message", text: prompt },
+      { type: "assistant_message", text: "first answer" },
+      { type: "user_message", text: prompt, clientMessageId: "ui-prompt", messageId: "ui-prompt" },
+      { type: "assistant_message", text: "second answer" },
+    ]);
+    await manager.closeAgent(agent.id);
+
+    sdk.Agent.listRuns.mockResolvedValue({ items: [second, first] });
+    sdk.Agent.messages.list.mockResolvedValue(
+      [first, second].map((run, index) => ({
+        type: "user",
+        message: {
+          turn: {
+            case: "agentConversationTurn",
+            value: {
+              userMessage: {
+                text: send.mock.calls[index][0].text,
+                messageId: "native-" + run.id,
+                startedAtMs: BigInt(run.createdAt + 10),
+              },
+            },
+          },
+        },
+      })),
+    );
+    getRun.mockImplementation(async ({ runId: id }) => {
+      const run = id === first.id ? first : second;
+      return {
+        createdAt: run.createdAt,
+        startedAt: run.createdAt + 1,
+        endedAt: run.createdAt + 100,
+      };
+    });
+    const session = await client.resumeSession(
+      { provider, sessionId: agentId, metadata: { cwd: config.cwd } },
+      config,
+      undefined,
+      { purpose: "history" },
+    );
+    const history = (await Array.fromAsync(session.streamHistory())).flatMap((event) =>
+      event.type === "timeline" ? [[event.turnId, event.item]] : [],
+    );
+    expect(history).toEqual([
+      [first.id, { type: "user_message", text: prompt, messageId: "native-first" }],
+      [first.id, { type: "assistant_message", text: "first answer" }],
+      [second.id, { type: "user_message", text: prompt, messageId: "native-second" }],
+      [second.id, { type: "assistant_message", text: "second answer" }],
+    ]);
     await session.close();
   });
 
@@ -266,8 +337,10 @@ describe("Cursor SDK provider", () => {
       call_id: "active",
       name: "shell",
       status: "running",
+      args: { command: "sleep 60", timeout: 120_000 },
     } satisfies SDKMessage;
-    sdk.Agent.listRuns.mockResolvedValue({ items: [makeRun([tool], result)] });
+    const cancelled = { ...eventIds, type: "status", status: "CANCELLED" } satisfies SDKMessage;
+    sdk.Agent.listRuns.mockResolvedValue({ items: [makeRun([tool, cancelled], result)] });
     const run = {
       ...makeRun([], result),
       status: "running",
@@ -275,6 +348,7 @@ describe("Cursor SDK provider", () => {
         yield tool;
         started.resolve();
         await canceled.promise;
+        yield cancelled;
       },
       cancel: async () => canceled.resolve(),
       wait: async () => {
@@ -286,6 +360,8 @@ describe("Cursor SDK provider", () => {
       .mockResolvedValueOnce(run)
       .mockResolvedValue(makeRun([], { id: "next", status: "finished" }));
     const session = await client.createSession(config);
+    const events: AgentStreamEvent[] = [];
+    session.subscribe((event) => events.push(event));
     const turn = session.run("first");
     await started.promise;
     const stop = session.interrupt();
@@ -295,14 +371,27 @@ describe("Cursor SDK provider", () => {
     const output = await turn;
     expect(output.canceled).toBe(true);
     await stop;
-    const replay = await Array.fromAsync(session.streamHistory());
+    const live = events.flatMap((event) => (event.type === "timeline" ? [event.item] : []));
+    const running = {
+      type: "tool_call",
+      callId: runId + ":active",
+      name: "shell",
+      status: "running",
+      error: null,
+      detail: { type: "unknown", input: tool.args, output: null },
+    };
+    const canceledTool = { ...running, status: "canceled" };
+    expect(
+      live.map((item) => AgentTimelineItemPayloadSchema.parse(JSON.parse(JSON.stringify(item)))),
+    ).toEqual([{ type: "user_message", text: "first" }, running, canceledTool]);
+    const replay = JSON.parse(JSON.stringify(await Array.fromAsync(session.streamHistory())));
     expect(replay).toEqual([
       {
         type: "timeline",
         provider,
         turnId: runId,
         timestamp: "2026-11-21T00:00:00.000Z",
-        item: output.timeline.at(-1),
+        item: canceledTool,
       },
     ]);
     await session.run("replacement");
