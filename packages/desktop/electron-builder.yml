@@ -13,6 +13,7 @@ directories:
 files:
   - dist/**/*
   - "!**/*.map"
+  - "!**/node_modules/@cursor/sdk-*/**"
   - "!node_modules/@getpaseo/*/src/**"
   - "!node_modules/@getpaseo/**/*.test.*"
   - "!node_modules/@getpaseo/**/*.spec.*"
@@ -28,6 +29,11 @@ asarUnpack:
   - dist/daemon/node-entrypoint-runner.js
   - node_modules/@getpaseo/server/dist/server/terminal/shell-integration/**/*
 extraResources:
+  # The SDK spawns helpers by absolute path and searches ancestor node_modules.
+  - from: ../../node_modules/@cursor
+    to: node_modules/@cursor
+    filter:
+      - "sdk-*/**/*"
   # Preserve physical compiler inputs, including .d.ts files omitted from packaged node_modules.
   - from: ../server/dist/server/builtin-plugins
     to: builtin-plugins

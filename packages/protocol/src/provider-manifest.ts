@@ -249,6 +249,22 @@ export const AGENT_PROVIDER_DEFINITIONS: AgentProviderDefinition[] = [
     modes: [],
   },
   {
+    id: "cursor-sdk",
+    label: "Cursor SDK",
+    description: "Cursor's local SDK agent with sandboxed shell execution",
+    enabledByDefault: false,
+    defaultModeId: "sandboxed",
+    modes: [
+      {
+        id: "sandboxed",
+        label: "Sandboxed",
+        description: "Run shell commands in Cursor's local sandbox without interactive approvals.",
+        icon: "Shield",
+        colorTier: "moderate",
+      },
+    ],
+  },
+  {
     id: "omp",
     label: "Oh My Pi",
     description: "Multi-provider coding agent with native approvals, host tools, and subagents",
