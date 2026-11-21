@@ -22,9 +22,8 @@ import { buildProviderDefinitions } from "@/utils/provider-definitions";
 import {
   buildAcpProviderConfigPatch,
   getAcpProviderCatalog,
-  type AcpProviderCatalogItem,
 } from "@/hooks/use-acp-provider-catalog";
-import { ProviderCatalogList } from "@/components/provider-catalog-list";
+import { ProviderCatalogList, type ProviderCatalogEntry } from "@/components/provider-catalog-list";
 import { useProviderIcon } from "@/components/provider-icons";
 import { LoadingSpinner } from "@/components/ui/loading-spinner";
 import { SkeletonPulse, useSkeletonPulse } from "@/components/ui/skeleton";
@@ -359,6 +358,7 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
   const toast = useToast();
   const isConnected = useHostRuntimeIsConnected(serverId);
   const supportsProviderRemoval = useHostFeature(serverId, "providerRemoval");
+  const supportsCursorSdk = useHostFeature(serverId, "cursorSdkAuth");
   const { entries, isLoading, refresh } = useProvidersSnapshot(serverId);
   const { config, patchConfig } = useDaemonConfig(serverId);
   const openProviderSettings = useProviderSettingsStore((state) => state.open);
@@ -367,7 +367,31 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
   const removingProviderIdRef = useRef<string | null>(null);
   const [installingProviderId, setInstallingProviderId] = useState<string | null>(null);
 
-  const providerDefinitions = useMemo(() => buildProviderDefinitions(entries), [entries]);
+  const cursorSdkConfigured = Boolean(config?.providers?.["cursor-sdk"]);
+  const installedEntries = useMemo(
+    () =>
+      entries?.filter(
+        (entry) =>
+          entry.provider !== "cursor-sdk" ||
+          entry.enabled !== false ||
+          !supportsCursorSdk ||
+          cursorSdkConfigured,
+      ),
+    [cursorSdkConfigured, entries, supportsCursorSdk],
+  );
+  const installedIds = useMemo(
+    () =>
+      new Set([
+        ...(installedEntries?.map((entry) => entry.provider) ?? []),
+        ...(cursorSdkConfigured ? ["cursor-sdk"] : []),
+      ]),
+    [cursorSdkConfigured, installedEntries],
+  );
+
+  const providerDefinitions = useMemo(
+    () => buildProviderDefinitions(installedEntries),
+    [installedEntries],
+  );
   const hasServer = serverId.length > 0;
 
   /** Config owns derived providers and opt-in bundled catalog providers. */
@@ -440,15 +464,20 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
   );
 
   const handleInstall = useCallback(
-    async (entry: AcpProviderCatalogItem) => {
+    async (entry: ProviderCatalogEntry) => {
       if (installingProviderId) return;
       setInstallingProviderId(entry.id);
       try {
-        await patchConfig(
-          buildAcpProviderConfigPatch(entry, (feature) =>
-            selectHostFeature(useSessionStore.getState(), serverId, feature),
-          ),
-        );
+        if ("command" in entry) {
+          await patchConfig(
+            buildAcpProviderConfigPatch(entry, (feature) =>
+              selectHostFeature(useSessionStore.getState(), serverId, feature),
+            ),
+          );
+        } else {
+          await patchConfig({ providers: { [entry.id]: { enabled: true } } });
+          handleOpenProviderSettings(entry.id);
+        }
         await refresh([entry.id]);
       } catch (error) {
         toast.error(error instanceof Error ? error.message : String(error));
@@ -456,7 +485,7 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
         setInstallingProviderId((current) => (current === entry.id ? null : current));
       }
     },
-    [installingProviderId, patchConfig, refresh, serverId, toast],
+    [handleOpenProviderSettings, installingProviderId, patchConfig, refresh, serverId, toast],
   );
 
   return (
@@ -509,7 +538,8 @@ export function ProvidersSection({ serverId }: ProvidersSectionProps) {
           style={styles.addProviderSection}
         >
           <ProviderCatalogList
-            serverId={serverId}
+            installedIds={installedIds}
+            supportsCursorSdk={supportsCursorSdk}
             installingProviderId={installingProviderId}
             onInstall={handleInstall}
           />

@@ -45,7 +45,11 @@ import type { ProviderRuntimeSettings } from "../provider-launch-config.js";
 import { runProviderRefreshActivity } from "../provider-refresh-deadline.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
 
-const PROVIDER = "cursor-sdk";
+import {
+  CURSOR_SDK_PROVIDER as PROVIDER,
+  getCursorSdkEnvKey,
+  readCursorSdkStoredKey,
+} from "./cursor-sdk-auth.js";
 const MODE = "unrestricted";
 const MODES = getAgentProviderDefinition(PROVIDER).modes;
 const DEFAULT_MODEL = "auto";
@@ -53,7 +57,7 @@ const PARAMETER_PREFIX = "cursor_model_";
 const RUN_INSTRUCTIONS_START = "<paseo_instructions>\n";
 const RUN_INSTRUCTIONS_END = "\n</paseo_instructions>\n\n";
 const MISSING_CREDENTIAL =
-  "Cursor SDK requires CURSOR_API_KEY. Set it in the daemon environment or in agents.providers.cursor-sdk.env, then reload the daemon configuration.";
+  "Sign in to Cursor SDK in host settings or configure CURSOR_API_KEY on the host.";
 const CAPABILITIES = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
@@ -197,41 +201,47 @@ export class CursorSdkAgentClient implements AgentClient {
   readonly provider = PROVIDER;
   readonly capabilities = CAPABILITIES;
 
-  private readonly apiKey: string | undefined;
   private store: LocalAgentStore | undefined;
   private catalog: SDKModel[] | undefined;
   private readonly storePath = join(resolvePaseoHome(), "cursor-sdk");
 
   constructor(
-    runtimeSettings?: ProviderRuntimeSettings,
+    private readonly runtimeSettings?: ProviderRuntimeSettings,
     private readonly loadSdk: () => Promise<CursorSdk> = () => import("@cursor/sdk"),
     private readonly listModels = listCursorModels,
-  ) {
-    this.apiKey = (runtimeSettings?.env?.CURSOR_API_KEY ?? process.env.CURSOR_API_KEY)?.trim();
-  }
+    private readonly readStoredKey = readCursorSdkStoredKey,
+  ) {}
 
-  private requireApiKey(): string {
-    if (!this.apiKey) {
-      throw new Error(MISSING_CREDENTIAL);
-    }
-    return this.apiKey;
+  private async requireApiKey(): Promise<string> {
+    const key = getCursorSdkEnvKey(this.runtimeSettings) ?? (await this.readStoredKey());
+    if (!key) throw new Error(MISSING_CREDENTIAL);
+    return key;
   }
 
   async isAvailable(): Promise<boolean> {
-    this.requireApiKey();
+    await this.requireApiKey();
     return true;
   }
 
   async getDiagnostic(): Promise<{ diagnostic: string }> {
+    if (getCursorSdkEnvKey(this.runtimeSettings)) {
+      return { diagnostic: "CURSOR_API_KEY is configured for Cursor SDK." };
+    }
     return {
-      diagnostic: this.apiKey ? "CURSOR_API_KEY is configured for Cursor SDK." : MISSING_CREDENTIAL,
+      diagnostic: (await this.readStoredKey())
+        ? "A Cursor SDK sign-in is stored on this host."
+        : MISSING_CREDENTIAL,
     };
   }
 
   private async fetchModels(signal?: AbortSignal): Promise<SDKModel[]> {
     const timeout = AbortSignal.timeout(30_000);
     const bounded = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const models = await this.listModels(this.requireApiKey(), bounded);
+    const key = await this.requireApiKey();
+    const models = await this.listModels(key, bounded).catch(() => {
+      bounded.throwIfAborted();
+      throw new Error("Could not load Cursor SDK models. Check the host's Cursor authentication.");
+    });
     bounded.throwIfAborted();
     this.catalog = models;
     return models;
@@ -312,8 +322,8 @@ export class CursorSdkAgentClient implements AgentClient {
     historyOnly = false,
   ): Promise<AgentSession> {
     assertNoInheritedAgentIdentity();
-    const apiKey = this.requireApiKey();
     assertMode(config.modeId);
+    const apiKey = await this.requireApiKey();
     const cwd = await realpath(config.cwd);
     const sdk = await this.loadSdk();
     const store = (this.store ??= new sdk.JsonlLocalAgentStore(this.storePath));

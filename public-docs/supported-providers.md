@@ -61,10 +61,15 @@ See [Custom providers](/docs/custom-providers) for command and environment overr
 
 ### Cursor SDK
 
-Set `CURSOR_API_KEY` in the daemon's environment or under
-`agents.providers.cursor-sdk.env` in its `config.json`. Enable **Cursor SDK** in the host's
-provider settings or set `agents.providers.cursor-sdk.enabled` to `true` in that file.
-Pick **Cursor SDK** to start a chat. Existing Cursor CLI chats still open with the **Cursor** provider.
+Open **Settings → Hosts → your host → Providers**. Under **Add provider**, add **Cursor SDK**.
+Paseo uses the Cursor SDK login saved on that host. If you're prompted to sign in, choose
+**Sign in with Cursor** and finish in your browser. You can then select a model and start a chat.
+The SDK login is separate from your Cursor editor login. Existing Cursor CLI chats still open
+with the **Cursor** provider.
+
+For a headless setup, set `agents.providers.cursor-sdk.enabled` to `true` in the daemon's
+`config.json` and supply `CURSOR_API_KEY` in the daemon environment or under
+`agents.providers.cursor-sdk.env`. An explicit key takes precedence over a saved login.
 
 **Unrestricted** is the only mode. Cursor runs tools as the daemon user, with access to the
 files and network that user can reach. Tools run without a sandbox or interactive approval

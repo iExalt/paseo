@@ -18,6 +18,9 @@ export function resolveProviderIconName(provider: string, iconSvg?: string): Pro
   if (iconSvg) {
     return { kind: "svg", svg: iconSvg };
   }
+  if (provider === "cursor-sdk") {
+    return { kind: "catalog", id: "cursor" };
+  }
   if (KNOWN_PROVIDER_IDS.has(provider)) {
     return { kind: "catalog", id: provider };
   }

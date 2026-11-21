@@ -6445,6 +6445,39 @@ export class DaemonClient {
     });
   }
 
+  private requireCursorSdkAuth(): void {
+    if (this.getLastServerInfoMessage()?.features?.cursorSdkAuth !== true) {
+      throw new Error("Update the host to sign in to Cursor SDK.");
+    }
+  }
+
+  async getCursorSdkAuthStatus(attemptId?: string) {
+    this.requireCursorSdkAuth();
+    return this.sendNamespacedCorrelatedSessionRequest<"provider.cursor_sdk.auth.get_status.response">(
+      {
+        message: { type: "provider.cursor_sdk.auth.get_status.request", attemptId },
+      },
+    );
+  }
+
+  async startCursorSdkSignIn() {
+    this.requireCursorSdkAuth();
+    return this.sendNamespacedCorrelatedSessionRequest<"provider.cursor_sdk.auth.start_sign_in.response">(
+      {
+        message: { type: "provider.cursor_sdk.auth.start_sign_in.request" },
+      },
+    );
+  }
+
+  async cancelCursorSdkSignIn(attemptId: string) {
+    this.requireCursorSdkAuth();
+    return this.sendNamespacedCorrelatedSessionRequest<"provider.cursor_sdk.auth.cancel_sign_in.response">(
+      {
+        message: { type: "provider.cursor_sdk.auth.cancel_sign_in.request", attemptId },
+      },
+    );
+  }
+
   async getDaemonConfig(
     requestId?: string,
   ): Promise<{ requestId: string; config: MutableDaemonConfig }> {

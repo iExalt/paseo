@@ -27,6 +27,11 @@ import {
 import type { ManagedAgent } from "./agent-manager.js";
 import type { WorkspaceGitService } from "../workspace-git-service.js";
 import type { ManagedProcessRegistry } from "../managed-processes/managed-processes.js";
+import {
+  CURSOR_SDK_PROVIDER,
+  CursorSdkSignIn,
+  getCursorSdkEnvKey,
+} from "./providers/cursor-sdk-auth.js";
 import type { OpenCodeBridge } from "./providers/opencode/bridge.js";
 import type {
   AgentProviderRuntimeSettingsMap,
@@ -282,6 +287,18 @@ export class ProviderSnapshotManager {
     } as Record<AgentProvider, AgentClient>;
     for (const client of Object.values(this.providerClients)) this.ownedClients.add(client);
   }
+
+  readonly cursorSdkSignIn = new CursorSdkSignIn(
+    () =>
+      Boolean(
+        getCursorSdkEnvKey(
+          this.generation.definitions[CURSOR_SDK_PROVIDER]?.configuration?.runtimeSettings,
+        ),
+      ),
+    () => {
+      void this.refreshSettingsSnapshot({ providers: [CURSOR_SDK_PROVIDER] });
+    },
+  );
 
   getSnapshot(cwd?: string): ProviderSnapshot {
     const target = resolveProviderSnapshotTarget(cwd);
@@ -688,6 +705,7 @@ export class ProviderSnapshotManager {
 
   async shutdown(): Promise<void> {
     this.destroyed = true;
+    this.cursorSdkSignIn.close();
     for (const state of this.generation.providerStates.values()) state.discoveryLimit.clearQueue();
     // Materialize a client per enabled provider so provider-owned resources
     // (background processes, sockets, etc.) get a chance to release even when
@@ -698,6 +716,7 @@ export class ProviderSnapshotManager {
 
   destroy(): void {
     this.destroyed = true;
+    this.cursorSdkSignIn.close();
     for (const state of this.generation.providerStates.values()) state.discoveryLimit.clearQueue();
     this.catalogs.clear();
     this.targets.clear();
