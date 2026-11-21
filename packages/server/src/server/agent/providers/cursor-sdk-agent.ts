@@ -71,7 +71,11 @@ const checkpointPromptSchema = z.object({
   turn: z.object({
     case: z.literal("agentConversationTurn"),
     value: z.object({
-      userMessage: z.object({ text: z.string(), messageId: z.string(), startedAtMs: z.bigint() }),
+      userMessage: z.object({
+        text: z.string(),
+        messageId: z.string().optional(),
+        startedAtMs: z.bigint(),
+      }),
     }),
   }),
 });
@@ -389,10 +393,14 @@ function mapTool(
   return { ...base, status: message.status, error: null };
 }
 
+function cursorUserMessageId(runId: string): string {
+  return `${runId}:user`;
+}
+
 function streamItems(
   message: SDKMessage,
   tools: Map<string, ToolCallTimelineItem>,
-  history: boolean,
+  historyUserMessageId?: string,
 ): AgentTimelineItem[] {
   switch (message.type) {
     case "assistant":
@@ -410,11 +418,11 @@ function streamItems(
       return [item];
     }
     case "user": {
-      if (!history) {
+      if (!historyUserMessageId) {
         return []; // The adapter already emitted the submitted prompt for this run.
       }
       const text = historyPrompt(message.message.content.map((block) => block.text).join(""));
-      return text ? [{ type: "user_message", text }] : [];
+      return text ? [{ type: "user_message", text, messageId: historyUserMessageId }] : [];
     }
     default:
       return [];
@@ -567,11 +575,16 @@ class CursorSdkAgent implements AgentSession {
       await Promise.resolve();
       this.emit({ type: "turn_started", provider, turnId });
       const run = await native;
-      emitItem({ type: "user_message", text, ...(clientMessageId ? { clientMessageId } : {}) });
+      emitItem({
+        type: "user_message",
+        text,
+        messageId: cursorUserMessageId(run.id),
+        ...(clientMessageId ? { clientMessageId } : {}),
+      });
       let streamError: unknown;
       try {
         for await (const message of run.stream()) {
-          for (const item of streamItems(message, tools, false)) {
+          for (const item of streamItems(message, tools)) {
             emitItem(item);
           }
         }
@@ -632,14 +645,12 @@ class CursorSdkAgent implements AgentSession {
       const tools = new Map<string, ToolCallTimelineItem>();
       const items: AgentTimelineItem[] = [];
       const positions = new Map<string, number>();
+      const prompt = prompts.get(run.id);
+      const messageId = prompt?.messageId ?? cursorUserMessageId(run.id);
       for await (const message of run.stream()) {
-        for (const item of streamItems(message, tools, true)) {
+        for (const item of streamItems(message, tools, messageId)) {
           writeHistoryItem(items, positions, item);
         }
-      }
-      const prompt = prompts.get(run.id);
-      if (prompt && !items.some((item) => item.type === "user_message")) {
-        items.unshift(prompt);
       }
       const result = await run.wait();
       for (const item of terminalTools(tools, result.status)) {
@@ -650,6 +661,9 @@ class CursorSdkAgent implements AgentSession {
       }
       if (result.status === "error") {
         items.push({ type: "error", message: result.error?.message ?? "Cursor SDK run failed." });
+      }
+      if (prompt && !items.some((item) => item.type === "user_message")) {
+        yield { type: "timeline", item: prompt, provider: PROVIDER, turnId, timestamp };
       }
       for (const item of items) {
         yield { type: "timeline", item, provider: PROVIDER, turnId, timestamp };
@@ -691,7 +705,11 @@ class CursorSdkAgent implements AgentSession {
       }
       if (nextPrompt === first + 1) {
         const { text, messageId } = prompts[first];
-        byRun.set(run.id, { type: "user_message", text, messageId });
+        byRun.set(run.id, {
+          type: "user_message",
+          text,
+          messageId: messageId?.trim() || cursorUserMessageId(run.id),
+        });
       }
     }
     return byRun;

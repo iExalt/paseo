@@ -274,7 +274,7 @@ describe("Cursor SDK provider", () => {
     await manager.runAgent(agent.id, prompt);
     await manager.runAgent(agent.id, prompt, { clientMessageId: "ui-prompt" });
     expect(manager.getTimeline(agent.id)).toEqual([
-      { type: "user_message", text: prompt },
+      { type: "user_message", text: prompt, messageId: "first:user" },
       { type: "assistant_message", text: "first answer" },
       { type: "user_message", text: prompt, clientMessageId: "ui-prompt", messageId: "ui-prompt" },
       { type: "assistant_message", text: "second answer" },
@@ -326,7 +326,7 @@ describe("Cursor SDK provider", () => {
   });
 
   it("blocks a replacement until both the cancel request and local SDK controller settle", async () => {
-    const { client, config, sdk, send } = fixture();
+    const { client, config, sdk, send, getRun } = fixture();
     const started = Promise.withResolvers<void>();
     const canceled = Promise.withResolvers<void>();
     const executionSettled = Promise.withResolvers<void>();
@@ -340,11 +340,35 @@ describe("Cursor SDK provider", () => {
       args: { command: "sleep 60", timeout: 120_000 },
     } satisfies SDKMessage;
     const cancelled = { ...eventIds, type: "status", status: "CANCELLED" } satisfies SDKMessage;
-    sdk.Agent.listRuns.mockResolvedValue({ items: [makeRun([tool, cancelled], result)] });
+    const thinking = { ...eventIds, type: "thinking", text: "Run the shell" } satisfies SDKMessage;
+    const historyRun = makeRun([thinking, tool, cancelled], result);
+    sdk.Agent.listRuns.mockResolvedValue({ items: [historyRun] });
+    sdk.Agent.messages.list.mockResolvedValue([
+      {
+        type: "user",
+        message: {
+          turn: {
+            case: "agentConversationTurn",
+            value: {
+              userMessage: {
+                text: "first",
+                messageId: "",
+                startedAtMs: BigInt(historyRun.createdAt + 1),
+              },
+            },
+          },
+        },
+      },
+    ]);
+    getRun.mockResolvedValue({
+      createdAt: historyRun.createdAt,
+      endedAt: historyRun.createdAt + 2,
+    });
     const run = {
       ...makeRun([], result),
       status: "running",
       stream: async function* () {
+        yield thinking;
         yield tool;
         started.resolve();
         await canceled.promise;
@@ -383,17 +407,26 @@ describe("Cursor SDK provider", () => {
     const canceledTool = { ...running, status: "canceled" };
     expect(
       live.map((item) => AgentTimelineItemPayloadSchema.parse(JSON.parse(JSON.stringify(item)))),
-    ).toEqual([{ type: "user_message", text: "first" }, running, canceledTool]);
+    ).toEqual([
+      { type: "user_message", text: "first", messageId: runId + ":user" },
+      { type: "reasoning", text: thinking.text },
+      running,
+      canceledTool,
+    ]);
     const replay = JSON.parse(JSON.stringify(await Array.fromAsync(session.streamHistory())));
-    expect(replay).toEqual([
-      {
+    expect(replay).toEqual(
+      [
+        { type: "user_message", text: "first", messageId: runId + ":user" },
+        { type: "reasoning", text: thinking.text },
+        canceledTool,
+      ].map((item) => ({
         type: "timeline",
         provider,
         turnId: runId,
         timestamp: "2026-11-21T00:00:00.000Z",
-        item: canceledTool,
-      },
-    ]);
+        item,
+      })),
+    );
     await session.run("replacement");
     expect(send.mock.calls.map(([prompt]) => prompt.text)).toEqual(["first", "replacement"]);
     await session.close();
