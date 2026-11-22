@@ -30,6 +30,11 @@ export interface AgentConfigOperations {
   setMode(agentId: string, modeId: string): Promise<AgentProviderNotice | null>;
   setModel(agentId: string, modelId: string | null): Promise<void>;
   setOptions(agentId: string, patch: ProviderOptionsPatch): Promise<void>;
+  trySetThinkingAndOptions?(
+    agentId: string,
+    thinkingOptionId: string | null,
+    patch: ProviderOptionsPatch,
+  ): Promise<boolean>;
   setThinking(
     agentId: string,
     thinkingOptionId: string | null,
@@ -187,13 +192,25 @@ export class AgentConfigSession {
       const modeNotice = await this.operations.setMode(agentId, config.modeId);
       notice ??= modeNotice;
     }
+    // COMPAT(featureValues): added in v0.15.0, remove after 2027-05-01. `featureValues` is an options patch.
+    const optionsPatch = { ...config.featureValues, ...config.options };
+    const hasOptions = Object.keys(optionsPatch).length > 0;
+    if (
+      config.thinkingOptionId !== undefined &&
+      hasOptions &&
+      (await this.operations.trySetThinkingAndOptions?.(
+        agentId,
+        config.thinkingOptionId,
+        optionsPatch,
+      ))
+    ) {
+      return notice;
+    }
     if (config.thinkingOptionId !== undefined) {
       const thinkingNotice = await this.operations.setThinking(agentId, config.thinkingOptionId);
       notice ??= thinkingNotice;
     }
-    // COMPAT(featureValues): added in v0.15.0, remove after 2027-05-01. `featureValues` is an options patch.
-    const optionsPatch = { ...config.featureValues, ...config.options };
-    if (Object.keys(optionsPatch).length > 0) {
+    if (hasOptions) {
       await this.operations.setOptions(agentId, optionsPatch);
     }
 

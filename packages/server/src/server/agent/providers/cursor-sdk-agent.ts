@@ -62,11 +62,23 @@ import { assertCursorRunReleased } from "./cursor-sdk-recovery.js";
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
 import { CursorRunController } from "./cursor-sdk-run-controller.js";
 import { CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
+import {
+  cursorCatalogOptionKeys,
+  cursorModelLabel,
+  cursorOptionsPatch,
+  cursorParameterControls,
+  cursorReasoningControl,
+  cursorSdkModelId,
+  defaultCursorModel,
+  optionsForCursorControls,
+  resolveCursorModel,
+  resolveCursorOptions,
+  selectCursorModel,
+} from "./cursor-sdk-model.js";
 
 const MODE = "unrestricted";
 const MODES = getAgentProviderDefinition(PROVIDER).modes;
 const DEFAULT_MODEL = "auto";
-const PARAMETER_PREFIX = "cursor_model_";
 const RUN_INSTRUCTIONS_START = "<paseo_instructions>\n";
 const RUN_INSTRUCTIONS_END = "\n</paseo_instructions>\n\n";
 const MISSING_CREDENTIAL =
@@ -83,38 +95,66 @@ const CAPABILITIES = {
 };
 
 type CursorSdk = HistorySdk & Pick<typeof import("@cursor/sdk"), "Agent" | "JsonlLocalAgentStore">;
+type ResolvedCursorModel = SDKModel & { sdkId: string; catalogOptionKeys: Set<string> };
 
 function modelId(id?: string | null): string {
   return id?.trim() || DEFAULT_MODEL;
 }
 
-function parameterControls(model: SDKModel | undefined): AgentOptionSelectControl[] {
-  const defaults = model?.variants?.find((variant) => variant.isDefault)?.params;
-  return (model?.parameters ?? []).map((parameter) => ({
-    type: "select",
-    key: PARAMETER_PREFIX + parameter.id,
-    label: parameter.displayName ?? parameter.id,
-    defaultValue: defaults?.find((value) => value.id === parameter.id)?.value,
-    choices: parameter.values.map((choice) => ({
-      value: choice.value,
-      label: choice.displayName ?? choice.value,
-    })),
-  }));
+function requestedModelOptions(
+  options: ProviderOptions,
+  thinking: string | null | undefined,
+  controls: AgentOptionSelectControl[],
+  strict: boolean,
+): ProviderOptions {
+  if (thinking === undefined) return options;
+
+  const reasoning = cursorReasoningControl(controls);
+  if (!reasoning) {
+    if (strict && thinking !== null) {
+      throw new Error("This Cursor SDK model does not support a thinking option.");
+    }
+    return options;
+  }
+  const value = thinking ?? reasoning.defaultValue ?? null;
+  const existing = options[reasoning.key];
+  if (existing != null && existing !== value) {
+    if (strict) throw new Error("Conflicting Cursor SDK thinking and reasoning settings.");
+    return options;
+  }
+  return { ...options, [reasoning.key]: value };
 }
 
-function selectModel(
-  id: string,
-  options: ProviderOptions,
+function resolveSessionOptions(
+  config: AgentSessionConfig,
+  model: ResolvedCursorModel,
   controls: AgentOptionSelectControl[],
-): ModelSelection {
-  const params = controls.flatMap((control) => {
-    const value = options[control.key] ?? control.defaultValue;
-    if (value == null || !control.choices.some((choice) => choice.value === value)) {
-      return [];
-    }
-    return [{ id: control.key.slice(PARAMETER_PREFIX.length), value: String(value) }];
-  });
-  return params.length ? { id, params } : { id };
+  strict: boolean,
+): ProviderOptions {
+  const merged = config.providerOptions ?? {};
+  const own = config.requestedProviderOptions ?? merged;
+  // A profile seed can still contain options for a model the draft has left.
+  const requested = Object.fromEntries(
+    Object.entries(own).filter(
+      ([key]) =>
+        !model.catalogOptionKeys.has(key) || controls.some((control) => control.key === key),
+    ),
+  );
+  const preferred = config.requestedProviderOptions
+    ? resolveCursorOptions(model, controls, merged, false)
+    : {};
+  return resolveCursorOptions(
+    model,
+    controls,
+    requestedModelOptions(
+      requested,
+      config.thinkingOptionId?.trim() || undefined,
+      controls,
+      strict,
+    ),
+    strict,
+    preferred,
+  );
 }
 
 function assertMode(mode?: string): void {
@@ -163,7 +203,7 @@ export class CursorSdkAgentClient implements AgentClient {
   readonly capabilities = CAPABILITIES;
 
   private binding?: ReturnType<typeof createCursorRunBinding>;
-  private catalog: SDKModel[] | undefined;
+  private catalog: { apiKey: string; models: SDKModel[] } | undefined;
 
   constructor(
     private readonly runtimeSettings?: ProviderRuntimeSettings,
@@ -200,14 +240,14 @@ export class CursorSdkAgentClient implements AgentClient {
     };
   }
 
-  private async fetchModels(signal?: AbortSignal): Promise<SDKModel[]> {
+  private async fetchModels(signal?: AbortSignal, apiKey?: string): Promise<SDKModel[]> {
     const timeout = AbortSignal.timeout(30_000);
     const bounded = signal ? AbortSignal.any([signal, timeout]) : timeout;
-    const key = await this.requireApiKey();
+    const key = apiKey ?? (await this.requireApiKey());
     try {
       const models = await this.listModels(key, bounded);
       bounded.throwIfAborted();
-      this.catalog = models;
+      this.catalog = { apiKey: key, models };
       return models;
     } catch (error) {
       signal?.throwIfAborted();
@@ -225,14 +265,16 @@ export class CursorSdkAgentClient implements AgentClient {
       this.fetchModels(context?.signal),
     );
     context?.signal.throwIfAborted();
+    const defaultModel = defaultCursorModel(models);
     return {
       models: models.map((model) => ({
         provider: PROVIDER,
         id: model.id,
         aliases: model.aliases,
-        label: model.displayName,
+        label: cursorModelLabel(models, model),
         description: model.description,
-        isDefault: model.id === DEFAULT_MODEL,
+        isDefault: model.id === defaultModel?.id,
+        isSelectable: cursorSdkModelId(models, model) ? undefined : false,
         metadata: { parameters: model.parameters, variants: model.variants },
       })),
       modes: MODES,
@@ -240,11 +282,14 @@ export class CursorSdkAgentClient implements AgentClient {
     };
   }
 
-  private async getControls(id: string): Promise<AgentOptionSelectControl[]> {
-    const models = this.catalog ?? (await this.fetchModels());
-    return parameterControls(
-      models.find((model) => model.id === id || model.aliases?.includes(id)),
-    );
+  private async resolveModel(id?: string | null, apiKey?: string): Promise<ResolvedCursorModel> {
+    const key = apiKey ?? (await this.requireApiKey());
+    const models =
+      this.catalog?.apiKey === key ? this.catalog.models : await this.fetchModels(undefined, key);
+    const model = resolveCursorModel(models, id);
+    const sdkId = cursorSdkModelId(models, model);
+    if (!sdkId) throw new Error(`Cursor SDK cannot select model "${model.id}" in this catalog.`);
+    return { ...model, sdkId, catalogOptionKeys: cursorCatalogOptionKeys(models) };
   }
 
   listCommands(): Promise<AgentSlashCommand[]> {
@@ -253,9 +298,12 @@ export class CursorSdkAgentClient implements AgentClient {
   }
 
   async listControls(config: AgentSessionConfig): Promise<AgentDraftControls> {
+    const model = await this.resolveModel(config.model);
+    const controls = cursorParameterControls(model);
     return {
-      controls: await this.getControls(modelId(config.model)),
-      options: config.providerOptions ?? {},
+      model: model.id,
+      controls,
+      options: resolveSessionOptions(config, model, controls, false),
     };
   }
 
@@ -320,11 +368,12 @@ export class CursorSdkAgentClient implements AgentClient {
       );
       await clearUnusedCursorReservation(sdk.Agent, store, nativeId, cwd);
     }
-    const id = modelId(config.model);
-    const providerOptions = config.providerOptions ?? {};
-    const controls = await this.getControls(id);
+    const model = await this.resolveModel(config.model, apiKey);
+    const controls = cursorParameterControls(model);
+    const strict = nativeId === undefined;
+    const providerOptions = resolveSessionOptions(config, model, controls, strict);
     const options: AgentOptions = {
-      model: selectModel(id, providerOptions, controls),
+      model: selectCursorModel(model.sdkId, providerOptions),
       name: config.title ?? undefined,
       local: {
         cwd,
@@ -343,17 +392,19 @@ export class CursorSdkAgentClient implements AgentClient {
     return new CursorSdkAgent(
       { agent, apiKey },
       cwd,
-      id,
+      model,
       providerOptions,
       controls,
-      (model) => this.getControls(model),
+      cursorOptionsPatch(config.providerOptions ?? {}, providerOptions),
+      (id, key) => this.resolveModel(id, key),
       composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
       sdk,
       binding,
       new CursorTurnJournal(this.storePath, agentId),
       {
         read: () => this.requireApiKey(),
-        resume: (key, model) => sdk.Agent.resume(agentId, { ...options, apiKey: key, model }),
+        resume: (key, selection) =>
+          sdk.Agent.resume(agentId, { ...options, apiKey: key, model: selection }),
       },
     );
   }
@@ -396,10 +447,14 @@ class CursorSdkAgent implements AgentSession {
   constructor(
     native: CredentialBoundAgent,
     private readonly cwd: string,
-    private model: string,
+    private model: ResolvedCursorModel,
     private options: ProviderOptions,
     private modelControls: AgentOptionSelectControl[],
-    private readonly getControls: (model: string) => Promise<AgentOptionSelectControl[]>,
+    readonly openOptionsPatch: ProviderOptions,
+    private readonly resolveModel: (
+      id?: string | null,
+      key?: string,
+    ) => Promise<ResolvedCursorModel>,
     private readonly instructions: string | undefined,
     private readonly sdk: CursorSdk,
     private readonly binding: ReturnType<typeof createCursorRunBinding>,
@@ -439,17 +494,19 @@ class CursorSdkAgent implements AgentSession {
       throw new Error("Select Cursor skills again from the skill menu.");
     }
     const input = makePrompt(prompt);
+    const requested = { model: this.model, options: this.options };
     return this.runs.start(
       prompt,
       input,
       (message, bind, throwIfStopped) =>
-        this.sendNative(message, bind, throwIfStopped, resolveSkills),
+        this.sendNative(message, requested, bind, throwIfStopped, resolveSkills),
       options?.clientMessageId,
     );
   }
 
   private async sendNative(
     input: SDKUserMessage,
+    requested: { model: ResolvedCursorModel; options: ProviderOptions },
     bind: (runId: string) => Promise<void>,
     throwIfStopped: () => void,
     resolveSkills: AgentRunOptions["resolveCursorSkills"],
@@ -464,8 +521,17 @@ class CursorSdkAgent implements AgentSession {
         throw new Error(interruptedCursorRunMessage(current.activeRunId));
       }
     }
-    const model = selectModel(this.model, this.options, this.modelControls);
     const apiKey = await this.credentials.read();
+    const selected = await this.resolveExactModel(requested.model.id, apiKey);
+    const controls = cursorParameterControls(selected);
+    const options = resolveCursorOptions(selected, controls, requested.options, true);
+    if (Object.keys(cursorOptionsPatch(requested.options, options)).length) {
+      throw new Error(
+        "Cursor SDK model options changed. Review the settings before sending again.",
+      );
+    }
+    const model = selectCursorModel(selected.sdkId, options);
+    throwIfStopped();
     let native = this.native;
     if (native?.apiKey !== apiKey) {
       native = await this.rebind(apiKey, model);
@@ -474,19 +540,31 @@ class CursorSdkAgent implements AgentSession {
       }
     }
     const { agent } = native;
-    return this.binding.send(this.id, bind, async () => {
+    const run = await this.binding.send(this.id, bind, async () => {
       throwIfStopped();
       const skills = resolveSkills ? await resolveSkills() : undefined;
-      if (resolveSkills && (await this.credentials.read()) !== apiKey) {
-        throw new Error("Cursor SDK sign-in changed. Send your message again.");
-      }
       const userAndContext = renderSelectedCursorSkills(input.text, skills);
       const text = this.instructions
         ? RUN_INSTRUCTIONS_START + this.instructions + RUN_INSTRUCTIONS_END + userAndContext
         : userAndContext;
+      if ((await this.credentials.read()) !== apiKey) {
+        throw new Error("Cursor SDK sign-in changed. Send your message again.");
+      }
       throwIfStopped();
       return agent.send({ ...input, text }, { model });
     });
+    if (this.model === requested.model && this.options === requested.options) {
+      this.model = selected;
+      this.modelControls = controls;
+    }
+    return run;
+  }
+
+  private async resolveExactModel(id: string, apiKey?: string): Promise<ResolvedCursorModel> {
+    const model = await this.resolveModel(id, apiKey);
+    if (model.id !== id)
+      throw new Error(`Cursor SDK model "${id}" is unavailable for this sign-in.`);
+    return model;
   }
 
   private async rebind(apiKey: string, model: ModelSelection): Promise<CredentialBoundAgent> {
@@ -531,7 +609,15 @@ class CursorSdkAgent implements AgentSession {
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
-    return { provider: PROVIDER, sessionId: this.id, model: this.model, modeId: MODE };
+    const reasoning = cursorReasoningControl(this.modelControls);
+    const thinking = reasoning && this.options[reasoning.key];
+    return {
+      provider: PROVIDER,
+      sessionId: this.id,
+      model: this.model.id,
+      thinkingOptionId: typeof thinking === "string" ? thinking : null,
+      modeId: MODE,
+    };
   }
 
   async getAvailableModes(): Promise<AgentMode[]> {
@@ -546,24 +632,43 @@ class CursorSdkAgent implements AgentSession {
     assertMode(mode);
   }
 
-  async setModel(model: string | null): Promise<{ model: string }> {
-    const id = modelId(model);
-    this.modelControls = await this.getControls(id);
-    this.model = id;
-    return { model: id };
+  async setModel(id: string | null): Promise<{ model: string; optionsPatch: ProviderOptions }> {
+    const model = await this.resolveModel(id);
+    const sameModel = model.id === this.model.id;
+    const controls = cursorParameterControls(model);
+    const options = resolveCursorOptions(model, controls, sameModel ? this.options : {}, false);
+    const patch = cursorOptionsPatch(this.options, options);
+    const optionsPatch = sameModel ? patch : { ...patch, ...options };
+    this.model = model;
+    this.modelControls = controls;
+    this.options = options;
+    return { model: model.id, optionsPatch };
   }
 
-  async applyOptions(patch: ProviderOptions): Promise<void> {
-    for (const [key, value] of Object.entries(patch)) {
-      const control = this.modelControls.find((entry) => entry.key === key);
-      if (
-        !control ||
-        (value !== null && !control.choices.some((choice) => choice.value === value))
-      ) {
-        throw new Error("Unsupported Cursor SDK model option " + key);
-      }
-    }
-    this.options = { ...this.options, ...patch };
+  async setThinkingOption(id: string | null): Promise<{ optionsPatch: ProviderOptions }> {
+    return { optionsPatch: await this.applyOptions({}, id) };
+  }
+
+  async applyOptions(
+    patch: ProviderOptions,
+    thinkingOptionId?: string | null,
+  ): Promise<ProviderOptions> {
+    const model = await this.resolveExactModel(this.model.id);
+    const controls = cursorParameterControls(model);
+    const requested = Object.fromEntries(
+      Object.entries(patch).map(([key, value]) => [
+        key,
+        value ?? controls.find((control) => control.key === key)?.defaultValue ?? null,
+      ]),
+    );
+    const selected = requestedModelOptions(requested, thinkingOptionId, controls, true);
+    const previous = optionsForCursorControls(this.options, controls);
+    const options = resolveCursorOptions(model, controls, selected, true, previous);
+    const applied = cursorOptionsPatch({ ...this.options, ...patch }, options);
+    this.model = model;
+    this.modelControls = controls;
+    this.options = options;
+    return applied;
   }
 
   getPendingPermissions(): [] {
