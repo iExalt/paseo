@@ -288,6 +288,15 @@ export async function checkLifecycle({
       "turn_started",
     );
     ownedPid = await heldShell();
+    const heldRuns = backend.runs;
+    for (const mode of ["conversation", "files", "both"]) {
+      await assert.rejects(
+        client.rewindAgent(canceled.id, imageMessageId, mode),
+        /does not support rewinding/,
+      );
+    }
+    assert.ok(await runningPid(ownedPid), "Unsupported rewind canceled the active shell");
+    assert.equal(backend.runs, heldRuns);
 
     const queueId = randomUUID();
     const queued = await send(canceled.id, "Run the queued canary.", {

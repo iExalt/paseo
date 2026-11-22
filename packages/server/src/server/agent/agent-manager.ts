@@ -115,7 +115,7 @@ import {
   type ForegroundTurnWaiter,
   type PendingForegroundRun,
 } from "./agent-run-state.js";
-import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
+import { invokeRewindCapability, RewindCapabilityError, type RewindMode } from "./rewind/rewind.js";
 import { parseAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import {
@@ -811,6 +811,7 @@ function buildImportedTimelineRows(entries: readonly ImportedTimelineEntry[]): A
       rows.push({
         seq: rows.length + 1,
         timestamp: entry.timestamp ?? new Date().toISOString(),
+        ...(entry.turnId ? { turnId: entry.turnId } : {}),
         item: limitAgentTimelineItemContent(item),
       });
     }
@@ -2073,7 +2074,10 @@ export class AgentManager {
 
       handedToRegistration = true;
       const agent = await this.registerSession(imported.session, importedConfig, resolvedAgentId, {
-        launchedOptions,
+        launchedOptions:
+          this.adapterOf(input.provider) === "cursor-sdk"
+            ? (importedConfig.providerOptions ?? {})
+            : launchedOptions,
         labels: input.labels,
         workspaceId: input.workspaceId,
         timelineRows,
@@ -4430,6 +4434,7 @@ export class AgentManager {
   async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
     this.assertAdmittingTurns();
     let agent = this.requireSessionAgent(agentId);
+    if (agent.provider === "cursor-sdk") throw new RewindCapabilityError(mode);
     if (this.historySessions.has(agent.session)) {
       agent = await this.ensureInteractiveSession(agentId);
     }

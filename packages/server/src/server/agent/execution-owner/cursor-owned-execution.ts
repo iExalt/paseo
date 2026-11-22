@@ -115,7 +115,7 @@ export async function openOwnedCursorExecution(
       void owned.channel.whenClosed.then(abort);
     },
     prepare: (input: CursorOwnerStart) => owned.channel.request<void>("prepare", input),
-    async send(input: SDKUserMessage): Promise<Run> {
+    async send(input: SDKUserMessage | null): Promise<Run> {
       const info = await owned.channel.request<CursorOwnerRunInfo>("dispatch", input);
       if (info.agentId !== agentId) throw new Error("Cursor SDK owner returned a different agent.");
       return remoteRun(owned, info);

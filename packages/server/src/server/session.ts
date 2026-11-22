@@ -173,6 +173,7 @@ import {
 import { listPendingAgentPermissions } from "./agent/permission-list.js";
 import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import { cursorCompactCommand } from "./agent/providers/cursor-sdk-maintenance.js";
 import {
   assertCursorSkillTarget,
   buildAgentPrompt,
@@ -5895,6 +5896,46 @@ export class Session {
     };
   }
 
+  private async resumeAgentByHandle(
+    handle: AgentPersistenceHandle,
+    overrides: Extract<SessionInboundMessage, { type: "resume_agent_request" }>["overrides"],
+  ): Promise<ManagedAgent> {
+    const cursorSdk = handle.provider === "cursor-sdk";
+    if (cursorSdk && handle.nativeHandle && handle.nativeHandle !== handle.sessionId) {
+      throw new Error("Cursor SDK resume requires matching session and native IDs.");
+    }
+    if (cursorSdk && overrides && Object.keys(overrides).length > 0) {
+      throw new Error("Open the registered Cursor SDK agent before changing its settings.");
+    }
+    const matched = await this.unarchiveAgentByHandle(handle);
+    if (cursorSdk && !matched) {
+      throw new Error("Import this local Cursor SDK session before trying to resume it.");
+    }
+    const effectiveOverrides = matched
+      ? { ...buildConfigOverrides(matched.record), ...overrides }
+      : overrides;
+    try {
+      if (cursorSdk && matched) {
+        return await ensureAgentLoaded(matched.record.id, {
+          agentManager: this.agentManager,
+          agentStorage: this.agentStorage,
+          logger: this.sessionLogger,
+        });
+      }
+      return await this.agentManager.resumeAgentFromPersistence(
+        handle,
+        effectiveOverrides,
+        undefined,
+        { workspaceId: matched?.record.workspaceId },
+      );
+    } catch (error) {
+      if (matched?.didUnarchive && matched.originalArchivedAt) {
+        await this.agentManager.archiveSnapshot(matched.record.id, matched.originalArchivedAt);
+      }
+      throw error;
+    }
+  }
+
   private async handleResumeAgentRequest(
     msg: Extract<SessionInboundMessage, { type: "resume_agent_request" }>,
   ): Promise<void> {
@@ -5928,24 +5969,7 @@ export class Session {
       `Resuming agent ${handle.sessionId} (${handle.provider})`,
     );
     try {
-      const matched = await this.unarchiveAgentByHandle(handle);
-      const effectiveOverrides = matched
-        ? { ...buildConfigOverrides(matched.record), ...overrides }
-        : overrides;
-      let snapshot: ManagedAgent;
-      try {
-        snapshot = await this.agentManager.resumeAgentFromPersistence(
-          handle,
-          effectiveOverrides,
-          undefined,
-          { workspaceId: matched?.record.workspaceId },
-        );
-      } catch (error) {
-        if (matched?.didUnarchive && matched.originalArchivedAt) {
-          await this.agentManager.archiveSnapshot(matched.record.id, matched.originalArchivedAt);
-        }
-        throw error;
-      }
+      const snapshot = await this.resumeAgentByHandle(handle, overrides);
       await unarchiveAgentState(this.agentStorage, this.agentManager, snapshot.id);
       await this.agentManager.hydrateTimelineFromProvider(snapshot.id);
       await this.agentUpdates.forwardLiveAgent(snapshot);
@@ -6455,9 +6479,10 @@ export class Session {
   ): Promise<boolean> {
     const target = this.resolveCursorCatalogTarget(existing, stored, msg.draftConfig);
     if (!target) return false;
-    const commands = this.supports(CLIENT_CAPS.cursorSdkSkillSelection)
+    const skills = this.supports(CLIENT_CAPS.cursorSdkSkillSelection)
       ? await this.listCursorSkillCommands(target, existing || stored ? msg.agentId : undefined)
       : [];
+    const commands = existing || stored ? [cursorCompactCommand, ...skills] : skills;
     this.emit({
       type: "list_commands_response",
       payload: { agentId: msg.agentId, commands, error: null, requestId: msg.requestId },
