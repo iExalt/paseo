@@ -619,6 +619,7 @@ export interface ImportProviderSessionContext {
 export interface ImportedTimelineEntry {
   item: AgentTimelineItem;
   timestamp?: string;
+  turnId?: string;
 }
 
 export interface ImportedProviderSession {

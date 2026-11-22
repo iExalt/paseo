@@ -463,3 +463,45 @@ test("Stop during the durable successful terminal transition waits for the owned
   expect(native.run.cancel).not.toHaveBeenCalled();
   expect((await journal.read())[0]).toMatchObject({ joined: true, ownerStopPending: false });
 });
+
+test("keeps compaction and ordinary steering separate and settles a canceled summary", async () => {
+  const { controller, events, journal } = await fixture();
+  const startObserved = async (prompt: string) => {
+    const run = nativeRun(prompt);
+    const started = Promise.withResolvers<void>();
+    const stream = run.run.stream.bind(run.run);
+    run.run.stream = async function* () {
+      started.resolve();
+      if (prompt === "/compact") {
+        yield { type: "summary", run_id: run.run.id, agent_id: sessionId, status: "running" };
+      }
+      yield* stream();
+    };
+    run.run.cancel = vi.fn(async () => run.finish("cancelled"));
+    const turn = await controller.start(prompt, { text: prompt }, async () => run.run);
+    await started.promise;
+    return { run, turn };
+  };
+
+  const summary = await startObserved("/compact");
+  await expect(
+    controller.steer("Continue work", { expectedTurnId: summary.turn.turnId }),
+  ).resolves.toEqual({ status: "unavailable" });
+  expect(summary.run.run.steer).not.toHaveBeenCalled();
+  await controller.interrupt();
+  expect((await summary.turn.completion).canceled).toBe(true);
+  expect(
+    events.some((event) => event.type === "timeline" && event.item.type === "compaction"),
+  ).toBe(false);
+  expect((await journal.read()).find((item) => item.id === summary.turn.turnId)?.compact).toBe(
+    true,
+  );
+
+  const next = await startObserved("Continue work");
+  await expect(controller.steer("/compact", { expectedTurnId: next.turn.turnId })).resolves.toEqual(
+    { status: "unavailable" },
+  );
+  expect(next.run.run.steer).not.toHaveBeenCalled();
+  next.run.finish();
+  expect((await next.turn.completion).canceled).toBeFalsy();
+});

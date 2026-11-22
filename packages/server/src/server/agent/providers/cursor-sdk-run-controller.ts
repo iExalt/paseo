@@ -20,6 +20,7 @@ import { waitForExecutionOwner } from "../execution-owner/owned-process.js";
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
 import { cursorUnresolvedSteerMessage, streamItems, terminalTools } from "./cursor-sdk-history.js";
 import type { OwnerTerminalProof } from "./cursor-sdk-recovery.js";
+import { isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { CursorToolProcesses } from "./cursor-sdk-tool-processes.js";
 import type { CursorHistoryTurn, CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
 
@@ -111,6 +112,7 @@ export class CursorRunController {
     const cursorSkills = cursorSkillReferences(typeof prompt === "string" ? undefined : prompt);
     const record: CursorHistoryTurn = {
       id,
+      ...(isCursorCompactPrompt(prompt) ? { compact: true } : {}),
       user: {
         type: "user_message",
         messageId: clientMessageId ?? `${id}:user`,
@@ -194,7 +196,14 @@ export class CursorRunController {
 
   async steer(prompt: AgentPromptInput, options: SteerActiveTurnOptions): Promise<SteerResult> {
     const turn = this.active;
-    if (!turn || turn.record.id !== options.expectedTurnId || turn.stopRequested || turn.steer) {
+    if (
+      !turn ||
+      turn.record.id !== options.expectedTurnId ||
+      turn.stopRequested ||
+      turn.steer ||
+      turn.record.compact ||
+      isCursorCompactPrompt(prompt)
+    ) {
       return { status: "unavailable" };
     }
     // Native steering takes text only. The full input can be sent once the run ends.
@@ -355,11 +364,12 @@ export class CursorRunController {
     run: Run,
     tools: Map<string, ToolCallTimelineItem>,
     onItem: (item: AgentTimelineItem) => Promise<void>,
+    trigger: "manual" | "auto",
   ): Promise<{ result: RunResult; streamError?: unknown }> {
     let streamError: unknown;
     try {
       for await (const message of run.stream()) {
-        for (const item of streamItems(message, tools)) await onItem(item);
+        for (const item of streamItems(message, tools, trigger)) await onItem(item);
       }
     } catch (error) {
       streamError = error;
@@ -380,7 +390,12 @@ export class CursorRunController {
         // Continue observing this owned follow-up even if its cancel fails.
         void this.requestCancellation(turn, run).catch(() => undefined);
       }
-      const observed = await this.observeRun(run, tools, onItem);
+      const observed = await this.observeRun(
+        run,
+        tools,
+        onItem,
+        turn.record.compact ? "manual" : "auto",
+      );
       // A cancel still writing SDK state can race a replacement, even after run.wait.
       await turn.cancellations.get(run)?.catch(() => undefined);
       // The pinned local executor cannot start a new unnamed run from an

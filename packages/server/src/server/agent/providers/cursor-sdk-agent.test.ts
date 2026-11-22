@@ -251,7 +251,7 @@ describe("Cursor SDK provider", () => {
         const cursor = await ctx.client.createAgent({ ...draft, workspaceId: workspace.id });
         expect(sdk.Agent.create).toHaveBeenCalledOnce();
         await expect(ctx.client.listCommands({ agentId: cursor.id })).resolves.toMatchObject({
-          commands: [],
+          commands: [{ name: "compact", kind: "command" }],
           error: null,
         });
         expect(send).not.toHaveBeenCalled();
