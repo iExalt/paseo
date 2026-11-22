@@ -220,6 +220,24 @@ async function resolveResumePurpose(
   }
 }
 
+function restoredProviderState(
+  client: AgentClient,
+  record: StoredAgentRecord | null,
+  purpose: AgentResumePurpose,
+): { lastError?: string; restoredLifecycle?: "error"; lastUsage?: AgentUsage } {
+  if (!record) return {};
+  const supportsOfflineHistory = client.capabilities.supportsOfflineHistory === true;
+  return {
+    lastError: supportsOfflineHistory ? (record.lastError ?? undefined) : undefined,
+    restoredLifecycle:
+      supportsOfflineHistory && purpose === "history" && record.lastStatus === "error"
+        ? "error"
+        : undefined,
+    lastUsage:
+      record.totalCostUsd !== undefined ? { totalCostUsd: record.totalCostUsd } : undefined,
+  };
+}
+
 interface PreparedSessionConfig {
   storedConfig: AgentSessionConfig;
   launchConfig: AgentSessionConfig;
@@ -1861,25 +1879,19 @@ export class AgentManager {
     // settled before the config is prepared, because a history load reads an archived
     // agent whose working directory may be gone.
     const record = this.registry ? await this.registry.get(resolvedAgentId) : null;
-    const purpose = await resolveResumePurpose(record, resumeOptions?.purpose, mergedConfig.cwd);
-    const currentResumeOptions = { purpose } satisfies AgentResumeSessionOptions;
-    await this.assertWorkspaceResumeAllowed(record, options, purpose);
-
+    const client = this.requireClient(handle.provider);
+    const { purpose, prepared } = await this.preparePersistedResume(
+      client,
+      mergedConfig,
+      record,
+      options,
+      resumeOptions,
+    );
+    const { storedConfig, launchConfig, paseoToolPolicy } = prepared;
     const { labels = {} } = options ?? {};
     const { title = mergedConfig.title ?? null, labels: recordLabels = labels } = record ?? {};
     const launchEnv = record?.launchEnv;
     const workspaceId = resolveResumeWorkspaceId({ options, record });
-    const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
-      mergedConfig,
-      { purpose, env: launchEnv },
-    );
-    const client = this.requireClient(handle.provider);
-    const available = await client.isAvailable();
-    if (!available) {
-      throw new Error(
-        `Provider '${handle.provider}' is not available. Please ensure the CLI is installed.`,
-      );
-    }
     this.paseoToolPolicies.set(resolvedAgentId, paseoToolPolicy);
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
@@ -1899,12 +1911,9 @@ export class AgentManager {
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const launchedOptions = this.launchOptionsFor({ client, own: storedConfig.providerOptions });
-    const session = await client.resumeSession(
-      handle,
-      providerLaunchConfig,
-      launchContext,
-      currentResumeOptions,
-    );
+    const session = await client.resumeSession(handle, providerLaunchConfig, launchContext, {
+      purpose,
+    });
     if (purpose === "history") this.historySessions.add(session);
     await this.requireExternalMcpSupport(session, providerLaunchConfig, launchContext);
     return this.registerSession(session, storedConfig, resolvedAgentId, {
@@ -1917,10 +1926,35 @@ export class AgentManager {
       launchEnv,
       persistence: handle,
       restoring: true,
-      ...(record?.totalCostUsd !== undefined
-        ? { lastUsage: { totalCostUsd: record.totalCostUsd } }
-        : {}),
+      ...restoredProviderState(client, record, purpose),
     });
+  }
+
+  private async preparePersistedResume(
+    client: AgentClient,
+    config: AgentSessionConfig,
+    record: StoredAgentRecord | null,
+    options: { workspaceId?: string } | undefined,
+    resumeOptions?: AgentResumeSessionOptions,
+  ): Promise<{ purpose: AgentResumePurpose; prepared: PreparedSessionConfig }> {
+    const supportsOfflineHistory = client.capabilities.supportsOfflineHistory === true;
+    const purpose =
+      supportsOfflineHistory && resumeOptions?.purpose === "history"
+        ? "history"
+        : await resolveResumePurpose(record, resumeOptions?.purpose, config.cwd);
+    await this.assertWorkspaceResumeAllowed(record, options, purpose);
+    const offlineHistory = purpose === "history" && supportsOfflineHistory;
+    const prepared = await this.prepareSessionConfig(config, {
+      purpose,
+      env: record?.launchEnv,
+      resolveDefaultModel: offlineHistory ? false : undefined,
+    });
+    if (!offlineHistory && !(await client.isAvailable())) {
+      throw new Error(
+        `Provider '${client.provider}' is not available. Please ensure the CLI is installed.`,
+      );
+    }
+    return { purpose, prepared };
   }
 
   importProviderSession(input: {
@@ -3410,6 +3444,9 @@ export class AgentManager {
     if (this.historySessions.has(agent.session)) {
       const record = await this.registry?.get(agentId);
       if (record?.archivedAt) throw new Error(`Agent is archived: ${agentId}`);
+      if (this.requireClient(agent.provider).capabilities.supportsOfflineHistory) {
+        await this.assertWorkspaceResumeAllowed(record ?? null, agent, "interactive");
+      }
       // Reload validates the directory before releasing readable history.
       await this.trackAgentRegistrationOperation(this.reloadAgentSessionInternal(agentId));
     }
@@ -4629,6 +4666,7 @@ export class AgentManager {
        */
       launchedOptions: ProviderOptions;
       restoring?: boolean;
+      restoredLifecycle?: "error";
       initialTitle?: string | null;
       publishWhenReady?: boolean;
       workspaceId?: string;
@@ -4710,7 +4748,7 @@ export class AgentManager {
 
       await this.refreshSessionState(managed, { emit: false });
       this.assertAgentRegistrationActive(managed);
-      managed.lifecycle = "idle";
+      managed.lifecycle = options.restoredLifecycle ?? "idle";
       // Stamping now over a restored timestamp rewrote the workspace's "last used" in the
       // sidebar every time a chat was reopened, because workspace `statusEnteredAt` is
       // re-derived from persisted agent `updatedAt` on every daemon start.
@@ -4826,6 +4864,7 @@ export class AgentManager {
           historyPrimed?: boolean;
           lastUsage?: AgentUsage;
           lastError?: string;
+          restoredLifecycle?: "error";
           attention?: AttentionState;
           persistence?: AgentPersistenceHandle;
           workspaceId?: string;
@@ -4856,7 +4895,7 @@ export class AgentManager {
       // What the session opened with. Provider defaults edited later reach it when it next opens.
       effectiveOptions,
       runtimeInfo: undefined,
-      lifecycle: "initializing",
+      lifecycle: options?.restoredLifecycle ?? "initializing",
       createdAt: options?.createdAt ?? now,
       updatedAt: options?.updatedAt ?? now,
       availableModes: [],
@@ -5440,11 +5479,10 @@ export class AgentManager {
       }
     }
     for (const event of historyEvents) {
-      const row = this.recordTimeline(
-        agent.id,
-        event.item,
-        event.timestamp ? { timestamp: event.timestamp } : undefined,
-      );
+      const row = this.recordTimeline(agent.id, event.item, {
+        timestamp: event.timestamp,
+        turnId: event.turnId,
+      });
       if (broadcastTimeline) {
         this.dispatchStream(agent.id, event, {
           seq: row.seq,
@@ -5509,11 +5547,10 @@ export class AgentManager {
       }
     }
     for (const event of historyEvents) {
-      const row = this.recordTimeline(
-        agent.id,
-        event.item,
-        event.timestamp ? { timestamp: event.timestamp } : undefined,
-      );
+      const row = this.recordTimeline(agent.id, event.item, {
+        timestamp: event.timestamp,
+        turnId: event.turnId,
+      });
       if (deferredBroadcast) {
         timelineEvents.push({ event, row });
       } else if (broadcast) {
