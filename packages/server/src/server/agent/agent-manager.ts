@@ -129,7 +129,7 @@ import {
   type ForegroundTurnWaiter,
   type PendingForegroundRun,
 } from "./agent-run-state.js";
-import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
+import { invokeRewindCapability, RewindCapabilityError, type RewindMode } from "./rewind/rewind.js";
 import { parseAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import {
@@ -4849,6 +4849,7 @@ export class AgentManager {
   async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
     this.assertAdmittingTurns();
     let agent = this.requireSessionAgent(agentId);
+    if (agent.provider === "cursor-sdk") throw new RewindCapabilityError(mode);
     if (this.historySessions.has(agent.session)) {
       agent = await this.ensureInteractiveSession(agentId);
     }
