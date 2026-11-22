@@ -615,7 +615,7 @@ class CursorSdkAgent implements AgentSession {
     await assertCursorRunReleased(store, this.journal, this.id, this.cwd);
     const generation = randomUUID();
     await execution.prepareOwner(generation);
-    let enrolling = false;
+    let transitioning = false;
     try {
       const owned = await openOwnedCursorExecution(
         store,
@@ -624,19 +624,22 @@ class CursorSdkAgent implements AgentSession {
         generation,
         async (owner) => {
           throwIfStopped();
-          enrolling = true;
+          // The SDK writer remains gated while the existing first-turn
+          // reservation is cleared. Failure leaves the new owner unadmitted.
+          transitioning = true;
+          await clearUnusedCursorReservation(this.sdk.Agent, store, this.id, this.cwd);
+          throwIfStopped();
           await execution.enroll(owner);
         },
         execution.bindRun,
       );
       execution.attachFinish(owned.finish);
-      await clearUnusedCursorReservation(this.sdk.Agent, store, this.id, this.cwd);
       await this.disposeIdleNative();
       return owned;
     } catch (error) {
       // A host can have systemd without sharing the daemon's execution domain.
-      // Fallback is safe only while the worker was never admitted.
-      if (enrolling) throw error;
+      // Fall back only before mutating the SDK reservation or enrolling the owner.
+      if (transitioning) throw error;
       await execution.discardUnadmittedOwner();
       throwIfStopped();
       return;

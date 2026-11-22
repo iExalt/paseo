@@ -65,19 +65,28 @@ afterEach(async () => {
   for (const store of stores.splice(0)) await rm(store, { recursive: true, force: true });
 });
 
-function fixture() {
+function fixture(initialReservation?: string) {
   const modelList = vi.fn(async (_apiKey: string) => [model]);
   const storePath = mkdtempSync(join(tmpdir(), "paseo-cursor-adapter-"));
   stores.push(storePath);
   const cwd = realpathSync(process.cwd());
+  let reservation = initialReservation;
   const sdk = {
     JsonlLocalAgentStore: class {
-      readonly agents = { get: async () => ({ agentId, cwd }) };
-      readonly runs = { get: vi.fn(), list: async () => ({ items: [] }) };
+      readonly agents = { get: async () => ({ agentId, cwd, activeRunId: reservation }) };
+      readonly runs = {
+        get: vi.fn(async () =>
+          reservation ? { runId: reservation, turnNumber: 1, status: "queued" } : undefined,
+        ),
+        list: async () => ({ items: [] }),
+      };
     },
     Agent: {
       create: vi.fn(),
       resume: vi.fn(),
+      cancelRun: vi.fn(async () => {
+        reservation = undefined;
+      }),
       messages: { list: vi.fn().mockResolvedValue([]) },
     },
   };
@@ -143,6 +152,48 @@ describe("Cursor SDK provider", () => {
       expect(ownedSend).not.toHaveBeenCalled();
       expect(send).not.toHaveBeenCalled();
       expect(sdk.Agent.resume).not.toHaveBeenCalled();
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("can retry after clearing the first SDK reservation fails before owner admission", async () => {
+    const { client, config, sdk, send, agent, storePath } = fixture("unused-reservation");
+    sdk.Agent.cancelRun.mockRejectedValueOnce(new Error("Reservation could not be cleared."));
+    vi.mocked(supportsExecutionOwner).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    const abandoned = vi.fn();
+    const prepare = vi.fn(async () => {});
+    const ownedSend = vi.fn().mockResolvedValue(makeRun([], { id: runId, status: "finished" }));
+    vi.mocked(openOwnedCursorExecution).mockImplementation(
+      async (_, __, ___, generation, enroll) => {
+        try {
+          await enroll({
+            backend: "windows-job",
+            generation,
+            hostId: "a".repeat(64),
+            receipt: join(storePath, "not-written"),
+          });
+        } catch (error) {
+          abandoned();
+          throw error;
+        }
+        return { finish: async () => {}, prepare, send: ownedSend };
+      },
+    );
+    const session = await client.createSession(config);
+    try {
+      await expect(session.run("First attempt")).rejects.toThrow(
+        "Reservation could not be cleared.",
+      );
+      expect(abandoned).toHaveBeenCalledOnce();
+      expect(agent[Symbol.asyncDispose]).not.toHaveBeenCalled();
+      expect(ownedSend).not.toHaveBeenCalled();
+      await session.interrupt();
+      await session.run("Retry the turn");
+      expect(sdk.Agent.cancelRun).toHaveBeenCalledTimes(2);
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(ownedSend).toHaveBeenCalledOnce();
+      expect(send).not.toHaveBeenCalled();
     } finally {
       await session.close();
     }
