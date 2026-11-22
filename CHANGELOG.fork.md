@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.32.0](https://github.com/iExalt/paseo/compare/paseo-v0.31.0...paseo-v0.32.0) (2026-11-22)
+
+
+### Features
+
+* **android:** let PASEO_HERMES_COMMAND replace the npm hermesc ([#551](https://github.com/iExalt/paseo/issues/551)) ([afb7dd4](https://github.com/iExalt/paseo/commit/afb7dd4de65298886f9dd350647e3954c8f7b50e))
+
+
+### Bug Fixes
+
+* **agents:** limit default send callbacks to direct children ([#554](https://github.com/iExalt/paseo/issues/554)) ([a504edf](https://github.com/iExalt/paseo/commit/a504edf9af639b6f6d1b10f05657470a44cd126b))
+* **app:** preserve text typed during input focus ([#553](https://github.com/iExalt/paseo/issues/553)) ([aced952](https://github.com/iExalt/paseo/commit/aced952db35975f14aaa1b49746f592d536053ae))
+
 ## [0.31.0](https://github.com/iExalt/paseo/compare/paseo-v0.30.0...paseo-v0.31.0) (2026-11-21)
 
 
