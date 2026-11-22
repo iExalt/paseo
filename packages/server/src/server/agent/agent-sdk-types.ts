@@ -222,6 +222,8 @@ export interface AgentRunOptions {
   clientMessageId?: string;
   /** Revalidates the selected references at native dispatch. */
   resolveCursorSkills?: () => Promise<ResolvedCursorSkill[]>;
+  /** Resolves trusted instruction text at native dispatch. */
+  resolveCursorWorkspaceInstructions?: () => Promise<string | undefined>;
 }
 
 export interface AgentSteerOptions extends AgentRunOptions {
