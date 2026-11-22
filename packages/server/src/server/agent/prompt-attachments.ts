@@ -7,7 +7,9 @@ const REVIEW_LINE_MARKERS = { add: "+", remove: "-", context: " " } as const;
 export function cursorSkillReferences(
   blocks: readonly AgentPromptContentBlock[] | undefined,
 ): CursorSkillReference[] {
-  return blocks?.flatMap((block) => (block.type === "cursor_skill" ? [block.reference] : [])) ?? [];
+  return Array.isArray(blocks)
+    ? blocks.flatMap((block) => (block.type === "cursor_skill" ? [block.reference] : []))
+    : [];
 }
 
 export function withoutCursorSkills(
@@ -22,7 +24,8 @@ export function assertCursorSkillTarget(
   callerAgentId?: string,
 ): void {
   if (
-    blocks?.some((block) => block.type === "cursor_skill") &&
+    Array.isArray(blocks) &&
+    blocks.some((block) => block.type === "cursor_skill") &&
     (provider !== "cursor-sdk" || callerAgentId)
   ) {
     throw new Error("Selected Cursor skills require a user message to a Cursor SDK agent.");

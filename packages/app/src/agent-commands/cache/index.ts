@@ -100,8 +100,7 @@ export function draftAgentCommandsQueryKey(input: {
     draftConfig.thinkingOptionId ?? null,
     "features",
     draftConfig.providerOptions ?? null,
-    "skillScope",
-    draftConfig.skillScope ?? null,
+    ...(draftConfig.skillScope ? ["skillScope", draftConfig.skillScope] : []),
   ] as const;
 }
 

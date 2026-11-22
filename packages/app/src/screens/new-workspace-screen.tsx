@@ -424,7 +424,7 @@ function buildComposerInitialValues(input: {
 }
 
 function scopeNewWorkspaceCommands(draft: DraftCommandTarget | undefined, isWorktree: boolean) {
-  return isWorktree && draft?.status === "ready"
+  return isWorktree && draft?.status === "ready" && draft.config.provider === "cursor-sdk"
     ? { ...draft, skillScope: "user" as const }
     : draft;
 }
