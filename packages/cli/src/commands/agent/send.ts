@@ -82,7 +82,10 @@ export function addSendOptions(cmd: Command): Command {
         .choices(["queue", "steer", "interrupt"])
         .default(DEFAULT_AGENT_SEND_BEHAVIOR),
     )
-    .option("--notify-on-finish", "Notify the calling agent when this agent finishes")
+    .option(
+      "--notify-on-finish",
+      "Notify the calling agent when the recipient finishes (by default, only for direct children)",
+    )
     .option("--no-notify-on-finish", "Do not notify the calling agent when this agent finishes")
     .option("--no-wait", "Return immediately without waiting for completion");
 }
@@ -195,9 +198,7 @@ export async function runSendCommand(
       messageId,
       activeTurnBehavior: options.behavior ?? options.ifRunning ?? DEFAULT_AGENT_SEND_BEHAVIOR,
       sessionMode: options.mode,
-      ...(options.notifyOnFinish !== undefined || callerAgentId
-        ? { notifyOnFinish: options.notifyOnFinish ?? true }
-        : {}),
+      ...(options.notifyOnFinish !== undefined ? { notifyOnFinish: options.notifyOnFinish } : {}),
     });
 
     // Wait on and report the Paseo ID the daemon resolved, not the prefix or session ID typed.

@@ -4228,6 +4228,7 @@ describe("send_agent_prompt native tool", () => {
           await send({
             agentId: child.id,
             prompt: "Retry after rejection",
+            notifyOnFinish: true,
           });
           client.sessions[1]!.finishTurn();
         } else {
@@ -4398,64 +4399,76 @@ describe("send_agent_prompt native tool", () => {
   const logger = createTestLogger();
   const existingCwd = process.cwd();
 
-  it("defaults agent-scoped prompts to background finish notifications", async () => {
-    const { agentManager, agentStorage, spies } = createTestDeps();
-    const parentAgent = createManagedAgent({
-      id: "parent-agent",
-      config: {},
-      cwd: existingCwd,
-      workspaceId: "wks_parent",
-      provider: "codex",
-      currentModeId: "full-access",
-    });
-    const childAgent = createManagedAgent({
-      id: "child-agent",
-      cwd: existingCwd,
-      lifecycle: "running",
-      currentModeId: null,
-      availableModes: [],
-      config: { title: "Child" },
-    });
-    spies.agentManager.getAgent.mockImplementation((agentId: string) => {
-      if (agentId === "parent-agent") return parentAgent;
-      if (agentId === "child-agent") return childAgent;
-      return null;
-    });
+  it.each([
+    { child: true, notifyOnFinish: undefined, notifying: true },
+    { child: false, notifyOnFinish: undefined, notifying: false },
+    { child: false, notifyOnFinish: true, notifying: true },
+    { child: true, notifyOnFinish: false, notifying: false },
+  ])(
+    "registers a finish callback for child=$child, notifyOnFinish=$notifyOnFinish",
+    async ({ child, notifyOnFinish, notifying }) => {
+      const { agentManager, agentStorage, spies } = createTestDeps();
+      const parentAgent = createManagedAgent({
+        id: "parent-agent",
+        config: {},
+        cwd: existingCwd,
+        workspaceId: "wks_parent",
+        provider: "codex",
+        currentModeId: "full-access",
+      });
+      const childAgent = createManagedAgent({
+        id: "child-agent",
+        cwd: existingCwd,
+        lifecycle: "running",
+        currentModeId: null,
+        availableModes: [],
+        config: { title: "Child" },
+        labels: child ? { [PARENT_AGENT_ID_LABEL]: "parent-agent" } : {},
+      });
+      spies.agentManager.getAgent.mockImplementation((agentId: string) => {
+        if (agentId === "parent-agent") return parentAgent;
+        if (agentId === "child-agent") return childAgent;
+        return null;
+      });
 
-    const server = await createAgentToolCatalog({
-      agentManager,
-      agentStorage,
-      providerSnapshotManager: createOpenCodeManager().manager,
-      callerAgentId: "parent-agent",
-      logger,
-    });
+      const server = await createAgentToolCatalog({
+        agentManager,
+        agentStorage,
+        providerSnapshotManager: createOpenCodeManager().manager,
+        callerAgentId: "parent-agent",
+        logger,
+      });
 
-    const tool = registeredTool(server, "send_agent_prompt");
-    const parsed = await tool.inputSchema.safeParseAsync({
-      agentId: "child-agent",
-      prompt: "Follow up",
-    });
-    expect(parsed.success).toBe(true);
-    if (!parsed.success) {
-      throw new Error("Expected caller send_agent_prompt input to parse");
-    }
-    expect(parsed.data).toMatchObject({
-      notifyOnFinish: true,
-      ifRunning: "steer",
-    });
+      const tool = registeredTool(server, "send_agent_prompt");
+      const parsed = await tool.inputSchema.safeParseAsync({
+        agentId: "child-agent",
+        prompt: "Follow up",
+        ...(notifyOnFinish !== undefined ? { notifyOnFinish } : {}),
+      });
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) {
+        throw new Error("Expected caller send_agent_prompt input to parse");
+      }
+      expect(parsed.data).toMatchObject({ ifRunning: "steer" });
+      if (notifyOnFinish === undefined) expect(parsed.data).not.toHaveProperty("notifyOnFinish");
 
-    const response = await tool.handler(parsed.data as Record<string, unknown>);
+      const response = await tool.handler(parsed.data as Record<string, unknown>);
 
-    expect(response.structuredContent).toMatchObject({ deliveryStatus: "queued" });
-    expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
-    await serverDeliveries
-      .get(server)!
-      .waitForDispatch("child-agent", new AbortController().signal);
-    await vi.waitFor(() => expect(spies.agentManager.subscribe).toHaveBeenCalledTimes(1));
-    expect(serverSubscriptionRecords.get(server)!.size).toBe(1);
-    expect(spies.agentManager.steerOrDeferBehindActiveTurn).toHaveBeenCalledTimes(1);
-    expect(response.structuredContent.guidance).toContain("You will get notified");
-  });
+      expect(response.structuredContent).toMatchObject({ deliveryStatus: "queued" });
+      expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
+      await serverDeliveries
+        .get(server)!
+        .waitForDispatch("child-agent", new AbortController().signal);
+      if (notifying)
+        await vi.waitFor(() => expect(spies.agentManager.subscribe).toHaveBeenCalledTimes(1));
+      else expect(spies.agentManager.subscribe).not.toHaveBeenCalled();
+      expect(serverSubscriptionRecords.get(server)!.size).toBe(notifying ? 1 : 0);
+      expect(spies.agentManager.steerOrDeferBehindActiveTurn).toHaveBeenCalledTimes(1);
+      expect(response.structuredContent.guidance).toContain(
+        notifying ? "You will get notified" : "provider dispatch has not occurred",
+      );
+    },
+  );
 
   it("acknowledges top-level prompts without a completion wait", async () => {
     const { agentManager, agentStorage, spies } = createTestDeps();
@@ -4596,6 +4609,7 @@ describe("send_agent_prompt native tool", () => {
         const response = await invokeToolWithParsedInput(tool, {
           agentId: child.id,
           prompt: "Retry now",
+          notifyOnFinish: true,
         });
         unsubscribe();
         expect(response.structuredContent).toMatchObject({
@@ -4657,12 +4671,17 @@ describe("send_agent_prompt native tool", () => {
     const tool = registeredTool(server, "send_agent_prompt");
     const dispatched = () =>
       serverDeliveries.get(server)!.waitForDispatch(child.id, new AbortController().signal);
-    await invokeToolWithParsedInput(tool, { agentId: child.id, prompt: "First task" });
+    await invokeToolWithParsedInput(tool, {
+      agentId: child.id,
+      prompt: "First task",
+      notifyOnFinish: true,
+    });
     await dispatched();
     await vi.waitFor(() => expect(agentManager.getAgent(child.id)?.lifecycle).toBe("running"));
     const response = await invokeToolWithParsedInput(tool, {
       agentId: child.id,
       prompt: "Follow-up",
+      notifyOnFinish: true,
       ifRunning,
     });
     expect(response.structuredContent).toMatchObject({ success: true, deliveryStatus: "queued" });
@@ -4747,6 +4766,7 @@ describe("send_agent_prompt native tool", () => {
           const response = await invokeToolWithParsedInput(tool, {
             agentId: child.id,
             prompt: "/side-command",
+            notifyOnFinish: true,
             activeTurnBehavior: scenario === "out_of_band_interrupt" ? "interrupt" : "steer",
           });
           expect(response.structuredContent).toMatchObject({
@@ -4770,6 +4790,7 @@ describe("send_agent_prompt native tool", () => {
             invokeToolWithParsedInput(tool, {
               agentId: child.id,
               prompt: "Replacement task",
+              notifyOnFinish: true,
               ifRunning: "interrupt",
             }),
           ).rejects.toThrow("Requested turn could not start");
@@ -4824,6 +4845,7 @@ describe("send_agent_prompt native tool", () => {
       const pending = invokeToolWithParsedInput(tool, {
         agentId: child.id,
         prompt: "Follow up",
+        notifyOnFinish: true,
       });
       const response = await pending;
       expect(response.structuredContent).toMatchObject({
@@ -4948,6 +4970,7 @@ describe("send_agent_prompt native tool", () => {
       const pending = invokeToolWithParsedInput(tool, {
         agentId: child.id,
         prompt: "Follow up",
+        notifyOnFinish: true,
       });
       await vi.waitFor(() => expect(childSession.prompts).toHaveLength(1));
       expect(parseAgentMessage(childSession.prompts[0])).toEqual({
@@ -5023,6 +5046,7 @@ describe("send_agent_prompt native tool", () => {
         {
           agentId: child.id,
           prompt: "Fast reply",
+          notifyOnFinish: true,
         },
       );
       unsubscribe();
@@ -5073,7 +5097,7 @@ describe("send_agent_prompt native tool to an OMP child", () => {
     const child = await agentManager.createAgent(
       { provider: "omp", cwd: existingCwd, title: "OMP child" },
       undefined,
-      { workspaceId: "wks_parent" },
+      { workspaceId: "wks_parent", labels: { [PARENT_AGENT_ID_LABEL]: parent.id } },
     );
     const server = await createAgentToolCatalog({
       agentManager,
@@ -7428,6 +7452,7 @@ describe("local durable finish subscription MCP wiring", () => {
         await sendMcpAndAwaitDispatch(mcp, server, {
           agentId: child.id,
           prompt: "Permission work",
+          notifyOnFinish: true,
         });
         const prompts = () =>
           parentClient.sessions[0]!.prompts.flatMap((prompt) => parseAgentMessages(prompt) ?? [])
@@ -7502,7 +7527,7 @@ describe("local durable finish subscription MCP wiring", () => {
       await expect(
         mcp.callTool({
           name: "send_agent_prompt",
-          arguments: { agentId: child.id, prompt: "Must not dispatch" },
+          arguments: { agentId: child.id, prompt: "Must not dispatch", notifyOnFinish: true },
         }),
       ).rejects.toThrow();
       expect(client.sessions[1]!.prompts).toEqual([]);
