@@ -3,6 +3,7 @@ import path from "node:path";
 import { z } from "zod";
 import type { Logger } from "pino";
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
+import { AgentUsageSchema } from "@getpaseo/protocol/messages";
 
 import { NotificationLifecycleStore, type NotificationEpisode } from "../push/lifecycle-store.js";
 import { writeJsonFileAtomic } from "../atomic-file.js";
@@ -87,6 +88,7 @@ const RAW_STORED_AGENT_SCHEMA = z.object({
   lastError: z.string().nullable().optional(),
   // The provider's lifetime cost estimate for the session, kept so it outlives the process.
   totalCostUsd: z.number().nonnegative().optional(),
+  lastUsage: AgentUsageSchema.optional(),
   notificationPendingPermissions: z.array(z.string()).optional(),
   requiresAttention: z.boolean().optional(),
   attentionReason: z.enum(["finished", "error", "permission"]).nullable().optional(),

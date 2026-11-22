@@ -1,5 +1,35 @@
-import type { SDKMessage } from "@cursor/sdk";
-import type { ToolCallDetail, ToolCallTimelineItem } from "../agent-sdk-types.js";
+import type { SDKMessage, TokenUsage } from "@cursor/sdk";
+import type { AgentUsage, ToolCallDetail, ToolCallTimelineItem } from "../agent-sdk-types.js";
+
+export function addCursorUsage(first: TokenUsage | undefined, next: TokenUsage): TokenUsage {
+  if (!first) return next;
+  const reasoningReported =
+    first.reasoningTokens !== undefined || next.reasoningTokens !== undefined;
+  return {
+    inputTokens: first.inputTokens + next.inputTokens,
+    cacheReadTokens: first.cacheReadTokens + next.cacheReadTokens,
+    cacheWriteTokens: first.cacheWriteTokens + next.cacheWriteTokens,
+    outputTokens: first.outputTokens + next.outputTokens,
+    totalTokens: first.totalTokens + next.totalTokens,
+    ...(reasoningReported
+      ? { reasoningTokens: (first.reasoningTokens ?? 0) + (next.reasoningTokens ?? 0) }
+      : {}),
+  };
+}
+
+export function mapCursorUsage(usage: TokenUsage | undefined): AgentUsage | undefined {
+  if (!usage) {
+    return undefined;
+  }
+  return {
+    inputTokens: usage.inputTokens,
+    cachedInputTokens: usage.cacheReadTokens,
+    cacheWriteTokens: usage.cacheWriteTokens,
+    outputTokens: usage.outputTokens,
+    ...(usage.reasoningTokens !== undefined ? { reasoningTokens: usage.reasoningTokens } : {}),
+    totalTokens: usage.totalTokens,
+  };
+}
 
 function record(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === "object" && !Array.isArray(value)
