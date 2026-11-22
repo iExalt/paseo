@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/iExalt/paseo/compare/paseo-v0.32.0...paseo-v0.32.1) (2026-11-22)
+
+
+### Bug Fixes
+
+* **server:** clear inherited caller identity at daemon startup ([#555](https://github.com/iExalt/paseo/issues/555)) ([5cfc726](https://github.com/iExalt/paseo/commit/5cfc7261d6c9951959a0b50e5b26d5ea13e219e8))
+
 ## [0.32.0](https://github.com/iExalt/paseo/compare/paseo-v0.31.0...paseo-v0.32.0) (2026-11-22)
 
 
