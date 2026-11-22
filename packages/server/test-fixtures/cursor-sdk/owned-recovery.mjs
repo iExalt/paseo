@@ -86,6 +86,8 @@ export async function checkOwnedRecovery({
   const send = (id, text, messageId = randomUUID()) =>
     client.sendAgentMessage(id, text, { messageId });
   let leaf;
+  let liveOwner;
+  let failure;
   const unrelated = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
     stdio: "ignore",
   });
@@ -173,6 +175,7 @@ export async function checkOwnedRecovery({
     assert.ok(saved?.executionOwner, "SDK dispatch did not enroll an execution owner");
     assert.ok(saved.executionRunIds.includes(saved.nativeRunId));
     const owner = saved.executionOwner;
+    liveOwner = owner;
     await checkLiveDomain(owner, leaf);
     await eventually("warm tool card", async () =>
       (await history(id)).entries.some(
@@ -229,6 +232,7 @@ export async function checkOwnedRecovery({
       }),
     );
     await releaseLeaf(owner, leaf);
+    liveOwner = undefined;
     leaf = undefined;
     await rm(hold, { force: true });
     assert.equal(await optional(sentinel), undefined);
@@ -281,6 +285,7 @@ export async function checkOwnedRecovery({
     });
     const active = await turnRecord(agentId, activeId);
     assert.notEqual(generationOf(active.executionOwner), generationOf(previous.executionOwner));
+    liveOwner = active.executionOwner;
     await checkLiveDomain(active.executionOwner, leaf);
     const beforeQueue = backend.runs;
     const queued = await client.sendAgentMessage(id, "Run this once after Stop.", {
@@ -294,6 +299,7 @@ export async function checkOwnedRecovery({
     assert.ok(runtimeMs < 2500);
     const end = await processIdentity(leaf.pid);
     assert.ok(!end || end.state === "Z");
+    liveOwner = undefined;
     leaf = undefined;
     assert.equal(await optional(sentinel), undefined);
     assert.ok(
@@ -406,15 +412,38 @@ export async function checkOwnedRecovery({
     await cycle(false);
     await cycle(true);
     await backgroundCanary();
+  } catch (error) {
+    failure = { error };
+    if (windows) {
+      const job =
+        liveOwner &&
+        (await windowsJobMembers(liveOwner.generation).catch((queryError) => ({
+          unavailable: queryError.message,
+        })));
+      console.error("Windows owner fixture live processes at failure", { leaf, job });
+    }
   } finally {
-    unsubscribe();
-    await client.close();
-    if (leaf && windows) await writeFile(finish, "exit safely");
-    else if (leaf && (await processIdentity(leaf.pid))?.birth === leaf.birth)
-      process.kill(leaf.pid, "SIGKILL");
-    await rm(hold, { force: true });
-    await writeFile(backgroundRelease, "finish background work");
-    unrelated.kill();
-    await unrelatedExited;
+    try {
+      unsubscribe();
+      await client.close();
+      if (leaf && windows) await writeFile(finish, "exit safely");
+      else if (leaf && (await processIdentity(leaf.pid))?.birth === leaf.birth)
+        process.kill(leaf.pid, "SIGKILL");
+      await rm(hold, { force: true });
+      await writeFile(backgroundRelease, "finish background work");
+      if (leaf && windows) {
+        await eventually(
+          "fixture tool exited after cleanup release",
+          async () => !(await processIdentity(leaf.pid)),
+        );
+      }
+    } catch (error) {
+      if (failure) console.error("Owner fixture tool cleanup failed", error);
+      else failure = { error };
+    } finally {
+      unrelated.kill();
+      await unrelatedExited;
+    }
   }
+  if (failure) throw failure.error;
 }

@@ -247,6 +247,8 @@ async function checkCompleted(run) {
   console.log("PASS Cursor SDK shell canary, client tool result, assistant text, and usage");
 }
 
+const windowsOwnerReplay = mode === "owner" && process.platform === "win32";
+let failure;
 try {
   await startDaemon();
   const workspaceId = callerWorkspace ?? (await createWorkspace());
@@ -346,16 +348,26 @@ try {
     });
   }
 } catch (error) {
+  failure = { error };
   if (daemonLog) console.error(daemonLog);
-  throw error;
 } finally {
   try {
-    await stopDaemon();
-  } finally {
     try {
-      await backend.close();
+      await stopDaemon();
     } finally {
-      await rm(tmp, { recursive: true, force: true });
+      try {
+        await backend.close();
+      } finally {
+        await rm(tmp, {
+          recursive: true,
+          force: true,
+          maxRetries: windowsOwnerReplay ? 5 : 0,
+        });
+      }
     }
+  } catch (error) {
+    if (failure && windowsOwnerReplay) console.error("Windows owner fixture cleanup failed", error);
+    else failure = { error };
   }
 }
+if (failure) throw failure.error;
