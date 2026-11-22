@@ -1,6 +1,6 @@
 import { cursorSkillReferences } from "../prompt-attachments.js";
 import { randomUUID } from "node:crypto";
-import type { Run, RunResult, SDKUserMessage } from "@cursor/sdk";
+import type { Run, RunResult, SDKUserMessage, TokenUsage } from "@cursor/sdk";
 import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
 import type {
   AgentPromptInput,
@@ -22,6 +22,7 @@ import { cursorUnresolvedSteerMessage, streamItems, terminalTools } from "./curs
 import type { OwnerTerminalProof } from "./cursor-sdk-recovery.js";
 import { isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { CursorToolProcesses } from "./cursor-sdk-tool-processes.js";
+import { addCursorUsage } from "./cursor-sdk-telemetry.js";
 import type { CursorHistoryTurn, CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
 
 const OPERATION_DEADLINE_MS = 1_500;
@@ -364,17 +365,29 @@ export class CursorRunController {
     run: Run,
     tools: Map<string, ToolCallTimelineItem>,
     onItem: (item: AgentTimelineItem) => Promise<void>,
+    usageByRun: Map<string, TokenUsage>,
     trigger: "manual" | "auto",
   ): Promise<{ result: RunResult; streamError?: unknown }> {
     let streamError: unknown;
+    let streamUsage: TokenUsage | undefined;
     try {
       for await (const message of run.stream()) {
+        if (message.type === "usage") streamUsage = addCursorUsage(streamUsage, message.usage);
         for (const item of streamItems(message, tools, trigger)) await onItem(item);
       }
     } catch (error) {
       streamError = error;
     }
-    return { result: await run.wait(), streamError };
+
+    let result: RunResult | undefined;
+    try {
+      result = await run.wait();
+      return { result, streamError };
+    } finally {
+      // wait() includes reported model calls from an unfinished turn.
+      const usage = result?.usage ?? run.usage ?? streamUsage;
+      if (usage) usageByRun.set(run.id, usage);
+    }
   }
 
   private async observeRuns(
@@ -382,6 +395,7 @@ export class CursorRunController {
     firstRun: Run,
     tools: Map<string, ToolCallTimelineItem>,
     onItem: (item: AgentTimelineItem) => Promise<void>,
+    usageByRun: Map<string, TokenUsage>,
   ): Promise<{ result: RunResult; streamError?: unknown }> {
     let run = firstRun;
     for (;;) {
@@ -394,6 +408,7 @@ export class CursorRunController {
         run,
         tools,
         onItem,
+        usageByRun,
         turn.record.compact ? "manual" : "auto",
       );
       // A cancel still writing SDK state can race a replacement, even after run.wait.
@@ -496,6 +511,11 @@ export class CursorRunController {
     let result: RunResult | undefined;
     let admitted = false;
     let persistenceError: unknown;
+    const usageByRun = new Map<string, TokenUsage>();
+    const collectUsage = () =>
+      this.mapUsage(
+        Array.from(usageByRun.values()).reduce<TokenUsage | undefined>(addCursorUsage, undefined),
+      );
     const emitItem = async (item: AgentTimelineItem) => {
       if (item.type === "tool_call" && item.name === "shell" && item.status === "running") {
         turn.toolProcesses.observeShellCall(item.callId);
@@ -529,7 +549,7 @@ export class CursorRunController {
       this.emitItem(turn, user);
       timeline.push(user);
 
-      const observed = await this.observeRuns(turn, run, tools, emitItem);
+      const observed = await this.observeRuns(turn, run, tools, emitItem, usageByRun);
       turn.abortInteractions();
       result = observed.result;
       if (observed.streamError && result.status === "finished") throw observed.streamError;
@@ -546,10 +566,10 @@ export class CursorRunController {
           cause: persistenceError,
         });
       }
-      return await this.finishTurn(turn, result, timeline, streamedText);
+      return await this.finishTurn(turn, result, timeline, streamedText, collectUsage());
     } catch (error) {
       turn.abortInteractions();
-      return this.failTurn(turn, error, admitted, result?.error?.code);
+      return this.failTurn(turn, error, admitted, result?.error?.code, collectUsage());
     }
   }
 
@@ -558,8 +578,10 @@ export class CursorRunController {
     error: unknown,
     admitted: boolean,
     errorCode: string | undefined,
+    usage: AgentUsage | undefined,
   ): Promise<never> {
     const message = messageOf(error);
+    turn.record.lastUsage = usage;
     turn.record.terminal = { status: "error", message, code: errorCode };
     if (turn.unadmittedCleanup) {
       // This launcher never returned its dispatch channel. A journal write
@@ -588,7 +610,9 @@ export class CursorRunController {
         this.active = undefined;
       }
       // startTurn rejection is projected by AgentManager before a turn has started.
-      if (admitted)
+      if (admitted) {
+        if (usage)
+          this.emit({ type: "usage_updated", provider: PROVIDER, turnId: turn.record.id, usage });
         this.emit({
           type: "turn_failed",
           provider: PROVIDER,
@@ -596,6 +620,7 @@ export class CursorRunController {
           error: message,
           code: errorCode,
         });
+      }
     }
     throw error;
   }
@@ -605,8 +630,9 @@ export class CursorRunController {
     result: RunResult,
     timeline: AgentTimelineItem[],
     streamedText: string,
+    usage: AgentUsage | undefined,
   ): Promise<AgentRunResult> {
-    const usage = this.mapUsage(result.usage);
+    turn.record.lastUsage = usage;
     turn.record.terminal =
       result.status === "cancelled"
         ? { status: "cancelled" }
@@ -630,6 +656,8 @@ export class CursorRunController {
         .catch(() => undefined);
     }
     if (result.status === "cancelled") {
+      if (usage)
+        this.emit({ type: "usage_updated", provider: PROVIDER, turnId: turn.record.id, usage });
       this.emit({
         type: "turn_canceled",
         provider: PROVIDER,

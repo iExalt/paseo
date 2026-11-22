@@ -1,4 +1,10 @@
-import type { LocalAgentRunDocument, LocalAgentStore, RunResult, SDKMessage } from "@cursor/sdk";
+import type {
+  LocalAgentRunDocument,
+  LocalAgentStore,
+  RunResult,
+  SDKMessage,
+  TokenUsage,
+} from "@cursor/sdk";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import type {
@@ -8,9 +14,11 @@ import type {
   AgentSession,
   AgentStreamEvent,
   AgentTimelineItem,
+  AgentUsage,
   ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
+import { addCursorUsage, mapCursorTool, mapCursorUsage } from "./cursor-sdk-telemetry.js";
 import type {
   CursorHistoryTurn,
   CursorHistoryUser,
@@ -35,27 +43,6 @@ const checkpointPromptSchema = z.object({
     }),
   }),
 });
-
-function mapTool(
-  message: Extract<SDKMessage, { type: "tool_call" }>,
-  previous?: ToolCallTimelineItem,
-): ToolCallTimelineItem {
-  const prior = previous?.detail.type === "unknown" ? previous.detail : undefined;
-  const base = {
-    type: "tool_call" as const,
-    callId: `${message.run_id}:${message.call_id}`,
-    name: message.name,
-    detail: {
-      type: "unknown" as const,
-      input: message.args ?? prior?.input ?? null,
-      output: message.result ?? prior?.output ?? null,
-    },
-  };
-  if (message.status === "error") {
-    return { ...base, status: "failed", error: message.result ?? "Cursor tool failed." };
-  }
-  return { ...base, status: message.status, error: null };
-}
 
 function cursorUserMessageId(runId: string): string {
   return `${runId}:user`;
@@ -107,7 +94,10 @@ export function streamItems(
       ];
     case "tool_call": {
       const key = `${message.run_id}:${message.call_id}`;
-      const item = mapTool(message, tools.get(key));
+      const previous = tools.get(key);
+      if (previous && previous.status !== "running" && message.status === "running") return [];
+      const item = mapCursorTool(message, previous);
+      if (isDeepStrictEqual(previous, item)) return [];
       tools.set(key, item);
       return [item];
     }
@@ -173,13 +163,7 @@ export async function* readCursorHistory(
     throw new Error("Cursor SDK could not find the saved local agent.");
   }
 
-  const runs: LocalAgentRunDocument[] = [];
-  let cursor: string | undefined;
-  do {
-    const page = await store.runs.list({ filter: { agentIds: [id], cursor } });
-    runs.push(...page.items);
-    cursor = page.nextCursor;
-  } while (cursor);
+  const runs = await readCursorRuns(store, id);
   runs.sort((a, b) => a.turnNumber - b.turnNumber);
   const records = await journal.read();
   const knownIds = new Set(runs.map((run) => run.runId));
@@ -283,8 +267,30 @@ async function readJournalItems(
   return {
     events,
     incomplete:
-      isPartialAnswer(record, events) || (native.length > 0 && !isDeepStrictEqual(events, native)),
+      isPartialAnswer(record, events) ||
+      (native.length > 0 &&
+        !isDeepStrictEqual(recoveryComparable(events), recoveryComparable(native))),
   };
+}
+
+// Older journals stored tool inputs and results as an unknown detail. Type
+// projection and repeated partial updates should not imply a transcript gap.
+function recoveryComparable(events: AgentTimelineItem[]): AgentTimelineItem[] {
+  const tools = new Map<string, ToolCallTimelineItem>();
+  return events.flatMap<AgentTimelineItem>((item) => {
+    if (item.type !== "tool_call") return [item];
+    const { metadata, ...withoutMetadata } = item;
+    const raw = metadata?.cursorSdk;
+    const normalized: ToolCallTimelineItem =
+      raw && typeof raw === "object" && "input" in raw && "output" in raw
+        ? { ...withoutMetadata, detail: { type: "unknown", input: raw.input, output: raw.output } }
+        : item;
+    const previous = tools.get(item.callId);
+    if (previous && previous.status !== "running" && normalized.status === "running") return [];
+    if (isDeepStrictEqual(previous, normalized)) return [];
+    tools.set(item.callId, normalized);
+    return [normalized];
+  });
 }
 
 function isPartialAnswer(record: CursorHistoryTurn, events: AgentTimelineItem[]): boolean {
@@ -466,6 +472,7 @@ export function openCursorHistorySession(params: {
     capabilities,
     subscribe: () => () => {},
     streamHistory: () => readCursorHistory(sdk, store, journal, id),
+    readLastUsage: () => readCursorLastUsage(store, journal, id),
     getRuntimeInfo: async () => ({ provider: PROVIDER, sessionId: id, model, modeId: mode }),
     getAvailableModes: async () => modes,
     getCurrentMode: async () => mode,
@@ -480,4 +487,62 @@ export function openCursorHistorySession(params: {
     interrupt: async () => {},
     close: async () => {},
   };
+}
+
+async function readCursorRuns(
+  store: LocalAgentStore,
+  id: string,
+): Promise<LocalAgentRunDocument[]> {
+  const runs: LocalAgentRunDocument[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await store.runs.list({ filter: { agentIds: [id], cursor } });
+    runs.push(...page.items);
+    cursor = page.nextCursor;
+  } while (cursor);
+  return runs;
+}
+
+export async function readCursorLastUsage(
+  store: LocalAgentStore,
+  journal: CursorTurnJournal,
+  id: string,
+) {
+  const [runs, records] = await Promise.all([readCursorRuns(store, id), journal.read()]);
+  const byId = new Map(runs.map((run) => [run.runId, run]));
+  const owned = new Set<string>();
+  const readings: Array<{ createdAt: number; order: number; usage: AgentUsage | undefined }> =
+    records.map((turn) => {
+      const ids = new Set([
+        turn.nativeRunId,
+        ...(turn.executionRunIds ?? []),
+        ...(turn.followUpIds ?? []),
+      ]);
+      let usage: TokenUsage | undefined;
+      let order = 0;
+      for (const runId of ids) {
+        if (!runId) continue;
+        owned.add(runId);
+        const run = byId.get(runId);
+        if (!run) continue;
+        order = Math.max(order, run.turnNumber);
+        if (run.usage) usage = addCursorUsage(usage, run.usage);
+      }
+      return {
+        createdAt: Date.parse(turn.createdAt),
+        order,
+        usage: turn.lastUsage ?? mapCursorUsage(usage),
+      };
+    });
+  for (const run of runs) {
+    if (!owned.has(run.runId) && run.usage) {
+      readings.push({
+        createdAt: run.createdAt,
+        order: run.turnNumber,
+        usage: mapCursorUsage(run.usage),
+      });
+    }
+  }
+  readings.sort((a, b) => b.createdAt - a.createdAt || b.order - a.order);
+  return readings.find(({ usage }) => usage !== undefined)?.usage;
 }

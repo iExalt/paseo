@@ -3,6 +3,7 @@ import { appendFile, mkdir, open, readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   AgentTimelineItemPayloadSchema,
+  AgentUsageSchema,
   CursorSkillReferenceSchema,
 } from "@getpaseo/protocol/messages";
 import { z } from "zod";
@@ -31,6 +32,7 @@ const turnSchema = z.object({
   joined: z.boolean().optional(),
   recovered: z.boolean().optional(),
   ownerStopPending: z.boolean().optional(),
+  lastUsage: AgentUsageSchema.optional(),
   user: userMessageSchema,
   steers: z.array(
     z.object({

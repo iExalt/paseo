@@ -15,7 +15,6 @@ import type {
   SDKAgent,
   SDKModel,
   SDKUserMessage,
-  TokenUsage,
 } from "@cursor/sdk";
 import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
@@ -37,7 +36,6 @@ import type {
   AgentSessionConfig,
   AgentSlashCommand,
   AgentStreamEvent,
-  AgentUsage,
   FetchCatalogOptions,
   ImportProviderSessionContext,
   ImportProviderSessionInput,
@@ -69,6 +67,7 @@ import {
 } from "./cursor-sdk-availability.js";
 import {
   type HistorySdk,
+  readCursorLastUsage,
   openCursorHistorySession,
   readCursorHistory,
   interruptedCursorRunMessage,
@@ -82,7 +81,9 @@ import { cursorCompactCommand, isCursorCompactPrompt } from "./cursor-sdk-mainte
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
 import { CursorQuestions, cursorQuestionToolName } from "./cursor-sdk-questions.js";
+import { cursorSpeakTool, cursorSpeakToolName } from "./cursor-sdk-voice.js";
 import { CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
+import { mapCursorUsage } from "./cursor-sdk-telemetry.js";
 import {
   cursorCatalogOptionKeys,
   cursorModelLabel,
@@ -183,17 +184,6 @@ function assertMode(mode?: string): void {
   if (mode && mode !== MODE) {
     throw new Error("Cursor SDK supports only Unrestricted mode.");
   }
-}
-
-function mapUsage(usage: TokenUsage | undefined): AgentUsage | undefined {
-  if (!usage) {
-    return undefined;
-  }
-  return {
-    inputTokens: usage.inputTokens,
-    cachedInputTokens: usage.cacheReadTokens,
-    outputTokens: usage.outputTokens,
-  };
 }
 
 function makePrompt(input: AgentPromptInput): SDKUserMessage {
@@ -468,6 +458,7 @@ export class CursorSdkAgentClient implements AgentClient {
       shellEnvironment,
       dirname(this.storePath),
       options,
+      launchContext?.paseoTools,
       {
         read: () => this.requireApiKey(),
         resume: (key, selection) =>
@@ -505,7 +496,7 @@ interface CredentialBoundAgent {
 class CursorSdkAgent implements AgentSession {
   readonly provider = PROVIDER;
   readonly id: string;
-  readonly capabilities = CAPABILITIES;
+  readonly capabilities: typeof CAPABILITIES & { supportsVoicePlayback?: boolean };
 
   private native: CredentialBoundAgent | undefined;
   private readonly runs: CursorRunController;
@@ -532,6 +523,7 @@ class CursorSdkAgent implements AgentSession {
     private readonly shellEnvironment: Awaited<ReturnType<typeof prepareCursorShellEnvironment>>,
     private readonly paseoHome: string,
     private readonly ownedOptions: CursorOwnerStart["options"],
+    private readonly voiceTools: AgentLaunchContext["paseoTools"],
     private readonly credentials: {
       read: () => Promise<string>;
       resume: (apiKey: string, model: ModelSelection) => Promise<SDKAgent>;
@@ -539,11 +531,14 @@ class CursorSdkAgent implements AgentSession {
   ) {
     this.native = native;
     this.id = native.agent.agentId;
+    this.capabilities = voiceTools?.getTool("speak")
+      ? { ...CAPABILITIES, supportsVoicePlayback: true }
+      : CAPABILITIES;
     this.runs = new CursorRunController(
       this.id,
       journal,
       (event) => this.emit(event),
-      mapUsage,
+      mapCursorUsage,
       (turn, proof) =>
         reconcileReleasedTurn(this.binding.store, this.journal, this.id, turn, proof),
     );
@@ -652,10 +647,24 @@ class CursorSdkAgent implements AgentSession {
     };
     const owned = await this.tryOwnedExecution(execution, throwIfStopped);
     const question = this.questions.tool(execution.interactionSignal);
+    const speak = this.voiceTools?.getTool("speak")
+      ? cursorSpeakTool(this.id, this.voiceTools, execution.interactionSignal)
+      : undefined;
     owned?.attachQuestionHandler(question.execute, execution.abortInteractions);
+    if (speak) owned?.attachSpeakHandler(speak.execute);
     const run = owned
       ? await this.sendOwned(owned, apiKey, model, prepareInput)
-      : await this.sendDirect(model, apiKey, prepareInput, bind, question, compact);
+      : await this.sendDirect(
+          model,
+          apiKey,
+          prepareInput,
+          bind,
+          {
+            [cursorQuestionToolName]: question,
+            ...(speak ? { [cursorSpeakToolName]: speak } : {}),
+          },
+          compact,
+        );
     if (this.model === requested.model && this.options === requested.options) {
       this.model = selected;
       this.modelControls = controls;
@@ -732,7 +741,7 @@ class CursorSdkAgent implements AgentSession {
     apiKey: string,
     prepareInput: () => Promise<SDKUserMessage | null>,
     bind: (runId: string) => Promise<void>,
-    question: ReturnType<CursorQuestions["tool"]>,
+    customTools: NonNullable<AgentOptions["local"]>["customTools"],
     compact: boolean,
   ): Promise<Run> {
     // summarize() uses the handle's model, unlike send({ model }).
@@ -746,7 +755,7 @@ class CursorSdkAgent implements AgentSession {
       return withCursorShellEnvironment(this.shellEnvironment, () =>
         native.agent.send(input, {
           model,
-          local: { customTools: { [cursorQuestionToolName]: question } },
+          local: { customTools },
         }),
       );
     });
@@ -797,6 +806,10 @@ class CursorSdkAgent implements AgentSession {
 
   streamHistory(): AsyncGenerator<AgentStreamEvent> {
     return readCursorHistory(this.sdk, this.binding.store, this.journal, this.id);
+  }
+
+  readLastUsage() {
+    return readCursorLastUsage(this.binding.store, this.journal, this.id);
   }
 
   listCommands(): Promise<AgentSlashCommand[]> {

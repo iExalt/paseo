@@ -42,6 +42,23 @@ function frame(payload, flags = 0) {
 
 const interaction = (field, value) => frame(bytes(1, bytes(field, value)));
 
+// ModelCallCompleted is the pinned SDK's source for usage when Stop interrupts
+// the turn before TurnEnded arrives.
+const stoppedUsage = interaction(
+  31,
+  join(bytes(1, "p8-model-call"), number(2, 7), number(3, 2), number(4, 1), number(6, 1)),
+);
+const finishedUsage = interaction(
+  14,
+  join(number(1, 12), number(2, 3), number(3, 2), number(4, 1), number(5, 1)),
+);
+
+function telemetryReadUpdate(status, text, workspace) {
+  const args = bytes(1, bytes(1, join(Buffer.from(workspace), Buffer.from("/cursor-canary.sh"))));
+  const result = text === undefined ? Buffer.alloc(0) : bytes(2, bytes(1, bytes(1, text)));
+  return interaction(status, join(bytes(1, "p8-read"), bytes(2, bytes(8, join(args, result)))));
+}
+
 function fields(body) {
   let offset = 0;
   const result = {};
@@ -105,6 +122,7 @@ export async function startBackend(
   { allowCodexPrewarm, selectSkillTurn, models, p5, maintenance },
 ) {
   const shell = shellMessages(workspace);
+  const stoppedShell = shellMessages(workspace, "p8-held.sh");
   const protectedShell = shellMessages(workspace, "p5-protected.sh");
   const skillShell = shellMessages(workspace, "cursor-selected-canary.sh");
   const streams = new Map();
@@ -150,6 +168,19 @@ export async function startBackend(
     );
   }
 
+  function prepareShellResponse(response, request) {
+    if (request?.includes("Run the shell canary.")) {
+      response.write(telemetryReadUpdate(2, undefined, workspace));
+      response.write(telemetryReadUpdate(7, "P8_READ_PROGRESS", workspace));
+      response.write(telemetryReadUpdate(3, "P8_READ_COMPLETED", workspace));
+    }
+    if (request?.includes("PASEO_P8_STOPPED")) {
+      response.write(stoppedUsage);
+      return stoppedShell;
+    }
+    return request && selectSkillTurn?.(request) ? skillShell : shell;
+  }
+
   function startShellIfReady(key) {
     const stream = streams.get(key);
     const request = initialRequests.get(key);
@@ -186,7 +217,7 @@ export async function startBackend(
       p5Turn.start(stream.response);
       return;
     }
-    stream.shell = request && selectSkillTurn?.(request) ? skillShell : shell;
+    stream.shell = prepareShellResponse(stream.response, request);
     stream.response.write(stream.shell.started);
     stream.response.write(stream.shell.execute);
   }
@@ -248,7 +279,7 @@ export async function startBackend(
 
   function finish(stream) {
     stream.write(interaction(1, bytes(1, assistantText)));
-    stream.write(interaction(14, join(number(1, 12), number(2, 3), number(3, 2))));
+    stream.write(finishedUsage);
     stream.end(frame(Buffer.from("{}"), 2));
     return;
   }

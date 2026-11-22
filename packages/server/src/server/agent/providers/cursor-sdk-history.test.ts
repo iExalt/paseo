@@ -4,7 +4,7 @@ import { join } from "node:path";
 import * as sdk from "@cursor/sdk";
 import { expect, test } from "vitest";
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
-import { readCursorHistory } from "./cursor-sdk-history.js";
+import { readCursorHistory, readCursorLastUsage } from "./cursor-sdk-history.js";
 import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 
 const agentId = "agent-offline";
@@ -308,6 +308,118 @@ test("a recovered terminal answer labels a durable partial projection", async ()
         item: { type: "error", message: expect.stringContaining("Some saved Cursor SDK output") },
       },
     ]);
+  });
+});
+
+test("keeps a recovered legacy shell journal when only the typed projection changed", async () => {
+  await withStore(async (_root, store, journal) => {
+    const runId = "legacy-shell";
+    const input = { command: "echo output", workingDirectory: cwd };
+    const output = { status: "success", value: { stdout: "output", stderr: "", exitCode: 0 } };
+    const turn: CursorHistoryTurn = {
+      id: "paseo-legacy-shell",
+      nativeRunId: runId,
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "run shell", messageId: "user" },
+      steers: [],
+      joined: true,
+      recovered: true,
+      terminal: { status: "finished" },
+    };
+    await journal.admit(turn, turn.user.text);
+    await store.runs.create({ run: localRun(runId, "finished") });
+    const append = async (status: "running" | "completed") => {
+      const result = status === "completed" ? output : undefined;
+      await store.runEvents.append({
+        runId,
+        eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
+        payload: sdk.createSdkMessageRunStreamEvent({
+          type: "tool_call",
+          run_id: runId,
+          agent_id: agentId,
+          call_id: "shell",
+          name: "shell",
+          status,
+          args: input,
+          result,
+        }),
+      });
+      await journal.append(turn.id, {
+        type: "tool_call",
+        callId: runId + ":shell",
+        name: "shell",
+        status,
+        detail: { type: "unknown", input, output: result ?? null },
+        error: null,
+      });
+    };
+    await append("running");
+    await append("running");
+    await append("completed");
+    const rows = messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
+    expect(rows.every(({ turnId }) => turnId === turn.id)).toBe(true);
+    expect(rows.map(({ item }) => item.type)).toEqual([
+      "user_message",
+      "tool_call",
+      "tool_call",
+      "tool_call",
+    ]);
+  });
+});
+
+test("deduplicates linked native usage and prefers a newer durable fallback over an older native row", async () => {
+  await withStore(async (_root, store, journal) => {
+    const first = {
+      inputTokens: 10,
+      outputTokens: 3,
+      cacheReadTokens: 2,
+      cacheWriteTokens: 1,
+      totalTokens: 13,
+    };
+    await store.runs.create({ run: { ...localRun("first", "finished"), usage: first } });
+    await store.runs.create({
+      run: {
+        ...localRun("followup", "cancelled"),
+        turnNumber: 2,
+        usage: { ...first, reasoningTokens: 0 },
+      },
+    });
+    const record: CursorHistoryTurn = {
+      id: "paseo-first",
+      nativeRunId: "first",
+      executionRunIds: ["first", "followup"],
+      followUpIds: ["followup"],
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "first", messageId: "first" },
+      steers: [],
+    };
+    await journal.admit(record, record.user.text);
+    expect(await readCursorLastUsage(store, journal, agentId)).toEqual({
+      inputTokens: 20,
+      outputTokens: 6,
+      cachedInputTokens: 4,
+      cacheWriteTokens: 2,
+      totalTokens: 26,
+      reasoningTokens: 0,
+    });
+
+    const fallback = { inputTokens: 8, outputTokens: 1, totalTokens: 9, reasoningTokens: 1 };
+    await store.runs.create({
+      run: { ...localRun("new", "finished"), turnNumber: 3, createdAt: time + 1 },
+    });
+    await journal.admit(
+      {
+        ...record,
+        id: "paseo-new",
+        nativeRunId: "new",
+        executionRunIds: ["new"],
+        followUpIds: [],
+        createdAt: new Date(time + 1).toISOString(),
+        lastUsage: fallback,
+      },
+      "new",
+    );
+    expect(await readCursorLastUsage(store, journal, agentId)).toEqual(fallback);
   });
 });
 
