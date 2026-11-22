@@ -106,16 +106,18 @@ npm run dev:ios         # Build/install the iOS development app
 ```
 
 `build:apk` writes `artifacts/paseo-dogfood-universal.apk`; `build:apk:arm64` writes
-`artifacts/paseo-dogfood-arm64.apk`. On an ARM64 Linux host, set `PASEO_HERMES_COMMAND` to a native
-`hermesc` built from the Hermes tag matching `hermes-compiler`'s version: npm ships the Linux
-`hermesc` for x86-64 only, and React Native's Gradle plugin stops on `linux-aarch64`. The variable
-sets the `paseoHermesCommand` Gradle property, which a direct `./gradlew` run can pass as
-`-PpaseoHermesCommand=PATH`. Unset, the build uses the npm `hermesc` as before. Neither command launches or installs on a device. Both enable
+`artifacts/paseo-dogfood-arm64.apk`. Neither command launches or installs on a device. Both enable
 `PASEO_WATCHDOG_BUILD=1`, the production React profiling renderer, and Android's shell-profileable
 flag. These builds keep the production package ID (`sh.paseo`) and release optimizations. Use this APK for
 personal dogfooding. Android system-trace spans require the separate `PASEO_PROFILE_BUILD=1` flag;
 watchdog recording does not send duplicate spans to that sink by default. Normal store/release
 workflows leave diagnostics disabled.
+
+On an ARM64 Linux host, set `PASEO_HERMES_COMMAND` to a native `hermesc` built from the Hermes tag
+matching `hermes-compiler`'s version: npm ships the Linux `hermesc` for x86-64 only, and React
+Native's Gradle plugin stops on `linux-aarch64`. A relative path resolves against the repository
+root. The variable sets the `paseoHermesCommand` Gradle property, which a direct `./gradlew` run can
+pass as `-PpaseoHermesCommand=PATH`. Unset, the build uses the npm `hermesc` as before.
 
 The older `android`, `android:development`, and `ios` commands remain aliases for development.
 `android:production` still builds and installs a release through Expo; use `build:apk` when you
