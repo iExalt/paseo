@@ -8,6 +8,20 @@ import { createOwnerChannel, ownerDeferred } from "./owner-channel.js";
 type Handler = Parameters<typeof createOwnerChannel>[2];
 type Channel = ReturnType<typeof createOwnerChannel>;
 
+export class UnadmittedExecutionError extends Error {
+  constructor(
+    error: unknown,
+    readonly drained: Promise<void>,
+  ) {
+    super(error instanceof Error ? error.message : String(error), { cause: error });
+  }
+}
+
+export type EnrollExecutionOwner = (
+  owner: ExecutionOwner,
+  assertLaunchAvailable: () => void,
+) => Promise<void>;
+
 export interface OwnedProcess {
   owner: ExecutionOwner;
   channel: Channel;
@@ -42,7 +56,7 @@ export async function openOwnedProcess(
   entry: string,
   home: string,
   generation: string,
-  enroll: (owner: ExecutionOwner) => Promise<void>,
+  enroll: EnrollExecutionOwner,
   handle: Handler,
 ): Promise<OwnedProcess> {
   const namespaces = await currentNamespaces();
@@ -68,6 +82,7 @@ export async function openOwnedProcess(
   if (!child.stdout || !child.stdin) throw new Error("Execution owner has no private pipes.");
   let authorized = false;
   let sawHello = false;
+  let enrollment: Promise<void> | undefined;
   const channel = createOwnerChannel(child.stdout, child.stdin, async (method, input) => {
     if (method !== "hello" || sawHello) {
       if (!authorized) throw new Error("Execution owner has not enrolled.");
@@ -85,11 +100,17 @@ export async function openOwnedProcess(
       }
       const attestation = await launch.attest(pid);
       const owner = "owner" in attestation ? attestation.owner : attestation;
-      if (timeout.aborted || !channel.connected)
-        throw new Error("Execution owner disconnected before enrollment.");
-      await enroll(owner);
-      if (timeout.aborted || !channel.connected)
-        throw new Error("Execution owner disconnected during enrollment.");
+      const assertLaunchAvailable = () => {
+        if (timeout.aborted || !channel.connected)
+          throw new Error("Execution owner disconnected during enrollment.");
+      };
+      assertLaunchAvailable();
+      enrollment = Promise.resolve().then(() => {
+        assertLaunchAvailable();
+        return enroll(owner, assertLaunchAvailable);
+      });
+      await enrollment;
+      assertLaunchAvailable();
       authorized = true;
       if ("watchWorker" in attestation) {
         void attestation.watchWorker(() => channel.connected, channel.close);
@@ -106,7 +127,14 @@ export async function openOwnedProcess(
     return { owner, channel, waitForExit: () => waitForExecutionOwner(owner) };
   } catch (error) {
     channel.close();
-    await launch.abandon();
+    const abandon = launch.abandon();
+    if (enrollment) {
+      // Return the failed admission promptly. The caller must retain its turn
+      // until the callback finishes any already accepted native mutation.
+      const drained = Promise.allSettled([enrollment, abandon]).then(() => undefined);
+      throw new UnadmittedExecutionError(error, drained);
+    }
+    await abandon;
     throw error;
   }
 }

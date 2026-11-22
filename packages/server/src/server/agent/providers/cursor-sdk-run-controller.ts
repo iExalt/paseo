@@ -28,6 +28,7 @@ const OPERATION_DEADLINE_MS = 1_500;
 export interface CursorTurnExecution {
   prepareOwner: (generation: string) => Promise<void>;
   discardUnadmittedOwner: () => Promise<void>;
+  deferUnadmittedCleanup: (drained: Promise<void>) => void;
   enroll: (owner: ExecutionOwner) => Promise<void>;
   bindRun: (nativeRunId: string) => Promise<void>;
   attachFinish: (finish: (waitForTools: boolean, cancelTools: boolean) => Promise<void>) => void;
@@ -45,6 +46,7 @@ interface CursorTurn {
   native: Promise<Run>;
   completion: Promise<AgentRunResult>;
   toolProcesses: CursorToolProcesses;
+  unadmittedCleanup?: Promise<void>;
   finishExecution?: (waitForTools: boolean, cancelTools: boolean) => Promise<void>;
   completedWriter?: boolean;
   nativeStopConfirmed?: boolean;
@@ -126,6 +128,9 @@ export class CursorRunController {
         if (record.executionOwner) throw new Error("Cannot discard an enrolled execution owner.");
         delete record.executionIntent;
         await this.journal.save(record);
+      },
+      deferUnadmittedCleanup: (drained) => {
+        turn.unadmittedCleanup = drained;
       },
       enroll: async (owner) => {
         if (record.executionOwner)
@@ -531,6 +536,14 @@ export class CursorRunController {
   ): Promise<never> {
     const message = messageOf(error);
     turn.record.terminal = { status: "error", message, code: errorCode };
+    if (turn.unadmittedCleanup) {
+      // This launcher never returned its dispatch channel. A journal write
+      // started just before disconnect can complete, but cannot start the SDK.
+      await turn.unadmittedCleanup;
+      delete turn.record.executionOwner;
+      delete turn.record.executionIntent;
+      delete turn.record.ownerStopPending;
+    }
     if (turn.record.executionOwner && !turn.record.joined) {
       turn.sdkWriterFinished = true;
       await this.finishOwnedExecution(turn);

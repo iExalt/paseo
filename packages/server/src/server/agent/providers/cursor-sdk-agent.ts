@@ -45,6 +45,7 @@ import type {
 } from "../agent-sdk-types.js";
 import { openOwnedCursorExecution } from "../execution-owner/cursor-owned-execution.js";
 import type { CursorOwnerStart } from "../execution-owner/cursor-owner-worker.js";
+import { UnadmittedExecutionError } from "../execution-owner/owned-process.js";
 import { supportsExecutionOwner } from "../execution-owner/execution-owner.js";
 import { cursorSkillReferences, renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import type { ProviderRuntimeSettings } from "../provider-launch-config.js";
@@ -622,13 +623,14 @@ class CursorSdkAgent implements AgentSession {
         this.id,
         this.paseoHome,
         generation,
-        async (owner) => {
+        async (owner, assertLaunchAvailable) => {
           throwIfStopped();
           // The SDK writer remains gated while the existing first-turn
           // reservation is cleared. Failure leaves the new owner unadmitted.
           transitioning = true;
           await clearUnusedCursorReservation(this.sdk.Agent, store, this.id, this.cwd);
           throwIfStopped();
+          assertLaunchAvailable();
           await execution.enroll(owner);
         },
         execution.bindRun,
@@ -637,6 +639,10 @@ class CursorSdkAgent implements AgentSession {
       await this.disposeIdleNative();
       return owned;
     } catch (error) {
+      if (error instanceof UnadmittedExecutionError) {
+        execution.deferUnadmittedCleanup(error.drained);
+        throw error;
+      }
       // A host can have systemd without sharing the daemon's execution domain.
       // Fall back only before mutating the SDK reservation or enrolling the owner.
       if (transitioning) throw error;

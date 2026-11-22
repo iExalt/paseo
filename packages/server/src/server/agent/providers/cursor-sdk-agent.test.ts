@@ -26,6 +26,8 @@ vi.mock("../execution-owner/cursor-owned-execution.js", () => ({
   openOwnedCursorExecution: vi.fn(),
 }));
 
+const assertMockLaunchAvailable = () => {};
+
 const provider = "cursor-sdk";
 const agentId = "agent-test";
 const runId = "run-test";
@@ -134,12 +136,15 @@ describe("Cursor SDK provider", () => {
     vi.mocked(supportsExecutionOwner).mockResolvedValueOnce(true);
     vi.mocked(openOwnedCursorExecution).mockImplementationOnce(
       async (_, __, ___, generation, enroll) => {
-        await enroll({
-          backend: "windows-job",
-          generation,
-          hostId: "a".repeat(64),
-          receipt: join(storePath, "not-written"),
-        });
+        await enroll(
+          {
+            backend: "windows-job",
+            generation,
+            hostId: "a".repeat(64),
+            receipt: join(storePath, "not-written"),
+          },
+          assertMockLaunchAvailable,
+        );
         return { finish, prepare, send: ownedSend };
       },
     );
@@ -167,12 +172,15 @@ describe("Cursor SDK provider", () => {
     vi.mocked(openOwnedCursorExecution).mockImplementation(
       async (_, __, ___, generation, enroll) => {
         try {
-          await enroll({
-            backend: "windows-job",
-            generation,
-            hostId: "a".repeat(64),
-            receipt: join(storePath, "not-written"),
-          });
+          await enroll(
+            {
+              backend: "windows-job",
+              generation,
+              hostId: "a".repeat(64),
+              receipt: join(storePath, "not-written"),
+            },
+            assertMockLaunchAvailable,
+          );
         } catch (error) {
           abandoned();
           throw error;

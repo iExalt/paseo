@@ -104,6 +104,49 @@ test("keeps a late SDK send rejection outside accepted-turn lifecycle", async ()
   await accepted.completion;
 });
 
+test("blocks a same-chat retry until unadmitted owner cleanup drains", async () => {
+  const { controller, journal, events } = await fixture();
+  const mutation = Promise.withResolvers<void>();
+  const input = { text: "start" };
+  const retry = nativeRun("retry-after-drain");
+  const dispatch = vi.fn(async () => retry.run);
+  await expect(
+    controller.start(
+      "start",
+      input,
+      async (_input, _bind, _stopped, execution) => {
+        const generation = "bf918087-0dcb-429c-ac63-7ed805540f21";
+        await execution.prepareOwner(generation);
+        await execution.enroll({
+          backend: "windows-job",
+          generation,
+          receipt: "not-dispatched",
+          hostId: "a".repeat(64),
+        });
+        execution.deferUnadmittedCleanup(mutation.promise);
+        throw new Error("Execution owner did not connect.");
+      },
+      "expired-admission",
+    ),
+  ).rejects.toThrow("Execution owner did not connect.");
+  await expect(controller.start("retry", input, dispatch)).rejects.toThrow("still running");
+  const [held] = await journal.read();
+  expect(held.executionOwner).toBeDefined();
+  expect(held.terminal).toBeUndefined();
+  expect(dispatch).not.toHaveBeenCalled();
+  expect(events).toEqual([]);
+  mutation.resolve();
+  await controller.interrupt();
+  const [released] = await journal.read();
+  expect(released.executionOwner).toBeUndefined();
+  expect(released.executionIntent).toBeUndefined();
+  expect(released.terminal?.status).toBe("error");
+  const accepted = await controller.start("retry", input, dispatch, "next-message");
+  retry.finish();
+  await accepted.completion;
+  expect(dispatch).toHaveBeenCalledOnce();
+});
+
 test("failed cancellation retains the live run until natural completion", async () => {
   const { controller, start, events } = await fixture();
   const first = nativeRun("active");

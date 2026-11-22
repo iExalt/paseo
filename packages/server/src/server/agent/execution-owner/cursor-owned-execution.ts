@@ -7,8 +7,8 @@ import type {
   CursorOwnerSteer,
 } from "./cursor-owner-worker.js";
 import { serveCursorStore } from "./cursor-store-proxy.js";
-import { requestExecutionOwnerStop, type ExecutionOwner } from "./execution-owner.js";
-import { openOwnedProcess, type OwnedProcess } from "./owned-process.js";
+import { requestExecutionOwnerStop } from "./execution-owner.js";
+import { openOwnedProcess, type EnrollExecutionOwner, type OwnedProcess } from "./owned-process.js";
 
 function remoteRun(process: OwnedProcess, info: CursorOwnerRunInfo): Run {
   const listeners = new Set<(status: Run["status"]) => void>();
@@ -64,7 +64,7 @@ export async function openOwnedCursorExecution(
   agentId: string,
   home: string,
   generation: string,
-  enroll: (owner: ExecutionOwner) => Promise<void>,
+  enroll: EnrollExecutionOwner,
   bind: (runId: string) => Promise<void>,
 ) {
   let process: OwnedProcess | undefined;
