@@ -3391,6 +3391,9 @@ export const ja: TranslationResources = {
     },
     providers: {
       cursorSdk: {
+        signOut: "Cursor からサインアウト",
+        expired:
+          "Cursor のサインインの有効期限が切れました。モデルを読み込むには、再度サインインしてください。",
         title: "Cursor アカウント",
         checking: "ログイン状態を確認中…",
         signedIn: "Cursor にログイン済み",

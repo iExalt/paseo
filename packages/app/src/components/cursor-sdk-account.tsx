@@ -1,11 +1,13 @@
+import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { useMutation } from "@tanstack/react-query";
 import { ArrowUpRight } from "lucide-react-native";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
 import { Button } from "@/components/ui/button";
 import { useFetchQuery } from "@/data/query";
+import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { settingsStyles } from "@/styles/settings";
 import { openExternalUrl } from "@/utils/open-external-url";
@@ -21,42 +23,80 @@ const statusLabels = {
   api_key: "settings.providers.cursorSdk.apiKey",
   signed_in: "settings.providers.cursorSdk.signedIn",
   signed_out: "settings.providers.cursorSdk.signedOut",
+  expired: "settings.providers.cursorSdk.expired",
   pending: "settings.providers.cursorSdk.pending",
   unavailable: "settings.providers.cursorSdk.statusFailed",
   checking: "settings.providers.cursorSdk.checking",
 } as const;
 
-function useCursorSdkAuth({ serverId, visible }: CursorSdkAccountProps) {
-  const { t } = useTranslation();
-  const client = useHostRuntimeClient(serverId);
-  const connected = useHostRuntimeIsConnected(serverId);
-  const [attempt, setAttempt] = useState<{ id: string; url: string | null } | null>(null);
-  const [browserError, setBrowserError] = useState(false);
+type AuthStatus = Awaited<ReturnType<DaemonClient["getCursorSdkAuthStatus"]>>;
 
-  const query = useFetchQuery({
-    queryKey: ["cursor-sdk-auth", serverId, attempt?.id ?? null],
-    enabled: visible && connected && client !== null,
+function useAccountStatus(
+  serverId: string,
+  client: DaemonClient | null,
+  enabled: boolean,
+  recovery: boolean,
+  attemptId?: string,
+) {
+  const { t } = useTranslation();
+  return useFetchQuery({
+    queryKey: ["cursor-sdk-auth", serverId, attemptId ?? null],
+    enabled: enabled,
     dataShape: "value",
     staleTimeMs: 0,
+    gcTime: 0,
     retry: false,
     refetchInterval: ({ state }) =>
-      visible && (state.data?.status === "pending" || (attempt && !state.data))
+      enabled && (recovery || state.data?.status === "pending" || (attemptId && !state.data))
         ? AUTH_POLL_INTERVAL_MS
         : false,
     queryFn: () => {
       if (!client) throw new Error(t("workspace.terminal.hostDisconnected"));
-      return client.getCursorSdkAuthStatus(attempt?.id);
+      return client.getCursorSdkAuthStatus(attemptId);
     },
   });
+}
+
+function getViewStatus(
+  online: boolean,
+  data: AuthStatus | undefined,
+  hasLegacyAttempt: boolean,
+): keyof typeof statusLabels {
+  if (!online) return "unavailable";
+  if (data?.expired) return "expired";
+  if (data) return data.status;
+  return hasLegacyAttempt ? "pending" : "checking";
+}
+
+type AccountCommand = "start" | "sign_out" | { cancel: string };
+
+function useCursorSdkAuth({ serverId, visible }: CursorSdkAccountProps) {
+  const { t } = useTranslation();
+  const client = useHostRuntimeClient(serverId);
+  const connected = useHostRuntimeIsConnected(serverId);
+  const recovery = useHostFeature(serverId, "cursorSdkAuthRecovery");
+  // COMPAT(cursorSdkAuthRecovery): added in v0.32.x, remove local attempt state once the daemon floor supports recovery.
+  const [legacyAttempt, setLegacyAttempt] = useState<{ id: string; url: string } | null>(null);
+  const [browserError, setBrowserError] = useState(false);
+  const interactive = useRef(false);
+  useEffect(() => {
+    interactive.current = visible && connected;
+    return () => {
+      interactive.current = false;
+    };
+  }, [visible, connected]);
+
+  const query = useAccountStatus(
+    serverId,
+    client,
+    visible && connected,
+    recovery,
+    legacyAttempt?.id,
+  );
   const { data, refetch } = query;
 
-  useEffect(() => {
-    if (!data || data.status === "pending") return;
-    if (attempt?.url) setAttempt({ id: attempt.id, url: null });
-    setBrowserError(false);
-  }, [attempt, data]);
-
   const openBrowser = useCallback(async (url: string) => {
+    if (!interactive.current) return;
     setBrowserError(false);
     try {
       await openExternalUrl(url);
@@ -65,62 +105,72 @@ function useCursorSdkAuth({ serverId, visible }: CursorSdkAccountProps) {
     }
   }, []);
 
-  const start = useMutation({
-    mutationFn: async () => {
+  const mutation = useMutation({
+    mutationFn: async (command: AccountCommand) => {
       if (!client) throw new Error(t("workspace.terminal.hostDisconnected"));
-      const result = await client.startCursorSdkSignIn();
+      if (command === "start") {
+        const result = await client.startCursorSdkSignIn();
+        if (result.error) throw new Error(result.error);
+        const url = result.url && parseSignInUrl(result.url);
+        if (!result.attemptId || !url)
+          throw new Error(t("settings.providers.cursorSdk.startFailed"));
+        if (!recovery) setLegacyAttempt({ id: result.attemptId, url });
+        void openBrowser(url);
+        return;
+      }
+
+      const result =
+        command === "sign_out"
+          ? await client.signOutCursorSdk()
+          : await client.cancelCursorSdkSignIn(command.cancel);
       if (result.error) throw new Error(result.error);
-      if (!result.attemptId || !result.url)
-        throw new Error(t("settings.providers.cursorSdk.startFailed"));
-      const url = parseSignInUrl(result.url);
-      if (!url) throw new Error(t("settings.providers.cursorSdk.startFailed"));
-      setAttempt({ id: result.attemptId, url });
-      void openBrowser(url);
-    },
-  });
-  const cancel = useMutation({
-    mutationFn: async (attemptId: string) => {
-      if (!client) throw new Error(t("workspace.terminal.hostDisconnected"));
-      const result = await client.cancelCursorSdkSignIn(attemptId);
-      if (result.error) throw new Error(result.error);
-    },
-    onSuccess: () => {
-      setAttempt(null);
+      setLegacyAttempt(null);
       setBrowserError(false);
-      void refetch();
     },
+    onSettled: () => refetch(),
   });
-  const status: keyof typeof statusLabels =
-    data?.status ?? getUnresolvedStatus(attempt?.id, query.isError);
-  const error =
-    query.error?.message ?? data?.error ?? start.error?.message ?? cancel.error?.message;
-  const errorText =
-    error || (browserError ? t("settings.providers.cursorSdk.browserFailed") : null);
-  const { mutate: startSignIn, isPending: starting, reset: resetStart } = start;
-  const { mutate: cancelSignIn, isPending: canceling } = cancel;
-  const handleSignIn = useCallback(() => startSignIn(), [startSignIn]);
+
+  const { mutate, isPending, variables, reset } = mutation;
+  const activeCommand = isPending ? variables : null;
+  const status = getViewStatus(connected && !query.isError, data, Boolean(legacyAttempt));
+  const pendingAttempt = recovery ? data?.attempt : legacyAttempt;
+  const attempt = status === "pending" ? pendingAttempt : undefined;
+  const error = query.error?.message ?? data?.error ?? mutation.error?.message;
+  const pendingBrowserError =
+    browserError && status === "pending" ? t("settings.providers.cursorSdk.browserFailed") : null;
+  const errorText = connected
+    ? error || pendingBrowserError
+    : t("workspace.terminal.hostDisconnected");
+
+  const handleSignIn = useCallback(() => mutate("start"), [mutate]);
   const handleOpenBrowser = useCallback(() => {
-    if (attempt?.url) void openBrowser(attempt.url);
+    const url = attempt?.url && parseSignInUrl(attempt.url);
+    if (url) void openBrowser(url);
   }, [attempt, openBrowser]);
   const handleCancel = useCallback(() => {
-    if (attempt) cancelSignIn(attempt.id);
-  }, [attempt, cancelSignIn]);
+    if (attempt) mutate({ cancel: attempt.id });
+  }, [attempt, mutate]);
+  const handleSignOut = useCallback(() => mutate("sign_out"), [mutate]);
   const handleRetryStatus = useCallback(() => {
-    resetStart();
+    reset();
     void refetch();
-  }, [refetch, resetStart]);
+  }, [refetch, reset]);
 
   return {
     status,
     errorText,
     connected,
-    starting,
-    canceling,
+    busy: isPending,
+    starting: activeCommand === "start",
+    signingOut: activeCommand === "sign_out",
+    canCancel: Boolean(attempt),
     canReopen: Boolean(attempt?.url),
+    canSignOut: recovery && (status === "signed_in" || status === "expired"),
     checking: query.isFetching,
     handleSignIn,
     handleOpenBrowser,
     handleCancel,
+    handleSignOut,
     handleRetryStatus,
   };
 }
@@ -134,15 +184,11 @@ function parseSignInUrl(value: string): string | null {
   }
 }
 
-function getUnresolvedStatus(
-  attemptId: string | undefined,
-  failed: boolean,
-): keyof typeof statusLabels {
-  if (attemptId) return "pending";
-  return failed ? "unavailable" : "checking";
+export function CursorSdkAccount(props: CursorSdkAccountProps) {
+  return <CursorSdkAccountView key={props.serverId} {...props} />;
 }
 
-export function CursorSdkAccount(props: CursorSdkAccountProps) {
+function CursorSdkAccountView(props: CursorSdkAccountProps) {
   const { t } = useTranslation();
   const auth = useCursorSdkAuth(props);
 
@@ -157,34 +203,48 @@ export function CursorSdkAccount(props: CursorSdkAccountProps) {
           {auth.errorText}
         </Text>
       ) : null}
-      {auth.status === "pending" && auth.canReopen ? (
+      {auth.canCancel ? (
         <View style={styles.actions}>
-          <Button
-            variant="outline"
-            onPress={auth.handleOpenBrowser}
-            leftIcon={ArrowUpRight}
-            disabled={auth.canceling}
-          >
-            {t("settings.providers.cursorSdk.openBrowser")}
-          </Button>
+          {auth.canReopen ? (
+            <Button
+              variant="outline"
+              onPress={auth.handleOpenBrowser}
+              leftIcon={ArrowUpRight}
+              disabled={!auth.connected || auth.busy}
+            >
+              {t("settings.providers.cursorSdk.openBrowser")}
+            </Button>
+          ) : null}
           <Button
             variant="ghost"
             onPress={auth.handleCancel}
-            disabled={!auth.connected || auth.canceling}
+            disabled={!auth.connected || auth.busy}
           >
             {t("common.actions.cancel")}
           </Button>
         </View>
       ) : null}
-      {auth.status === "signed_out" ? (
+      {auth.status === "signed_out" || auth.status === "expired" || auth.canSignOut ? (
         <View style={styles.actions}>
-          <Button
-            onPress={auth.handleSignIn}
-            disabled={!auth.connected || auth.starting}
-            loading={auth.starting}
-          >
-            {t("settings.providers.cursorSdk.signIn")}
-          </Button>
+          {auth.status !== "signed_in" ? (
+            <Button
+              onPress={auth.handleSignIn}
+              disabled={!auth.connected || auth.busy}
+              loading={auth.starting}
+            >
+              {t("settings.providers.cursorSdk.signIn")}
+            </Button>
+          ) : null}
+          {auth.canSignOut ? (
+            <Button
+              variant="outline"
+              onPress={auth.handleSignOut}
+              disabled={!auth.connected || auth.busy}
+              loading={auth.signingOut}
+            >
+              {t("settings.providers.cursorSdk.signOut")}
+            </Button>
+          ) : null}
         </View>
       ) : null}
       {auth.status === "unavailable" ? (

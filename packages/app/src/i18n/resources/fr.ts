@@ -3434,6 +3434,8 @@ export const fr: TranslationResources = {
     },
     providers: {
       cursorSdk: {
+        signOut: "Se déconnecter de Cursor",
+        expired: "Votre session Cursor a expiré. Reconnectez-vous pour charger les modèles.",
         title: "Compte Cursor",
         checking: "Vérification de la connexion…",
         signedIn: "Connecté à Cursor",
