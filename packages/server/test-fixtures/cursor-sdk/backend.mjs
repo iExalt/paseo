@@ -98,7 +98,7 @@ function shellMessages(workspace, script = "cursor-canary.sh") {
   };
 }
 
-export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTurn }) {
+export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTurn, models }) {
   const shell = shellMessages(workspace);
   const skillShell = shellMessages(workspace, "cursor-selected-canary.sh");
   const streams = new Map();
@@ -108,6 +108,7 @@ export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTu
   let shellReplies = 0;
   const nextSteer = [];
   const steers = [];
+  const wire = [];
 
   function sendSteerAck(key, injection, send) {
     const payload = fields(injection);
@@ -154,6 +155,7 @@ export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTu
     const outer = fields(body);
     const nested = outer[4] ?? Buffer.from(outer[1]?.toString() ?? "", "hex");
     const client = fields(nested);
+    if (models && Buffer.isBuffer(client[1])) wire.push(client[1]);
     if (selectSkillTurn && client[1]) {
       // RunSSE only carries the request ID. The initial run action and its
       // selected context, including images, arrive on the BidiAppend channel.
@@ -213,7 +215,7 @@ export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTu
           auth(apiKey);
           return send(
             "application/json",
-            JSON.stringify({ items: [{ id: model, displayName: model }] }),
+            JSON.stringify({ items: models ?? [{ id: model, displayName: model }] }),
           );
         case "POST /aiserver.v1.DashboardService/GetUserPrivacyMode":
           return send(proto, number(1, 1));
@@ -255,6 +257,12 @@ export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTu
   await once(server, "listening");
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
+    get wireCount() {
+      return wire.length;
+    },
+    wire(start, end) {
+      return wire.slice(start, end);
+    },
     get runs() {
       return runs;
     },

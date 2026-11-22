@@ -23,6 +23,7 @@ import type { ManagedAgent } from "./agent-manager.js";
 import { featuresFromControls } from "@getpaseo/protocol/option-controls";
 import type { JsonValue } from "../json-utils.js";
 import { persistedAsyncQuestions } from "./providers/codex/async-questions.js";
+import { optionsForCursorControls } from "./providers/cursor-sdk-model.js";
 import {
   isStoredAgentProviderAvailable,
   resolveStoredAgentUpdatedAt,
@@ -254,8 +255,14 @@ function buildStoredOptionControls(
   effectiveOptionsFor: EffectiveOptionsResolver,
 ): Pick<AgentSnapshotPayload, "features" | "options" | "controls"> {
   const controls = normalizeControls(record.controls);
+  const providerOptions = effectiveOptionsFor(
+    record.provider,
+    record.config?.providerOptions ?? undefined,
+  );
   const options = sanitizeEffectiveOptions(
-    effectiveOptionsFor(record.provider, record.config?.providerOptions ?? undefined),
+    record.provider === "cursor-sdk"
+      ? optionsForCursorControls(providerOptions, record.controls)
+      : providerOptions,
   );
   return {
     // COMPAT(featureValues): added in v0.15.0, remove after 2027-05-01.
