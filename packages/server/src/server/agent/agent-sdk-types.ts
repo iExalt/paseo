@@ -183,6 +183,9 @@ export interface AgentCapabilityFlags {
   supportsStreaming: boolean;
   supportsSessionPersistence: boolean;
   supportsSessionListing?: boolean;
+  /** History-purpose resume can read local records without a workspace or interactive availability. */
+  readonly supportsOfflineHistory?: boolean;
+
   supportsDynamicModes: boolean;
   supportsMcpServers: boolean;
   supportsNativePaseoTools?: boolean;

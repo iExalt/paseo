@@ -472,3 +472,116 @@ test.each(["mode", "thinking", "rewind"])(
   },
   30000,
 );
+
+test("offline history opens without provider availability and preserves turn IDs and last error", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "agent-loading-offline-history-"));
+  const logger = createTestLogger();
+  const storage = new AgentStorage(path.join(root, "agents"), logger);
+  const base = createTestAgentClients().codex;
+  if (!base) throw new Error("expected Codex test client");
+  const calls: string[] = [];
+  const client: AgentClient = {
+    provider: base.provider,
+    capabilities: { ...base.capabilities, supportsOfflineHistory: true },
+    isAvailable: async () => {
+      throw new Error("provider is logged out");
+    },
+    fetchCatalog: async () => {
+      throw new Error("catalog must never be contacted by offline history");
+    },
+    createSession: (config, context) => base.createSession(config, context),
+    async resumeSession(handle, overrides, context, options) {
+      calls.push(options?.purpose ?? "implicit-interactive");
+      if (options?.purpose !== "history") throw new Error("provider is logged out");
+      const session = await base.resumeSession(handle, overrides, context);
+      session.streamHistory = async function* () {
+        yield {
+          type: "timeline",
+          provider: "codex",
+          turnId: "provider-turn",
+          item: { type: "user_message", text: "saved", messageId: "saved-message" },
+        };
+      };
+      return session;
+    },
+  };
+  let denyHistory = true;
+  let workspaceActive = true;
+  const hookPurposes: string[] = [];
+  const manager = new AgentManager({
+    clients: { codex: client },
+    registry: storage,
+    logger,
+    pluginLifecycle: {
+      wait: async () => {},
+      emit: () => {},
+      before: async (name, request) => {
+        if (name === "agent.open.before" && "purpose" in request) {
+          hookPurposes.push(request.purpose);
+          if (request.purpose === "history" && denyHistory)
+            throw new Error("history denied by plugin");
+        }
+        return request;
+      },
+    },
+  });
+  manager.setWorkspaceLifecycle({
+    assertActive: async () => {
+      if (!workspaceActive) throw new Error("workspace is archived");
+    },
+    onAgentRemoved: async () => {},
+  });
+  const id = "00000000-0000-4000-8000-000000000412";
+  const now = new Date().toISOString();
+
+  try {
+    await storage.upsert({
+      id,
+      provider: "codex",
+      cwd: root,
+      workspaceId: "workspace-offline",
+      createdAt: now,
+      updatedAt: now,
+      labels: {},
+      lastStatus: "error",
+      lastError: "previous failure",
+      archivedAt: null,
+      persistence: {
+        provider: "codex",
+        sessionId: "offline-history",
+        metadata: { cwd: root },
+      },
+    });
+    const deps = { agentManager: manager, agentStorage: storage, logger };
+    await expect(ensureAgentLoaded(id, deps)).rejects.toThrow("provider is logged out");
+    await expect(ensureAgentLoaded(id, { ...deps, purpose: "history" })).rejects.toThrow(
+      "history denied by plugin",
+    );
+    denyHistory = false;
+    workspaceActive = false;
+    const loaded = await ensureAgentLoaded(id, { ...deps, purpose: "history" });
+    expect(loaded.lastError).toBe("previous failure");
+    expect(loaded.lifecycle).toBe("error");
+    expect(await storage.get(id)).toMatchObject({
+      lastStatus: "error",
+      lastError: "previous failure",
+    });
+    expect(await manager.getTimelineRows(id)).toMatchObject([
+      { turnId: "provider-turn", item: { messageId: "saved-message", text: "saved" } },
+    ]);
+    await manager.hydrateTimelineFromProvider(id, { force: true });
+    expect(await manager.getTimelineRows(id)).toMatchObject([{ turnId: "provider-turn" }]);
+    await expect(manager.setAgentMode(id, "default")).rejects.toThrow("workspace is archived");
+    expect(calls).toEqual(["history"]);
+    expect(hookPurposes).toEqual(["history", "history"]);
+    workspaceActive = true;
+    await expect(manager.setAgentMode(id, "default")).rejects.toThrow("provider is logged out");
+    expect(hookPurposes).toEqual(["history", "history", "interactive"]);
+    expect(calls).toEqual(["history", "implicit-interactive"]);
+  } finally {
+    await manager.closeAgent(id).catch(() => undefined);
+    await manager.flush();
+    await storage.flush();
+    await rm(root, { recursive: true, force: true });
+  }
+});
