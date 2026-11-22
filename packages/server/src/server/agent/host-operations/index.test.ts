@@ -119,6 +119,7 @@ function resolverFor(client: DaemonClient, caller: Caller | null) {
     callerAgentId: caller ? "caller" : undefined,
     caller: () => caller,
     local: {} as HostOperations,
+    prepareRemoteSendNotification: async () => undefined,
     hosts: () => ({
       directory: async () => ({ self: { serverId: "origin", label: "Origin" }, hosts: [] }),
       use: (_serverId, action) => action(client),

@@ -334,8 +334,9 @@ describe("OpenCodeBridge", () => {
         });
         expect(createDefinition.inputSchema.properties).toHaveProperty("background");
         expect(sendDefinition.inputSchema).toMatchObject({
-          properties: { notifyOnFinish: { default: true } },
+          properties: { notifyOnFinish: { type: "boolean" } },
         });
+        expect(sendDefinition.inputSchema).not.toHaveProperty("properties.notifyOnFinish.default");
         await catalog.executeTool("create_agent", {
           ...createInput,
           title: "Background child",

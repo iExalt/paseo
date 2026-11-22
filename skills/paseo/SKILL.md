@@ -45,7 +45,7 @@ paseo agent update <id> --clear-model --clear-thinking
 paseo agent close <id>
 ```
 
-Agent-scoped creation defaults to a subagent in your workspace. `--workspace <id>` changes placement, preserving parentage. Use `--relationship detached` only when independent work is intended. `--no-wait` changes waiting only. Create/send notify a resolved caller on finish, error, or permission by default; `--no-notify-on-finish` opts out. Human shells have no parent callback. With notifications enabled, continue independent work instead of repeatedly polling. Otherwise use `wait`, `agent status`, or `agent activity`.
+Agent-scoped creation defaults to a subagent in your workspace. `--workspace <id>` changes placement, preserving parentage. Use `--relationship detached` only when independent work is intended. `--no-wait` changes waiting only. Creation notifies a resolved caller on finish, error, or permission by default. Send defaults to notifying only for a direct child. Use `--notify-on-finish` to subscribe for any recipient or `--no-notify-on-finish` to opt out. Human shells have no parent callback. With notifications enabled, continue independent work instead of repeatedly polling. Otherwise use `wait`, `agent status`, or `agent activity`.
 
 Any agent `<id>` also accepts the agent's full provider session ID (Claude session ID, Codex thread ID), which is what the user gets from **Copy session ID**. An exact agent ID wins, session IDs never match by prefix, and an ID several agents share fails with their agent IDs listed.
 
