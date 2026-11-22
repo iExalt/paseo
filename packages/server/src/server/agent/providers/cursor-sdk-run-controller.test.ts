@@ -49,7 +49,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 });
 
-async function fixture() {
+async function fixture(reconcile?: ConstructorParameters<typeof CursorRunController>[4]) {
   const root = await mkdtemp(join(tmpdir(), "cursor-sdk-controller-"));
   roots.push(root);
   const journal = new CursorTurnJournal(root, sessionId);
@@ -59,6 +59,7 @@ async function fixture() {
     journal,
     (event) => events.push(event),
     () => undefined,
+    reconcile,
   );
   const start = async (run: Run) =>
     controller.start(
@@ -362,3 +363,60 @@ test.skipIf(process.platform !== "linux" && process.platform !== "darwin")(
     await first.waitForKnownGroupsToExit();
   },
 );
+
+test("Stop during the durable successful terminal transition waits for the owned domain", async () => {
+  const enteringCommit = Promise.withResolvers<void>();
+  const finishCommit = Promise.withResolvers<void>();
+  const waitingOnTools = Promise.withResolvers<void>();
+  const exited = Promise.withResolvers<void>();
+  const { controller, events, journal } = await fixture(async (record, proof) => {
+    expect(proof).toBe("completed-writer");
+    enteringCommit.resolve();
+    await finishCommit.promise;
+    record.joined = true;
+    await journal.save(record);
+  });
+  const native = nativeRun("run-for-stop-race");
+  native.run.cancel = vi.fn(async () => {
+    throw new Error("SDK channel is already closed");
+  });
+  const active = await controller.start(
+    "original",
+    { text: "original" },
+    async (_input, _bind, _guard, execution) => {
+      await execution.enroll({
+        backend: "linux-systemd",
+        hostId: "a".repeat(64),
+        bootId: "before",
+        cgroupNamespace: "cgroup:[12]",
+        mountNamespace: "mnt:[14]",
+        cgroupRootIdentity: "12:13",
+        cgroupIdentity: "12:15",
+        unit: "paseo-run-45262816-26a6-4258-9e2e-7059a6198c39.service",
+        invocation: "a".repeat(32),
+        cgroup: "/cgroup",
+      });
+      await execution.bindRun(native.run.id);
+      execution.attachFinish(async (waitForTools) => {
+        if (!waitForTools) return;
+        waitingOnTools.resolve();
+        await exited.promise;
+      });
+      return native.run;
+    },
+  );
+  native.finish();
+  await enteringCommit.promise;
+  const stop = controller.interrupt();
+  finishCommit.resolve();
+  await waitingOnTools.promise;
+  expect(events.some(({ type }) => type === "turn_completed")).toBe(false);
+  await expect(controller.start("next", { text: "next" }, async () => native.run)).rejects.toThrow(
+    "still running",
+  );
+  exited.resolve();
+  await Promise.all([stop, active.completion]);
+  expect(events.filter(({ type }) => type === "turn_completed")).toHaveLength(1);
+  expect(native.run.cancel).not.toHaveBeenCalled();
+  expect((await journal.read())[0]).toMatchObject({ joined: true, ownerStopPending: false });
+});
