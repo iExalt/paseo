@@ -326,7 +326,7 @@ describe("Cursor SDK provider", () => {
         provider,
         id: "model",
         label: "Cursor Test Model",
-        isDefault: false,
+        isDefault: true,
         metadata: { parameters: model.parameters, variants: model.variants },
       },
     ]);
@@ -684,5 +684,79 @@ it("clears an SDK first turn reservation on interactive resume without clearing 
     await resumed[Symbol.asyncDispose]();
   } finally {
     await rm(root, { recursive: true, force: true });
+  }
+});
+
+it("keeps the canonical model and parameters when a new account changes its aliases", async () => {
+  vi.stubEnv("CURSOR_API_KEY", "");
+  const { config, load, sdk, agent, send, storePath } = fixture();
+  const fast = "cursor_model_fast";
+  const accountModel = (values: string[], aliases?: string[]): SDKModel => ({
+    id: "default",
+    displayName: "Auto",
+    aliases,
+    parameters: [{ id: "fast", values: values.map((value) => ({ value })) }],
+    variants: [{ isDefault: true, displayName: "Fast", params: [{ id: "fast", value: "true" }] }],
+  });
+  const catalogs = {
+    original: [
+      { id: "auto-smart", displayName: "Auto", aliases: ["default"] },
+      accountModel(["true", "false"], ["auto"]),
+    ],
+    replacement: [
+      { id: "auto-smart", displayName: "Auto", aliases: ["auto"] },
+      accountModel(["true"]),
+    ],
+    unavailable: [{ id: "auto-smart", displayName: "Auto", aliases: ["auto"] }],
+  };
+  let key: keyof typeof catalogs = "original";
+  const catalog = vi.fn(async (apiKey: string) => catalogs[apiKey as keyof typeof catalogs]);
+  const client = new CursorSdkAgentClient(undefined, load, catalog, async () => key, storePath);
+  const session = await client.createSession({ ...config, model: "default" });
+  try {
+    const result = makeRun([], { id: runId, status: "finished" });
+    const replacementSend = vi.fn().mockResolvedValue(result);
+    send.mockResolvedValue(result);
+    sdk.Agent.resume.mockResolvedValue({ ...agent, send: replacementSend });
+    await session.run("original account");
+    expect(send).toHaveBeenCalledWith(expect.anything(), {
+      model: { id: "auto", params: [{ id: "fast", value: "true" }] },
+    });
+
+    await session.applyOptions?.({ [fast]: false });
+    key = "replacement";
+    await expect(session.startTurn("unsupported selected Fast")).rejects.toThrow(
+      "Unsupported Cursor SDK model option",
+    );
+    await session.interrupt();
+    expect(sdk.Agent.resume).not.toHaveBeenCalled();
+    expect(agent[Symbol.asyncDispose]).not.toHaveBeenCalled();
+    await expect(session.applyOptions?.({ [fast]: false })).rejects.toThrow(
+      "Unsupported Cursor SDK model option",
+    );
+    await session.applyOptions?.({ [fast]: true });
+    await session.run("rotated account");
+    await session.run("same rotated account again");
+    const selection = { id: "default", params: [{ id: "fast", value: "true" }] };
+    expect(sdk.Agent.resume).toHaveBeenCalledExactlyOnceWith(
+      agentId,
+      expect.objectContaining({ apiKey: "replacement", model: selection }),
+    );
+    expect(replacementSend.mock.calls.map((call) => call[1])).toEqual([
+      { model: selection },
+      { model: selection },
+    ]);
+    expect(catalog.mock.calls.map(([apiKey]) => apiKey)).toEqual(["original", "replacement"]);
+    expect((await session.getRuntimeInfo()).model).toBe("default");
+    expect(session.controls?.[0]).toMatchObject({ choices: [{ value: "true" }] });
+
+    key = "unavailable";
+    await expect(session.startTurn("unavailable account")).rejects.toThrow("unavailable");
+    await session.interrupt();
+    expect(sdk.Agent.resume).toHaveBeenCalledOnce();
+    expect(replacementSend).toHaveBeenCalledTimes(2);
+  } finally {
+    await session.close();
+    vi.unstubAllEnvs();
   }
 });

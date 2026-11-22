@@ -33,6 +33,28 @@ export function profileConfig(profile: AgentProfile): AgentConfigApply {
   };
 }
 
+const cursorReasoningKeys = ["cursor_model_reasoning_effort", "cursor_model_reasoning"];
+
+export function mergeProfileControls(
+  profile: AgentProfile,
+  thinking: string | null | undefined,
+  features: Record<string, unknown>,
+): Pick<AgentConfigApply, "thinkingOptionId" | "featureValues"> {
+  const inherited = { ...profile.featureValues };
+  let inheritedThinking = profile.thinkingOptionId?.trim() || undefined;
+  if (profile.provider === "cursor-sdk") {
+    const hasExplicitReasoning = cursorReasoningKeys.some((key) => Object.hasOwn(features, key));
+    if (thinking !== undefined || hasExplicitReasoning) {
+      for (const key of cursorReasoningKeys) delete inherited[key];
+    }
+    if (hasExplicitReasoning) inheritedThinking = undefined;
+  }
+  return {
+    thinkingOptionId: thinking === undefined ? inheritedThinking : thinking,
+    featureValues: { ...inherited, ...features },
+  };
+}
+
 interface RunProfileOptions {
   provider?: string;
   model?: string;
@@ -48,17 +70,18 @@ export function withProfileDefaults<T extends RunProfileOptions>(
   const explicit = options.provider ? resolveProviderAndModel(options) : undefined;
   if (explicit && explicit.provider !== profile.provider)
     throw new Error("--provider must match the selected profile's provider");
-  const features = {
-    ...profile.featureValues,
-    ...parseFeatureValues(options.feature, options.featuresJson),
-  };
+  const controls = mergeProfileControls(
+    profile,
+    options.thinking,
+    parseFeatureValues(options.feature, options.featuresJson),
+  );
   return {
     ...options,
     provider: explicit?.provider ?? profile.provider,
     model: explicit?.model ?? options.model ?? (profile.model?.trim() || undefined),
     mode: options.mode ?? (profile.modeId?.trim() || undefined),
-    thinking: options.thinking ?? (profile.thinkingOptionId?.trim() || undefined),
+    thinking: controls.thinkingOptionId ?? undefined,
     feature: [],
-    featuresJson: JSON.stringify(features),
+    featuresJson: JSON.stringify(controls.featureValues),
   };
 }

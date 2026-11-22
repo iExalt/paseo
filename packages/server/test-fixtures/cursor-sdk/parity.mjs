@@ -9,6 +9,7 @@ import { promisify } from "node:util";
 import { checkBaseline, prepareBaseline, shellEnvironment } from "./baseline.mjs";
 import { apiKey, assistantText, callId, model, sdkVersion, startBackend } from "./backend.mjs";
 import { checkLifecycle } from "./lifecycle.mjs";
+import { checkControls, controlCatalog } from "./controls.mjs";
 import {
   assertSkillTurnRequest,
   checkDraftSkills,
@@ -35,6 +36,7 @@ const fixtures = mode === "green" ? await installSkillFixtures(workspace, home) 
 const backend = await startBackend(workspace, {
   allowCodexPrewarm: mode === "baseline",
   selectSkillTurn: fixtures ? assertSkillTurnRequest : undefined,
+  models: mode === "green" ? controlCatalog(model) : undefined,
 });
 const codexProvider =
   mode === "baseline"
@@ -53,7 +55,13 @@ await writeFile(
   JSON.stringify({
     agents: {
       resumeOnStartup: false,
-      providers: { "cursor-sdk": { enabled: true }, codex: codexProvider },
+      providers: {
+        "cursor-sdk": {
+          enabled: true,
+          ...(mode === "green" ? { options: { cursor_model_reasoning_effort: "none" } } : {}),
+        },
+        codex: codexProvider,
+      },
     },
   }),
 );
@@ -231,17 +239,29 @@ try {
       listener: () => listener,
     });
     await checkCompleted(await launch(workspaceId, "Run the shell canary."));
-    await checkSelectedSkills({
+    const replaySelectedSkills = () =>
+      checkSelectedSkills({
+        backend,
+        listener: () => listener,
+        require,
+        startDaemon,
+        stopDaemon,
+        cli,
+        workspace,
+        workspaceId,
+        fixtures,
+        selection,
+      });
+    await checkControls({
       backend,
-      listener: () => listener,
-      require,
-      startDaemon,
-      stopDaemon,
       cli,
+      listener: () => listener,
+      model,
+      paseoHome,
+      require,
+      restart: replaySelectedSkills,
       workspace,
       workspaceId,
-      fixtures,
-      selection,
     });
     await checkLifecycle({
       backend,

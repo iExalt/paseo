@@ -567,6 +567,10 @@ function wrapClientProvider(
     convertLegacyOptions({ provider: inner.provider, options: configuredOptions });
   const withDefaults = (own: ProviderOptions | undefined) =>
     mergeProviderOptions(configuredDefaults(), own);
+  const launchOptions = (own: ProviderOptions | undefined) => ({
+    providerOptions: withDefaults(own),
+    ...(inner.provider === "cursor-sdk" ? { requestedProviderOptions: own ?? {} } : {}),
+  });
 
   const wrapped: AgentClient = {
     ...bindClientDirectMethods(inner),
@@ -583,7 +587,7 @@ function wrapClientProvider(
           {
             ...config,
             provider: inner.provider,
-            providerOptions: withDefaults(config.providerOptions),
+            ...launchOptions(config.providerOptions),
           },
           launchContext,
           { ...options, configuredModelIds },
@@ -600,7 +604,7 @@ function wrapClientProvider(
           {
             ...overrides,
             provider: inner.provider,
-            providerOptions: withDefaults(overrides?.providerOptions),
+            ...launchOptions(overrides?.providerOptions),
           },
           launchContext,
           { ...options, configuredModelIds },
@@ -645,7 +649,7 @@ function wrapClientProvider(
           await listControls({
             ...config,
             provider: inner.provider,
-            providerOptions: withDefaults(config.providerOptions),
+            ...launchOptions(config.providerOptions),
           })
       : undefined,
     listImportableSessions: listImportableSessions

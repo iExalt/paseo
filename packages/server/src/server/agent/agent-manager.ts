@@ -93,6 +93,7 @@ import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agen
 import type { JsonValue, ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { storedUsage, toStoredAgentRecord } from "./agent-projections.js";
 import { sanitizeAgentMetrics, withModelMetric } from "./agent-metrics.js";
+import { optionsForCursorControls } from "./providers/cursor-sdk-model.js";
 import {
   applyProviderOptionsPatch,
   exposeFeatureValuesToHook,
@@ -2154,10 +2155,12 @@ export class AgentManager {
     const session = await client.resumeSession(handle, providerLaunchConfig, launchContext, {
       purpose,
     });
+    const historicalControls = this.restoreHistoricalControls(purpose, storedConfig, record);
     if (purpose === "history") this.historySessions.add(session);
     await this.requireExternalMcpSupport(session, providerLaunchConfig, launchContext);
     return this.registerSession(session, storedConfig, resolvedAgentId, {
-      launchedOptions,
+      launchedOptions: optionsForCursorControls(launchedOptions, historicalControls),
+      historicalControls,
       ...options,
       // The caller read its metadata and attention before this turn in the lane; a setMetadata
       // or attention clear queued ahead of it has saved a newer record, the one the open hooks saw.
@@ -2178,6 +2181,16 @@ export class AgentManager {
       restoring: true,
       ...restoredProviderState(client, record, purpose),
     });
+  }
+
+  private restoreHistoricalControls(
+    purpose: AgentResumePurpose,
+    config: AgentSessionConfig,
+    record: StoredAgentRecord | null,
+  ): AgentOptionControl[] | undefined {
+    return purpose === "history" && this.adapterOf(config.provider) === "cursor-sdk"
+      ? record?.controls
+      : undefined;
   }
 
   private async preparePersistedResume(
@@ -2918,9 +2931,9 @@ export class AgentManager {
         updatedAt,
         availableModes: [],
         controls: record.controls,
-        effectiveOptions: this.effectiveOptionsFor(
-          record.provider,
-          record.config?.providerOptions ?? undefined,
+        effectiveOptions: optionsForCursorControls(
+          this.effectiveOptionsFor(record.provider, record.config?.providerOptions ?? undefined),
+          this.adapterOf(record.provider) === "cursor-sdk" ? record.controls : undefined,
         ),
         currentModeId: record.lastModeId ?? null,
         pendingPermissions: new Map(),
@@ -2986,7 +2999,11 @@ export class AgentManager {
         if (normalizedModelId !== null && selection) effectiveModelId = selection.model;
 
         agent.config.model = effectiveModelId ?? undefined;
-        if (agent.runtimeInfo) {
+        if (selection?.optionsPatch) {
+          this.storeOptionsPatch({ agent, patch: selection.optionsPatch });
+          this.updateEffectiveOptions({ agent, sent: {}, reported: selection.optionsPatch });
+          await this.refreshRuntimeInfo(agent, { emit: false });
+        } else if (agent.runtimeInfo) {
           agent.runtimeInfo = { ...agent.runtimeInfo, model: effectiveModelId };
         }
         this.refreshSessionPersistence(agent);
@@ -3009,7 +3026,14 @@ export class AgentManager {
 
         let notice: AgentProviderNotice | null = null;
         if (agent.session.setThinkingOption) {
-          notice = (await agent.session.setThinkingOption(normalizedThinkingOptionId)) ?? null;
+          const result = await agent.session.setThinkingOption(normalizedThinkingOptionId);
+          if (result && "optionsPatch" in result) {
+            this.storeOptionsPatch({ agent, patch: result.optionsPatch });
+            this.updateEffectiveOptions({ agent, sent: {}, reported: result.optionsPatch });
+            notice = result.notice ?? null;
+          } else {
+            notice = result ?? null;
+          }
         }
         await this.drainSessionEvents(agentId);
 
@@ -3039,13 +3063,27 @@ export class AgentManager {
    * where nothing is set. The patch and whatever the provider says it ended up with are stored in
    * one step once the provider accepts. Patches to one agent run one at a time, in arrival order.
    */
-  async setAgentOptions(agentId: string, requested: ProviderOptionsPatch): Promise<void> {
+  async setAgentThinkingAndOptions(
+    agentId: string,
+    thinkingOptionId: string | null,
+    requested: ProviderOptionsPatch,
+  ): Promise<boolean> {
+    if (this.adapterOf(this.requireAgent(agentId).provider) !== "cursor-sdk") return false;
+    await this.setAgentOptions(agentId, requested, thinkingOptionId?.trim() || null);
+    return true;
+  }
+
+  async setAgentOptions(
+    agentId: string,
+    requested: ProviderOptionsPatch,
+    thinkingOptionId?: string | null,
+  ): Promise<void> {
     return this.runLifecycleMutation(agentId, () =>
       this.withLiveInteractiveSessionUnlocked(agentId, async (agent) => {
         const patch = this.convertLegacyOptions(agent.provider, requested);
         let ended: ProviderOptionsPatch = {};
         let sent: ProviderOptionsPatch = {};
-        if (Object.keys(patch).length > 0) {
+        if (Object.keys(patch).length > 0 || thinkingOptionId !== undefined) {
           // A provider that cannot apply options to a running agent must not store them either.
           if (!agent.session.applyOptions) {
             throw new ProviderOptionsValidationError(
@@ -3062,7 +3100,10 @@ export class AgentManager {
           const resolved = this.effectiveOptionsFor(agent.provider, set);
           sent = Object.fromEntries(Object.keys(patch).map((key) => [key, resolved[key] ?? null]));
           const modelBefore = agent.runtimeInfo?.model;
-          ended = (await agent.session.applyOptions(sent)) ?? {};
+          ended =
+            (thinkingOptionId === undefined
+              ? await agent.session.applyOptions(sent)
+              : await agent.session.applyOptions(sent, thinkingOptionId)) ?? {};
           // Changes the provider made on its own while applying are older than its final answer.
           await this.drainSessionEvents(agentId);
           await this.refreshRuntimeInfo(agent, { emit: false });
@@ -5142,6 +5183,7 @@ export class AgentManager {
        * while the provider was opening.
        */
       launchedOptions: ProviderOptions;
+      historicalControls?: AgentOptionControl[];
       restoring?: boolean;
       restoredLifecycle?: "error";
       initialTitle?: string | null;
@@ -5177,6 +5219,7 @@ export class AgentManager {
         resolvedAgentId,
         session,
         config,
+        controls: options.historicalControls,
         effectiveOptions: this.openedEffectiveOptions({
           session,
           launchedOptions: options.launchedOptions,
@@ -5329,6 +5372,7 @@ export class AgentManager {
     resolvedAgentId: string;
     session: AgentSession;
     config: AgentSessionConfig;
+    controls?: AgentOptionControl[];
     effectiveOptions: ProviderOptions;
     now: Date;
     durableTimelineHasRows: boolean;
@@ -5372,6 +5416,7 @@ export class AgentManager {
       config,
       // What the session opened with. Provider defaults edited later reach it when it next opens.
       effectiveOptions,
+      controls: params.controls,
       runtimeInfo: undefined,
       lifecycle: options.restoredLifecycle ?? "initializing",
       createdAt: options.createdAt ?? now,
@@ -5901,6 +5946,12 @@ export class AgentManager {
         newInfo.sessionId !== agent.runtimeInfo?.sessionId ||
         newInfo.modeId !== agent.runtimeInfo?.modeId;
       agent.runtimeInfo = newInfo;
+      if (this.adapterOf(agent.provider) === "cursor-sdk") {
+        if (newInfo.model) agent.config.model = newInfo.model;
+        if (newInfo.thinkingOptionId !== undefined) {
+          agent.config.thinkingOptionId = newInfo.thinkingOptionId ?? undefined;
+        }
+      }
       if (!agent.persistence && newInfo.sessionId) {
         agent.persistence = normalizePersistenceForConfig(
           { provider: agent.provider, sessionId: newInfo.sessionId },
@@ -7227,7 +7278,9 @@ export class AgentManager {
 
     if (typeof normalized.model === "string") {
       const trimmed = normalized.model.trim();
-      normalized.model = trimmed.length > 0 && trimmed !== "default" ? trimmed : undefined;
+      const hasNativeDefaultId = this.adapterOf(normalized.provider) === "cursor-sdk";
+      normalized.model =
+        trimmed && (trimmed !== "default" || hasNativeDefaultId) ? trimmed : undefined;
     }
 
     const shouldResolveDefaultModel = options.resolveDefaultModel ?? true;
