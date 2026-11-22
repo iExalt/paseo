@@ -84,8 +84,12 @@ diagnostic distinguishes a missing native helper, a rejected key, a credential w
 access, and an unreachable model catalog.
 
 **Unrestricted** is the only mode. Cursor runs tools as the daemon user, with access to the
-files and network that user can reach. Tools run without a sandbox or interactive approval
-prompts. Inference requests go to Cursor.
+files and network that user can reach. General tool approvals and exact Hub MCP preapproval
+are unavailable. Inference requests go to Cursor.
+
+Cursor SDK can ask a structured question in the chat. A pending question remains available
+after you reconnect while its turn is still running. You can answer or dismiss it. Stopping
+the turn cancels the question.
 
 For a trusted registered workspace, Paseo adds `AGENTS.md` from the workspace root through
 the agent's working directory, the root `.cursorrules` file, and top-level `.cursor/rules/*.mdc`
