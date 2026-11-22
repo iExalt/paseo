@@ -3170,6 +3170,8 @@ export const es: TranslationResources = {
     },
     providers: {
       cursorSdk: {
+        signOut: "Cerrar sesión en Cursor",
+        expired: "Tu sesión de Cursor caducó. Vuelve a iniciar sesión para cargar los modelos.",
         title: "Cuenta de Cursor",
         checking: "Comprobando la sesión…",
         signedIn: "Sesión iniciada en Cursor",

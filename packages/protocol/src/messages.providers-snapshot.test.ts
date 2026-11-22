@@ -75,6 +75,25 @@ describe("provider snapshot message schemas", () => {
     expect(parsed.payload.entries.map((entry) => entry.enabled)).toEqual([true, false]);
   });
 
+  test("keeps current and future diagnostic codes in a full response", () => {
+    const diagnostic = {
+      provider: "cursor-sdk",
+      enabled: true,
+      status: "error",
+      error: "A safe provider diagnostic.",
+      errorCode: "future_diagnostic",
+    };
+    const parsed = GetProvidersSnapshotResponseMessageSchema.parse({
+      type: "get_providers_snapshot_response",
+      payload: {
+        entries: [diagnostic],
+        generatedAt: "2026-04-24T00:00:00.000Z",
+        requestId: "diagnostics",
+      },
+    });
+    expect(parsed.payload.entries).toEqual([diagnostic]);
+  });
+
   test("defaults missing enabled state in providers snapshot update entries", () => {
     const parsed = ProvidersSnapshotUpdateMessageSchema.parse({
       type: "providers_snapshot_update",

@@ -1155,6 +1155,9 @@ export class VoiceAssistantWebSocketServer {
     principalId: string,
     permissions: readonly DaemonPermission[],
   ): void {
+    if (!permissions.includes("daemon.manage")) {
+      this.providerSnapshotManager.cursorSdkSignIn.revokePrincipal(principalId);
+    }
     for (const [socket, link] of this.hostLinks) {
       if (this.sessions.get(socket)?.principalId === principalId) {
         link.close("permission_denied");
@@ -2096,6 +2099,7 @@ export class VoiceAssistantWebSocketServer {
         workspaceSetupRun: true,
         workspaceSetupObservation: true,
         cursorSdkAuth: true,
+        cursorSdkAuthRecovery: true,
         workspaceSortTimes: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
         providersSnapshot: true,

@@ -1,4 +1,8 @@
-import { normalizeAgentModelCatalog, type ProviderOptions } from "@getpaseo/protocol/agent-types";
+import {
+  normalizeAgentModelCatalog,
+  type ProviderOptions,
+  type ProviderSnapshotEntry,
+} from "@getpaseo/protocol/agent-types";
 import { createHash } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { homedir } from "node:os";
@@ -18,7 +22,6 @@ import {
   type AgentModelDefinition,
   type AgentProvider,
   type FetchCatalogOptions,
-  type ProviderSnapshotEntry,
 } from "./agent-sdk-types.js";
 import {
   raceProviderRefreshAbort,
@@ -32,6 +35,7 @@ import {
   CursorSdkSignIn,
   getCursorSdkEnvKey,
 } from "./providers/cursor-sdk-auth.js";
+import { CursorSdkAvailabilityError } from "./providers/cursor-sdk-availability.js";
 import type { OpenCodeBridge } from "./providers/opencode/bridge.js";
 import type {
   AgentProviderRuntimeSettingsMap,
@@ -1085,6 +1089,7 @@ export class ProviderSnapshotManager {
         status: "error",
         enabled: true,
         error: toErrorMessage(error),
+        ...(error instanceof CursorSdkAvailabilityError ? { errorCode: error.code } : {}),
       });
       if (emitted) {
         this.logger.warn(
@@ -1230,6 +1235,7 @@ function toErrorMessage(error: unknown): string {
 }
 
 function formatProviderStatus(entry: ProviderSnapshotEntry): string {
+  if (!entry.enabled) return "Disabled";
   if (entry.status === "ready") return "Ready";
   if (entry.status === "error") return `Error: ${entry.error ?? "Unknown error"}`;
   if (entry.status === "unavailable") return "Unavailable";
