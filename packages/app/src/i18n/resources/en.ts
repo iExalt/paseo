@@ -3357,6 +3357,8 @@ export const en = {
     },
     providers: {
       cursorSdk: {
+        signOut: "Sign out of Cursor",
+        expired: "Your Cursor sign-in expired. Sign in again to load models.",
         title: "Cursor account",
         checking: "Checking sign-in…",
         signedIn: "Signed in to Cursor",
