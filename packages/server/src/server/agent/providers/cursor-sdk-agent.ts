@@ -1,3 +1,4 @@
+import { renderSelectedCursorSkills } from "../cursor-skill-catalog.js";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import type {
@@ -36,7 +37,7 @@ import type {
   SteerActiveTurnOptions,
   SteerResult,
 } from "../agent-sdk-types.js";
-import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
+import { cursorSkillReferences, renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import type { ProviderRuntimeSettings } from "../provider-launch-config.js";
 import { runProviderRefreshActivity } from "../provider-refresh-deadline.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
@@ -144,6 +145,7 @@ function makePrompt(input: AgentPromptInput): SDKUserMessage {
               images.push({ data: block.data, mimeType: block.mimeType });
               return [];
             }
+            if (block.type === "cursor_skill") return [];
             return [block.type === "text" ? block.text : renderPromptAttachmentAsText(block)];
           })
           .join("\n\n");
@@ -431,14 +433,17 @@ class CursorSdkAgent implements AgentSession {
     if (this.closed || this.closing) {
       throw new Error("Cursor SDK session is closing or closed.");
     }
+    const resolveSkills = options?.resolveCursorSkills;
+    const blocks = typeof prompt === "string" ? undefined : prompt;
+    if (cursorSkillReferences(blocks).length && !resolveSkills) {
+      throw new Error("Select Cursor skills again from the skill menu.");
+    }
     const input = makePrompt(prompt);
-    const text = this.instructions
-      ? RUN_INSTRUCTIONS_START + this.instructions + RUN_INSTRUCTIONS_END + input.text
-      : input.text;
     return this.runs.start(
       prompt,
-      { ...input, text },
-      (message, bind, throwIfStopped) => this.sendNative(message, bind, throwIfStopped),
+      input,
+      (message, bind, throwIfStopped) =>
+        this.sendNative(message, bind, throwIfStopped, resolveSkills),
       options?.clientMessageId,
     );
   }
@@ -447,6 +452,7 @@ class CursorSdkAgent implements AgentSession {
     input: SDKUserMessage,
     bind: (runId: string) => Promise<void>,
     throwIfStopped: () => void,
+    resolveSkills: AgentRunOptions["resolveCursorSkills"],
   ): Promise<Run> {
     throwIfStopped();
     assertNoInheritedAgentIdentity();
@@ -468,9 +474,18 @@ class CursorSdkAgent implements AgentSession {
       }
     }
     const { agent } = native;
-    return this.binding.send(this.id, bind, () => {
+    return this.binding.send(this.id, bind, async () => {
       throwIfStopped();
-      return agent.send(input, { model });
+      const skills = resolveSkills ? await resolveSkills() : undefined;
+      if (resolveSkills && (await this.credentials.read()) !== apiKey) {
+        throw new Error("Cursor SDK sign-in changed. Send your message again.");
+      }
+      const userAndContext = renderSelectedCursorSkills(input.text, skills);
+      const text = this.instructions
+        ? RUN_INSTRUCTIONS_START + this.instructions + RUN_INSTRUCTIONS_END + userAndContext
+        : userAndContext;
+      throwIfStopped();
+      return agent.send({ ...input, text }, { model });
     });
   }
 

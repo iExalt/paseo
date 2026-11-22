@@ -104,6 +104,17 @@ describe("agent command query keys", () => {
     ]);
   });
 
+  it("separates a user-only Cursor draft from the bound workspace catalog", () => {
+    const draftConfig = { provider: "cursor-sdk" as const, cwd: "/repo" };
+    const bound = draftAgentCommandsQueryKey({ serverId: "server-1", draftConfig });
+    expect(
+      draftAgentCommandsQueryKey({
+        serverId: "server-1",
+        draftConfig: { ...draftConfig, skillScope: "user" },
+      }),
+    ).toEqual([...bound, "skillScope", "user"]);
+  });
+
   it("normalizes cwd values so equivalent workspace paths share one draft scope", () => {
     expect(normalizeAgentCommandsCwd("C:\\Users\\Ezekiel Bulver\\project")).toBe(
       "C:/Users/Ezekiel Bulver/project",

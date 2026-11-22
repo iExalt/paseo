@@ -294,6 +294,7 @@ it("lists canonical session and draft commands, preserves errors, and closes its
       kind: "skill" as const,
     },
   ];
+  let availableCommands = commands;
   const connect = async () => ({
     fetchAgent: async (input: unknown) => {
       requests.push(input);
@@ -301,7 +302,12 @@ it("lists canonical session and draft commands, preserves errors, and closes its
     },
     listCommands: async (...args: unknown[]) => {
       requests.push(args);
-      return { agentId: "resolved-agent", commands, error, requestId: "commands" };
+      return {
+        agentId: "resolved-agent",
+        commands: availableCommands,
+        error,
+        requestId: "commands",
+      };
     },
     close: async () => {
       closes++;
@@ -346,6 +352,25 @@ it("lists canonical session and draft commands, preserves errors, and closes its
     runProviderCommandsCommand("codex", { daemonTarget }, new Command(), connect),
   ).rejects.toMatchObject({ code: "MISSING_CWD" });
   expect(closes).toBe(3);
+  error = null;
+  availableCommands = [];
+  await expect(
+    runProviderCommandsCommand(
+      "codex",
+      { daemonTarget, cwd: "/host/repo" },
+      new Command(),
+      connect,
+    ),
+  ).rejects.toMatchObject({ code: "MISSING_MODEL", message: expect.stringContaining("--model") });
+  await expect(
+    runProviderCommandsCommand(
+      "cursor-sdk",
+      { daemonTarget, cwd: "/host/repo" },
+      new Command(),
+      connect,
+    ),
+  ).resolves.toMatchObject({ data: [] });
+  expect(closes).toBe(5);
 });
 
 it("registers provider command discovery with explicit host cwd and draft settings", () => {

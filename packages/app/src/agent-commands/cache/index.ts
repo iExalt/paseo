@@ -19,6 +19,7 @@ export interface AgentCommandsDraftConfig {
   model?: string;
   thinkingOptionId?: string;
   providerOptions?: Record<string, unknown>;
+  skillScope?: "user";
 }
 
 export function normalizeAgentCommandsCwd(cwd: string): string {
@@ -99,6 +100,7 @@ export function draftAgentCommandsQueryKey(input: {
     draftConfig.thinkingOptionId ?? null,
     "features",
     draftConfig.providerOptions ?? null,
+    ...(draftConfig.skillScope ? ["skillScope", draftConfig.skillScope] : []),
   ] as const;
 }
 

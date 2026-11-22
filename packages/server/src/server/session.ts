@@ -1,3 +1,4 @@
+import type { CursorSkillTarget } from "./agent/cursor-skill-catalog.js";
 import { DiffSession } from "./diff/index.js";
 import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
@@ -172,7 +173,12 @@ import {
 import { listPendingAgentPermissions } from "./agent/permission-list.js";
 import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
-import { buildAgentPrompt } from "./agent/prompt-attachments.js";
+import {
+  assertCursorSkillTarget,
+  buildAgentPrompt,
+  cursorSkillReferences,
+  withoutCursorSkills,
+} from "./agent/prompt-attachments.js";
 import type { StructuredGenerationDaemonConfig } from "./agent/structured-generation-providers.js";
 import {
   getAgentStreamEventTurnId,
@@ -5484,6 +5490,16 @@ export class Session {
         throw new Error("Session is not authorized to create an agent");
       }
       const agentInput = request.agent;
+      assertCursorSkillTarget(
+        agentInput?.attachments,
+        agentInput?.config.provider,
+        request.callerAgentId,
+      );
+      if (cursorSkillReferences(request.firstAgentContext?.attachments).length) {
+        throw new Error(
+          "Select Cursor skills on the initial agent, not in the workspace naming context.",
+        );
+      }
       const creation = await this.creationService.create(
         {
           kind: "workspace",
@@ -5499,7 +5515,10 @@ export class Session {
               {
                 ...request,
                 firstAgentContext: agentInput
-                  ? { prompt: agentInput.initialPrompt, attachments: agentInput.attachments }
+                  ? {
+                      prompt: agentInput.initialPrompt,
+                      attachments: withoutCursorSkills(agentInput.attachments),
+                    }
                   : request.firstAgentContext,
               },
               id,
@@ -5665,6 +5684,7 @@ export class Session {
       attachments,
       env,
     } = msg;
+    assertCursorSkillTarget(attachments, config.provider, msg.callerAgentId);
     const runtimeCwd = await this.resolveSessionRuntimeCwd(msg);
     this.sessionLogger.info(
       { cwd: config.cwd, provider: config.provider, worktreeName },
@@ -5688,9 +5708,10 @@ export class Session {
         initialPrompt: trimmedPrompt,
       });
 
+      const namingAttachments = withoutCursorSkills(attachments);
       const firstAgentContext: FirstAgentContext = {
         ...(trimmedPrompt ? { prompt: trimmedPrompt } : {}),
-        ...(attachments && attachments.length > 0 ? { attachments } : {}),
+        ...(namingAttachments?.length ? { attachments: namingAttachments } : {}),
       };
       const workspacePromptTitle = resolveFirstAgentPromptTitle(firstAgentContext);
       const createdWorktree = await this.createAgentLifecycleDispatch.createWorktreeForRequest({
@@ -5711,6 +5732,13 @@ export class Session {
         throw new Error(`Working directory does not exist or is not a directory: ${resolvedCwd}`);
       }
 
+      const selectedSkills = cursorSkillReferences(attachments);
+      if (selectedSkills.length) {
+        await this.agentManager.validateCursorSkillSelection(
+          { cwd: resolvedCwd, workspaceId: resolvedIntent.intent.workspaceId },
+          selectedSkills,
+        );
+      }
       const { snapshot, liveSnapshot, initialPromptStarted } = await createAgentCommand(
         {
           agentManager: this.agentManager,
@@ -6375,10 +6403,64 @@ export class Session {
     // COMPAT(agentCommandUpdates): added in v0.23.2, remove gate after 2027-05-06.
     if (this.clientSources.size > 0 && this.onMessageToSource) {
       for (const [source] of this.clientSources) {
-        if (this.supportsForSource(CLIENT_CAPS.agentCommandUpdates, source))
-          this.emitForSource(message, source);
+        if (!this.supportsForSource(CLIENT_CAPS.agentCommandUpdates, source)) continue;
+        if (this.delivery.isModern(source)) this.emitSubscribedEvent(message, source);
+        else this.emitForSource(message, source);
       }
     } else if (this.supports(CLIENT_CAPS.agentCommandUpdates)) this.emit(message);
+  }
+
+  private async listCursorSkillCommands(target: CursorSkillTarget, agentId?: string) {
+    const config = { ...target, provider: "cursor-sdk" };
+    const key = JSON.stringify([
+      config.provider,
+      config.cwd,
+      config.workspaceId,
+      config.skillScope,
+      agentId,
+    ]);
+    let watch = this.draftSkillWatches.get(key);
+    if (!watch) {
+      watch = this.agentManager.watchSkills(config, () => {
+        this.emitCommandsChanged({ agentId, cwd: config.cwd, provider: config.provider });
+      });
+      this.draftSkillWatches.set(key, watch);
+    }
+    await watch.ready;
+    return this.agentManager.listCursorSkillCommands(target);
+  }
+
+  private resolveCursorCatalogTarget(
+    existing: ReturnType<AgentManager["getAgent"]>,
+    stored: Awaited<ReturnType<AgentStorage["get"]>>,
+    draftConfig: Extract<SessionInboundMessage, { type: "list_commands_request" }>["draftConfig"],
+  ): CursorSkillTarget | undefined {
+    if (existing?.provider === "cursor-sdk") {
+      return { cwd: existing.config.cwd, workspaceId: existing.workspaceId };
+    }
+    if (stored?.provider === "cursor-sdk" && !stored.archivedAt) {
+      return { cwd: stored.cwd, workspaceId: stored.workspaceId ?? undefined };
+    }
+    if (!existing && !stored && draftConfig?.provider === "cursor-sdk") {
+      return { cwd: expandTilde(draftConfig.cwd), skillScope: draftConfig.skillScope };
+    }
+  }
+
+  private async emitCursorSkillCatalog(
+    msg: Extract<SessionInboundMessage, { type: "list_commands_request" }>,
+    existing: ReturnType<AgentManager["getAgent"]>,
+    stored: Awaited<ReturnType<AgentStorage["get"]>>,
+  ): Promise<boolean> {
+    const target = this.resolveCursorCatalogTarget(existing, stored, msg.draftConfig);
+    if (!target) return false;
+    const commands = this.supports(CLIENT_CAPS.cursorSdkSkillSelection)
+      ? await this.listCursorSkillCommands(target, existing || stored ? msg.agentId : undefined)
+      : [];
+    this.emit({
+      type: "list_commands_response",
+      payload: { agentId: msg.agentId, commands, error: null, requestId: msg.requestId },
+    });
+    return true;
   }
 
   private async handleListCommandsRequest(
@@ -6393,6 +6475,8 @@ export class Session {
     try {
       const existing = this.agentManager.getAgent(agentId);
       const stored = existing ? null : await this.agentStorage.get(agentId);
+      if (await this.emitCursorSkillCatalog(msg, existing, stored)) return;
+
       const agent =
         existing || (stored && !stored.archivedAt)
           ? await ensureAgentLoaded(agentId, {
@@ -9835,6 +9919,16 @@ export class Session {
         throw new Error(`Caller agent ${msg.sourceAgentId} not found`);
       }
 
+      const skillReferences = cursorSkillReferences(msg.attachments);
+      if (skillReferences.length) {
+        const live = this.agentManager.getAgent(agentId);
+        const stored = live ? null : await this.agentStorage.get(agentId);
+        assertCursorSkillTarget(
+          msg.attachments,
+          live?.provider ?? stored?.provider,
+          msg.sourceAgentId,
+        );
+      }
       const prompt = buildAgentPrompt(msg.text, msg.images, msg.attachments);
       this.sessionLogger.trace(
         {
@@ -10453,24 +10547,28 @@ function sessionEventCategory(message: SessionOutboundMessage): SessionEventSubs
     case "workspace_setup_progress":
     case "agent.provider_subagents.update":
     case "agent.background_work.update":
+    case "agent.commands.changed":
     case "terminal_attention_required":
     case "activity_log":
     case "hub.execution.agent.update":
     case "hub.execution.agent.stream":
       return message.type;
     case "status":
-      switch (message.payload.status) {
-        case "server_info":
-          return "status.server_info";
-        case "daemon_config_changed":
-          return "status.daemon_config_changed";
-        case "plugin_catalog_changed":
-          return "status.plugin_catalog_changed";
-        case "plugin_settings_changed":
-          return "status.plugin_settings_changed";
-        default:
-          return null;
-      }
+      return subscribedStatusCategory(message.payload.status);
+    default:
+      return null;
+  }
+}
+
+function subscribedStatusCategory(
+  status: Extract<SessionOutboundMessage, { type: "status" }>["payload"]["status"],
+): SessionEventSubscription | null {
+  switch (status) {
+    case "server_info":
+    case "daemon_config_changed":
+    case "plugin_catalog_changed":
+    case "plugin_settings_changed":
+      return `status.${status}`;
     default:
       return null;
   }

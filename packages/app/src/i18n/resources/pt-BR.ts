@@ -187,6 +187,7 @@ export const ptBR: TranslationResources = {
       openImage: "Abrir anexo de imagem",
       removeImage: "Remover anexo de imagem",
       removeFile: "Remover anexo de arquivo",
+      removeSkill: "Remover habilidade {{name}}",
       openGithub: "Abrir {{kind}} {{number}}",
       removeGithub: "Remover {{kind}} {{number}}",
       element: "Elemento",

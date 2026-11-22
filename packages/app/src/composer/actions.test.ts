@@ -573,6 +573,12 @@ describe("dispatchComposerAgentMessage", () => {
     const client = createFakeSendClient();
     const stream = createFakeStream();
     const image = imageWithId("img-2");
+    const reference = {
+      name: "review-code",
+      scope: "workspace" as const,
+      id: "a".repeat(64),
+      revision: "b".repeat(64),
+    };
 
     await dispatchComposerAgentMessage({
       client,
@@ -581,6 +587,7 @@ describe("dispatchComposerAgentMessage", () => {
       attachments: [
         { kind: "image", metadata: image },
         { kind: "github_pr", item: prItem },
+        { kind: "skill", reference },
       ],
       encodeImages: passthroughEncodeImages,
       submission: stream,
@@ -603,6 +610,7 @@ describe("dispatchComposerAgentMessage", () => {
         baseRefName: "main",
         headRefName: "composer-attachments",
       },
+      { type: "cursor_skill", reference },
     ]);
 
     expect(stream.head.get("agent")).toEqual([]);

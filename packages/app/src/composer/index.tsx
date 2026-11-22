@@ -455,6 +455,17 @@ function renderComposerAttachmentPill(args: RenderComposerAttachmentPillArgs): R
       />
     );
   }
+  if (attachment.kind === "skill") {
+    return (
+      <SkillAttachmentPill
+        key={attachment.reference.id}
+        attachment={attachment}
+        index={index}
+        disabled={disabled}
+        onRemove={onRemove}
+      />
+    );
+  }
   if (attachment.kind === "workspace_file") {
     return (
       <WorkspaceFileAttachmentPill
@@ -851,6 +862,38 @@ function FileAttachmentPill({
         icon={filePillIcon}
         title={fileName}
         subtitle={getFileTypeLabel(fileName) ?? t("message.attachments.file")}
+      />
+    </AttachmentPill>
+  );
+}
+
+function SkillAttachmentPill({
+  attachment,
+  index,
+  disabled,
+  onRemove,
+}: {
+  attachment: Extract<ComposerAttachment, { kind: "skill" }>;
+  index: number;
+  disabled: boolean;
+  onRemove: (index: number) => void;
+}) {
+  const { t } = useTranslation();
+  const name = attachment.reference.name;
+  const handleRemove = useCallback(() => onRemove(index), [index, onRemove]);
+  return (
+    <AttachmentPill
+      testID="composer-skill-attachment-pill"
+      onOpen={noopCallback}
+      onRemove={handleRemove}
+      openAccessibilityLabel={name}
+      removeAccessibilityLabel={t("composer.attachments.removeSkill", { name })}
+      disabled={disabled}
+    >
+      <AttachmentLabel
+        icon={filePillIcon}
+        title={name}
+        subtitle={t("agentAutocomplete.skillTag")}
       />
     </AttachmentPill>
   );
@@ -1774,8 +1817,23 @@ function ComposerContentImpl({
     [serverId, setQueuedMessages],
   );
 
+  const canSubmitSelectedSkills = useCallback(
+    (outgoingAttachments: ComposerAttachment[]) => {
+      if (
+        outgoingAttachments.some((attachment) => attachment.kind === "skill") &&
+        client?.getLastServerInfoMessage()?.features?.cursorSdkSkillSelection !== true
+      ) {
+        setSendError("Update the Paseo host to send selected Cursor skills.");
+        return false;
+      }
+      return true;
+    },
+    [client],
+  );
+
   const queueMessage = useCallback(
     (queuedMessage: string, queuedAttachments: ComposerAttachment[]) => {
+      if (!canSubmitSelectedSkills(queuedAttachments)) return;
       const result = queueComposerMessage({
         agentId,
         text: queuedMessage,
@@ -1791,6 +1849,7 @@ function ComposerContentImpl({
     },
     [
       agentId,
+      canSubmitSelectedSkills,
       clearSentAttachments,
       queueWriter,
       resetSuppression,
@@ -1805,6 +1864,7 @@ function ComposerContentImpl({
       outgoingAttachments: ComposerAttachment[],
       forceSend?: boolean,
     ) => {
+      if (!canSubmitSelectedSkills(outgoingAttachments)) return;
       const result = await submitAgentInput({
         message: outgoingMessage,
         attachments: outgoingAttachments,
@@ -1845,6 +1905,7 @@ function ComposerContentImpl({
     [
       allowEmptySubmit,
       beginSubmit,
+      canSubmitSelectedSkills,
       clearDraft,
       completeSubmit,
       hasExternalContent,
@@ -2518,6 +2579,17 @@ function ComposerContentImpl({
       draft: commandDraft,
       canExecuteClientSlashCommand: buildOutgoingAttachments(attachments).length === 0,
       onClientSlashCommand: runClientSlashCommand,
+      onSkillSelected: (
+        reference: Extract<UserComposerAttachment, { kind: "skill" }>["reference"],
+      ) => {
+        setSelectedAttachments((current) => [
+          ...current.filter(
+            (attachment) =>
+              attachment.kind !== "skill" || attachment.reference.name !== reference.name,
+          ),
+          { kind: "skill", reference },
+        ]);
+      },
       pluginClientSlashCommands,
     }),
     [
@@ -2528,6 +2600,7 @@ function ComposerContentImpl({
       buildOutgoingAttachments,
       attachments,
       runClientSlashCommand,
+      setSelectedAttachments,
       pluginClientSlashCommands,
     ],
   );
