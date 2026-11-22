@@ -1,5 +1,6 @@
 import type {
   AgentAttachment,
+  CursorSkillReference,
   ForgeSearchItem,
   UploadedFileAttachment,
 } from "@getpaseo/protocol/messages";
@@ -106,6 +107,7 @@ export interface WorkspaceFileComposerAttachment {
 export type UserComposerAttachment =
   | { kind: "image"; metadata: AttachmentMetadata }
   | { kind: "file"; attachment: UploadedFileAttachment }
+  | { kind: "skill"; reference: CursorSkillReference }
   | WorkspaceFileComposerAttachment
   | PluginResourceComposerAttachment
   | { kind: "forge_issue"; item: ForgeSearchItem }

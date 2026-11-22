@@ -66,6 +66,17 @@ export async function runProviderCommandsCommand(
   try {
     const response = await client.listCommands({ agentId: "__new_agent__", draftConfig });
     if (response.error) throw new Error(response.error);
+    if (
+      selected.provider !== "cursor-sdk" &&
+      (!selected.model || selected.model === "default") &&
+      !response.commands.length
+    ) {
+      throw {
+        code: "MISSING_MODEL",
+        message:
+          "Pass --model <id> or use <provider>/<model> to list this provider's draft commands.",
+      };
+    }
     return { type: "list", data: response.commands, schema };
   } finally {
     await client.close();

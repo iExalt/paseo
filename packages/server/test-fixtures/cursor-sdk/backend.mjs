@@ -77,13 +77,10 @@ const emptyRoutes = new Set([
 
 // These field numbers are the SDK 1.4.2 loopback contract. Shell execution
 // requires both the command and the model-supplied parsed command.
-function shellMessages(workspace) {
+function shellMessages(workspace, script = "cursor-canary.sh") {
   const arg = (value) => bytes(2, join(bytes(1, "word"), bytes(2, value)));
-  const command = "sh cursor-canary.sh";
-  const parsed = join(
-    bytes(2, join(bytes(1, "sh"), arg("cursor-canary.sh"), bytes(3, command))),
-    number(3, 1),
-  );
+  const command = "sh " + script;
+  const parsed = join(bytes(2, join(bytes(1, "sh"), arg(script), bytes(3, command))), number(3, 1));
   const args = join(
     bytes(1, command),
     bytes(2, workspace),
@@ -101,9 +98,11 @@ function shellMessages(workspace) {
   };
 }
 
-export async function startBackend(workspace, { allowCodexPrewarm }) {
+export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTurn }) {
   const shell = shellMessages(workspace);
+  const skillShell = shellMessages(workspace, "cursor-selected-canary.sh");
   const streams = new Map();
+  const initialRequests = new Map();
   const failures = [];
   let runs = 0;
   let shellReplies = 0;
@@ -118,7 +117,7 @@ export async function startBackend(workspace, { allowCodexPrewarm }) {
     const expected = nextSteer.shift();
     assert.ok(expected, "Unexpected native steer request");
     assert.equal(text, expected.text);
-    const stream = streams.get(key);
+    const stream = streams.get(key)?.response;
     assert.ok(stream && !stream.writableEnded, "Steer has no active native run");
     steers.push({ text, outcome: expected.outcome });
     send(proto);
@@ -141,10 +140,28 @@ export async function startBackend(workspace, { allowCodexPrewarm }) {
     );
   }
 
+  function startShellIfReady(key) {
+    const stream = streams.get(key);
+    const request = initialRequests.get(key);
+    if (!stream || (selectSkillTurn && !request) || stream.shell) return;
+    initialRequests.delete(key);
+    stream.shell = request && selectSkillTurn(request) ? skillShell : shell;
+    stream.response.write(stream.shell.started);
+    stream.response.write(stream.shell.execute);
+  }
+
   function handleBidiAppend(body, send) {
     const outer = fields(body);
     const nested = outer[4] ?? Buffer.from(outer[1]?.toString() ?? "", "hex");
     const client = fields(nested);
+    if (selectSkillTurn && client[1]) {
+      // RunSSE only carries the request ID. The initial run action and its
+      // selected context, including images, arrive on the BidiAppend channel.
+      const key = fields(outer[2])[1].toString();
+      initialRequests.set(key, client[1]);
+      startShellIfReady(key);
+      return send(proto);
+    }
     const injection = client[4] && fields(client[4])[19];
     if (injection) {
       const key = fields(outer[2])[1].toString();
@@ -156,7 +173,8 @@ export async function startBackend(workspace, { allowCodexPrewarm }) {
     const result = reply?.[2];
     if (!result) return send(proto);
     const key = fields(outer[2])[1].toString();
-    const stream = streams.get(key);
+    const active = streams.get(key);
+    const stream = active?.response;
     assert.ok(stream && !stream.writableEnded, "Shell reply has no active run");
     const decoded = fields(result);
     assert.ok(Buffer.isBuffer(decoded[1]), "SDK shell did not report success");
@@ -166,7 +184,7 @@ export async function startBackend(workspace, { allowCodexPrewarm }) {
     );
     shellReplies++;
     send(proto);
-    stream.write(shell.finished(result));
+    stream.write(active.shell.finished(result));
     stream.write(interaction(1, bytes(1, assistantText)));
     stream.write(interaction(14, join(number(1, 12), number(2, 3), number(3, 2))));
     stream.end(frame(Buffer.from("{}"), 2));
@@ -210,11 +228,14 @@ export async function startBackend(workspace, { allowCodexPrewarm }) {
           assert.ok(key, "Missing fixture run key");
           assert.ok(!streams.has(key), "Duplicate fixture run key");
           runs++;
-          streams.set(key, response);
-          response.on("close", () => streams.delete(key));
+          streams.set(key, { response });
+          response.on("close", () => {
+            streams.delete(key);
+            initialRequests.delete(key);
+          });
           response.writeHead(200, { "content-type": connect });
-          response.write(shell.started);
-          response.write(shell.execute);
+          response.flushHeaders();
+          startShellIfReady(key);
           return;
         }
         case "POST /aiserver.v1.BidiService/BidiAppend":

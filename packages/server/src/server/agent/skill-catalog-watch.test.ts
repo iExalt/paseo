@@ -1,4 +1,4 @@
-import { mkdtemp, mkdir, writeFile, rm, symlink, rename } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, symlink, rename, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
@@ -13,7 +13,11 @@ async function fixture() {
   cleanups.push(() => rm(root, { recursive: true, force: true }));
   return root;
 }
-function observe(roots: string[], changed = vi.fn(), debounceMs = 10) {
+function observe(
+  roots: Parameters<typeof watchSkillChanges>[0],
+  changed = vi.fn(),
+  debounceMs = 10,
+) {
   const errors: unknown[] = [];
   const watch = watchSkillChanges(roots, changed, (err) => errors.push(err), debounceMs);
   cleanups.push(() => watch.close());
@@ -171,4 +175,53 @@ test("ignores rewrites that leave every skill unchanged", async () => {
   await writeFile(file, "second");
   await expect.poll(() => observer.changed.mock.calls.length).toBe(1);
   expect(observer.errors).toEqual([]);
+});
+
+test("refreshes a scoped catalog through authorized root links and their replacement", async () => {
+  const boundary = await realpath(await fixture());
+  const outside = await realpath(await fixture());
+  const target = join(boundary, "physical");
+  const alias = join(boundary, "skills");
+  const file = join(target, "selected", "SKILL.md");
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, "first");
+  await symlink(target, alias, "junction");
+  const observer = observe(async () => [{ path: alias, boundary, scope: "workspace" }]);
+  await observer.watch.ready;
+
+  await mutation(observer, () => writeFile(file, "edited"));
+  await mutation(observer, () => rm(target, { recursive: true }));
+  const before = observer.changed.mock.calls.length;
+  await mkdir(dirname(file), { recursive: true });
+  await writeFile(file, "restored");
+  await expect.poll(() => observer.changed.mock.calls.length).toBeGreaterThan(before);
+  await mutation(observer, async () => {
+    await rm(alias);
+    await symlink(outside, alias, "junction");
+  });
+  await mutation(observer, async () => {
+    await rm(alias);
+    await symlink(target, alias, "junction");
+  });
+  await mutation(observer, () => writeFile(file, "edited after reapproval"));
+});
+
+test("refreshes a scoped catalog when a linked skill directory is atomically replaced", async () => {
+  const boundary = await realpath(await fixture());
+  const root = join(boundary, "skills");
+  const hidden = join(root, ".shared");
+  const target = join(hidden, "target");
+  const replacement = join(hidden, "replacement");
+  await mkdir(target, { recursive: true });
+  await mkdir(replacement);
+  await writeFile(join(target, "SKILL.md"), "original");
+  await writeFile(join(replacement, "SKILL.md"), "replacement");
+  await symlink(target, join(root, "visible"), "junction");
+  const observer = observe(async () => [{ path: root, boundary, scope: "workspace" }]);
+  await observer.watch.ready;
+
+  await mutation(observer, async () => {
+    await rename(target, join(hidden, "displaced"));
+    await rename(replacement, target);
+  });
 });

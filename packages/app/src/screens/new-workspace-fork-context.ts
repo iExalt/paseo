@@ -11,7 +11,9 @@ function isChatHistoryTextAttachment(attachment: AgentAttachment): boolean {
 export function getWorkspaceNamingAttachments(
   attachments: readonly AgentAttachment[],
 ): AgentAttachment[] {
-  return attachments.filter((attachment) => !isChatHistoryTextAttachment(attachment));
+  return attachments.filter(
+    (attachment) => attachment.type !== "cursor_skill" && !isChatHistoryTextAttachment(attachment),
+  );
 }
 
 export function remapDraftCwdToWorkspace(input: {

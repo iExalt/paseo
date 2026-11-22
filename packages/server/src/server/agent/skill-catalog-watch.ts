@@ -3,7 +3,13 @@ import { createHash } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
 import { readFile, readdir, readlink, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { isPathInsideRoot } from "../../utils/path.js";
+import {
+  isAllowedSkillPath,
+  resolveCursorSkillRoot,
+  type CursorSkillRoot,
+} from "./cursor-skill-catalog.js";
 
 /** Watch discovery directories, never a whole checkout or home directory recursively. */
 export function skillRoots(config: { cwd: string; env?: NodeJS.ProcessEnv }): string[] {
@@ -70,35 +76,37 @@ function observe(
   onError: (error: unknown) => void,
   identity: string,
   filter?: string,
+  probe = true,
 ): SkillWatch {
   // A directory recreated at the same path must not reuse the deleted one's watcher.
-  const key = JSON.stringify([directory, recursive, identity]);
+  const key = JSON.stringify([directory, recursive, identity, probe]);
   let entry = watches.get(key);
   if (!entry) {
     const callbacks = new Set<(filename: string | null) => void>();
     const abort = new AbortController();
-    const canary = createWatcherLivenessCanary(directory);
+    const canary = probe ? createWatcherLivenessCanary(directory) : null;
     const watcher = watch(directory, { recursive, persistent: false }, (_event, filename) => {
       const name = filename?.toString() ?? null;
       if (name) {
-        const events = canary.filterEvents([{ path: resolve(directory, name), type: "update" }]);
-        if (events.length === 0 || basename(name).startsWith(".paseo-watcher-canary-")) return;
+        const events = canary?.filterEvents([{ path: resolve(directory, name), type: "update" }]);
+        if (events?.length === 0 || basename(name).startsWith(".paseo-watcher-canary-")) return;
       }
       for (const listener of callbacks) listener(name);
     });
     watcher.on("error", onError);
-    const ready = canary.verify(abort.signal).catch((error) => {
-      // A read-only ancestor can be watched but cannot host a liveness probe.
-      if (
-        abort.signal.aborted ||
-        (typeof error === "object" &&
-          error !== null &&
-          "code" in error &&
-          (error.code === "EACCES" || error.code === "EROFS"))
-      )
-        return;
-      onError(error);
-    });
+    const ready =
+      canary?.verify(abort.signal).catch((error) => {
+        // A read-only ancestor can be watched but cannot host a liveness probe.
+        if (
+          abort.signal.aborted ||
+          (typeof error === "object" &&
+            error !== null &&
+            "code" in error &&
+            (error.code === "EACCES" || error.code === "EROFS"))
+        )
+          return;
+        onError(error);
+      }) ?? Promise.resolve();
     entry = { watcher, callbacks, ready, abort };
     watches.set(key, entry);
   }
@@ -123,7 +131,7 @@ function observe(
 }
 
 export function watchSkillChanges(
-  roots: readonly string[],
+  roots: readonly string[] | (() => Promise<readonly CursorSkillRoot[]>),
   onChange: () => void | Promise<void>,
   onError: (error: unknown) => void,
   debounceMs = 150,
@@ -160,7 +168,7 @@ export function watchSkillChanges(
     const entries: string[] = [];
     const observed = new Set<string>();
     const visited = new Set<string>();
-    const add = async (directory: string, recursive: boolean, filter?: string) => {
+    const add = async (directory: string, recursive: boolean, filter?: string, probe = true) => {
       if (closed) return;
       const key = JSON.stringify([directory, recursive, filter]);
       if (observed.has(key)) return;
@@ -171,7 +179,7 @@ export function watchSkillChanges(
         if (closed) return;
         const identity = `${dev}:${ino}:${birthtimeNs}`;
         if (filter === undefined) entries.push(`d ${directory} ${identity}`);
-        const observation = observe(directory, recursive, change, onError, identity, filter);
+        const observation = observe(directory, recursive, change, onError, identity, filter, probe);
         next.push(observation.close);
         readiness.push(observation.ready);
       } catch (error) {
@@ -218,13 +226,73 @@ export function watchSkillChanges(
       };
       await walk(target);
     };
-    for (const root of roots) {
-      try {
-        // A shallow parent watch also detects atomic directory replacement or later creation.
-        await parentWatch(root);
-        if ((await stat(root).catch(() => null))?.isDirectory()) await links(root);
-      } catch (error) {
-        if (!missing(error)) onError(error);
+    const scoped = async (source: CursorSkillRoot) => {
+      // Observe each lexical link from an approved parent so retargeting a root also
+      // invalidates the catalog. Scoped watchers need no write canaries.
+      const traced = new Set<string>();
+      const traceParents = async (target: string): Promise<void> => {
+        if (target === source.boundary || traced.has(target) || !isAllowedSkillPath(source, target))
+          return;
+        traced.add(target);
+        let parent = source.boundary;
+        for (const child of relative(source.boundary, target).split(sep)) {
+          const physical = await realpath(parent).catch(() => null);
+          if (!physical || !isAllowedSkillPath(source, physical)) return;
+          await add(physical, false, child, false);
+          parent = join(parent, child);
+          const link = await readlink(parent).catch(() => null);
+          if (link) await traceParents(resolve(physical, link));
+        }
+      };
+      await traceParents(source.path);
+
+      const root = await resolveCursorSkillRoot(source);
+      if (!root) return;
+      await traceParents(root);
+      await add(root, false, undefined, false);
+      const listings = await readdir(root, { withFileTypes: true });
+      for (const entry of listings) {
+        if (entry.name.startsWith(".") || (!entry.isDirectory() && !entry.isSymbolicLink()))
+          continue;
+        const directory = await realpath(join(root, entry.name)).catch(() => null);
+        if (
+          !directory ||
+          !isPathInsideRoot(root, directory) ||
+          !isAllowedSkillPath(source, directory)
+        )
+          continue;
+        await traceParents(directory);
+        await add(directory, false, "SKILL.md", false);
+        const file = await realpath(join(directory, "SKILL.md")).catch(() => null);
+        if (!file || !isPathInsideRoot(root, file) || !isAllowedSkillPath(source, file)) continue;
+        if (dirname(file) !== directory || basename(file) !== "SKILL.md") {
+          await traceParents(dirname(file));
+          await add(dirname(file), false, basename(file), false);
+        }
+        const stamp = await stat(file, { bigint: true }).catch(() => null);
+        if (stamp?.isFile())
+          entries.push(
+            `f ${entry.name} ${file} ${stamp.dev} ${stamp.ino} ${stamp.mtimeNs} ${stamp.ctimeNs}`,
+          );
+      }
+    };
+    if (typeof roots === "function") {
+      for (const source of await roots()) {
+        try {
+          await scoped(source);
+        } catch (error) {
+          if (!missing(error)) onError(error);
+        }
+      }
+    } else {
+      for (const root of roots) {
+        try {
+          // A shallow parent watch also detects atomic directory replacement or later creation.
+          await parentWatch(root);
+          if ((await stat(root).catch(() => null))?.isDirectory()) await links(root);
+        } catch (error) {
+          if (!missing(error)) onError(error);
+        }
       }
     }
     await Promise.all(readiness);

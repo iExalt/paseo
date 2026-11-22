@@ -55,6 +55,11 @@ export function splitComposerAttachmentsForSubmit(
       continue;
     }
 
+    if (attachment.kind === "skill") {
+      agentAttachments.push({ type: "cursor_skill", reference: attachment.reference });
+      continue;
+    }
+
     if (attachment.kind === "workspace_file") {
       agentAttachments.push(workspaceFileAttachmentToAgentAttachment(attachment));
       continue;
