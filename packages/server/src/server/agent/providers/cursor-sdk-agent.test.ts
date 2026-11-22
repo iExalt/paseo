@@ -13,11 +13,8 @@ import { hasHeldMessages } from "../held-messages.js";
 import { startAgentRun } from "../agent-prompt.js";
 import { AgentManager } from "../agent-manager.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
-import {
-  clearUnusedCursorReservation,
-  CursorSdkAgentClient,
-  listCursorModels,
-} from "./cursor-sdk-agent.js";
+import { clearUnusedCursorReservation, CursorSdkAgentClient } from "./cursor-sdk-agent.js";
+import { listCursorSdkModels as listCursorModels } from "./cursor-sdk-availability.js";
 
 const provider = "cursor-sdk";
 const agentId = "agent-test";
@@ -87,7 +84,7 @@ function fixture() {
     storePath,
   );
   const config: AgentSessionConfig = { provider, cwd: process.cwd(), model: "model" };
-  return { client, config, sdk, load, send, modelList };
+  return { client, config, sdk, load, send, modelList, storePath, agent };
 }
 
 describe("Cursor SDK provider", () => {
@@ -201,6 +198,74 @@ describe("Cursor SDK provider", () => {
       vi.unstubAllEnvs();
     }
   });
+
+  it.each(["stop", "rotate"] as const)(
+    "rejects dispatch when %s occurs during native credential rebinding",
+    async (change) => {
+      vi.stubEnv("CURSOR_API_KEY", "");
+      const { config, load, modelList, sdk, agent, send, storePath } = fixture();
+      const enteredResume = Promise.withResolvers<void>();
+      const releaseResume = Promise.withResolvers<void>();
+      const replacementSend = vi
+        .fn()
+        .mockResolvedValue(makeRun([], { id: runId, status: "finished" }));
+      const rebound = { ...agent, send: replacementSend };
+      let key: string | undefined = "original";
+      const client = new CursorSdkAgentClient(
+        undefined,
+        load,
+        modelList,
+        async () => key,
+        storePath,
+      );
+      const session = await client.createSession(config);
+      try {
+        key = undefined;
+        await expect(session.startTurn("signed out")).rejects.toThrow("Sign in to Cursor SDK");
+        await session.interrupt();
+        expect(send).not.toHaveBeenCalled();
+
+        key = "replacement";
+        sdk.Agent.resume
+          .mockImplementationOnce(async () => {
+            enteredResume.resolve();
+            await releaseResume.promise;
+            return rebound;
+          })
+          .mockResolvedValue(rebound);
+        const start = session.startTurn("blocked dispatch");
+        void start.catch(() => {});
+        await Promise.race([enteredResume.promise, start]);
+        expect(agent[Symbol.asyncDispose]).toHaveBeenCalledOnce();
+        const stop = change === "stop" ? session.interrupt() : undefined;
+        if (change === "rotate") key = "latest";
+        releaseResume.resolve();
+        await expect(start).rejects.toThrow(
+          change === "stop" ? "stopped before dispatch" : "sign-in changed",
+        );
+        await (stop ?? session.interrupt());
+        expect(send).not.toHaveBeenCalled();
+        expect(replacementSend).not.toHaveBeenCalled();
+        expect(session.describePersistence()?.nativeHandle).toBe(agentId);
+        expect(sdk.Agent.resume).toHaveBeenCalledWith(
+          agentId,
+          expect.objectContaining({ apiKey: "replacement" }),
+        );
+        await session.run("retry after credentials settle");
+        expect(replacementSend).toHaveBeenCalledOnce();
+        if (change === "rotate") {
+          expect(sdk.Agent.resume).toHaveBeenLastCalledWith(
+            agentId,
+            expect.objectContaining({ apiKey: "latest" }),
+          );
+        }
+      } finally {
+        releaseResume.resolve();
+        await session.close();
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   it("rejects other modes and cloud handles before opening the SDK agent", async () => {
     const { client, config, load } = fixture();
@@ -510,6 +575,8 @@ describe("Cursor SDK provider", () => {
     await expect(startAgentRun(manager, agent.id, "first", logger)).resolves.toMatchObject({
       disposition: "turn_started",
     });
+    await manager.waitForAgentRunStart(agent.id);
+    expect(send).toHaveBeenCalledOnce();
     await expect(
       startAgentRun(manager, agent.id, "explicit queue", logger, {
         activeTurnBehavior: "queue",

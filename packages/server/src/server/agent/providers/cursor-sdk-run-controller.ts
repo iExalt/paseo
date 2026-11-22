@@ -21,6 +21,7 @@ const OPERATION_DEADLINE_MS = 1_500;
 type NativeSend = (
   input: SDKUserMessage,
   bind: (nativeRunId: string) => Promise<void>,
+  throwIfStopped: () => void,
 ) => Promise<Run>;
 
 interface CursorTurn {
@@ -92,12 +93,18 @@ export class CursorRunController {
     const native = Promise.resolve().then(async () => {
       await this.journal.admit(record, prompt);
       return toolProcesses.scope(() =>
-        send(input, async (nativeRunId) => {
-          if (record.nativeRunId === nativeRunId) return;
-          if (record.nativeRunId) throw new Error("Cursor SDK changed the admitted run ID.");
-          record.nativeRunId = nativeRunId;
-          await this.journal.save(record);
-        }),
+        send(
+          input,
+          async (nativeRunId) => {
+            if (record.nativeRunId === nativeRunId) return;
+            if (record.nativeRunId) throw new Error("Cursor SDK changed the admitted run ID.");
+            record.nativeRunId = nativeRunId;
+            await this.journal.save(record);
+          },
+          () => {
+            if (turn.stopRequested) throw new Error("Cursor SDK turn stopped before dispatch.");
+          },
+        ),
       );
     });
     const turn: CursorTurn = {

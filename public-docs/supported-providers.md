@@ -67,8 +67,10 @@ If you reload Paseo or reconnect directly to that host, open **Cursor SDK** in i
 settings to reopen the sign-in page or cancel the attempt.
 
 The host saves the SDK login separately from your Cursor editor login. Sign in again when it
-expires. **Sign out of Cursor** clears the saved login on that host. To revoke the minted key
-before it expires, revoke it in Cursor's API keys dashboard. Existing Cursor CLI chats still
+expires. **Sign out of Cursor** clears the saved login on that host. New turns and queued turns
+that have yet to start require a current credential. A running turn can finish with the
+credential it already has. To revoke the minted key before it expires, use Cursor's API keys
+dashboard. Existing Cursor CLI chats still
 open with the **Cursor** provider.
 
 For a headless setup, set `agents.providers.cursor-sdk.enabled` to `true` in the daemon's
