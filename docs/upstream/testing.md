@@ -181,7 +181,9 @@ Codex MultiAgentV2 real tests use local Codex authentication rather than the Ope
 
 ## Running tests locally
 
-Test suites in this repo are heavy. Running them in bulk freezes the machine, especially with multiple agents in parallel.
+On a fresh or memory-limited development instance, run lint, typecheck, and focused server and CLI tests in one shell, one check at a time. If agents share the instance, wait for the current verification run to finish before starting another. A cold typecheck builds workspace dependencies and competes with Vitest for memory. Pass `--maxWorkers=1` to each Vitest invocation.
+
+Keep each check's output and exit status, and stop at the first failure. If SSH drops, check the container's restart count and last termination reason before retrying.
 
 Run only the focused tests your change affects. From the repository root, use the app workspace for an app unit test; its path is relative to `packages/app`:
 
