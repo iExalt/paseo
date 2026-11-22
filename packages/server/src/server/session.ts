@@ -1230,6 +1230,8 @@ export class Session {
           (await setAgentModeCommand({ agentManager }, { agentId, modeId })).notice,
         setModel: (agentId, modelId) => agentManager.setAgentModel(agentId, modelId),
         setOptions: (agentId, patch) => agentManager.setAgentOptions(agentId, patch),
+        trySetThinkingAndOptions: (agentId, thinkingOptionId, patch) =>
+          agentManager.setAgentThinkingAndOptions(agentId, thinkingOptionId, patch),
         setThinking: (agentId, thinkingOptionId) =>
           agentManager.setAgentThinkingOption(agentId, thinkingOptionId),
       },
