@@ -17,13 +17,13 @@ cc -Wall -Wextra -Werror "$fixture/no-socket-proxy.c" -o "$scratch/no-socket-pro
 trace() {
   local receipt="$1"
   shift
-  sudo -n unshare --net --pid --fork --kill-child --mount-proc /bin/sh -ec '
+  sudo -n unshare --net --pid --fork --kill-child --mount-proc /bin/bash -ec '
     ip link set lo up
     uid="$1"
     gid="$2"
     scratch="$3"
     shift 3
-    exec setpriv --reuid "$uid" --regid "$gid" --clear-groups --no-new-privs --bounding-set=-all \
+    setpriv --reuid "$uid" --regid "$gid" --clear-groups --no-new-privs --bounding-set=-all \
       env -i PATH=/usr/bin:/bin TMPDIR="$scratch" "$@"
   ' sh "$(id -u)" "$(id -g)" "$scratch" \
     /usr/bin/timeout --kill-after=3s 100s strace -f -qq -s 64 \

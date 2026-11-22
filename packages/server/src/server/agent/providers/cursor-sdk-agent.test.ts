@@ -1,13 +1,16 @@
+import { mkdtempSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BroadcastChannel } from "node:worker_threads";
 import type { RunResult, SDKMessage, SDKModel, SDKUserMessage, SendOptions } from "@cursor/sdk";
 import { AgentTimelineItemPayloadSchema } from "@getpaseo/protocol/messages";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import pino from "pino";
 import { createDaemonTestContext } from "../../test-utils/daemon-test-context.js";
 import { createTestAgentClients } from "../../test-utils/fake-agent-client.js";
+import { hasHeldMessages } from "../held-messages.js";
+import { startAgentRun } from "../agent-prompt.js";
 import { AgentManager } from "../agent-manager.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
 import {
@@ -47,18 +50,25 @@ function makeRun(messages: SDKMessage[], result: RunResult, createdAt = Date.UTC
   };
 }
 
+const stores: string[] = [];
+
+afterEach(async () => {
+  for (const store of stores.splice(0)) await rm(store, { recursive: true, force: true });
+});
+
 function fixture() {
   const modelList = vi.fn(async (_apiKey: string) => [model]);
-  const getRun = vi.fn();
+  const storePath = mkdtempSync(join(tmpdir(), "paseo-cursor-adapter-"));
+  stores.push(storePath);
+  const cwd = realpathSync(process.cwd());
   const sdk = {
     JsonlLocalAgentStore: class {
-      readonly agents = { get: async () => null };
-      readonly runs = { get: getRun };
+      readonly agents = { get: async () => ({ agentId, cwd }) };
+      readonly runs = { get: vi.fn(), list: async () => ({ items: [] }) };
     },
     Agent: {
       create: vi.fn(),
       resume: vi.fn(),
-      listRuns: vi.fn(),
       messages: { list: vi.fn().mockResolvedValue([]) },
     },
   };
@@ -66,13 +76,18 @@ function fixture() {
   const agent = { agentId, send, [Symbol.asyncDispose]: vi.fn(async () => {}) };
   sdk.Agent.create.mockResolvedValue(agent);
   sdk.Agent.resume.mockResolvedValue(agent);
-  sdk.Agent.listRuns.mockResolvedValue({ items: [] });
   const load = vi.fn(async () => sdk) as unknown as NonNullable<
     ConstructorParameters<typeof CursorSdkAgentClient>[1]
   >;
-  const client = new CursorSdkAgentClient({ env: { CURSOR_API_KEY: "test-key" } }, load, modelList);
+  const client = new CursorSdkAgentClient(
+    { env: { CURSOR_API_KEY: "test-key" } },
+    load,
+    modelList,
+    undefined,
+    storePath,
+  );
   const config: AgentSessionConfig = { provider, cwd: process.cwd(), model: "model" };
-  return { client, config, sdk, load, send, modelList, getRun };
+  return { client, config, sdk, load, send, modelList };
 }
 
 describe("Cursor SDK provider", () => {
@@ -279,8 +294,8 @@ describe("Cursor SDK provider", () => {
     await resumed.close();
   });
 
-  it("uses the final result for terminal status and replays a tool only once", async () => {
-    const { client, config, sdk, send } = fixture();
+  it("uses the final result for terminal status and replays the same ordered tool updates", async () => {
+    const { client, config, send } = fixture();
     const messages = [
       {
         ...eventIds,
@@ -313,9 +328,6 @@ describe("Cursor SDK provider", () => {
     ] satisfies SDKMessage[];
     const error = { message: "Final failure", code: "bad_run" };
     const run = makeRun(messages, { id: runId, status: "error", error });
-    sdk.Agent.listRuns
-      .mockResolvedValueOnce({ items: [run], nextCursor: "next" })
-      .mockResolvedValueOnce({ items: [run] });
     send.mockResolvedValue(run);
     const session = await client.createSession(config);
     const events: AgentStreamEvent[] = [];
@@ -346,15 +358,14 @@ describe("Cursor SDK provider", () => {
       event.type === "timeline" ? [event.item] : [],
     );
     expect(replay).toEqual([
-      ...live.filter((item) => item.type !== "tool_call" || item.status !== "running"),
-      { type: "error", message: error.message },
+      ...live,
+      { type: "assistant_message", text: `[System Error] ${error.message}\n\ncode: ${error.code}` },
     ]);
-    expect(sdk.Agent.listRuns).toHaveBeenCalledTimes(2);
     await session.close();
   });
 
   it("records CLI and desktop prompts once when Cursor omits user events, including after resume", async () => {
-    const { client, config, sdk, send, getRun } = fixture();
+    const { client, config, sdk, send } = fixture();
     const manager = new AgentManager({
       clients: { [provider]: client },
       logger: pino({ level: "silent" }),
@@ -370,40 +381,15 @@ describe("Cursor SDK provider", () => {
     );
     await manager.runAgent(agent.id, prompt);
     await manager.runAgent(agent.id, prompt, { clientMessageId: "ui-prompt" });
-    expect(manager.getTimeline(agent.id)).toEqual([
-      { type: "user_message", text: prompt, messageId: "first:user" },
+    const live = await manager.getTimelineRows(agent.id);
+    expect(live.map(({ item }) => item)).toEqual([
+      { type: "user_message", text: prompt, messageId: expect.stringMatching(/:user$/) },
       { type: "assistant_message", text: "first answer" },
       { type: "user_message", text: prompt, clientMessageId: "ui-prompt", messageId: "ui-prompt" },
       { type: "assistant_message", text: "second answer" },
     ]);
     await manager.closeAgent(agent.id);
 
-    sdk.Agent.listRuns.mockResolvedValue({ items: [second, first] });
-    sdk.Agent.messages.list.mockResolvedValue(
-      [first, second].map((run, index) => ({
-        type: "user",
-        message: {
-          turn: {
-            case: "agentConversationTurn",
-            value: {
-              userMessage: {
-                text: send.mock.calls[index][0].text,
-                messageId: "native-" + run.id,
-                startedAtMs: BigInt(run.createdAt + 10),
-              },
-            },
-          },
-        },
-      })),
-    );
-    getRun.mockImplementation(async ({ runId: id }) => {
-      const run = id === first.id ? first : second;
-      return {
-        createdAt: run.createdAt,
-        startedAt: run.createdAt + 1,
-        endedAt: run.createdAt + 100,
-      };
-    });
     const session = await client.resumeSession(
       { provider, sessionId: agentId, metadata: { cwd: config.cwd } },
       config,
@@ -413,17 +399,13 @@ describe("Cursor SDK provider", () => {
     const history = (await Array.fromAsync(session.streamHistory())).flatMap((event) =>
       event.type === "timeline" ? [[event.turnId, event.item]] : [],
     );
-    expect(history).toEqual([
-      [first.id, { type: "user_message", text: prompt, messageId: "native-first" }],
-      [first.id, { type: "assistant_message", text: "first answer" }],
-      [second.id, { type: "user_message", text: prompt, messageId: "native-second" }],
-      [second.id, { type: "assistant_message", text: "second answer" }],
-    ]);
+    expect(history).toEqual(live.map(({ turnId, item }) => [turnId, item]));
+    expect(sdk.Agent.resume).not.toHaveBeenCalled();
     await session.close();
   });
 
   it("blocks a replacement until both the cancel request and local SDK controller settle", async () => {
-    const { client, config, sdk, send, getRun } = fixture();
+    const { client, config, send } = fixture();
     const started = Promise.withResolvers<void>();
     const canceled = Promise.withResolvers<void>();
     const executionSettled = Promise.withResolvers<void>();
@@ -432,35 +414,12 @@ describe("Cursor SDK provider", () => {
       ...eventIds,
       type: "tool_call",
       call_id: "active",
-      name: "shell",
+      name: "read",
       status: "running",
-      args: { command: "sleep 60", timeout: 120_000 },
+      args: { path: "test.txt" },
     } satisfies SDKMessage;
     const cancelled = { ...eventIds, type: "status", status: "CANCELLED" } satisfies SDKMessage;
     const thinking = { ...eventIds, type: "thinking", text: "Run the shell" } satisfies SDKMessage;
-    const historyRun = makeRun([thinking, tool, cancelled], result);
-    sdk.Agent.listRuns.mockResolvedValue({ items: [historyRun] });
-    sdk.Agent.messages.list.mockResolvedValue([
-      {
-        type: "user",
-        message: {
-          turn: {
-            case: "agentConversationTurn",
-            value: {
-              userMessage: {
-                text: "first",
-                messageId: "",
-                startedAtMs: BigInt(historyRun.createdAt + 1),
-              },
-            },
-          },
-        },
-      },
-    ]);
-    getRun.mockResolvedValue({
-      createdAt: historyRun.createdAt,
-      endedAt: historyRun.createdAt + 2,
-    });
     const run = {
       ...makeRun([], result),
       status: "running",
@@ -496,7 +455,7 @@ describe("Cursor SDK provider", () => {
     const running = {
       type: "tool_call",
       callId: runId + ":active",
-      name: "shell",
+      name: "read",
       status: "running",
       error: null,
       detail: { type: "unknown", input: tool.args, output: null },
@@ -505,28 +464,61 @@ describe("Cursor SDK provider", () => {
     expect(
       live.map((item) => AgentTimelineItemPayloadSchema.parse(JSON.parse(JSON.stringify(item)))),
     ).toEqual([
-      { type: "user_message", text: "first", messageId: runId + ":user" },
+      { type: "user_message", text: "first", messageId: expect.stringMatching(/:user$/) },
       { type: "reasoning", text: thinking.text },
       running,
       canceledTool,
     ]);
-    const replay = JSON.parse(JSON.stringify(await Array.fromAsync(session.streamHistory())));
+    const replay = await Array.fromAsync(session.streamHistory());
+    const turnId = events.find((event) => event.type === "turn_started")?.turnId;
     expect(replay).toEqual(
-      [
-        { type: "user_message", text: "first", messageId: runId + ":user" },
-        { type: "reasoning", text: thinking.text },
-        canceledTool,
-      ].map((item) => ({
+      live.map((item) => ({
         type: "timeline",
         provider,
-        turnId: runId,
-        timestamp: "2026-11-21T00:00:00.000Z",
+        turnId,
+        timestamp: expect.any(String),
         item,
       })),
     );
     await session.run("replacement");
     expect(send.mock.calls.map(([prompt]) => prompt.text)).toEqual(["first", "replacement"]);
     await session.close();
+  });
+  it("keeps an explicit Queue held when native join cannot confirm Stop", async () => {
+    const { client, config, send } = fixture();
+    const logger = pino({ level: "silent" });
+    const manager = new AgentManager({
+      clients: { [provider]: client },
+      logger,
+      rescueTimeouts: { interruptSessionMs: 100 },
+    });
+    const release = Promise.withResolvers<void>();
+    const run = {
+      ...makeRun([], { id: runId, status: "cancelled" }),
+      status: "running",
+      stream: async function* () {
+        await release.promise;
+        yield { ...eventIds, type: "status", status: "CANCELLED" } satisfies SDKMessage;
+      },
+      cancel: async () => release.resolve(),
+      wait: async () => {
+        throw new Error("SDK failed to join the tool controller");
+      },
+    };
+    send.mockResolvedValue(run);
+    const agent = await manager.createAgent(config, undefined, { workspaceId: undefined });
+    await expect(startAgentRun(manager, agent.id, "first", logger)).resolves.toMatchObject({
+      disposition: "turn_started",
+    });
+    await expect(
+      startAgentRun(manager, agent.id, "explicit queue", logger, {
+        activeTurnBehavior: "queue",
+      }),
+    ).resolves.toMatchObject({ disposition: "queued" });
+    expect((await manager.cancelAgentRun(agent.id)).status).toBe("refused");
+    expect(manager.hasInFlightRun(agent.id)).toBe(true);
+    expect(hasHeldMessages(manager, agent.id)).toBe(true);
+    expect(send).toHaveBeenCalledTimes(1);
   });
 });
 
