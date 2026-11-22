@@ -6575,9 +6575,16 @@ export class DaemonClient {
 
   async getCursorSdkAuthStatus(attemptId?: string) {
     this.requireCursorSdkAuth();
+    // COMPAT(cursorSdkAuthRecovery): Keep the legacy status request until the host floor supports recovery.
+    const includeDetails =
+      this.getLastServerInfoMessage()?.features?.cursorSdkAuthRecovery === true;
     return this.sendNamespacedCorrelatedSessionRequest<"provider.cursor_sdk.auth.get_status.response">(
       {
-        message: { type: "provider.cursor_sdk.auth.get_status.request", attemptId },
+        message: {
+          type: "provider.cursor_sdk.auth.get_status.request",
+          attemptId,
+          ...(includeDetails ? { includeDetails: true } : {}),
+        },
       },
     );
   }
@@ -6596,6 +6603,17 @@ export class DaemonClient {
     return this.sendNamespacedCorrelatedSessionRequest<"provider.cursor_sdk.auth.cancel_sign_in.response">(
       {
         message: { type: "provider.cursor_sdk.auth.cancel_sign_in.request", attemptId },
+      },
+    );
+  }
+
+  async signOutCursorSdk() {
+    if (this.getLastServerInfoMessage()?.features?.cursorSdkAuthRecovery !== true) {
+      throw new Error("Update the host to sign out of Cursor SDK.");
+    }
+    return this.sendNamespacedCorrelatedSessionRequest<"provider.cursor_sdk.auth.sign_out.response">(
+      {
+        message: { type: "provider.cursor_sdk.auth.sign_out.request" },
       },
     );
   }

@@ -317,6 +317,7 @@ export const ProviderSnapshotEntrySchema = z.object({
   enabled: z.boolean().optional().default(true),
   source: z.enum(["builtin", "custom"]).optional(),
   error: z.string().optional(),
+  errorCode: z.string().optional(),
   models: z.array(AgentModelDefinitionSchema).optional(),
   modes: z.array(AgentModeSchema).optional(),
   fetchedAt: z.string().optional(),
@@ -1795,6 +1796,7 @@ export const CursorSdkAuthStatusRequestSchema = z.object({
   type: z.literal("provider.cursor_sdk.auth.get_status.request"),
   requestId: z.string(),
   attemptId: z.string().optional(),
+  includeDetails: z.boolean().optional(),
 });
 
 export const CursorSdkStartSignInRequestSchema = z.object({
@@ -1806,6 +1808,11 @@ export const CursorSdkCancelSignInRequestSchema = z.object({
   type: z.literal("provider.cursor_sdk.auth.cancel_sign_in.request"),
   requestId: z.string(),
   attemptId: z.string(),
+});
+
+export const CursorSdkSignOutRequestSchema = z.object({
+  type: z.literal("provider.cursor_sdk.auth.sign_out.request"),
+  requestId: z.string(),
 });
 
 export const GetDaemonConfigRequestMessageSchema = z.object({
@@ -3975,6 +3982,7 @@ export const SessionInboundMessageSchema = z.discriminatedUnion("type", [
   CursorSdkAuthStatusRequestSchema,
   CursorSdkStartSignInRequestSchema,
   CursorSdkCancelSignInRequestSchema,
+  CursorSdkSignOutRequestSchema,
   AgentDirectoryQueryRequestMessageSchema,
   AgentStatusGetRequestMessageSchema,
   AgentActivityGetRequestMessageSchema,
@@ -4586,6 +4594,7 @@ export const ServerInfoStatusPayloadSchema = z
         binaryChunkingV1: z.boolean().optional(),
         workspaceSetupObservation: z.boolean().optional(),
         cursorSdkAuth: z.boolean().optional(),
+        cursorSdkAuthRecovery: z.boolean().optional(),
         workspaceSortTimes: z.boolean().optional(),
         // COMPAT(canonicalSubmittedPrompts): added in v0.2.6, remove gate after 2027-01-30.
         canonicalSubmittedPrompts: z.boolean().optional(),
@@ -5984,6 +5993,8 @@ export const CursorSdkAuthStatusResponseSchema = z.object({
     requestId: z.string(),
     status: z.enum(["signed_in", "signed_out", "api_key", "pending"]),
     error: z.string().nullable(),
+    attempt: z.object({ id: z.string(), url: z.string().nullable() }).optional(),
+    expired: z.literal(true).optional(),
   }),
 });
 
@@ -5999,6 +6010,14 @@ export const CursorSdkStartSignInResponseSchema = z.object({
 
 export const CursorSdkCancelSignInResponseSchema = z.object({
   type: z.literal("provider.cursor_sdk.auth.cancel_sign_in.response"),
+  payload: z.object({
+    requestId: z.string(),
+    error: z.string().nullable(),
+  }),
+});
+
+export const CursorSdkSignOutResponseSchema = z.object({
+  type: z.literal("provider.cursor_sdk.auth.sign_out.response"),
   payload: z.object({
     requestId: z.string(),
     error: z.string().nullable(),
@@ -8408,6 +8427,7 @@ export const SessionOutboundMessageSchema = z.discriminatedUnion("type", [
   CursorSdkAuthStatusResponseSchema,
   CursorSdkStartSignInResponseSchema,
   CursorSdkCancelSignInResponseSchema,
+  CursorSdkSignOutResponseSchema,
   AgentDirectoryQueryResponseMessageSchema,
   AgentStatusGetResponseMessageSchema,
   AgentActivityGetResponseMessageSchema,

@@ -3409,6 +3409,8 @@ export const ptBR: TranslationResources = {
     },
     providers: {
       cursorSdk: {
+        signOut: "Sair do Cursor",
+        expired: "Sua sessão do Cursor expirou. Entre novamente para carregar os modelos.",
         title: "Conta do Cursor",
         checking: "Verificando o login…",
         signedIn: "Conectado ao Cursor",

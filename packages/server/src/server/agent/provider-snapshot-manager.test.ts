@@ -28,6 +28,7 @@ import {
   resolveSnapshotCwd,
 } from "./provider-snapshot-manager.js";
 import { raceProviderRefreshAbort } from "./provider-refresh-deadline.js";
+import { CursorSdkAvailabilityError } from "./providers/cursor-sdk-availability.js";
 import { OpenCodeAgentClient } from "./providers/opencode-agent.js";
 import { getClaudeModels } from "./providers/claude/models.js";
 
@@ -1036,6 +1037,39 @@ describe("ProviderSnapshotManager public surface", () => {
     } finally {
       manager.destroy();
       vi.unstubAllEnvs();
+    }
+  });
+
+  test.each([
+    "missing_credentials",
+    "missing_helper",
+    "invalid_key",
+    "catalog_forbidden",
+    "catalog_unavailable",
+  ] as const)("keeps a sanitized Cursor SDK diagnostic for %s", async (code) => {
+    const failure = new CursorSdkAvailabilityError(code);
+    const manager = new ProviderSnapshotManager({
+      logger: createTestLogger(),
+      providerOverrides: { "cursor-sdk": { enabled: true } },
+      extraClients: {
+        "cursor-sdk": createExtraClient("cursor-sdk", {
+          isAvailable: async () => true,
+          fetchCatalog: async () => {
+            throw failure;
+          },
+        }),
+      },
+    });
+    try {
+      const entry = await manager.getProvider({ provider: "cursor-sdk", wait: true });
+      expect(entry).toMatchObject({
+        status: "error",
+        enabled: true,
+        error: failure.message,
+        errorCode: code,
+      });
+    } finally {
+      manager.destroy();
     }
   });
 
