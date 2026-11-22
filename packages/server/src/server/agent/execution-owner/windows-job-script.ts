@@ -53,6 +53,8 @@ public static class PaseoJobOwner {
   [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern bool CreateProcess(string application, StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity, bool inherit, uint flags, IntPtr environment, string cwd, ref ExtendedStartup startup, out ProcessInfo process);
   [DllImport("kernel32.dll", SetLastError=true)] static extern uint ResumeThread(IntPtr thread);
   [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr GetStdHandle(int which);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr OpenProcess(uint access, bool inherit, uint pid);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetProcessTimes(IntPtr process, out long creation, out long exit, out long kernel, out long user);
   [DllImport("kernel32.dll", SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle, uint timeout);
   [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern SafePipeHandle CreateNamedPipe(string name, uint openMode, uint pipeMode, uint instances, uint outputSize, uint inputSize, uint defaultTimeout, ref PipeSecurityAttributes security);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetNamedPipeClientProcessId(SafePipeHandle pipe, out uint pid);
@@ -64,10 +66,40 @@ public static class PaseoJobOwner {
     if (!success) throw new Win32Exception(Marshal.GetLastWin32Error(), step);
   }
 
+  static IntPtr OpenObservedProcess(uint pid) {
+    // SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
+    IntPtr process = OpenProcess(0x00101000, false, pid);
+    Check(process != IntPtr.Zero, "open daemon handle");
+    return process;
+  }
+
+  static long ProcessBirth(IntPtr process) {
+    long creation, exit, kernel, user;
+    Check(GetProcessTimes(process, out creation, out exit, out kernel, out user), "read daemon identity");
+    return creation;
+  }
+
   public static int Main(string[] args) {
-    if (args.Length != 6) return 2;
-    try { Run(args[0], args[1], args[2], args[3], args[4], args[5]); return 0; }
-    catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
+    IntPtr daemon = IntPtr.Zero;
+    try {
+      if (args.Length == 2 && args[0] == "--process-birth") {
+        daemon = OpenObservedProcess(UInt32.Parse(args[1]));
+        Console.WriteLine(ProcessBirth(daemon));
+        return 0;
+      }
+      if (args.Length != 8) return 2;
+      daemon = OpenObservedProcess(UInt32.Parse(args[6]));
+      if (ProcessBirth(daemon) != Int64.Parse(args[7]) || WaitForSingleObject(daemon, 0) != 258) {
+        throw new InvalidOperationException("Daemon identity changed before worker launch.");
+      }
+      Run(args[0], args[1], args[2], args[3], args[4], args[5], daemon);
+      return 0;
+    } catch (Exception error) {
+      Console.Error.WriteLine(error.GetType().Name + ": " + error.Message);
+      return 1;
+    } finally {
+      if (daemon != IntPtr.Zero) CloseHandle(daemon);
+    }
   }
 
   sealed class WorkerChannel : IDisposable {
@@ -148,7 +180,7 @@ public static class PaseoJobOwner {
     }
   }
 
-  static void Run(string executable, string argv, string jobName, string receipt, string generation, string pipeName) {
+  static void Run(string executable, string argv, string jobName, string receipt, string generation, string pipeName, IntPtr daemon) {
     IntPtr job = CreateJobObject(IntPtr.Zero, jobName);
     int jobError = Marshal.GetLastWin32Error();
     Check(job != IntPtr.Zero, "create execution job");
@@ -189,7 +221,7 @@ public static class PaseoJobOwner {
             writerExited = true;
           } catch (IOException) { }
             catch (UnauthorizedAccessException) { }
-        } else if (writerState == 258 && channel.DaemonEnded) {
+        } else if (writerState == 258 && (WaitForSingleObject(daemon, 0) == 0 || channel.DaemonEnded)) {
           TerminateProcess(worker.Process, 1);
         }
         Accounting value;

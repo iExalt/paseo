@@ -19,6 +19,7 @@ export type WindowsExecutionOwner = z.infer<typeof windowsExecutionOwnerSchema>;
 const exec = promisify(execFile);
 export const windowsOwnerPipePrefix = String.raw`\\.\pipe\paseo-owner-`;
 let identity: Promise<string | undefined> | undefined;
+let daemonBirth: string | undefined;
 
 async function getHostIdentity(): Promise<string | undefined> {
   const root = process.env.SystemRoot;
@@ -56,19 +57,30 @@ export async function startWindowsExecutionOwner(
   const pipe = windowsOwnerPipePrefix + generation;
   const argv = [command, ...args, "--paseo-owner-pipe", pipe].map(windowsArgument).join(" ");
   const executable = await stageWindowsKeeper();
-  const child = spawn(executable, [command, argv, job, receipt, generation, pipe], {
-    detached: true,
-    windowsHide: true,
-    stdio: ["pipe", "pipe", "ignore"],
-    env: {
-      SystemRoot: root,
-      WINDIR: root,
-      TEMP: process.env.TEMP,
-      TMP: process.env.TMP,
-      PATH: join(root, "System32"),
-      ELECTRON_RUN_AS_NODE: "1",
-    },
-  });
+  const env = {
+    SystemRoot: root,
+    WINDIR: root,
+    TEMP: process.env.TEMP,
+    TMP: process.env.TMP,
+    PATH: join(root, "System32"),
+    ELECTRON_RUN_AS_NODE: "1",
+  };
+  if (!daemonBirth) {
+    // Query while this daemon is live, before handing its identity to the keeper.
+    const { stdout } = await exec(executable, ["--process-birth", String(process.pid)], {
+      env,
+      timeout: 3_000,
+      windowsHide: true,
+    });
+    const birth = stdout.trim();
+    if (!/^[0-9]+$/.test(birth)) throw new Error("Unable to identify the Paseo daemon.");
+    daemonBirth = birth;
+  }
+  const child = spawn(
+    executable,
+    [command, argv, job, receipt, generation, pipe, String(process.pid), daemonBirth],
+    { detached: true, windowsHide: true, stdio: ["pipe", "pipe", "ignore"], env },
+  );
   child.unref();
   return {
     child,
