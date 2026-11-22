@@ -263,6 +263,23 @@ async function resolveResumePurpose(
   }
 }
 
+function restoredProviderState(
+  client: AgentClient,
+  record: StoredAgentRecord | null,
+  purpose: AgentResumePurpose,
+): { lastError?: string; restoredLifecycle?: "error"; lastUsage?: AgentUsage } {
+  if (!record) return {};
+  const supportsOfflineHistory = client.capabilities.supportsOfflineHistory === true;
+  return {
+    lastError: supportsOfflineHistory ? (record.lastError ?? undefined) : undefined,
+    restoredLifecycle:
+      supportsOfflineHistory && purpose === "history" && record.lastStatus === "error"
+        ? "error"
+        : undefined,
+    ...storedUsage(record),
+  };
+}
+
 interface PreparedSessionConfig {
   storedConfig: AgentSessionConfig;
   launchConfig: AgentSessionConfig;
@@ -2065,25 +2082,19 @@ export class AgentManager {
     // settled before the config is prepared, because a history load reads an archived
     // agent whose working directory may be gone.
     const record = this.registry ? await this.registry.get(resolvedAgentId) : null;
-    const purpose = await resolveResumePurpose(record, resumeOptions?.purpose, mergedConfig.cwd);
-    const currentResumeOptions = { purpose } satisfies AgentResumeSessionOptions;
-    await this.assertWorkspaceResumeAllowed(record, options, purpose);
-
+    const client = this.requireClient(handle.provider);
+    const { purpose, prepared } = await this.preparePersistedResume(
+      client,
+      mergedConfig,
+      record,
+      options,
+      resumeOptions,
+    );
+    const { storedConfig, launchConfig, paseoToolPolicy } = prepared;
     const { labels = {} } = options ?? {};
     const { title = mergedConfig.title ?? null, labels: recordLabels = labels } = record ?? {};
     const launchEnv = record?.launchEnv;
     const workspaceId = resolveResumeWorkspaceId({ options, record });
-    const { storedConfig, launchConfig, paseoToolPolicy } = await this.prepareSessionConfig(
-      mergedConfig,
-      { purpose, env: launchEnv },
-    );
-    const client = this.requireClient(handle.provider);
-    const available = await client.isAvailable();
-    if (!available) {
-      throw new Error(
-        `Provider '${handle.provider}' is not available. Please ensure the CLI is installed.`,
-      );
-    }
     this.paseoToolPolicies.set(resolvedAgentId, paseoToolPolicy);
     const launchContext = await this.buildLaunchContext(
       resolvedAgentId,
@@ -2103,12 +2114,9 @@ export class AgentManager {
     );
     const providerLaunchConfig = this.resolveProviderLaunchConfig(launchConfig, launchContext);
     const launchedOptions = this.launchOptionsFor({ client, own: storedConfig.providerOptions });
-    const session = await client.resumeSession(
-      handle,
-      providerLaunchConfig,
-      launchContext,
-      currentResumeOptions,
-    );
+    const session = await client.resumeSession(handle, providerLaunchConfig, launchContext, {
+      purpose,
+    });
     if (purpose === "history") this.historySessions.add(session);
     await this.requireExternalMcpSupport(session, providerLaunchConfig, launchContext);
     return this.registerSession(session, storedConfig, resolvedAgentId, {
@@ -2131,8 +2139,35 @@ export class AgentManager {
           ? (session.describePersistence() ?? handle)
           : handle,
       restoring: true,
-      ...storedUsage(record),
+      ...restoredProviderState(client, record, purpose),
     });
+  }
+
+  private async preparePersistedResume(
+    client: AgentClient,
+    config: AgentSessionConfig,
+    record: StoredAgentRecord | null,
+    options: { workspaceId?: string } | undefined,
+    resumeOptions?: AgentResumeSessionOptions,
+  ): Promise<{ purpose: AgentResumePurpose; prepared: PreparedSessionConfig }> {
+    const supportsOfflineHistory = client.capabilities.supportsOfflineHistory === true;
+    const purpose =
+      supportsOfflineHistory && resumeOptions?.purpose === "history"
+        ? "history"
+        : await resolveResumePurpose(record, resumeOptions?.purpose, config.cwd);
+    await this.assertWorkspaceResumeAllowed(record, options, purpose);
+    const offlineHistory = purpose === "history" && supportsOfflineHistory;
+    const prepared = await this.prepareSessionConfig(config, {
+      purpose,
+      env: record?.launchEnv,
+      resolveDefaultModel: offlineHistory ? false : undefined,
+    });
+    if (!offlineHistory && !(await client.isAvailable())) {
+      throw new Error(
+        `Provider '${client.provider}' is not available. Please ensure the CLI is installed.`,
+      );
+    }
+    return { purpose, prepared };
   }
 
   importProviderSession(input: {
@@ -3746,11 +3781,12 @@ export class AgentManager {
   /** Inside the agent's lane: a history session is upgraded before anything is applied to it. */
   private async ensureInteractiveSessionUnlocked(agentId: string): Promise<ActiveManagedAgent> {
     const agent = this.requireSessionAgent(agentId);
-    if (
-      this.historySessions.has(agent.session) &&
-      (await this.registry?.get(agentId))?.archivedAt
-    ) {
-      throw new Error(`Agent is archived: ${agentId}`);
+    if (this.historySessions.has(agent.session)) {
+      const record = await this.registry?.get(agentId);
+      if (record?.archivedAt) throw new Error(`Agent is archived: ${agentId}`);
+      if (this.requireClient(agent.provider).capabilities.supportsOfflineHistory) {
+        await this.assertWorkspaceResumeAllowed(record ?? null, agent, "interactive");
+      }
     }
     return this.upgradeHistorySessionUnlocked(agent);
   }
@@ -5034,6 +5070,7 @@ export class AgentManager {
        */
       launchedOptions: ProviderOptions;
       restoring?: boolean;
+      restoredLifecycle?: "error";
       initialTitle?: string | null;
       publishWhenReady?: boolean;
       workspaceId?: string;
@@ -5053,7 +5090,7 @@ export class AgentManager {
       const initialPersistedTitle = await this.resolveInitialPersistedTitle(
         resolvedAgentId,
         config,
-        options?.initialTitle ?? null,
+        options.initialTitle ?? null,
       );
 
       const now = new Date();
@@ -5073,7 +5110,7 @@ export class AgentManager {
         }),
         now,
         durableTimelineHasRows,
-        background: options?.background === true,
+        background: options.background === true,
         options,
       });
 
@@ -5111,17 +5148,17 @@ export class AgentManager {
         title: initialPersistedTitle,
       });
       this.assertAgentRegistrationActive(managed);
-      if (!options?.publishWhenReady) {
+      if (!options.publishWhenReady) {
         this.emitState(managed, { persist: false });
       }
 
       await this.refreshSessionState(managed, { emit: false });
       this.assertAgentRegistrationActive(managed);
-      managed.lifecycle = "idle";
+      managed.lifecycle = options.restoredLifecycle ?? "idle";
       // Stamping now over a restored timestamp rewrote the workspace's "last used" in the
       // sidebar every time a chat was reopened, because workspace `statusEnteredAt` is
       // re-derived from persisted agent `updatedAt` on every daemon start.
-      if (!options?.restoring) {
+      if (!options.restoring) {
         this.touchUpdatedAt(managed);
       }
       await this.persistSnapshot(managed);
@@ -5223,24 +5260,23 @@ export class AgentManager {
     now: Date;
     durableTimelineHasRows: boolean;
     background: boolean;
-    options:
-      | {
-          createdAt?: Date;
-          updatedAt?: Date;
-          lastUserMessageAt?: Date | null;
-          labels?: Record<string, string>;
-          metadata?: AgentMetadata;
-          historyPrimed?: boolean;
-          lastUsage?: AgentUsage;
-          sessionMetrics?: AgentMetric[];
-          lastError?: string;
-          attention?: AttentionState;
-          persistence?: AgentPersistenceHandle;
-          workspaceId?: string;
-          owner?: AgentOwner;
-          launchEnv?: Record<string, string>;
-        }
-      | undefined;
+    options: {
+      createdAt?: Date;
+      updatedAt?: Date;
+      lastUserMessageAt?: Date | null;
+      labels?: Record<string, string>;
+      metadata?: AgentMetadata;
+      historyPrimed?: boolean;
+      lastUsage?: AgentUsage;
+      sessionMetrics?: AgentMetric[];
+      lastError?: string;
+      restoredLifecycle?: "error";
+      attention?: AttentionState;
+      persistence?: AgentPersistenceHandle;
+      workspaceId?: string;
+      owner?: AgentOwner;
+      launchEnv?: Record<string, string>;
+    };
   }): ActiveManagedAgent {
     const {
       resolvedAgentId,
@@ -5255,18 +5291,18 @@ export class AgentManager {
       id: resolvedAgentId,
       provider: config.provider,
       cwd: config.cwd,
-      workspaceId: options?.workspaceId,
-      owner: options?.owner,
-      launchEnv: options?.launchEnv,
+      workspaceId: options.workspaceId,
+      owner: options.owner,
+      launchEnv: options.launchEnv,
       session,
       capabilities: session.capabilities,
       config,
       // What the session opened with. Provider defaults edited later reach it when it next opens.
       effectiveOptions,
       runtimeInfo: undefined,
-      lifecycle: "initializing",
-      createdAt: options?.createdAt ?? now,
-      updatedAt: options?.updatedAt ?? now,
+      lifecycle: options.restoredLifecycle ?? "initializing",
+      createdAt: options.createdAt ?? now,
+      updatedAt: options.updatedAt ?? now,
       availableModes: [],
       currentModeId: null,
       pendingPermissions: new Map<string, AgentPermissionRequest>(),
@@ -5280,15 +5316,15 @@ export class AgentManager {
       finalizedForegroundTurnIds: new Set<string>(),
       unsubscribeSession: null,
       persistence: normalizePersistenceForConfig(
-        options?.persistence ?? session.describePersistence(),
+        options.persistence ?? session.describePersistence(),
         config,
       ),
-      historyPrimed: options?.historyPrimed ?? durableTimelineHasRows,
-      lastUserMessageAt: options?.lastUserMessageAt ?? null,
-      lastUsage: options?.lastUsage,
-      sessionMetrics: options?.sessionMetrics,
-      lastError: options?.lastError,
-      attention: resolveInitialAttention(options?.attention),
+      historyPrimed: options.historyPrimed ?? durableTimelineHasRows,
+      lastUserMessageAt: options.lastUserMessageAt ?? null,
+      lastUsage: options.lastUsage,
+      sessionMetrics: options.sessionMetrics,
+      lastError: options.lastError,
+      attention: resolveInitialAttention(options.attention),
       internal: config.internal ?? false,
       background: params.background,
       ...agentEntityData(options),
@@ -5886,11 +5922,10 @@ export class AgentManager {
       return null;
     }
     const { event } = entry;
-    const row = this.recordTimeline(
-      agent.id,
-      event.item,
-      event.timestamp ? { timestamp: event.timestamp } : undefined,
-    );
+    const row = this.recordTimeline(agent.id, event.item, {
+      timestamp: event.timestamp,
+      turnId: event.turnId,
+    });
     return { event, row };
   }
 

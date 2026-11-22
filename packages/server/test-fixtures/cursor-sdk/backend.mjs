@@ -107,6 +107,71 @@ export async function startBackend(workspace, { allowCodexPrewarm }) {
   const failures = [];
   let runs = 0;
   let shellReplies = 0;
+  const nextSteer = [];
+  const steers = [];
+
+  function sendSteerAck(key, injection, send) {
+    const payload = fields(injection);
+    const id = payload[1].toString();
+    const user = fields(payload[3])[1];
+    const text = fields(user)[1].toString();
+    const expected = nextSteer.shift();
+    assert.ok(expected, "Unexpected native steer request");
+    assert.equal(text, expected.text);
+    const stream = streams.get(key);
+    assert.ok(stream && !stream.writableEnded, "Steer has no active native run");
+    steers.push({ text, outcome: expected.outcome });
+    send(proto);
+    // The pinned SDK maps context injection delivery to native ownership
+    // and an explicit rejection to a client-owned follow-up.
+    if (expected.outcome === "delivered") stream.write(interaction(6, bytes(1, user)));
+    stream.write(
+      interaction(
+        23,
+        join(
+          bytes(1, id),
+          bytes(
+            2,
+            expected.outcome === "delivered"
+              ? bytes(2, number(1, 1))
+              : bytes(5, bytes(1, "fixture fallback")),
+          ),
+        ),
+      ),
+    );
+  }
+
+  function handleBidiAppend(body, send) {
+    const outer = fields(body);
+    const nested = outer[4] ?? Buffer.from(outer[1]?.toString() ?? "", "hex");
+    const client = fields(nested);
+    const injection = client[4] && fields(client[4])[19];
+    if (injection) {
+      const key = fields(outer[2])[1].toString();
+      sendSteerAck(key, injection, send);
+      return;
+    }
+    const exec = client[2];
+    const reply = exec && fields(exec);
+    const result = reply?.[2];
+    if (!result) return send(proto);
+    const key = fields(outer[2])[1].toString();
+    const stream = streams.get(key);
+    assert.ok(stream && !stream.writableEnded, "Shell reply has no active run");
+    const decoded = fields(result);
+    assert.ok(Buffer.isBuffer(decoded[1]), "SDK shell did not report success");
+    assert.ok(
+      Object.keys(decoded).every((field) => field === "1" || field === "101"),
+      "Unexpected SDK shell result case",
+    );
+    shellReplies++;
+    send(proto);
+    stream.write(shell.finished(result));
+    stream.write(interaction(1, bytes(1, assistantText)));
+    stream.write(interaction(14, join(number(1, 12), number(2, 3), number(3, 2))));
+    stream.end(frame(Buffer.from("{}"), 2));
+    return;
+  }
 
   const server = createServer(async (request, response) => {
     const route = `${request.method} ${request.url}`;
@@ -152,30 +217,8 @@ export async function startBackend(workspace, { allowCodexPrewarm }) {
           response.write(shell.execute);
           return;
         }
-        case "POST /aiserver.v1.BidiService/BidiAppend": {
-          const outer = fields(body);
-          const nested = outer[4] ?? Buffer.from(outer[1]?.toString() ?? "", "hex");
-          const exec = fields(nested)[2];
-          const reply = exec && fields(exec);
-          const result = reply?.[2];
-          if (!result) return send(proto);
-          const key = fields(outer[2])[1].toString();
-          const stream = streams.get(key);
-          assert.ok(stream && !stream.writableEnded, "Shell reply has no active run");
-          const decoded = fields(result);
-          assert.ok(Buffer.isBuffer(decoded[1]), "SDK shell did not report success");
-          assert.ok(
-            Object.keys(decoded).every((field) => field === "1" || field === "101"),
-            "Unexpected SDK shell result case",
-          );
-          shellReplies++;
-          send(proto);
-          stream.write(shell.finished(result));
-          stream.write(interaction(1, bytes(1, assistantText)));
-          stream.write(interaction(14, join(number(1, 12), number(2, 3), number(3, 2))));
-          stream.end(frame(Buffer.from("{}"), 2));
-          return;
-        }
+        case "POST /aiserver.v1.BidiService/BidiAppend":
+          return handleBidiAppend(body, send);
         default:
           if (emptyRoutes.has(route)) return send(proto);
           throw new Error("Unexpected loopback route");
@@ -197,11 +240,18 @@ export async function startBackend(workspace, { allowCodexPrewarm }) {
     get shellReplies() {
       return shellReplies;
     },
+    expectSteer(text, outcome) {
+      nextSteer.push({ text, outcome });
+    },
+    get steers() {
+      return steers.slice();
+    },
     async close() {
       const closed = once(server, "close");
       server.close();
       server.closeAllConnections();
       await closed;
+      assert.deepEqual(nextSteer, [], "Expected SDK steer requests were not received");
       assert.deepEqual(
         failures,
         [],
