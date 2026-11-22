@@ -54,6 +54,7 @@ function DetailSectionBody({
 interface ToolCallDetailsContentProps {
   toolName?: string;
   detail?: ToolCallDetail;
+  metadata?: Record<string, unknown>;
   errorText?: string;
   maxHeight?: number;
   fillAvailableHeight?: boolean;
@@ -569,6 +570,7 @@ function LoadingSkeleton({ containerStyle }: { containerStyle: StyleProp<ViewSty
 export function ToolCallDetailsContent({
   toolName,
   detail,
+  metadata,
   errorText,
   maxHeight,
   fillAvailableHeight = false,
@@ -581,6 +583,16 @@ export function ToolCallDetailsContent({
   const diffLines = useDiffLines(detail);
 
   const sections: ReactNode[] = buildDetailSections(toolName, detail, diffLines, ds, t);
+  const raw = metadata?.cursorSdk;
+  if (
+    detail?.type !== "unknown" &&
+    raw &&
+    typeof raw === "object" &&
+    "input" in raw &&
+    "output" in raw
+  ) {
+    sections.push(...buildUnknownSections({ input: raw.input, output: raw.output }, ds, t));
+  }
 
   if (errorText) {
     sections.push(<ErrorSection key="error" errorText={errorText} ds={ds} />);

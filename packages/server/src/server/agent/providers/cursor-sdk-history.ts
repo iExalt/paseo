@@ -11,6 +11,7 @@ import type {
   ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
+import { mapCursorTool } from "./cursor-sdk-telemetry.js";
 import type {
   CursorHistoryTurn,
   CursorHistoryUser,
@@ -35,27 +36,6 @@ const checkpointPromptSchema = z.object({
     }),
   }),
 });
-
-function mapTool(
-  message: Extract<SDKMessage, { type: "tool_call" }>,
-  previous?: ToolCallTimelineItem,
-): ToolCallTimelineItem {
-  const prior = previous?.detail.type === "unknown" ? previous.detail : undefined;
-  const base = {
-    type: "tool_call" as const,
-    callId: `${message.run_id}:${message.call_id}`,
-    name: message.name,
-    detail: {
-      type: "unknown" as const,
-      input: message.args ?? prior?.input ?? null,
-      output: message.result ?? prior?.output ?? null,
-    },
-  };
-  if (message.status === "error") {
-    return { ...base, status: "failed", error: message.result ?? "Cursor tool failed." };
-  }
-  return { ...base, status: message.status, error: null };
-}
 
 function cursorUserMessageId(runId: string): string {
   return `${runId}:user`;
@@ -107,7 +87,10 @@ export function streamItems(
       ];
     case "tool_call": {
       const key = `${message.run_id}:${message.call_id}`;
-      const item = mapTool(message, tools.get(key));
+      const previous = tools.get(key);
+      if (previous && previous.status !== "running" && message.status === "running") return [];
+      const item = mapCursorTool(message, previous);
+      if (isDeepStrictEqual(previous, item)) return [];
       tools.set(key, item);
       return [item];
     }
@@ -283,8 +266,30 @@ async function readJournalItems(
   return {
     events,
     incomplete:
-      isPartialAnswer(record, events) || (native.length > 0 && !isDeepStrictEqual(events, native)),
+      isPartialAnswer(record, events) ||
+      (native.length > 0 &&
+        !isDeepStrictEqual(recoveryComparable(events), recoveryComparable(native))),
   };
+}
+
+// Older journals stored tool inputs and results as an unknown detail. Type
+// projection and repeated partial updates should not imply a transcript gap.
+function recoveryComparable(events: AgentTimelineItem[]): AgentTimelineItem[] {
+  const tools = new Map<string, ToolCallTimelineItem>();
+  return events.flatMap<AgentTimelineItem>((item) => {
+    if (item.type !== "tool_call") return [item];
+    const { metadata, ...withoutMetadata } = item;
+    const raw = metadata?.cursorSdk;
+    const normalized: ToolCallTimelineItem =
+      raw && typeof raw === "object" && "input" in raw && "output" in raw
+        ? { ...withoutMetadata, detail: { type: "unknown", input: raw.input, output: raw.output } }
+        : item;
+    const previous = tools.get(item.callId);
+    if (previous && previous.status !== "running" && normalized.status === "running") return [];
+    if (isDeepStrictEqual(previous, normalized)) return [];
+    tools.set(item.callId, normalized);
+    return [normalized];
+  });
 }
 
 function isPartialAnswer(record: CursorHistoryTurn, events: AgentTimelineItem[]): boolean {

@@ -311,46 +311,58 @@ test("a recovered terminal answer labels a durable partial projection", async ()
   });
 });
 
-test("replays a manual compaction from the native stream if the daemon journal missed it", async () => {
+test("keeps a recovered legacy shell journal when only the typed projection changed", async () => {
   await withStore(async (_root, store, journal) => {
-    const runId = "native-manual-summary";
+    const runId = "legacy-shell";
+    const input = { command: "echo output", workingDirectory: cwd };
+    const output = { status: "success", value: { stdout: "output", stderr: "", exitCode: 0 } };
     const turn: CursorHistoryTurn = {
-      id: "paseo-manual-summary",
-      compact: true,
+      id: "paseo-legacy-shell",
       nativeRunId: runId,
       createdAt: new Date(time).toISOString(),
-      user: { type: "user_message", text: "/compact", messageId: "command-message" },
+      user: { type: "user_message", text: "run shell", messageId: "user" },
       steers: [],
-      recovered: true,
       joined: true,
-      terminal: { status: "finished", fallback: "stored summary" },
+      recovered: true,
+      terminal: { status: "finished" },
     };
-    await journal.admit(turn, "/compact");
-    await store.runs.create({ run: { ...localRun(runId, "finished"), result: "stored summary" } });
-    for (const status of ["running", "completed"] as const) {
+    await journal.admit(turn, turn.user.text);
+    await store.runs.create({ run: localRun(runId, "finished") });
+    const append = async (status: "running" | "completed") => {
+      const result = status === "completed" ? output : undefined;
       await store.runEvents.append({
         runId,
         eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
         payload: sdk.createSdkMessageRunStreamEvent({
-          type: "summary",
+          type: "tool_call",
           run_id: runId,
           agent_id: agentId,
+          call_id: "shell",
+          name: "shell",
           status,
+          args: input,
+          result,
         }),
       });
-    }
-    const read = async () =>
-      messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
-    const compaction = { type: "compaction", status: "completed", trigger: "manual" } as const;
-    const rows = [
-      { turnId: turn.id, item: turn.user },
-      { turnId: turn.id, item: compaction },
-      { turnId: turn.id, item: { type: "assistant_message", text: "stored summary" } },
-    ];
-    expect(await read()).toEqual(rows);
-    await journal.append(turn.id, compaction);
-    expect(await read()).toEqual(rows);
-    await journal.append(turn.id, { type: "assistant_message", text: "stored summary" });
-    expect(await read()).toEqual(rows);
+      await journal.append(turn.id, {
+        type: "tool_call",
+        callId: runId + ":shell",
+        name: "shell",
+        status,
+        detail: { type: "unknown", input, output: result ?? null },
+        error: null,
+      });
+    };
+    await append("running");
+    await append("running");
+    await append("completed");
+    const rows = messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
+    expect(rows.every(({ turnId }) => turnId === turn.id)).toBe(true);
+    expect(rows.map(({ item }) => item.type)).toEqual([
+      "user_message",
+      "tool_call",
+      "tool_call",
+      "tool_call",
+    ]);
   });
 });

@@ -42,6 +42,12 @@ function frame(payload, flags = 0) {
 
 const interaction = (field, value) => frame(bytes(1, bytes(field, value)));
 
+function telemetryReadUpdate(status, text, workspace) {
+  const args = bytes(1, bytes(1, join(Buffer.from(workspace), Buffer.from("/cursor-canary.sh"))));
+  const result = text === undefined ? Buffer.alloc(0) : bytes(2, bytes(1, bytes(1, text)));
+  return interaction(status, join(bytes(1, "p8-read"), bytes(2, bytes(8, join(args, result)))));
+}
+
 function fields(body) {
   let offset = 0;
   const result = {};
@@ -150,6 +156,15 @@ export async function startBackend(
     );
   }
 
+  function prepareShellResponse(response, request) {
+    if (request?.includes("Run the shell canary.")) {
+      response.write(telemetryReadUpdate(2, undefined, workspace));
+      response.write(telemetryReadUpdate(7, "P8_READ_PROGRESS", workspace));
+      response.write(telemetryReadUpdate(3, "P8_READ_COMPLETED", workspace));
+    }
+    return request && selectSkillTurn?.(request) ? skillShell : shell;
+  }
+
   function startShellIfReady(key) {
     const stream = streams.get(key);
     const request = initialRequests.get(key);
@@ -186,7 +201,7 @@ export async function startBackend(
       p5Turn.start(stream.response);
       return;
     }
-    stream.shell = request && selectSkillTurn?.(request) ? skillShell : shell;
+    stream.shell = prepareShellResponse(stream.response, request);
     stream.response.write(stream.shell.started);
     stream.response.write(stream.shell.execute);
   }
