@@ -3,7 +3,11 @@ import type { AgentProvider } from "@getpaseo/protocol/agent-types";
 import { type WorkspaceRuntimeStore } from "./workspace-runtime-store/index.js";
 import type { AgentMessageBehavior, AgentMessageDelivery } from "./agent/agent-messages/index.js";
 import { AgentDirectory, type BackgroundVisibility } from "./agent/directory.js";
-import { acceptOnDispatch, type FinishSubscriptions } from "./agent/finish-subscriptions/index.js";
+import {
+  acceptOnDispatch,
+  isFinishNotificationParent,
+  type FinishSubscriptions,
+} from "./agent/finish-subscriptions/index.js";
 import { ConnectedHostSession } from "./connected-hosts/index.js";
 import type { ConnectedHosts } from "./connected-hosts/index.js";
 import {
@@ -995,6 +999,7 @@ export class Session {
   private readonly workspaceScripts: WorkspaceScriptsService;
   private readonly messageReceipts: Pick<MessageReceipts, "send">;
   private readonly agentMessages: AgentMessageDelivery;
+  private readonly serverId: string | undefined;
   private readonly finishSubscriptions: (() => FinishSubscriptions) | undefined;
   private readonly createAgentLifecycleDispatch: CreateAgentLifecycleDispatch;
   private readonly creationService: Pick<CreationService, "create" | "subscribe">;
@@ -1088,6 +1093,7 @@ export class Session {
     this.paseoHome = paseoHome;
     this.messageReceipts = options.messageReceipts;
     this.agentMessages = options.agentMessages;
+    this.serverId = serverId;
     this.finishSubscriptions = options.finishSubscriptions;
     this.creationService = options.creationService;
     this.projectIcons = new ProjectIconReader(paseoHome);
@@ -10160,9 +10166,24 @@ export class Session {
         if (msg.sourceAgentId) {
           // Register before queueing so a finish that races dispatch still notifies the caller;
           // dispatch accepts the registration and a failed dispatch withdraws it.
-          const notification = msg.notifyOnFinish
+          const serverId = this.serverId ?? "self";
+          const caller = { agentId: msg.sourceAgentId, serverId };
+          const notifyOnFinish =
+            msg.notifyOnFinish ??
+            ((!msg.sourceAgentServerId || msg.sourceAgentServerId === serverId) &&
+              isFinishNotificationParent(
+                caller,
+                (this.agentManager.getAgent(agentId) ?? (await this.agentStorage.get(agentId)))
+                  ?.labels,
+                serverId,
+              ));
+          const notification = notifyOnFinish
             ? await this.requireFinishSubscriptions().register(
-                { childAgentId: agentId, callerAgentId: msg.sourceAgentId },
+                {
+                  childAgentId: agentId,
+                  callerAgentId: caller.agentId,
+                  requireParentOwnership: msg.notifyOnFinish === undefined,
+                },
                 true,
               )
             : undefined;
