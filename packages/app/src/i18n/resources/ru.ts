@@ -3161,6 +3161,8 @@ export const ru: TranslationResources = {
     },
     providers: {
       cursorSdk: {
+        signOut: "Выйти из Cursor",
+        expired: "Срок действия сеанса Cursor истёк. Войдите снова, чтобы загрузить модели.",
         title: "Аккаунт Cursor",
         checking: "Проверка входа…",
         signedIn: "Вход в Cursor выполнен",

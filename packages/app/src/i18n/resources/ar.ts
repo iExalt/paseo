@@ -3138,6 +3138,8 @@ export const ar: TranslationResources = {
     },
     providers: {
       cursorSdk: {
+        signOut: "تسجيل الخروج من Cursor",
+        expired: "انتهت صلاحية تسجيل الدخول إلى Cursor. سجّل الدخول مرة أخرى لتحميل النماذج.",
         title: "حساب Cursor",
         checking: "جارٍ التحقق من تسجيل الدخول…",
         signedIn: "تم تسجيل الدخول إلى Cursor",

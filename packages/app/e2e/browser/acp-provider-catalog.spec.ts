@@ -1,3 +1,4 @@
+import type { Page, TestInfo } from "@playwright/test";
 import {
   closeModelPicker,
   openModelPicker,
@@ -205,16 +206,24 @@ test("model selector excludes Hoplite before opt-in", async ({ page }, testInfo)
   }
 });
 
-test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
-  page,
-}, testInfo) => {
+test("uses legacy Cursor SDK sign-in and refreshes models", async ({ page }, testInfo) => {
+  await exerciseCursorSignIn(page, testInfo, false);
+});
+
+test("recovers Cursor SDK sign-in after reload and signs out", async ({ page }, testInfo) => {
+  await exerciseCursorSignIn(page, testInfo, true);
+});
+
+async function exerciseCursorSignIn(page: Page, testInfo: TestInfo, recovery: boolean) {
   const provider = "cursor-sdk";
   const nextAttempt = () => "cursor-sdk-fixture-attempt-" + startCount;
   const signInUrl = "https://cursor.example.test/sign-in";
   let authStatus: "signed_out" | "pending" | "signed_in" = "signed_out";
   let startCount = 0;
+  let expired = false;
   let canceledAttempt: string | undefined;
   const checkedAttempts: (string | undefined)[] = [];
+  const requestedDetails: (boolean | undefined)[] = [];
   let sentModels = false;
   const authPrefix = "provider.cursor_sdk.auth.";
   const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
@@ -233,11 +242,24 @@ test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
     let snapshotSubscriptionId: string | undefined;
     server.onMessage((message) => {
       if (typeof message === "string") {
-        const reply = (
-          JSON.parse(message) as {
-            message?: { type: string; payload?: { requestId: string; subscriptionId?: string } };
-          }
-        ).message;
+        const envelope = JSON.parse(message) as {
+          message?: {
+            type: string;
+            payload?: {
+              requestId: string;
+              subscriptionId?: string;
+              status?: string;
+              features?: Record<string, boolean>;
+            };
+          };
+        };
+        const reply = envelope.message;
+        if (reply?.payload?.status === "server_info" && reply.payload.features) {
+          expect(reply.payload.features.cursorSdkAuthRecovery).toBe(true);
+          if (!recovery) delete reply.payload.features.cursorSdkAuthRecovery;
+          browser.send(JSON.stringify(envelope));
+          return;
+        }
         if (
           reply?.type === "session.events.set_subscription.response" &&
           reply.payload &&
@@ -255,7 +277,13 @@ test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
       }
       const request = (
         JSON.parse(message) as {
-          message?: { type: string; requestId: string; attemptId?: string; events?: string[] };
+          message?: {
+            type: string;
+            requestId: string;
+            attemptId?: string;
+            includeDetails?: boolean;
+            events?: string[];
+          };
         }
       ).message;
       if (
@@ -279,7 +307,14 @@ test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
       switch (request?.type) {
         case authPrefix + "get_status.request":
           checkedAttempts.push(request.attemptId);
-          respond({ status: authStatus });
+          requestedDetails.push(request.includeDetails);
+          respond({
+            status: authStatus,
+            ...(request.includeDetails && authStatus === "pending"
+              ? { attempt: { id: nextAttempt(), url: signInUrl } }
+              : {}),
+            ...(request.includeDetails && expired ? { expired: true } : {}),
+          });
           if (authStatus === "signed_in" && snapshotSubscriptionId && !sentModels) {
             sentModels = true;
             browser.send(
@@ -307,11 +342,17 @@ test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
           return;
         case authPrefix + "start_sign_in.request":
           startCount += 1;
+          expired = false;
           authStatus = "pending";
           respond({ attemptId: nextAttempt(), url: signInUrl });
           return;
         case authPrefix + "cancel_sign_in.request":
           canceledAttempt = request.attemptId;
+          authStatus = "signed_out";
+          respond({});
+          return;
+        case authPrefix + "sign_out.request":
+          expect(recovery).toBe(true);
           authStatus = "signed_out";
           respond({});
           return;
@@ -351,9 +392,23 @@ test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
     const openPage = account.getByRole("button", { name: "Open sign-in page", exact: true });
     await expect(openPage).toBeEnabled();
     await expect(page.locator("html")).toHaveAttribute("data-cursor-sign-in-url", signInUrl);
-    await page
-      .locator("html")
-      .evaluate((element) => element.removeAttribute("data-cursor-sign-in-url"));
+    if (recovery) {
+      await page.screenshot({ path: testInfo.outputPath("cursor-sdk-pending-desktop.png") });
+      await page.setViewportSize({ width: 820, height: 1180 });
+      await expect(openPage).toBeEnabled();
+      await page.screenshot({ path: testInfo.outputPath("cursor-sdk-pending-tablet.png") });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload();
+      await settingsRow.click();
+      await expect(openPage).toBeEnabled();
+      await expect(page.locator("html")).not.toHaveAttribute("data-cursor-sign-in-url");
+      await expect(openPage).toBeInViewport({ ratio: 1 });
+      await page.screenshot({ path: testInfo.outputPath("cursor-sdk-pending-phone.png") });
+    } else {
+      await page
+        .locator("html")
+        .evaluate((element) => element.removeAttribute("data-cursor-sign-in-url"));
+    }
     await openPage.click();
     await expect(page.locator("html")).toHaveAttribute("data-cursor-sign-in-url", signInUrl);
     await account.getByRole("button", { name: "Cancel", exact: true }).click();
@@ -367,14 +422,39 @@ test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
     authStatus = "signed_in";
     await expect(account.getByText("Signed in to Cursor", { exact: true })).toBeVisible();
     await expect(openPage).toHaveCount(0);
-    expect(checkedAttempts).toContain(nextAttempt());
+    if (recovery) {
+      expect(requestedDetails).toContain(true);
+      expect(checkedAttempts.filter(Boolean)).toEqual([]);
+      const signOut = account.getByRole("button", { name: "Sign out of Cursor", exact: true });
+      await expect(signOut).toBeEnabled();
+      await signOut.click();
+      await expect(signIn).toBeEnabled();
+      await expect(signOut).toHaveCount(0);
+      expired = true;
+      await expect(
+        account.getByText("Your Cursor sign-in expired. Sign in again to load models.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await signIn.click();
+      await expect(openPage).toBeEnabled();
+      authStatus = "signed_in";
+      await expect(signOut).toBeEnabled();
+    } else {
+      expect(requestedDetails).not.toContain(true);
+      expect(checkedAttempts).toContain(nextAttempt());
+      await expect(
+        account.getByRole("button", { name: "Sign out of Cursor", exact: true }),
+      ).toHaveCount(0);
+    }
     await expect(
-      page
-        .getByTestId("provider-settings-sheet")
-        .getByText("Cursor fixture model", { exact: true }),
+      page.getByRole("switch", {
+        name: "Show Cursor fixture model in model pickers",
+        exact: true,
+      }),
     ).toBeVisible();
   } finally {
     await client.patchDaemonConfig({ removeProviders: [provider] }).catch(() => undefined);
     await client.close();
   }
-});
+}

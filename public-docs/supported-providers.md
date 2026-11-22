@@ -62,14 +62,24 @@ See [Custom providers](/docs/custom-providers) for command and environment overr
 ### Cursor SDK
 
 Open **Settings → Hosts → your host → Providers**. Under **Add provider**, add **Cursor SDK**.
-Paseo uses the Cursor SDK login saved on that host. If you're prompted to sign in, choose
-**Sign in with Cursor** and finish in your browser. You can then select a model and start a chat.
-The SDK login is separate from your Cursor editor login. Existing Cursor CLI chats still open
-with the **Cursor** provider.
+Choose **Sign in with Cursor** and finish in your browser. The selected host keeps the attempt.
+If you reload Paseo or reconnect directly to that host, open **Cursor SDK** in its provider
+settings to reopen the sign-in page or cancel the attempt.
+
+The host saves the SDK login separately from your Cursor editor login. Sign in again when it
+expires. **Sign out of Cursor** clears the saved login on that host. To revoke the minted key
+before it expires, revoke it in Cursor's API keys dashboard. Existing Cursor CLI chats still
+open with the **Cursor** provider.
 
 For a headless setup, set `agents.providers.cursor-sdk.enabled` to `true` in the daemon's
 `config.json` and supply `CURSOR_API_KEY` in the daemon environment or under
-`agents.providers.cursor-sdk.env`. An explicit key takes precedence over a saved login.
+`agents.providers.cursor-sdk.env`. Paseo uses the provider's configured key first, then the
+daemon environment key when the provider has no override. These settings take precedence over
+the saved login and must be changed on the host.
+
+In provider settings, check whether Cursor SDK is enabled before refreshing models. The model
+diagnostic distinguishes a missing native helper, a rejected key, a credential without catalog
+access, and an unreachable model catalog.
 
 **Unrestricted** is the only mode. Cursor runs tools as the daemon user, with access to the
 files and network that user can reach. Tools run without a sandbox or interactive approval

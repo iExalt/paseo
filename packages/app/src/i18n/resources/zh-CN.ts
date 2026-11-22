@@ -3064,6 +3064,8 @@ export const zhCN: TranslationResources = {
     },
     providers: {
       cursorSdk: {
+        signOut: "退出 Cursor 登录",
+        expired: "Cursor 登录已过期。请重新登录以加载模型。",
         title: "Cursor 账号",
         checking: "正在检查登录状态…",
         signedIn: "已登录 Cursor",

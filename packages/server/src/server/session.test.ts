@@ -827,51 +827,142 @@ test("routes plugin requests and releases its owned catalog subscription on clea
   expect(releasePluginSubscription).toHaveBeenCalledOnce();
 });
 
-test("Cursor SDK sign-in is scoped to its source and rechecks daemon authority before saving", async () => {
-  const providerSnapshotManager = new ProviderSnapshotManager({
-    logger: pino({ level: "silent" }),
-  });
-  const result = { attemptId: "attempt", url: "https://cursor.com/loginDeepControl", error: null };
-  const start = vi
-    .spyOn(providerSnapshotManager.cursorSdkSignIn, "start")
-    .mockResolvedValue(result);
-  const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
-  const session = createSessionForTest({ providerSnapshotManager, targetedMessages });
-  const source = {};
-  const otherSource = {};
-  session.updateClientCapabilities({ [CLIENT_CAPS.ownedSubscriptions]: true }, source);
-  session.updateClientCapabilities(null, otherSource);
-  const request = {
-    type: "provider.cursor_sdk.auth.start_sign_in.request",
-    requestId: "start",
-  } as const;
+test.each([false, true])(
+  "Cursor SDK sign-in rechecks daemon authority and retains direct admission (routed=%s)",
+  async (routed) => {
+    const providerSnapshotManager = new ProviderSnapshotManager({
+      logger: pino({ level: "silent" }),
+    });
+    const result = {
+      attemptId: "attempt",
+      url: "https://cursor.com/loginDeepControl",
+      error: null,
+    };
+    const start = vi
+      .spyOn(providerSnapshotManager.cursorSdkSignIn, "start")
+      .mockResolvedValue(result);
+    const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+    const session = createSessionForTest({ providerSnapshotManager, targetedMessages });
+    session.setRouted(routed);
+    const source = {};
+    const otherSource = {};
+    session.updateClientCapabilities({ [CLIENT_CAPS.ownedSubscriptions]: true }, source);
+    session.updateClientCapabilities(null, otherSource);
+    const request = {
+      type: "provider.cursor_sdk.auth.start_sign_in.request",
+      requestId: "start",
+    } as const;
 
-  await session.handleMessage(request, source);
+    await session.handleMessage(request, source);
+    expect(targetedMessages).toEqual([
+      {
+        source,
+        message: {
+          type: "provider.cursor_sdk.auth.start_sign_in.response",
+          payload: { ...result, requestId: "start" },
+        },
+      },
+    ]);
+    const [canSave, , sessionSignal] = start.mock.calls[0];
+    expect(canSave()).toBe(true);
+
+    session.setPermissions(["daemon.read"]);
+    expect(canSave()).toBe(false);
+    await session.handleMessage(request, otherSource);
+    expect(start).toHaveBeenCalledOnce();
+    expect(targetedMessages.at(-1)).toMatchObject({
+      source: otherSource,
+      message: { type: "rpc_error", payload: { code: "access_denied" } },
+    });
+
+    session.setPermissions(OWNER_PERMISSIONS);
+    await session.cleanup();
+    expect(canSave()).toBe(true);
+    expect(sessionSignal?.aborted).toBe(routed ? true : undefined);
+    providerSnapshotManager.destroy();
+  },
+);
+
+test("Cursor SDK recovery is correlated to the authorized view on the selected host", async () => {
+  const manager = new ProviderSnapshotManager({ logger: pino({ level: "silent" }) });
+  const otherHost = new ProviderSnapshotManager({ logger: pino({ level: "silent" }) });
+  const details = {
+    status: "pending" as const,
+    error: null,
+    attempt: { id: "host-attempt", url: "https://cursor.com/loginDeepControl" },
+  };
+  vi.spyOn(manager.cursorSdkSignIn, "getStatus").mockImplementation(async (_, includeDetails) =>
+    includeDetails ? details : { status: "pending", error: null },
+  );
+  vi.spyOn(otherHost.cursorSdkSignIn, "getStatus").mockResolvedValue({
+    status: "signed_out",
+    error: null,
+  });
+  const signOut = vi.spyOn(manager.cursorSdkSignIn, "signOut").mockResolvedValue({ error: null });
+  const targetedMessages: Array<{ source: object; message: SessionOutboundMessage }> = [];
+  const view = createSessionForTest({ providerSnapshotManager: manager, targetedMessages });
+  const elsewhere = createSessionForTest({ providerSnapshotManager: otherHost, targetedMessages });
+  const source = {};
+  const peer = {};
+  view.updateClientCapabilities({ [CLIENT_CAPS.ownedSubscriptions]: true }, source);
+  view.updateClientCapabilities({ [CLIENT_CAPS.ownedSubscriptions]: true }, peer);
+  elsewhere.updateClientCapabilities({ [CLIENT_CAPS.ownedSubscriptions]: true }, source);
+  const status = {
+    type: "provider.cursor_sdk.auth.get_status.request",
+    requestId: "status",
+  } as const;
+  const clear = { type: "provider.cursor_sdk.auth.sign_out.request", requestId: "out" } as const;
+
+  await view.handleMessage(status, source);
+  await view.handleMessage({ ...status, includeDetails: true }, peer);
+  await elsewhere.handleMessage({ ...status, includeDetails: true }, source);
   expect(targetedMessages).toEqual([
     {
       source,
       message: {
-        type: "provider.cursor_sdk.auth.start_sign_in.response",
-        payload: { ...result, requestId: "start" },
+        type: "provider.cursor_sdk.auth.get_status.response",
+        payload: {
+          requestId: "status",
+          status: "pending",
+          error: null,
+        },
+      },
+    },
+    {
+      source: peer,
+      message: {
+        type: "provider.cursor_sdk.auth.get_status.response",
+        payload: {
+          requestId: "status",
+          ...details,
+        },
+      },
+    },
+    {
+      source,
+      message: {
+        type: "provider.cursor_sdk.auth.get_status.response",
+        payload: {
+          requestId: "status",
+          status: "signed_out",
+          error: null,
+        },
       },
     },
   ]);
-  const [canSave] = start.mock.calls[0];
-  expect(canSave()).toBe(true);
+  view.setPermissions(["daemon.read"]);
+  await view.handleMessage({ ...status, includeDetails: true }, peer);
+  await view.handleMessage(clear, peer);
+  expect(targetedMessages.slice(-2).map(({ message }) => message)).toMatchObject([
+    { type: "rpc_error", payload: { code: "access_denied", requestId: "status" } },
+    { type: "rpc_error", payload: { code: "access_denied", requestId: "out" } },
+  ]);
+  expect(signOut).not.toHaveBeenCalled();
 
-  session.setPermissions(["daemon.read"]);
-  expect(canSave()).toBe(false);
-  await session.handleMessage(request, otherSource);
-  expect(start).toHaveBeenCalledOnce();
-  expect(targetedMessages.at(-1)).toMatchObject({
-    source: otherSource,
-    message: { type: "rpc_error", payload: { code: "access_denied" } },
-  });
-
-  session.setPermissions(OWNER_PERMISSIONS);
-  await session.cleanup();
-  expect(canSave()).toBe(false);
-  providerSnapshotManager.destroy();
+  await view.cleanup();
+  await elsewhere.cleanup();
+  manager.destroy();
+  otherHost.destroy();
 });
 
 test("losing daemon.manage releases the session's plugin subscriptions", async () => {

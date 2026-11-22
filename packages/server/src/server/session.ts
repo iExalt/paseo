@@ -837,6 +837,8 @@ export class Session {
   >();
   private readonly clientId: string;
   private readonly authorization: SessionAuthorization;
+  private readonly admittedSourceId: string;
+  private cursorSdkSignInScope?: AbortController;
   private appVersion: string | null;
   private clientCapabilities: ReadonlySet<ClientCapability>;
   private readonly sessionId: string;
@@ -1028,7 +1030,8 @@ export class Session {
     this.appVersion = appVersion ?? null;
     this.clientCapabilities = parseClientCapabilities(clientCapabilities);
     this.sessionId = uuidv4();
-    this.hostSourceId = hostSource(options);
+    this.admittedSourceId = hostSource(options);
+    this.hostSourceId = this.admittedSourceId;
     this.connectedHostSession = createHostSession(options, this);
     this.onMessage = onMessage;
     this.onMessageToSource = onMessageToSource
@@ -2565,6 +2568,8 @@ export class Session {
     }
     // Binary plugin events skip the outbound permission check, so revocation ends the streams.
     if (!this.authorization.allowsPermission("daemon.manage")) {
+      this.cursorSdkSignInScope?.abort();
+      this.cursorSdkSignInScope = undefined;
       void this.delivery
         .releaseFamily("plugin-rpc")
         .catch((error) =>
@@ -4059,25 +4064,49 @@ export class Session {
     }
   }
 
+  private cursorSdkSignInSessionSignal(): AbortSignal | undefined {
+    // Routed and ephemeral plugin sessions borrow authority that ends with the session.
+    if (this.routed || this.admittedSourceId.startsWith("plugin:")) {
+      this.cursorSdkSignInScope ??= new AbortController();
+      return this.cursorSdkSignInScope.signal;
+    }
+    return undefined;
+  }
+
   private dispatchProviderMessage(msg: SessionInboundMessage): Promise<void> | undefined {
     switch (msg.type) {
       case "provider.inspect.request":
         return this.handleProviderInspectRequest(msg);
       case "provider.cursor_sdk.auth.get_status.request":
         return this.providerSnapshotManager.cursorSdkSignIn
-          .getStatus(msg.attemptId)
+          .getStatus(msg.attemptId, msg.includeDetails)
           .then((result) =>
             this.emit({
               type: "provider.cursor_sdk.auth.get_status.response",
               payload: { requestId: msg.requestId, ...result },
             }),
           );
-      case "provider.cursor_sdk.auth.start_sign_in.request":
+      case "provider.cursor_sdk.auth.start_sign_in.request": {
+        const authorization = this.authorization;
         return this.providerSnapshotManager.cursorSdkSignIn
-          .start(() => !this.isCleanedUp && this.authorization.allowsPermission("daemon.manage"))
+          .start(
+            () => authorization.allowsPermission("daemon.manage"),
+            this.admittedSourceId,
+            this.cursorSdkSignInSessionSignal(),
+          )
           .then((result) =>
             this.emit({
               type: "provider.cursor_sdk.auth.start_sign_in.response",
+              payload: { requestId: msg.requestId, ...result },
+            }),
+          );
+      }
+      case "provider.cursor_sdk.auth.sign_out.request":
+        return this.providerSnapshotManager.cursorSdkSignIn
+          .signOut(() => !this.isCleanedUp && this.authorization.allowsPermission("daemon.manage"))
+          .then((result) =>
+            this.emit({
+              type: "provider.cursor_sdk.auth.sign_out.response",
               payload: { requestId: msg.requestId, ...result },
             }),
           );
@@ -10325,6 +10354,7 @@ export class Session {
   public async cleanup(): Promise<void> {
     this.sessionLogger.trace({}, "agent.session.lifecycle.cleanup");
     this.isCleanedUp = true;
+    this.cursorSdkSignInScope?.abort();
     for (const watch of this.draftSkillWatches.values()) watch.close();
     this.draftSkillWatches.clear();
     this.unsubscribeSetupObservation();

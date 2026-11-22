@@ -3119,6 +3119,8 @@ export const ko: TranslationResources = {
     },
     providers: {
       cursorSdk: {
+        signOut: "Cursor에서 로그아웃",
+        expired: "Cursor 로그인이 만료되었습니다. 모델을 불러오려면 다시 로그인하세요.",
         title: "Cursor 계정",
         checking: "로그인 확인 중…",
         signedIn: "Cursor에 로그인됨",

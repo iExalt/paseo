@@ -635,6 +635,10 @@ export function ProviderDiagnosticSheet({
     providerEntry?.status === "error"
       ? (providerEntry.error ?? t("settings.providers.diagnostic.unknownError"))
       : null;
+  const accountHandlesMissingCredentials =
+    provider === "cursor-sdk" &&
+    supportsCursorSdkAuth &&
+    providerEntry?.errorCode === "missing_credentials";
   const modelsRefreshing = isRefreshing || providerSnapshotRefreshing;
 
   const stableDiscoveredRef = useRef<ProviderDiscoveredModelsCache | null>(null);
@@ -726,22 +730,25 @@ export function ProviderDiagnosticSheet({
         {provider === "cursor-sdk" && supportsCursorSdkAuth ? (
           <CursorSdkAccount serverId={serverId} visible={visible} />
         ) : null}
-        <ProviderModalBody
-          serverId={serverId}
-          provider={provider}
-          discoveredCount={discoveredModels.length}
-          additionalCount={additionalModels.length}
-          providerSnapshotRefreshing={providerSnapshotRefreshing}
-          providerErrorMessage={providerErrorMessage}
-          modelsRefreshing={modelsRefreshing}
-          searchActive={Boolean(q)}
-          filteredDiscovered={filteredDiscovered}
-          filteredCustom={filteredCustom}
-          deletingModelId={deletingModelId}
-          onRefresh={handleRefreshModels}
-          onDeleteCustom={handleDeleteCustom}
-          theme={theme}
-        />
+        {accountHandlesMissingCredentials &&
+        discoveredModels.length + additionalModels.length === 0 ? null : (
+          <ProviderModalBody
+            serverId={serverId}
+            provider={provider}
+            discoveredCount={discoveredModels.length}
+            additionalCount={additionalModels.length}
+            providerSnapshotRefreshing={providerSnapshotRefreshing}
+            providerErrorMessage={providerErrorMessage}
+            modelsRefreshing={modelsRefreshing}
+            searchActive={Boolean(q)}
+            filteredDiscovered={filteredDiscovered}
+            filteredCustom={filteredCustom}
+            deletingModelId={deletingModelId}
+            onRefresh={handleRefreshModels}
+            onDeleteCustom={handleDeleteCustom}
+            theme={theme}
+          />
+        )}
       </AdaptiveModalSheet>
       <AddCustomModelSubSheet
         provider={provider}

@@ -61,6 +61,20 @@ describe("provider snapshot codec", () => {
     );
   });
 
+  it("round trips a provider diagnostic through the compact schema", () => {
+    const original: ProviderSnapshotEntry[] = [
+      {
+        provider: "cursor-sdk",
+        enabled: true,
+        status: "error",
+        error: "Cursor rejected this host’s API key.",
+        errorCode: "invalid_key",
+      },
+    ];
+    const parsed = CompactProviderSnapshotSchema.parse(compactProviderSnapshot(original));
+    expect(expandProviderSnapshot(parsed)).toEqual(original);
+  });
+
   it("shrinks catalogs dominated by one repeated thinking set", () => {
     const model = providerEntry().models?.[0];
     if (!model) throw new Error("fixture model missing");
