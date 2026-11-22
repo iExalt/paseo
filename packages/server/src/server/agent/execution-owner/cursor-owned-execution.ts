@@ -84,15 +84,17 @@ export async function openOwnedCursorExecution(
   const suffix = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const entry = fileURLToPath(new URL(`./cursor-owner-worker.${suffix}`, import.meta.url));
   let answerQuestion: SDKCustomTool["execute"] | undefined;
+  let speak: SDKCustomTool["execute"] | undefined;
   const owned = await openOwnedProcess(entry, home, generation, enroll, async (method, input) => {
-    if (method === "question") {
-      if (!answerQuestion || !process?.channel.connected)
-        throw new Error("Cursor SDK question handler is unavailable.");
+    if (method === "question" || method === "speak") {
+      const handler = method === "question" ? answerQuestion : speak;
+      if (!handler || !process?.channel.connected)
+        throw new Error(`Cursor SDK ${method} handler is unavailable.`);
       const { args, context } = input as {
         args: Parameters<SDKCustomTool["execute"]>[0];
         context: Parameters<SDKCustomTool["execute"]>[1];
       };
-      return answerQuestion(args, context);
+      return handler(args, context);
     }
     return storeOwner.handle(method, input);
   });
@@ -115,8 +117,14 @@ export async function openOwnedCursorExecution(
       void owned.channel.whenClosed.then(abort);
     },
     prepare: (input: CursorOwnerStart) => owned.channel.request<void>("prepare", input),
+    attachSpeakHandler(execute: SDKCustomTool["execute"]) {
+      speak = execute;
+    },
     async send(input: SDKUserMessage | null): Promise<Run> {
-      const info = await owned.channel.request<CursorOwnerRunInfo>("dispatch", input);
+      const info = await owned.channel.request<CursorOwnerRunInfo>("dispatch", {
+        input,
+        voice: speak !== undefined,
+      });
       if (info.agentId !== agentId) throw new Error("Cursor SDK owner returned a different agent.");
       return remoteRun(owned, info);
     },

@@ -614,6 +614,24 @@ export function createPaseoAgentToolManifest(
   return { tools: createToolCatalog(options, "agent").tools };
 }
 
+function bindCatalogSpeak(
+  options: PaseoToolHostDependencies,
+  callerContext: VoiceCallerContext | null,
+) {
+  const { callerAgentId, resolveSpeakHandler } = options;
+  const resolve = resolveSpeakHandler ?? (() => null);
+  if (!options.voiceOnly) {
+    return { available: options.enableVoiceTools || callerContext?.enableVoiceTools, resolve };
+  }
+
+  // A scoped SDK catalog can speak only through the activation it opened with.
+  const handler = callerAgentId && callerContext?.enableVoiceTools ? resolve(callerAgentId) : null;
+  return {
+    available: Boolean(handler),
+    resolve: (agentId: string) => (resolve(agentId) === handler ? handler : null),
+  };
+}
+
 function createToolCatalog(
   options: PaseoToolHostDependencies,
   scope: "agent" | "top-level",
@@ -627,7 +645,6 @@ function createToolCatalog(
     providerSnapshotManager,
     daemonConfigStore,
     callerAgentId,
-    resolveSpeakHandler,
     resolveCallerContext,
     logger,
   } = options;
@@ -647,6 +664,7 @@ function createToolCatalog(
   const workspaceNotificationsEnabled = options.workspaceNotificationsEnabled === true;
   const childLogger = logger.child({ module: "agent", component: "paseo-tool-catalog" });
   const callerContext = callerAgentId ? (resolveCallerContext?.(callerAgentId) ?? null) : null;
+  const speak = bindCatalogSpeak(options, callerContext);
 
   const parseToolInput = async (tool: PaseoToolDefinition, input: unknown): Promise<unknown> => {
     const inputSchema = tool.inputSchema;
@@ -821,6 +839,7 @@ function createToolCatalog(
   const toCatalog = (): PaseoToolCatalog => ({
     tools,
     getTool(name: string): PaseoToolDefinition | undefined {
+      if (options.voiceOnly && !speak.resolve(callerAgentId ?? "")) return undefined;
       return tools.get(name);
     },
     async executeTool(
@@ -1267,7 +1286,7 @@ function createToolCatalog(
   type TopLevelCreateAgentArgs = z.infer<typeof canonicalTopLevelCreateAgentArgsSchema>;
   type LegacyTopLevelCreateAgentArgs = z.infer<typeof legacyTopLevelCreateAgentArgsSchema>;
 
-  if (options.voiceOnly || options.enableVoiceTools || callerContext?.enableVoiceTools) {
+  if (speak.available) {
     registerTool(
       "speak",
       {
@@ -1289,7 +1308,7 @@ function createToolCatalog(
         await speakWithHandler({
           text: args.text,
           callerAgentId,
-          resolveSpeakHandler: (agentId) => resolveSpeakHandler?.(agentId) ?? null,
+          resolveSpeakHandler: speak.resolve,
           signal: context?.signal,
         });
         return {

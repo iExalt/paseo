@@ -273,6 +273,13 @@ async function resolveResumePurpose(
   }
 }
 
+function shouldAttachCursorVoice(
+  adapter: AgentProvider,
+  purpose: PluginSessionOpenRequest["purpose"] | undefined,
+): boolean {
+  return adapter === "cursor-sdk" && purpose === "interactive";
+}
+
 function restoredProviderState(
   client: AgentClient,
   record: StoredAgentRecord | null,
@@ -7547,20 +7554,23 @@ export class AgentManager {
       mcpServerOwners,
       env: launchEnv,
     };
-    const useNativeTools =
-      this.agentToolsEnabled &&
-      isPaseoToolPolicyEnabled(paseoToolPolicy) &&
-      client.capabilities.supportsNativePaseoTools;
+    const allowPaseoTools = this.agentToolsEnabled && isPaseoToolPolicyEnabled(paseoToolPolicy);
+    const useNativeTools = allowPaseoTools && client.capabilities.supportsNativePaseoTools;
+    const useCursorVoice =
+      allowPaseoTools && shouldAttachCursorVoice(this.adapterOf(client.provider), opening?.purpose);
     if (
       this.paseoToolCatalogFactory &&
-      (useNativeTools || this.getPluginTools(agentId).length > 0)
+      (useNativeTools || useCursorVoice || this.getPluginTools(agentId).length > 0)
     ) {
       // Building the catalog checks the plugin tools against Paseo's own names.
       const catalog = await this.paseoToolCatalogFactory({
         callerAgentId: agentId,
         paseoToolPolicy,
+        ...(useCursorVoice ? { voiceOnly: true } : {}),
       });
-      if (useNativeTools) context.paseoTools = catalog;
+      if (useNativeTools || (useCursorVoice && catalog.getTool("speak"))) {
+        context.paseoTools = catalog;
+      }
     }
     return context;
   }
