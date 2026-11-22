@@ -680,7 +680,10 @@ function wrapClientProvider(
             config: {
               ...imported.config,
               provider,
-              providerOptions: context.storedConfig.providerOptions,
+              providerOptions:
+                inner.provider === "cursor-sdk"
+                  ? imported.config.providerOptions
+                  : context.storedConfig.providerOptions,
             },
             persistence,
           };

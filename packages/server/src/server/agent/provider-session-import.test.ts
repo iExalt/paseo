@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type {
   AgentPersistenceHandle,
   AgentSession,
@@ -47,6 +47,42 @@ describe("importSessionFromPersistence", () => {
       nativeHandle: SESSION_FILE,
       metadata: { cwd, provider: "omp", model: "resumed-model" },
     });
+  });
+
+  it("keeps provider turn IDs and closes the resumed runtime if history fails", async () => {
+    const cwd = "/Users/dev/code/project";
+    const session = fakeSession(null);
+    const request = {
+      provider: "omp" as const,
+      request: { providerHandleId: SESSION_FILE, cwd },
+      context: context(cwd),
+      resumeSession: async () => session,
+    };
+    session.streamHistory = async function* () {
+      yield {
+        type: "timeline",
+        provider: "omp",
+        turnId: "original-turn",
+        item: { type: "assistant_message", text: "saved response" },
+      };
+    };
+    expect((await importSessionFromPersistence(request)).timeline).toEqual([
+      { turnId: "original-turn", item: { type: "assistant_message", text: "saved response" } },
+    ]);
+
+    session.close = vi.fn(async () => {});
+    session.streamHistory = async function* () {
+      yield {
+        type: "timeline",
+        provider: "omp",
+        item: { type: "assistant_message", text: "saved prefix" },
+      };
+      throw new Error("saved history is unreadable");
+    };
+    await expect(importSessionFromPersistence(request)).rejects.toThrow(
+      "saved history is unreadable",
+    );
+    expect(session.close).toHaveBeenCalledOnce();
   });
 
   it("keeps the requested handle when the provider describes no identity", async () => {

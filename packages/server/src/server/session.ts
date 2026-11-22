@@ -6093,6 +6093,46 @@ export class Session {
     };
   }
 
+  private async resumeAgentByHandle(
+    handle: AgentPersistenceHandle,
+    overrides: Extract<SessionInboundMessage, { type: "resume_agent_request" }>["overrides"],
+  ): Promise<ManagedAgent> {
+    const cursorSdk = handle.provider === "cursor-sdk";
+    if (cursorSdk && handle.nativeHandle && handle.nativeHandle !== handle.sessionId) {
+      throw new Error("Cursor SDK resume requires matching session and native IDs.");
+    }
+    if (cursorSdk && overrides && Object.keys(overrides).length > 0) {
+      throw new Error("Open the registered Cursor SDK agent before changing its settings.");
+    }
+    const matched = await this.unarchiveAgentByHandle(handle);
+    if (cursorSdk && !matched) {
+      throw new Error("Import this local Cursor SDK session before trying to resume it.");
+    }
+    const effectiveOverrides = matched
+      ? { ...buildConfigOverrides(matched.record), ...overrides }
+      : overrides;
+    try {
+      if (cursorSdk && matched) {
+        return await ensureAgentLoaded(matched.record.id, {
+          agentManager: this.agentManager,
+          agentStorage: this.agentStorage,
+          logger: this.sessionLogger,
+        });
+      }
+      return await this.agentManager.resumeAgentFromPersistence(
+        handle,
+        effectiveOverrides,
+        undefined,
+        { workspaceId: matched?.record.workspaceId },
+      );
+    } catch (error) {
+      if (matched?.didUnarchive && matched.originalArchivedAt) {
+        await this.agentManager.archiveSnapshot(matched.record.id, matched.originalArchivedAt);
+      }
+      throw error;
+    }
+  }
+
   private async handleResumeAgentRequest(
     msg: Extract<SessionInboundMessage, { type: "resume_agent_request" }>,
   ): Promise<void> {
@@ -6126,24 +6166,7 @@ export class Session {
       `Resuming agent ${handle.sessionId} (${handle.provider})`,
     );
     try {
-      const matched = await this.unarchiveAgentByHandle(handle);
-      const effectiveOverrides = matched
-        ? { ...buildConfigOverrides(matched.record), ...overrides }
-        : overrides;
-      let snapshot: ManagedAgent;
-      try {
-        snapshot = await this.agentManager.resumeAgentFromPersistence(
-          handle,
-          effectiveOverrides,
-          undefined,
-          { workspaceId: matched?.record.workspaceId },
-        );
-      } catch (error) {
-        if (matched?.didUnarchive && matched.originalArchivedAt) {
-          await this.agentManager.archiveSnapshot(matched.record.id, matched.originalArchivedAt);
-        }
-        throw error;
-      }
+      const snapshot = await this.resumeAgentByHandle(handle, overrides);
       await unarchiveAgentState(this.agentStorage, this.agentManager, snapshot.id);
       await this.agentManager.hydrateTimelineFromProvider(snapshot.id);
       await this.agentUpdates.forwardLiveAgent(snapshot);

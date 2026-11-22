@@ -897,6 +897,7 @@ function buildImportedTimelineRows(entries: readonly ImportedTimelineEntry[]): A
       const row: AgentTimelineRow = {
         seq: rows.length + 1,
         timestamp: entry.timestamp ?? new Date().toISOString(),
+        ...(entry.turnId ? { turnId: entry.turnId } : {}),
         item: limitAgentTimelineItemContent(item),
       };
       rows.push(row);
@@ -2298,7 +2299,10 @@ export class AgentManager {
 
       handedToRegistration = true;
       const agent = await this.registerSession(imported.session, importedConfig, resolvedAgentId, {
-        launchedOptions,
+        launchedOptions:
+          this.adapterOf(input.provider) === "cursor-sdk"
+            ? (importedConfig.providerOptions ?? {})
+            : launchedOptions,
         labels: input.labels,
         workspaceId: input.workspaceId,
         timelineRows,
