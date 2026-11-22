@@ -34,8 +34,13 @@ async function readOptional(path) {
 }
 
 async function runningPid(pid) {
-  const stat = await readOptional(`/proc/${pid}/stat`);
-  return Boolean(stat && stat.slice(stat.lastIndexOf(")") + 2, stat.lastIndexOf(")") + 3) !== "Z");
+  try {
+    const stat = await readFile(`/proc/${pid}/stat`, "utf8");
+    return stat[stat.lastIndexOf(")") + 2] !== "Z";
+  } catch (error) {
+    if (error.code === "ENOENT" || error.code === "ESRCH") return false;
+    throw error;
+  }
 }
 
 function comparable(page) {
