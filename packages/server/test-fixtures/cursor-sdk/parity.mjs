@@ -13,6 +13,7 @@ import { checkP5Interactions, prepareP5Fixture } from "./interactions.mjs";
 import { checkOwnedRecovery } from "./owned-recovery.mjs";
 import { checkMaintenance } from "./maintenance.mjs";
 import { checkLifecycle } from "./lifecycle.mjs";
+import { checkCompletedTelemetry, checkStoppedTelemetry, finishedUsage } from "./telemetry.mjs";
 import { checkControls, controlCatalog } from "./controls.mjs";
 import {
   assertSkillTurnRequest,
@@ -266,7 +267,12 @@ async function checkCompleted(run) {
   }
   assert.equal(await readFile(join(workspace, "cursor-canary.txt"), "utf8"), canary);
   const { snapshot } = await cli("agent", "status", run.agentId);
-  assert.deepEqual(snapshot.lastUsage, { inputTokens: 12, cachedInputTokens: 2, outputTokens: 3 });
+  assert.deepEqual(
+    snapshot.lastUsage,
+    mode === "baseline"
+      ? { inputTokens: 12, cachedInputTokens: 2, outputTokens: 3 }
+      : finishedUsage,
+  );
   assert.equal(backend.runs, 1);
   assert.equal(backend.shellReplies, 1);
   console.log("PASS Cursor SDK shell canary, client tool result, assistant text, and usage");
@@ -333,7 +339,21 @@ try {
       require,
       listener: () => listener,
     });
-    await checkCompleted(await launch(workspaceId, "Run the shell canary."));
+    const completed = await launch(workspaceId, "Run the shell canary.");
+    await checkCompleted(completed);
+    const telemetry = {
+      backend,
+      cli,
+      listener: () => listener,
+      paseoHome,
+      require,
+      startDaemon,
+      stopDaemon,
+      workspace,
+      workspaceId,
+    };
+    await checkCompletedTelemetry(telemetry, completed.agentId);
+    await checkStoppedTelemetry(telemetry);
     assert.deepEqual(
       (await readFile(join(workspace, "cursor-cli-disabled.txt"), "utf8")).trimEnd().split("\n"),
       [paseoHome, "absent"],

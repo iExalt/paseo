@@ -92,7 +92,7 @@ import {
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import type { JsonValue, ProviderOptions } from "@getpaseo/protocol/agent-types";
-import { storedUsage, toStoredAgentRecord } from "./agent-projections.js";
+import { readStoredAgentUsage, toStoredAgentRecord } from "./agent-projections.js";
 import { sanitizeAgentMetrics, withModelMetric } from "./agent-metrics.js";
 import { optionsForCursorControls } from "./providers/cursor-sdk-model.js";
 import {
@@ -286,7 +286,7 @@ function restoredProviderState(
       supportsOfflineHistory && purpose === "history" && record.lastStatus === "error"
         ? "error"
         : undefined,
-    ...storedUsage(record),
+    lastUsage: readStoredAgentUsage(record),
   };
 }
 
@@ -2160,6 +2160,8 @@ export class AgentManager {
     const historicalControls = this.restoreHistoricalControls(purpose, storedConfig, record);
     if (purpose === "history") this.historySessions.add(session);
     await this.requireExternalMcpSupport(session, providerLaunchConfig, launchContext);
+    const restored = restoredProviderState(client, record, purpose);
+    const nativeUsage = await this.readResumedUsage(session, resolvedAgentId);
     return this.registerSession(session, storedConfig, resolvedAgentId, {
       launchedOptions: optionsForCursorControls(launchedOptions, historicalControls),
       historicalControls,
@@ -2181,7 +2183,18 @@ export class AgentManager {
           ? (session.describePersistence() ?? handle)
           : handle,
       restoring: true,
-      ...restoredProviderState(client, record, purpose),
+      ...restored,
+      lastUsage: nativeUsage ? withKnownCost(nativeUsage, restored.lastUsage) : restored.lastUsage,
+    });
+  }
+
+  private readResumedUsage(
+    session: AgentSession,
+    agentId: string,
+  ): Promise<AgentUsage | undefined> | undefined {
+    return session.readLastUsage?.().catch((error: unknown) => {
+      this.logger.warn({ err: error, agentId }, "Could not restore provider usage");
+      return undefined;
     });
   }
 
@@ -2954,7 +2967,7 @@ export class AgentManager {
         persistence: record.persistence ?? null,
         historyPrimed: true,
         lastUserMessageAt: record.lastUserMessageAt ? new Date(record.lastUserMessageAt) : null,
-        lastUsage: storedUsage(record).lastUsage,
+        lastUsage: readStoredAgentUsage(record),
         sessionMetrics: record.sessionMetrics,
         lastError: record.lastError ?? undefined,
         attention,
@@ -3779,6 +3792,21 @@ export class AgentManager {
     });
   }
 
+  private withCursorWorkspaceInstructions(
+    agent: ActiveManagedAgent,
+    options: AgentRunOptions | undefined,
+  ): AgentRunOptions | undefined {
+    if (this.adapterOf(agent.provider) !== "cursor-sdk" || !agent.workspaceId) return options;
+    return {
+      ...options,
+      resolveCursorWorkspaceInstructions: async () => {
+        const target = { cwd: agent.config.cwd, workspaceId: agent.workspaceId };
+        const roots = await this.resolveCursorSkillRoots(target);
+        return readCursorWorkspaceInstructions(target.cwd, roots);
+      },
+    };
+  }
+
   private async startPendingForegroundTurn(params: {
     agent: ActiveManagedAgent;
     agentId: string;
@@ -3809,16 +3837,7 @@ export class AgentManager {
         }
         runOptions = { ...options, resolveCursorSkills: resolveSelectedSkills };
       }
-      if (this.adapterOf(agent.provider) === "cursor-sdk" && agent.workspaceId) {
-        runOptions = {
-          ...runOptions,
-          resolveCursorWorkspaceInstructions: async () => {
-            const target = { cwd: agent.config.cwd, workspaceId: agent.workspaceId };
-            const roots = await this.resolveCursorSkillRoots(target);
-            return readCursorWorkspaceInstructions(target.cwd, roots);
-          },
-        };
-      }
+      runOptions = this.withCursorWorkspaceInstructions(agent, runOptions);
       const result = await agent.session.startTurn(prompt, runOptions);
       if (pendingRun.settled) {
         throw new Error(`Agent ${agentId} run was canceled before its turn started`);
@@ -6583,7 +6602,10 @@ export class AgentManager {
     if (terminalDisposition === "stale") return;
     if (event.usage) {
       if (!fromHistory) this.recordSpend(agent, event.usage);
-      agent.lastUsage = { ...agent.lastUsage, ...event.usage };
+      agent.lastUsage =
+        this.adapterOf(agent.provider) === "cursor-sdk"
+          ? withKnownCost(event.usage, agent.lastUsage)
+          : { ...agent.lastUsage, ...event.usage };
     }
     // If no usage on turn_completed, keep lastUsage as-is so context window
     // data accumulated during streaming isn't lost when the provider omits

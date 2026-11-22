@@ -4,7 +4,7 @@ import { join } from "node:path";
 import * as sdk from "@cursor/sdk";
 import { expect, test } from "vitest";
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
-import { readCursorHistory } from "./cursor-sdk-history.js";
+import { readCursorHistory, readCursorLastUsage } from "./cursor-sdk-history.js";
 import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 
 const agentId = "agent-offline";
@@ -364,5 +364,105 @@ test("keeps a recovered legacy shell journal when only the typed projection chan
       "tool_call",
       "tool_call",
     ]);
+  });
+});
+
+test("deduplicates linked native usage and prefers a newer durable fallback over an older native row", async () => {
+  await withStore(async (_root, store, journal) => {
+    const first = {
+      inputTokens: 10,
+      outputTokens: 3,
+      cacheReadTokens: 2,
+      cacheWriteTokens: 1,
+      totalTokens: 13,
+    };
+    await store.runs.create({ run: { ...localRun("first", "finished"), usage: first } });
+    await store.runs.create({
+      run: {
+        ...localRun("followup", "cancelled"),
+        turnNumber: 2,
+        usage: { ...first, reasoningTokens: 0 },
+      },
+    });
+    const record: CursorHistoryTurn = {
+      id: "paseo-first",
+      nativeRunId: "first",
+      executionRunIds: ["first", "followup"],
+      followUpIds: ["followup"],
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "first", messageId: "first" },
+      steers: [],
+    };
+    await journal.admit(record, record.user.text);
+    expect(await readCursorLastUsage(store, journal, agentId)).toEqual({
+      inputTokens: 20,
+      outputTokens: 6,
+      cachedInputTokens: 4,
+      cacheWriteTokens: 2,
+      totalTokens: 26,
+      reasoningTokens: 0,
+    });
+
+    const fallback = { inputTokens: 8, outputTokens: 1, totalTokens: 9, reasoningTokens: 1 };
+    await store.runs.create({
+      run: { ...localRun("new", "finished"), turnNumber: 3, createdAt: time + 1 },
+    });
+    await journal.admit(
+      {
+        ...record,
+        id: "paseo-new",
+        nativeRunId: "new",
+        executionRunIds: ["new"],
+        followUpIds: [],
+        createdAt: new Date(time + 1).toISOString(),
+        lastUsage: fallback,
+      },
+      "new",
+    );
+    expect(await readCursorLastUsage(store, journal, agentId)).toEqual(fallback);
+  });
+});
+
+test("replays a manual compaction from the native stream if the daemon journal missed it", async () => {
+  await withStore(async (_root, store, journal) => {
+    const runId = "native-manual-summary";
+    const turn: CursorHistoryTurn = {
+      id: "paseo-manual-summary",
+      compact: true,
+      nativeRunId: runId,
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "/compact", messageId: "command-message" },
+      steers: [],
+      recovered: true,
+      joined: true,
+      terminal: { status: "finished", fallback: "stored summary" },
+    };
+    await journal.admit(turn, "/compact");
+    await store.runs.create({ run: { ...localRun(runId, "finished"), result: "stored summary" } });
+    for (const status of ["running", "completed"] as const) {
+      await store.runEvents.append({
+        runId,
+        eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
+        payload: sdk.createSdkMessageRunStreamEvent({
+          type: "summary",
+          run_id: runId,
+          agent_id: agentId,
+          status,
+        }),
+      });
+    }
+    const read = async () =>
+      messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
+    const compaction = { type: "compaction", status: "completed", trigger: "manual" } as const;
+    const rows = [
+      { turnId: turn.id, item: turn.user },
+      { turnId: turn.id, item: compaction },
+      { turnId: turn.id, item: { type: "assistant_message", text: "stored summary" } },
+    ];
+    expect(await read()).toEqual(rows);
+    await journal.append(turn.id, compaction);
+    expect(await read()).toEqual(rows);
+    await journal.append(turn.id, { type: "assistant_message", text: "stored summary" });
+    expect(await read()).toEqual(rows);
   });
 });

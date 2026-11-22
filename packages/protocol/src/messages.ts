@@ -372,10 +372,13 @@ const AgentCapabilityFlagsSchema: z.ZodType<AgentCapabilityFlags> = z
   })
   .catchall(z.boolean());
 
-const AgentUsageSchema: z.ZodType<AgentUsage> = z.object({
+export const AgentUsageSchema: z.ZodType<AgentUsage> = z.object({
   inputTokens: z.number().optional(),
   cachedInputTokens: z.number().optional(),
+  cacheWriteTokens: z.number().optional(),
   outputTokens: z.number().optional(),
+  reasoningTokens: z.number().optional(),
+  totalTokens: z.number().optional(),
   totalCostUsd: z.number().optional(),
   contextWindowMaxTokens: z.number().optional(),
   contextWindowUsedTokens: z.number().optional(),

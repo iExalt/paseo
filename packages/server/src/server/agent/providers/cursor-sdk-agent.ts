@@ -15,7 +15,6 @@ import type {
   SDKAgent,
   SDKModel,
   SDKUserMessage,
-  TokenUsage,
 } from "@cursor/sdk";
 import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
@@ -37,7 +36,6 @@ import type {
   AgentSessionConfig,
   AgentSlashCommand,
   AgentStreamEvent,
-  AgentUsage,
   FetchCatalogOptions,
   ImportProviderSessionContext,
   ImportProviderSessionInput,
@@ -69,6 +67,7 @@ import {
 } from "./cursor-sdk-availability.js";
 import {
   type HistorySdk,
+  readCursorLastUsage,
   openCursorHistorySession,
   readCursorHistory,
   interruptedCursorRunMessage,
@@ -83,6 +82,7 @@ import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
 import { CursorQuestions, cursorQuestionToolName } from "./cursor-sdk-questions.js";
 import { CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
+import { mapCursorUsage } from "./cursor-sdk-telemetry.js";
 import {
   cursorCatalogOptionKeys,
   cursorModelLabel,
@@ -183,17 +183,6 @@ function assertMode(mode?: string): void {
   if (mode && mode !== MODE) {
     throw new Error("Cursor SDK supports only Unrestricted mode.");
   }
-}
-
-function mapUsage(usage: TokenUsage | undefined): AgentUsage | undefined {
-  if (!usage) {
-    return undefined;
-  }
-  return {
-    inputTokens: usage.inputTokens,
-    cachedInputTokens: usage.cacheReadTokens,
-    outputTokens: usage.outputTokens,
-  };
 }
 
 function makePrompt(input: AgentPromptInput): SDKUserMessage {
@@ -543,7 +532,7 @@ class CursorSdkAgent implements AgentSession {
       this.id,
       journal,
       (event) => this.emit(event),
-      mapUsage,
+      mapCursorUsage,
       (turn, proof) =>
         reconcileReleasedTurn(this.binding.store, this.journal, this.id, turn, proof),
     );
@@ -797,6 +786,10 @@ class CursorSdkAgent implements AgentSession {
 
   streamHistory(): AsyncGenerator<AgentStreamEvent> {
     return readCursorHistory(this.sdk, this.binding.store, this.journal, this.id);
+  }
+
+  readLastUsage() {
+    return readCursorLastUsage(this.binding.store, this.journal, this.id);
   }
 
   listCommands(): Promise<AgentSlashCommand[]> {

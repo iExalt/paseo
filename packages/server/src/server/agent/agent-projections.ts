@@ -108,6 +108,7 @@ export function toStoredAgentRecord(
     ...projectSessionMetrics(agent.sessionMetrics),
     lastError: agent.lastError ?? undefined,
     totalCostUsd: readTotalCostUsd(agent.lastUsage),
+    lastUsage: agent.provider === "cursor-sdk" ? sanitizeUsage(agent.lastUsage) : undefined,
     requiresAttention: agent.attention.requiresAttention,
     attentionReason: agent.attention.requiresAttention ? agent.attention.attentionReason : null,
     attentionTimestamp: agent.attention.requiresAttention
@@ -625,9 +626,16 @@ function assignFiniteNumber(
   return raw === undefined || raw === null;
 }
 
+export function readStoredAgentUsage(record: StoredAgentRecord): AgentUsage | undefined {
+  return (
+    record.lastUsage ??
+    (record.totalCostUsd === undefined ? undefined : { totalCostUsd: record.totalCostUsd })
+  );
+}
+
 export function storedUsage(record: StoredAgentRecord | null): { lastUsage?: AgentUsage } {
-  const cost = record?.totalCostUsd;
-  return cost === undefined ? {} : { lastUsage: { totalCostUsd: cost } };
+  const lastUsage = record ? readStoredAgentUsage(record) : undefined;
+  return lastUsage ? { lastUsage } : {};
 }
 
 function readTotalCostUsd(usage: AgentUsage | undefined): number | undefined {
@@ -644,7 +652,10 @@ function sanitizeUsage(value: unknown): AgentUsage | undefined {
   const fields: UsageNumericField[] = [
     "inputTokens",
     "cachedInputTokens",
+    "cacheWriteTokens",
     "outputTokens",
+    "reasoningTokens",
+    "totalTokens",
     "totalCostUsd",
     "contextWindowMaxTokens",
     "contextWindowUsedTokens",
