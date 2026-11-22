@@ -32,6 +32,7 @@ import type {
   AgentRunOptions,
   AgentSession,
   AgentSessionConfig,
+  AgentSlashCommand,
   AgentStreamEvent,
   AgentTimelineItem,
   AgentUsage,
@@ -276,6 +277,11 @@ export class CursorSdkAgentClient implements AgentClient {
     return parameterControls(
       models.find((model) => model.id === id || model.aliases?.includes(id)),
     );
+  }
+
+  listCommands(): Promise<AgentSlashCommand[]> {
+    // The SDK exposes no slash command catalog. Draft discovery needs no SDK session.
+    return Promise.resolve([]);
   }
 
   async listControls(config: AgentSessionConfig): Promise<AgentDraftControls> {
@@ -723,6 +729,10 @@ class CursorSdkAgent implements AgentSession {
       }
     }
     return byRun;
+  }
+
+  listCommands(): Promise<AgentSlashCommand[]> {
+    return Promise.resolve([]);
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {

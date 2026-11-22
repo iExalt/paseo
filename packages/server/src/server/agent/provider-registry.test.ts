@@ -881,6 +881,15 @@ test("cursor provider extending acp uses CursorACPAgentClient", () => {
   expect(mockState.constructorArgs.genericAcp).toEqual([]);
 });
 
+test("wrapped Cursor SDK client lists draft commands without opening an SDK session", async () => {
+  const registry = buildProviderRegistry(logger, {
+    providerOverrides: { "cursor-sdk": { enabled: true } },
+  });
+  const client = registry["cursor-sdk"]!.createClient(logger);
+
+  await expect(client.listCommands?.({ provider: "cursor-sdk", cwd: "/tmp" })).resolves.toEqual([]);
+});
+
 test("wrapped cursor client lists ACP controls through the inner provider", async () => {
   const registry = buildProviderRegistry(logger, {
     providerOverrides: {
