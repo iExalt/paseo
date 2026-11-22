@@ -39,6 +39,7 @@ import {
   type CursorSkillRoot,
   type CursorSkillTarget,
 } from "./cursor-skill-catalog.js";
+import { readCursorWorkspaceInstructions } from "./cursor-workspace-instructions.js";
 import { assertCursorSkillTarget, cursorSkillReferences } from "./prompt-attachments.js";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
@@ -3478,6 +3479,16 @@ export class AgentManager {
           throw new Error(`Agent ${agentId} run was canceled before its turn started`);
         }
         runOptions = { ...options, resolveCursorSkills: resolveSelectedSkills };
+      }
+      if (this.adapterOf(agent.provider) === "cursor-sdk" && agent.workspaceId) {
+        runOptions = {
+          ...runOptions,
+          resolveCursorWorkspaceInstructions: async () => {
+            const target = { cwd: agent.config.cwd, workspaceId: agent.workspaceId };
+            const roots = await this.resolveCursorSkillRoots(target);
+            return readCursorWorkspaceInstructions(target.cwd, roots);
+          },
+        };
       }
       const result = await agent.session.startTurn(prompt, runOptions);
       if (pendingRun.settled) {

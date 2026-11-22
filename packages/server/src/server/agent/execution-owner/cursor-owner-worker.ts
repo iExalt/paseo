@@ -1,6 +1,10 @@
 import { Console } from "node:console";
 import type { AgentOptions, Run, SDKAgent, SDKMessage, SDKUserMessage } from "@cursor/sdk";
 import { withCursorShellEnvironment } from "../providers/cursor-sdk-shell-environment.js";
+import {
+  cursorQuestionToolDescriptor,
+  cursorQuestionToolName,
+} from "../providers/cursor-sdk-questions.js";
 import { proxyCursorStore } from "./cursor-store-proxy.js";
 import { ownerDeferred } from "./owner-channel.js";
 import { connectOwnedProcess } from "./owned-process.js";
@@ -81,7 +85,19 @@ async function main() {
       dispatched = true;
       const native = agent;
       return withCursorShellEnvironment(shellEnvironment, async () =>
-        describe(await native.send(value as SDKUserMessage, { model })),
+        describe(
+          await native.send(value as SDKUserMessage, {
+            model,
+            local: {
+              customTools: {
+                [cursorQuestionToolName]: {
+                  ...cursorQuestionToolDescriptor,
+                  execute: (args, context) => channel.request("question", { args, context }),
+                },
+              },
+            },
+          }),
+        ),
       );
     }
     if (method === "close") {

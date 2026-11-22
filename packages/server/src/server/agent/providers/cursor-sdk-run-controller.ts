@@ -26,6 +26,8 @@ import type { CursorHistoryTurn, CursorTurnJournal } from "./cursor-sdk-turn-jou
 const OPERATION_DEADLINE_MS = 1_500;
 
 export interface CursorTurnExecution {
+  interactionSignal: AbortSignal;
+  abortInteractions: () => void;
   prepareOwner: (generation: string) => Promise<void>;
   discardUnadmittedOwner: () => Promise<void>;
   deferUnadmittedCleanup: (drained: Promise<void>) => void;
@@ -47,6 +49,7 @@ interface CursorTurn {
   completion: Promise<AgentRunResult>;
   toolProcesses: CursorToolProcesses;
   unadmittedCleanup?: Promise<void>;
+  abortInteractions: () => void;
   finishExecution?: (waitForTools: boolean, cancelTools: boolean) => Promise<void>;
   completedWriter?: boolean;
   nativeStopConfirmed?: boolean;
@@ -119,7 +122,10 @@ export class CursorRunController {
       steers: [],
     };
     const toolProcesses = new CursorToolProcesses();
+    const interactions = new AbortController();
     const execution: CursorTurnExecution = {
+      interactionSignal: interactions.signal,
+      abortInteractions: () => interactions.abort(),
       prepareOwner: async (generation) => {
         record.executionIntent = generation;
         await this.journal.enrollExecutionOwner(record);
@@ -174,6 +180,7 @@ export class CursorRunController {
       native,
       completion: Promise.resolve().then(() => this.consume(turn)),
       toolProcesses,
+      abortInteractions: execution.abortInteractions,
       emitted: 0,
       cancellations: new Map(),
       stopRequested: false,
@@ -258,6 +265,7 @@ export class CursorRunController {
     if (!turn) return;
     if (turn.record.unresolvedNativeFollowUp) throw new Error(cursorUnresolvedSteerMessage());
     turn.stopRequested = true;
+    turn.abortInteractions();
     if (!turn.stop) turn.nativeStopRejected = false;
     const stop = (turn.stop ??= this.stopTurn(turn));
     void stop
@@ -507,6 +515,7 @@ export class CursorRunController {
       timeline.push(user);
 
       const observed = await this.observeRuns(turn, run, tools, emitItem);
+      turn.abortInteractions();
       result = observed.result;
       if (observed.streamError && result.status === "finished") throw observed.streamError;
 
@@ -524,6 +533,7 @@ export class CursorRunController {
       }
       return await this.finishTurn(turn, result, timeline, streamedText);
     } catch (error) {
+      turn.abortInteractions();
       return this.failTurn(turn, error, admitted, result?.error?.code);
     }
   }
