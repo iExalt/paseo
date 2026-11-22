@@ -3693,8 +3693,11 @@ export class DaemonClient {
       return this.lastServerInfoMessage?.features?.[feature] === true;
     },
     requestId: () => this.createRequestId(),
-    request: (kind, input) =>
-      kind === "workspace"
+    request: async (kind, input) => {
+      // Reconnect can retry a creation directly, including after the host version changes.
+      const agent = input.agent as CreateWorkspaceRequestOptions["agent"] | undefined;
+      this.requireCursorSdkSkillSelection(agent?.attachments ?? input.attachments);
+      return kind === "workspace"
         ? this.sendCorrelatedSessionRequest({
             requestId: input.requestId as string | undefined,
             message: { ...input, type: "workspace.create.request" },
@@ -3706,7 +3709,8 @@ export class DaemonClient {
             message: { ...input, type: "agent.create.request" },
             responseType: "agent.create.response",
             timeout: 0,
-          }),
+          });
+    },
     observe: (kind, idempotencyKey, next, error) => {
       const observation = this.observe("creation.subscribe.response", {
         type: "creation.subscribe.request",
@@ -3779,6 +3783,7 @@ export class DaemonClient {
     if (options.background !== undefined) this.requireBackgroundCreation(options);
     if (options.metadata !== undefined) this.requireEntityMetadata();
     const config = resolveAgentConfig(options);
+    this.requireCursorSdkSkillSelection(options.attachments);
     if (
       options.relationship !== undefined ||
       options.notifyOnFinish !== undefined ||
@@ -3826,6 +3831,7 @@ export class DaemonClient {
   private async createLegacyAgent(
     options: CreateAgentRequestOptions,
   ): Promise<AgentSnapshotPayload> {
+    this.requireCursorSdkSkillSelection(options.attachments);
     const requestId = this.createRequestId(options.requestId);
     const config = resolveAgentConfig(options);
 
@@ -4631,6 +4637,7 @@ export class DaemonClient {
     text: string,
     options: SendMessageOptions = {},
   ): Promise<AgentMessageReceipt & { agentId: string }> {
+    this.requireCursorSdkSkillSelection(options.attachments);
     this.requireSendAgentMessageCapabilities(options);
     const activeTurnBehavior = this.activeTurnBehaviorForHost(options);
     const requestId = this.createRequestId();
@@ -4670,6 +4677,16 @@ export class DaemonClient {
       ...(payload.activeTurnBehavior ? { activeTurnBehavior: payload.activeTurnBehavior } : {}),
       ...(payload.guidance ? { guidance: payload.guidance } : {}),
     };
+  }
+
+  private requireCursorSdkSkillSelection(attachments: unknown): void {
+    if (
+      Array.isArray(attachments) &&
+      attachments.some((attachment) => attachment?.type === "cursor_skill") &&
+      this.lastServerInfoMessage?.features?.cursorSdkSkillSelection !== true
+    ) {
+      throw new Error("Update the Paseo host to send selected Cursor skills.");
+    }
   }
 
   private requireSendAgentMessageCapabilities(options?: SendMessageOptions): void {
@@ -5923,6 +5940,7 @@ export class DaemonClient {
     input: CreatePaseoWorktreeInput,
     requestId?: string,
   ): Promise<CreatePaseoWorktreePayload> {
+    this.requireCursorSdkSkillSelection(input.firstAgentContext?.attachments);
     if (
       input.notifications !== undefined &&
       this.lastServerInfoMessage?.features?.workspaceNotifications !== true
@@ -5978,6 +5996,8 @@ export class DaemonClient {
   }
 
   private assertWorkspaceCreateOptions(input: CreateWorkspaceRequestOptions): void {
+    this.requireCursorSdkSkillSelection(input.agent?.attachments);
+    this.requireCursorSdkSkillSelection(input.firstAgentContext?.attachments);
     if (
       input.callerContext !== undefined &&
       this.lastServerInfoMessage?.features?.workspaceCallerContext !== true

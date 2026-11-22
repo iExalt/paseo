@@ -5,6 +5,7 @@ import {
   AgentMetricSchema,
   AgentStatusSchema,
   AgentTimelineItemPayloadSchema,
+  CursorSkillReferenceSchema,
   ForgeWebSchema,
   WorkspaceGitHubRuntimePayloadSchema,
 } from "@getpaseo/protocol/messages";
@@ -136,6 +137,7 @@ const StoredTimelineItemSchema = z.discriminatedUnion("kind", [
     kind: z.literal("user_message"),
     clientMessageId: z.string().optional(),
     messageId: z.string().optional(),
+    cursorSkills: z.array(CursorSkillReferenceSchema).optional(),
     text: z.string(),
   }),
   z.strictObject({
@@ -484,14 +486,19 @@ function serializeAgentToolCall(data: AgentToolCallData): StoredToolCall {
 function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
   const base = timelineBase(item);
   switch (item.kind) {
-    case "user_message":
+    case "user_message": {
+      const cursorSkills = item.attachments?.flatMap((attachment) =>
+        attachment.type === "cursor_skill" ? [attachment.reference] : [],
+      );
       return {
         ...base,
         kind: item.kind,
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
         ...(item.messageId ? { messageId: item.messageId } : {}),
         text: item.text,
+        ...(cursorSkills?.length ? { cursorSkills } : {}),
       };
+    }
     case "assistant_message":
       return {
         ...base,
@@ -586,6 +593,14 @@ function deserializeBuiltinTimelineItem(
         ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
         ...(item.messageId ? { messageId: item.messageId } : {}),
         text: item.text,
+        ...(item.cursorSkills?.length
+          ? {
+              attachments: item.cursorSkills.map((reference) => ({
+                type: "cursor_skill" as const,
+                reference,
+              })),
+            }
+          : {}),
       };
     case "assistant_message":
       return {
@@ -814,7 +829,10 @@ function serializeProject(project: ProjectDescriptor): StoredProject {
 function isTimelineItemStoredLosslessly(item: StreamItem): boolean {
   switch (item.kind) {
     case "user_message":
-      return (item.images?.length ?? 0) === 0 && (item.attachments?.length ?? 0) === 0;
+      return (
+        (item.images?.length ?? 0) === 0 &&
+        (item.attachments?.every((attachment) => attachment.type === "cursor_skill") ?? true)
+      );
     case "tool_call":
       return item.payload.source === "agent";
     default:

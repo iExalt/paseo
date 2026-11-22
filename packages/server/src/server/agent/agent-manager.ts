@@ -40,7 +40,15 @@ import {
 } from "@getpaseo/protocol/agent-labels";
 import type { Logger } from "pino";
 import type { ToolPolicy } from "@getpaseo/protocol/agent-types";
-import type { SpendSummary } from "@getpaseo/protocol/messages";
+import type { CursorSkillReference, SpendSummary } from "@getpaseo/protocol/messages";
+import {
+  cursorSkillRoots,
+  resolveCursorSkills,
+  scanCursorSkills,
+  type CursorSkillRoot,
+  type CursorSkillTarget,
+} from "./cursor-skill-catalog.js";
+import { assertCursorSkillTarget, cursorSkillReferences } from "./prompt-attachments.js";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
@@ -449,6 +457,7 @@ export interface CreateAgentOptions {
 }
 
 export interface AgentManagerOptions {
+  resolveCursorSkillRoots?: (target: CursorSkillTarget) => Promise<CursorSkillRoot[]>;
   pluginLifecycle?: PluginLifecycle;
   /** An internal workspace makes every agent created inside it internal. */
   clients?: ProviderClientMap;
@@ -1093,7 +1102,12 @@ export class AgentManager {
   // Cleared once an idle-only shutdown commits, so no turn starts in the daemon's last moments.
   private admittingTurns = true;
 
+  private readonly resolveCursorSkillRoots: NonNullable<
+    AgentManagerOptions["resolveCursorSkillRoots"]
+  >;
+
   constructor(options: AgentManagerOptions) {
+    this.resolveCursorSkillRoots = options.resolveCursorSkillRoots ?? cursorSkillRoots;
     this.pluginLifecycle = options.pluginLifecycle;
     this.pluginSessions = options.pluginSessions;
     this.timelineStore = options.timelineStore ?? new InMemoryAgentTimelineStore();
@@ -1597,7 +1611,30 @@ export class AgentManager {
     }
   }
 
+  async listCursorSkillCommands(target: CursorSkillTarget): Promise<AgentSlashCommand[]> {
+    if (this.providerEnabled.get("cursor-sdk") === false) {
+      throw new Error("Cursor SDK is disabled on this host.");
+    }
+    const skills = await scanCursorSkills(await this.resolveCursorSkillRoots(target));
+    return skills.map(({ reference, description }) => ({
+      name: reference.name,
+      description,
+      argumentHint: "",
+      kind: "skill",
+      skill: reference,
+    }));
+  }
+
+  async validateCursorSkillSelection(
+    target: CursorSkillTarget,
+    references: readonly CursorSkillReference[],
+  ) {
+    if (!references.length) return [];
+    return resolveCursorSkills(await this.resolveCursorSkillRoots(target), references);
+  }
+
   async listDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
+    if (config.provider === "cursor-sdk") return this.listCursorSkillCommands(config);
     const normalizedConfig = await this.normalizeConfig(config, { resolveDefaultModel: false });
     const client = this.requireClient(normalizedConfig.provider);
     if (!normalizedConfig.model) {
@@ -3588,6 +3625,9 @@ export class AgentManager {
     const agent = await this.findOutOfBandRecipient(agentId);
     if (!agent) return false;
     this.assertAdmittingTurns();
+    const blocks = typeof prompt === "string" ? undefined : prompt;
+    assertCursorSkillTarget(blocks, agent.provider);
+    if (cursorSkillReferences(blocks).length) return false;
     // Providers parse slash commands from the raw text, so a command another agent sent
     // must reach them without its sender envelope.
     const agentMessage = typeof prompt === "string" ? parseAgentMessage(prompt) : null;
@@ -3707,7 +3747,23 @@ export class AgentManager {
       return null;
     }
     try {
-      const result = await agent.session.startTurn(prompt, options);
+      let runOptions = options;
+      const blocks = typeof prompt === "string" ? undefined : prompt;
+      const references = cursorSkillReferences(blocks);
+      assertCursorSkillTarget(blocks, agent.provider);
+      if (references.length) {
+        const resolveSelectedSkills = () =>
+          this.validateCursorSkillSelection(
+            { cwd: agent.config.cwd, workspaceId: agent.workspaceId },
+            references,
+          );
+        await resolveSelectedSkills();
+        if (pendingRun.settled) {
+          throw new Error(`Agent ${agentId} run was canceled before its turn started`);
+        }
+        runOptions = { ...options, resolveCursorSkills: resolveSelectedSkills };
+      }
+      const result = await agent.session.startTurn(prompt, runOptions);
       if (pendingRun.settled) {
         throw new Error(`Agent ${agentId} run was canceled before its turn started`);
       }
@@ -4159,7 +4215,9 @@ export class AgentManager {
     this.assertNotArchiving(agentId);
     const agent = this.requireSessionAgent(agentId);
     const expectedTurnId = agent.activeForegroundTurnId ?? agent.activeTurnId;
-    if (!expectedTurnId || !agent.session.steerActiveTurn) {
+    const blocks = typeof prompt === "string" ? undefined : prompt;
+    assertCursorSkillTarget(blocks, agent.provider);
+    if (!expectedTurnId || !agent.session.steerActiveTurn || cursorSkillReferences(blocks).length) {
       return { status: "unavailable" };
     }
     const result = await this.runSteerAdmission(agent, expectedTurnId, async () => {
@@ -4205,24 +4263,28 @@ export class AgentManager {
       return { status: "inactive" };
     }
 
-    const result = agent.session.steerActiveTurn
-      ? await this.runSteerAdmission(agent, expectedTurnId, async () => {
-          const admission = await agent.session.steerActiveTurn!(prompt, {
-            ...options,
-            expectedTurnId,
-          });
-          if (admission.status === "accepted") {
-            await this.recordAcceptedSteer(
-              agent,
-              prompt,
-              options?.clientMessageId,
+    const blocks = typeof prompt === "string" ? undefined : prompt;
+    assertCursorSkillTarget(blocks, agent.provider);
+    // A selected skill needs a fresh turn so the daemon can validate it at dispatch.
+    const result =
+      agent.session.steerActiveTurn && !cursorSkillReferences(blocks).length
+        ? await this.runSteerAdmission(agent, expectedTurnId, async () => {
+            const admission = await agent.session.steerActiveTurn!(prompt, {
+              ...options,
               expectedTurnId,
-              admission.providerMessageId,
-            );
-          }
-          return admission;
-        })
-      : { status: "unavailable" as const };
+            });
+            if (admission.status === "accepted") {
+              await this.recordAcceptedSteer(
+                agent,
+                prompt,
+                options?.clientMessageId,
+                expectedTurnId,
+                admission.providerMessageId,
+              );
+            }
+            return admission;
+          })
+        : { status: "unavailable" as const };
     if (result.status === "accepted") {
       return { status: "steered" };
     }
@@ -4333,11 +4395,22 @@ export class AgentManager {
         if (starting && starting.start.status !== "started" && starting !== stalledStart) {
           return { status: "starting" as const, run: starting };
         }
+        this.assertNotArchiving(agent.id);
+        const blocks = typeof prompt === "string" ? undefined : prompt;
+        assertCursorSkillTarget(blocks, agent.provider);
         if (!this.hasInFlightRun(agent.id)) {
           return {
             status: "reserved" as const,
             iterator: this.streamAgent(agent.id, prompt, options, promptStart),
           };
+        }
+        const skillReferences = cursorSkillReferences(blocks);
+        if (skillReferences.length) {
+          await this.validateCursorSkillSelection(
+            { cwd: agent.config.cwd, workspaceId: agent.workspaceId },
+            skillReferences,
+          );
+          this.assertNotArchiving(agent.id);
         }
         agent.pendingReplacement = true;
         agent.lifecycle = "running";
@@ -5523,10 +5596,15 @@ export class AgentManager {
   }
 
   watchSkills(
-    config: AgentSessionConfig & { env?: NodeJS.ProcessEnv },
+    config: AgentSessionConfig &
+      Pick<CursorSkillTarget, "workspaceId" | "skillScope"> & { env?: NodeJS.ProcessEnv },
     onChange: () => Promise<void> | void,
   ) {
-    return watchSkillChanges(skillRoots(config), onChange, (err) => {
+    const roots =
+      config.provider === "cursor-sdk"
+        ? () => this.resolveCursorSkillRoots(config)
+        : skillRoots(config);
+    return watchSkillChanges(roots, onChange, (err) => {
       this.logger.warn({ err, provider: config.provider, cwd: config.cwd }, "Skill refresh failed");
     });
   }
@@ -5548,7 +5626,10 @@ export class AgentManager {
       }
       this.enqueueSessionEvent(agentId, event);
     });
-    if (!agent.session.listCommands && !agent.session.refreshSkills) {
+    if (
+      agent.provider === "cursor-sdk" ||
+      (!agent.session.listCommands && !agent.session.refreshSkills)
+    ) {
       agent.unsubscribeSession = unsubscribe;
       return;
     }
@@ -6677,9 +6758,11 @@ export class AgentManager {
     outcome: "accepted" | "rejected",
     options?: { messageId?: string; providerMessageId?: string; turnId?: string },
   ): void {
+    const cursorSkills = cursorSkillReferences(typeof prompt === "string" ? undefined : prompt);
     const items = projectAgentMessages({
       type: "user_message",
       text: submittedPromptText(prompt),
+      ...(cursorSkills.length ? { cursorSkills } : {}),
       clientMessageId,
       ...(options?.messageId ? { messageId: options.messageId } : {}),
     });

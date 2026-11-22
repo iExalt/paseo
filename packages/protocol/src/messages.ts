@@ -1,4 +1,6 @@
 import { AgentMessageSchema } from "./agent-message.js";
+import { CursorSkillAttachmentSchema, CursorSkillReferenceSchema } from "./cursor-skill.js";
+export { CursorSkillReferenceSchema, type CursorSkillReference } from "./cursor-skill.js";
 import {
   HostsListRequestSchema,
   HostsAddRequestSchema,
@@ -667,6 +669,7 @@ export const AgentTimelineItemPayloadSchema: z.ZodType<AgentTimelineItem, unknow
     text: z.string(),
     messageId: z.string().optional(),
     clientMessageId: z.string().optional(),
+    cursorSkills: z.array(CursorSkillReferenceSchema).optional(),
   }),
   z.object({
     type: z.literal("assistant_message"),
@@ -1291,9 +1294,10 @@ export const AgentAttachmentSchema = z.discriminatedUnion("type", [
   TextAttachmentSchema,
   ReviewAttachmentSchema,
   UploadedFileAttachmentSchema,
+  CursorSkillAttachmentSchema,
 ]);
 
-function normalizeAgentAttachments(input: unknown): AgentAttachment[] {
+function normalizeAgentAttachments(input: unknown, ctx: z.RefinementCtx): AgentAttachment[] {
   if (!Array.isArray(input)) {
     return [];
   }
@@ -1302,6 +1306,16 @@ function normalizeAgentAttachments(input: unknown): AgentAttachment[] {
     const parsed = AgentAttachmentSchema.safeParse(item);
     if (parsed.success) {
       normalized.push(parsed.data);
+    } else if (
+      typeof item === "object" &&
+      item !== null &&
+      "type" in item &&
+      item.type === "cursor_skill"
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        message: "Invalid Cursor skill selection. Select it again from the skill menu.",
+      });
     }
   }
   return normalized;
@@ -3511,6 +3525,7 @@ export const PingMessageSchema = z.object({
 const ListCommandsDraftConfigSchema = z.object({
   provider: AgentProviderSchema,
   cwd: z.string(),
+  skillScope: z.literal("user").optional(),
   modeId: z.string().optional(),
   model: z.string().optional(),
   thinkingOptionId: z.string().optional(),
@@ -3837,6 +3852,7 @@ export const SessionEventSubscriptionSchema = z.enum([
   "workspace_setup_progress",
   "agent.provider_subagents.update",
   "agent.background_work.update",
+  "agent.commands.changed",
   "terminal_attention_required",
   "plugin.notification",
   "status.server_info",
@@ -4331,6 +4347,7 @@ export const ServerInfoStatusPayloadSchema = z
         // COMPAT(workspaceRequestReceipts): added in v0.8.0; remove gate after 2027-03-07.
         workspaceRequestReceipts: z.boolean().optional(),
         creationLifecycle: z.boolean().optional(),
+        cursorSdkSkillSelection: z.boolean().optional(),
         // COMPAT(hubAgentRpc): added in v0.8.0; remove gate after 2027-03-05.
         hubAgentRpc: z.boolean().optional(),
         // COMPAT(internalAgents): added in v0.9.0; remove gate after 2027-03-17.
@@ -7693,11 +7710,13 @@ const AgentSlashCommandSchema = z.object({
   description: z.string(),
   argumentHint: z.string(),
   kind: z.enum(["command", "skill"]).optional().catch("command"),
+  skill: CursorSkillReferenceSchema.optional(),
 });
 
 export const AgentCommandsChangedSchema = z.object({
   type: z.literal("agent.commands.changed"),
   payload: z.object({
+    subscriptionId: z.string().optional(),
     agentId: z.string().optional(),
     cwd: z.string(),
     provider: AgentProviderSchema,

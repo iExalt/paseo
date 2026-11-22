@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useFetchQuery } from "@/data/query";
 import { useTranslation } from "react-i18next";
+import type { CursorSkillReference } from "@getpaseo/protocol/messages";
 import type { DaemonClient } from "@getpaseo/client/internal/daemon-client";
 import { useRetainedPanelActive } from "@/components/retained-panel";
 import { useSessionStore } from "@/stores/session-store";
@@ -19,13 +20,14 @@ export interface AgentSlashCommand {
   description: string;
   argumentHint: string;
   kind?: string;
+  skill?: CursorSkillReference;
 }
 
 export type DraftCommandConfig = AgentCommandsDraftConfig;
 
 /** What a draft composer can list commands for, before an agent exists. */
 export type DraftCommandTarget =
-  | { status: "ready"; config: DraftCommandConfig }
+  | { status: "ready"; config: DraftCommandConfig; skillScope?: "user" }
   | { status: "needs-project" }
   | { status: "needs-provider" };
 

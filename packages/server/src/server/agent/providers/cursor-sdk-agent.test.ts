@@ -199,13 +199,15 @@ describe("Cursor SDK provider", () => {
     }
   });
 
-  it.each(["stop", "rotate"] as const)(
-    "rejects dispatch when %s occurs during native credential rebinding",
+  it.each(["stop", "rotate", "skill", "lateRotate"] as const)(
+    "revalidates a pending %s change during native credential rebinding",
     async (change) => {
       vi.stubEnv("CURSOR_API_KEY", "");
       const { config, load, modelList, sdk, agent, send, storePath } = fixture();
       const enteredResume = Promise.withResolvers<void>();
       const releaseResume = Promise.withResolvers<void>();
+      const enteredSkills = Promise.withResolvers<void>();
+      const releaseSkills = Promise.withResolvers<void>();
       const replacementSend = vi
         .fn()
         .mockResolvedValue(makeRun([], { id: runId, status: "finished" }));
@@ -233,16 +235,52 @@ describe("Cursor SDK provider", () => {
             return rebound;
           })
           .mockResolvedValue(rebound);
-        const start = session.startTurn("blocked dispatch");
+        const resolveCursorSkills = vi.fn(async () => {
+          if (change === "skill") {
+            throw new Error("Cursor skill changed. Select it again from the skill menu.");
+          }
+          enteredSkills.resolve();
+          await releaseSkills.promise;
+          return [];
+        });
+        const hasSkill = change === "skill" || change === "lateRotate";
+        const start = hasSkill
+          ? session.startTurn(
+              [
+                { type: "text", text: "blocked dispatch" },
+                {
+                  type: "cursor_skill",
+                  reference: {
+                    name: "sample-skill",
+                    scope: "workspace",
+                    id: "a".repeat(64),
+                    revision: "b".repeat(64),
+                  },
+                },
+              ],
+              { resolveCursorSkills },
+            )
+          : session.startTurn("blocked dispatch");
         void start.catch(() => {});
         await Promise.race([enteredResume.promise, start]);
         expect(agent[Symbol.asyncDispose]).toHaveBeenCalledOnce();
         const stop = change === "stop" ? session.interrupt() : undefined;
         if (change === "rotate") key = "latest";
+        expect(resolveCursorSkills).not.toHaveBeenCalled();
         releaseResume.resolve();
-        await expect(start).rejects.toThrow(
-          change === "stop" ? "stopped before dispatch" : "sign-in changed",
-        );
+        if (change === "lateRotate") {
+          await Promise.race([enteredSkills.promise, start]);
+          key = "latest";
+          releaseSkills.resolve();
+        }
+        const errors = {
+          stop: "stopped before dispatch",
+          rotate: "sign-in changed",
+          skill: "Select it again from the skill menu",
+          lateRotate: "sign-in changed",
+        };
+        await expect(start).rejects.toThrow(errors[change]);
+        expect(resolveCursorSkills).toHaveBeenCalledTimes(hasSkill ? 1 : 0);
         await (stop ?? session.interrupt());
         expect(send).not.toHaveBeenCalled();
         expect(replacementSend).not.toHaveBeenCalled();
@@ -253,7 +291,7 @@ describe("Cursor SDK provider", () => {
         );
         await session.run("retry after credentials settle");
         expect(replacementSend).toHaveBeenCalledOnce();
-        if (change === "rotate") {
+        if (change === "rotate" || change === "lateRotate") {
           expect(sdk.Agent.resume).toHaveBeenLastCalledWith(
             agentId,
             expect.objectContaining({ apiKey: "latest" }),
@@ -261,6 +299,7 @@ describe("Cursor SDK provider", () => {
         }
       } finally {
         releaseResume.resolve();
+        releaseSkills.resolve();
         await session.close();
         vi.unstubAllEnvs();
       }
