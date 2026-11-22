@@ -51,6 +51,8 @@ run("npx", ["expo", "prebuild", "--platform", "android", "--no-install"], app);
 // Gradle does not track Metro's environment flags. Always regenerate the JS artifact
 // so a previous ordinary release cannot silently bypass the profiling renderer.
 rmSync(path.join(app, "android/app/build/generated/assets"), { recursive: true, force: true });
+// npm's hermesc is x86-64 only on Linux; an ARM64 Linux host supplies its own (with-android-gradle.js).
+const hermesCommand = process.env.PASEO_HERMES_COMMAND;
 run(
   "./gradlew",
   [
@@ -59,6 +61,7 @@ run(
     "--max-workers=2",
     "-Dorg.gradle.parallel=false",
     `-PreactNativeArchitectures=${architectures}`,
+    ...(hermesCommand ? [`-PpaseoHermesCommand=${path.resolve(hermesCommand)}`] : []),
   ],
   path.join(app, "android"),
 );

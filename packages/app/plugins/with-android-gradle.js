@@ -35,9 +35,26 @@ function configureAndroidAppBuildGradle(source) {
   return source.replaceAll("proguard-android.txt", "proguard-android-optimize.txt");
 }
 
+// React Native resolves %OS-BIN% to a prebuilt hermesc, and hermes-compiler ships Linux only for
+// x86-64, so its Gradle plugin fails on linux-aarch64. The paseoHermesCommand property (set by
+// build-apk.mjs from PASEO_HERMES_COMMAND) points the build at another hermesc instead.
+const hermesCommandOverride = "findProperty('paseoHermesCommand') ?: ";
+
+function configureHermesCommand(source) {
+  const command = /^(\s*)hermesCommand = (.+)$/m;
+  const match = source.match(command);
+  if (!match) {
+    throw new Error("Could not find React Native's hermesCommand");
+  }
+  if (match[2].startsWith(hermesCommandOverride)) return source;
+  return source.replace(command, `$1hermesCommand = ${hermesCommandOverride}$2`);
+}
+
 function withAndroidGradle(config) {
   config = withAppBuildGradle(config, (modConfig) => {
-    modConfig.modResults.contents = configureAndroidAppBuildGradle(modConfig.modResults.contents);
+    modConfig.modResults.contents = configureHermesCommand(
+      configureAndroidAppBuildGradle(modConfig.modResults.contents),
+    );
     return modConfig;
   });
   config = withProjectBuildGradle(config, (modConfig) => {
@@ -77,3 +94,4 @@ module.exports = withAndroidGradle;
 module.exports.configureGradleWrapper = configureGradleWrapper;
 module.exports.configureAndroidBuildGradle = configureAndroidBuildGradle;
 module.exports.configureAndroidAppBuildGradle = configureAndroidAppBuildGradle;
+module.exports.configureHermesCommand = configureHermesCommand;
