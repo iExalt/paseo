@@ -2622,6 +2622,7 @@ export const ToolCall = memo(function ToolCall({
         displayName: presentation.displayName,
         summary: presentation.summary,
         detail: presentation.detail,
+        metadata,
         errorText: presentation.errorText,
         icon: presentation.icon,
         showLoadingSkeleton: presentation.isLoadingDetails,
@@ -2635,6 +2636,7 @@ export const ToolCall = memo(function ToolCall({
     toggleExpanded,
     openToolCall,
     toolName,
+    metadata,
     presentation.detail,
     presentation.displayName,
     presentation.summary,
@@ -2670,6 +2672,7 @@ export const ToolCall = memo(function ToolCall({
       <ToolCallDetailsContent
         toolName={toolName}
         detail={presentation.detail}
+        metadata={metadata}
         errorText={presentation.errorText}
         maxHeight={maxDetailHeight}
         showLoadingSkeleton={presentation.isLoadingDetails}
@@ -2678,6 +2681,7 @@ export const ToolCall = memo(function ToolCall({
   }, [
     shouldRenderInline,
     toolName,
+    metadata,
     presentation.detail,
     presentation.errorText,
     presentation.isLoadingDetails,

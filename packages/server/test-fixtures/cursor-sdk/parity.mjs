@@ -242,10 +242,28 @@ async function checkCompleted(run) {
   assert.equal(shells.length, 1);
   assert.ok(shells[0].callId.endsWith(`:${callId}`));
   assert.equal(shells[0].status, "completed");
-  const result = shells[0].detail.output;
-  assert.equal(result?.status, "success");
-  assert.equal(result.value.exitCode, 0);
-  assert.equal(result.value.stdout, canary);
+  if (mode === "baseline") {
+    const result = shells[0].detail.output;
+    assert.equal(result?.status, "success");
+    assert.equal(result.value.exitCode, 0);
+    assert.equal(result.value.stdout, canary);
+  } else {
+    const shell = shells[0];
+    assert.equal(shell.detail.type, "shell");
+    assert.equal(shell.detail.command, "sh cursor-canary.sh");
+    assert.equal(shell.detail.cwd, workspace);
+    assert.equal(shell.detail.exitCode, 0);
+    assert.equal(shell.detail.output, canary);
+    assert.equal(shell.metadata.cursorSdk.output.value.stdout, canary);
+    const reads = items.filter((item) => item.type === "tool_call" && item.name === "read");
+    assert.equal(reads.length, 1);
+    assert.equal(reads[0].status, "completed");
+    assert.deepEqual(reads[0].detail, {
+      type: "read",
+      filePath: join(workspace, "cursor-canary.sh"),
+      content: "P8_READ_COMPLETED",
+    });
+  }
   assert.equal(await readFile(join(workspace, "cursor-canary.txt"), "utf8"), canary);
   const { snapshot } = await cli("agent", "status", run.agentId);
   assert.deepEqual(snapshot.lastUsage, { inputTokens: 12, cachedInputTokens: 2, outputTokens: 3 });
