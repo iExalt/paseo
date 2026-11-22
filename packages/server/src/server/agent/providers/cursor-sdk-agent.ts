@@ -1,6 +1,11 @@
+import {
+  canRequestCursorShellEnvironment,
+  prepareCursorShellEnvironment,
+  withCursorShellEnvironment,
+} from "./cursor-sdk-shell-environment.js";
 import { renderSelectedCursorSkills } from "../cursor-skill-catalog.js";
 import { realpath } from "node:fs/promises";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import type {
   AgentOptions,
   LocalAgentStore,
@@ -89,7 +94,7 @@ const CAPABILITIES = {
   supportsOfflineHistory: true,
   supportsDynamicModes: false,
   supportsMcpServers: true,
-  supportsPaseoCli: false,
+  supportsPaseoCli: canRequestCursorShellEnvironment(),
   supportsReasoningStream: true,
   supportsToolInvocations: true,
 };
@@ -354,6 +359,10 @@ export class CursorSdkAgentClient implements AgentClient {
   ): Promise<AgentSession> {
     assertNoInheritedAgentIdentity();
     assertMode(config.modeId);
+    const shellEnvironment = await prepareCursorShellEnvironment(
+      launchContext?.env,
+      dirname(this.storePath),
+    );
     const apiKey = await this.requireApiKey();
     const cwd = await realpath(config.cwd);
     const sdk = await this.loadSdk();
@@ -385,9 +394,11 @@ export class CursorSdkAgentClient implements AgentClient {
       mcpServers: { ...config.mcpServers, ...launchContext?.mcpServers },
     };
 
-    const agent = nativeId
-      ? await sdk.Agent.resume(nativeId, { ...options, apiKey })
-      : await sdk.Agent.create({ ...options, apiKey });
+    const agent = await withCursorShellEnvironment(shellEnvironment, () =>
+      nativeId
+        ? sdk.Agent.resume(nativeId, { ...options, apiKey })
+        : sdk.Agent.create({ ...options, apiKey }),
+    );
     const agentId = agent.agentId;
     return new CursorSdkAgent(
       { agent, apiKey },
@@ -401,10 +412,13 @@ export class CursorSdkAgentClient implements AgentClient {
       sdk,
       binding,
       new CursorTurnJournal(this.storePath, agentId),
+      shellEnvironment,
       {
         read: () => this.requireApiKey(),
         resume: (key, selection) =>
-          sdk.Agent.resume(agentId, { ...options, apiKey: key, model: selection }),
+          withCursorShellEnvironment(shellEnvironment, () =>
+            sdk.Agent.resume(agentId, { ...options, apiKey: key, model: selection }),
+          ),
       },
     );
   }
@@ -459,6 +473,7 @@ class CursorSdkAgent implements AgentSession {
     private readonly sdk: CursorSdk,
     private readonly binding: ReturnType<typeof createCursorRunBinding>,
     private readonly journal: CursorTurnJournal,
+    private readonly shellEnvironment: Awaited<ReturnType<typeof prepareCursorShellEnvironment>>,
     private readonly credentials: {
       read: () => Promise<string>;
       resume: (apiKey: string, model: ModelSelection) => Promise<SDKAgent>;
@@ -551,7 +566,9 @@ class CursorSdkAgent implements AgentSession {
         throw new Error("Cursor SDK sign-in changed. Send your message again.");
       }
       throwIfStopped();
-      return agent.send({ ...input, text }, { model });
+      return withCursorShellEnvironment(this.shellEnvironment, () =>
+        agent.send({ ...input, text }, { model }),
+      );
     });
     if (this.model === requested.model && this.options === requested.options) {
       this.model = selected;

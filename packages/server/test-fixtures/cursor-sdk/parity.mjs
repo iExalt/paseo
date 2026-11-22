@@ -1,3 +1,4 @@
+import { checkCallerEnvironment, prepareCallerFixture } from "./caller.mjs";
 import assert from "node:assert/strict";
 import { execFile, fork } from "node:child_process";
 import { once } from "node:events";
@@ -33,6 +34,8 @@ const canary = "PASEO_LOCAL_CANARY";
 
 await Promise.all([mkdir(workspace), mkdir(home), mkdir(paseoHome)]);
 const fixtures = mode === "green" ? await installSkillFixtures(workspace, home) : undefined;
+const callerWorkspace =
+  mode === "green" ? await prepareCallerFixture({ root, paseoHome, home, workspace }) : undefined;
 const backend = await startBackend(workspace, {
   allowCodexPrewarm: mode === "baseline",
   selectSkillTurn: fixtures ? assertSkillTurnRequest : undefined,
@@ -46,6 +49,12 @@ await writeFile(
   join(workspace, "cursor-canary.sh"),
   [
     ...(mode === "baseline" ? shellEnvironment : []),
+    ...(mode === "green"
+      ? [
+          `if [ -n "\${P3_LABEL:-}" ]; then exec "${process.execPath}" p3-shell.mjs; fi`,
+          'printf "%s\\n" "${PASEO_HOME:-absent}" "${PASEO_CLI:-absent}" > cursor-cli-disabled.txt',
+        ]
+      : []),
     `printf '%s' '${canary}' > cursor-canary.txt`,
     `printf '%s' '${canary}'`,
   ].join("\n"),
@@ -69,7 +78,7 @@ await writeFile(
 const env = {
   HOME: home,
   PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
-  SHELL: "/bin/sh",
+  SHELL: mode === "green" ? "/bin/bash" : "/bin/sh",
   PASEO_HOME: paseoHome,
   PASEO_LISTEN: "127.0.0.1:0",
   PASEO_RELAY_ENABLED: "false",
@@ -88,6 +97,7 @@ let listener;
 async function startDaemon({ listen = env.PASEO_LISTEN, offline = false } = {}) {
   const daemonEnv = {
     ...env,
+    ...(mode === "green" ? { PASEO_AGENT_ID: "stale-launcher" } : {}),
     PASEO_LISTEN: listen,
     ...(offline
       ? {
@@ -213,7 +223,7 @@ async function checkCompleted(run) {
 
 try {
   await startDaemon();
-  const workspaceId = await createWorkspace();
+  const workspaceId = callerWorkspace ?? (await createWorkspace());
   if (mode === "baseline") {
     await checkBaseline({
       backend,
@@ -239,6 +249,19 @@ try {
       listener: () => listener,
     });
     await checkCompleted(await launch(workspaceId, "Run the shell canary."));
+    assert.deepEqual(
+      (await readFile(join(workspace, "cursor-cli-disabled.txt"), "utf8")).trimEnd().split("\n"),
+      [paseoHome, "absent"],
+    );
+    const callerProof = {
+      root,
+      require,
+      paseoHome,
+      workspace,
+      workspaceId,
+      listener: () => listener,
+    };
+    const callerAgents = await checkCallerEnvironment(callerProof);
     const replaySelectedSkills = () =>
       checkSelectedSkills({
         backend,
@@ -263,6 +286,7 @@ try {
       workspace,
       workspaceId,
     });
+    await checkCallerEnvironment({ ...callerProof, agents: callerAgents });
     await checkLifecycle({
       backend,
       listener: () => listener,
