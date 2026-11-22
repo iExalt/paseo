@@ -214,6 +214,28 @@ Build workspace dependencies first in a fresh checkout; see [development setup](
 - Teardown kills the process tree, because a Windows signal reaches only the direct child and leaves forked workers holding the listening port.
 - The `asdf`-backed local Elixir relay stays POSIX-only, so the `relay-deployment` Playwright project is unavailable on Windows.
 
+### Cursor SDK loopback parity
+
+The routine integration lane runs the built daemon and the pinned Cursor SDK against a scripted loopback service. The record includes a shell-written file, the shell result and assistant text in the CLI timeline, and token usage. The Linux launcher needs passwordless sudo for a private network namespace, plus a C compiler, `ip`, `setpriv`, and `strace`. The daemon, SDK, and shell run as your current user with dummy credentials and a temporary home. A syscall filter blocks connections through host proxy sockets and keeps the local stream pairs used for child-process IPC.
+
+```bash
+mise exec -- npm run build:server
+mise exec -- bash packages/server/test-fixtures/cursor-sdk/loopback.sh
+```
+
+The historical probe describes the three known failures in Paseo 0.32.1. Use a separate worktree at `d0731444316f7a8030b2557fe306866b7e73734a` with its locked dependencies installed and `build:server` completed. Pass the absolute path to a local Codex executable (verified with 0.167.0) for the offline catalog and caller-scope comparisons. The fixture refuses Codex’s loopback WebSocket startup handshake before a model request can be sent. Run the fixture from this checkout.
+
+```bash
+mise exec -- bash packages/server/test-fixtures/cursor-sdk/loopback.sh \
+  baseline /path/to/paseo-0.32.1 /path/to/codex
+```
+
+| Historical probe | Expected 0.32.1 result                                                                                                                               | Control                                                                                                                              |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Skill discovery  | Both Cursor SDK command lists are empty with the fixture model selected.                                                                             | Codex finds the fixture through both catalogs.                                                                                       |
+| Caller identity  | The Cursor shell sees no caller agent ID, cwd, workspace ID or per-run environment sentinel.                                                         | The same Cursor shell sees the daemon-wide sentinel. Codex's local app server sees all three caller values and the per-run sentinel. |
+| Stale run        | After a crash during an actual local shell, the cold agent reports idle, Stop reports false, and the next send fails with an already-active SDK run. | A completed Cursor agent reopens and completes another turn on the same restarted daemon.                                            |
+
 ## Pull-request test routing
 
 Fork PR checks use `.github/ci-paths.json` ownership and dependent-consumer rules; unknown and shared configuration changes select the full routine gate. Independent lanes run in parallel, including three server-unit shards. Dev pushes and rebased `dev` retain the complete routine gate.
