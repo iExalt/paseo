@@ -9,6 +9,7 @@ import { delimiter, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { checkBaseline, prepareBaseline, shellEnvironment } from "./baseline.mjs";
 import { apiKey, assistantText, callId, model, sdkVersion, startBackend } from "./backend.mjs";
+import { checkP5Interactions, prepareP5Fixture } from "./interactions.mjs";
 import { checkOwnedRecovery } from "./owned-recovery.mjs";
 import { checkLifecycle } from "./lifecycle.mjs";
 import { checkControls, controlCatalog } from "./controls.mjs";
@@ -42,7 +43,11 @@ const useCallerFixture = mode === "green" || (mode === "owner" && process.platfo
 const callerWorkspace = useCallerFixture
   ? await prepareCallerFixture({ root, paseoHome, home, workspace })
   : undefined;
+const p5Fixture = useCallerFixture
+  ? await prepareP5Fixture({ root, paseoHome, home, workspace })
+  : undefined;
 const backend = await startBackend(workspace, {
+  p5: !!p5Fixture,
   allowCodexPrewarm: mode === "baseline",
   selectSkillTurn: fixtures ? assertSkillTurnRequest : undefined,
   models: mode === "green" ? controlCatalog(model) : undefined,
@@ -252,6 +257,17 @@ let failure;
 try {
   await startDaemon();
   const workspaceId = callerWorkspace ?? (await createWorkspace());
+  const checkInteractions = (expectOwner) =>
+    checkP5Interactions({
+      require,
+      listener: () => listener,
+      paseoHome,
+      workspace,
+      workspaceId,
+      fixtures: p5Fixture,
+      model,
+      expectOwner,
+    });
   if (mode === "baseline") {
     await checkBaseline({
       backend,
@@ -272,6 +288,7 @@ try {
     const callerCanary = join(workspace, "cursor-canary.sh");
     const callerScript = await readFile(callerCanary);
     const callerAgents = useCallerFixture ? await checkCallerEnvironment(caller) : undefined;
+    if (p5Fixture) await checkInteractions(true);
     await checkOwnedRecovery({
       backend,
       listener: () => listener,
@@ -335,6 +352,7 @@ try {
       workspaceId,
     });
     await checkCallerEnvironment({ ...callerProof, agents: callerAgents });
+    await checkInteractions(false);
     await checkLifecycle({
       backend,
       listener: () => listener,

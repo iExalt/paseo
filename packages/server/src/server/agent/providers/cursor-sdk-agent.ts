@@ -26,6 +26,7 @@ import type {
   AgentLaunchContext,
   AgentMode,
   AgentOptionSelectControl,
+  AgentPermissionResponse,
   AgentPersistenceHandle,
   AgentPromptInput,
   AgentRunResult,
@@ -71,6 +72,7 @@ import {
 import { assertCursorRunReleased, reconcileReleasedTurn } from "./cursor-sdk-recovery.js";
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
+import { CursorQuestions, cursorQuestionToolName } from "./cursor-sdk-questions.js";
 import { CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
 import {
   cursorCatalogOptionKeys,
@@ -364,6 +366,8 @@ export class CursorSdkAgentClient implements AgentClient {
   ): Promise<AgentSession> {
     assertNoInheritedAgentIdentity();
     assertMode(config.modeId);
+    if (config.toolPolicy)
+      throw new Error("Cursor SDK cannot preapprove exact MCP tools for unattended execution.");
     const shellEnvironment = await prepareCursorShellEnvironment(
       launchContext?.env,
       dirname(this.storePath),
@@ -389,6 +393,7 @@ export class CursorSdkAgentClient implements AgentClient {
     const options: CursorOwnerStart["options"] = {
       model: selectCursorModel(model.sdkId, providerOptions),
       name: config.title ?? undefined,
+      disallowedTools: ["askQuestion"],
       local: {
         cwd,
         settingSources: [],
@@ -464,6 +469,7 @@ class CursorSdkAgent implements AgentSession {
   private closing: Promise<void> | undefined;
   private closed = false;
   private readonly listeners = new Set<(event: AgentStreamEvent) => void>();
+  private readonly questions = new CursorQuestions((event) => this.emit(event));
 
   constructor(
     native: CredentialBoundAgent,
@@ -590,9 +596,11 @@ class CursorSdkAgent implements AgentSession {
       return { ...input, text };
     };
     const owned = await this.tryOwnedExecution(execution, throwIfStopped);
+    const question = this.questions.tool(execution.interactionSignal);
+    owned?.attachQuestionHandler(question.execute, execution.abortInteractions);
     const run = owned
       ? await this.sendOwned(owned, apiKey, model, prepareInput)
-      : await this.sendDirect(model, apiKey, prepareInput, bind);
+      : await this.sendDirect(model, apiKey, prepareInput, bind, question);
     if (this.model === requested.model && this.options === requested.options) {
       this.model = selected;
       this.modelControls = controls;
@@ -669,12 +677,16 @@ class CursorSdkAgent implements AgentSession {
     apiKey: string,
     prepareInput: () => Promise<SDKUserMessage>,
     bind: (runId: string) => Promise<void>,
+    question: ReturnType<CursorQuestions["tool"]>,
   ): Promise<Run> {
     const native = this.native?.apiKey === apiKey ? this.native : await this.rebind(apiKey, model);
     return this.binding.send(this.id, bind, async () => {
       const input = await prepareInput();
       return withCursorShellEnvironment(this.shellEnvironment, () =>
-        native.agent.send(input, { model }),
+        native.agent.send(input, {
+          model,
+          local: { customTools: { [cursorQuestionToolName]: question } },
+        }),
       );
     });
   }
@@ -793,12 +805,12 @@ class CursorSdkAgent implements AgentSession {
     return applied;
   }
 
-  getPendingPermissions(): [] {
-    return [];
+  getPendingPermissions() {
+    return this.questions.requests();
   }
 
-  async respondToPermission(): Promise<void> {
-    throw new Error("Cursor SDK does not provide interactive approvals.");
+  async respondToPermission(requestId: string, response: AgentPermissionResponse): Promise<void> {
+    this.questions.respond(requestId, response);
   }
 
   describePersistence(): AgentPersistenceHandle {
