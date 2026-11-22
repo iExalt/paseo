@@ -520,6 +520,7 @@ class CursorSdkAgent implements AgentSession {
       throw new Error("Cursor SDK session is closing or closed.");
     }
     const resolveSkills = options?.resolveCursorSkills;
+    const resolveInstructions = options?.resolveCursorWorkspaceInstructions;
     const blocks = typeof prompt === "string" ? undefined : prompt;
     if (cursorSkillReferences(blocks).length && !resolveSkills) {
       throw new Error("Select Cursor skills again from the skill menu.");
@@ -530,7 +531,15 @@ class CursorSdkAgent implements AgentSession {
       prompt,
       input,
       (message, bind, throwIfStopped, execution) =>
-        this.sendNative(message, requested, bind, throwIfStopped, resolveSkills, execution),
+        this.sendNative(
+          message,
+          requested,
+          bind,
+          throwIfStopped,
+          resolveSkills,
+          resolveInstructions,
+          execution,
+        ),
       options?.clientMessageId,
     );
   }
@@ -541,6 +550,7 @@ class CursorSdkAgent implements AgentSession {
     bind: (runId: string) => Promise<void>,
     throwIfStopped: () => void,
     resolveSkills: AgentRunOptions["resolveCursorSkills"],
+    resolveInstructions: AgentRunOptions["resolveCursorWorkspaceInstructions"],
     execution: CursorTurnExecution,
   ): Promise<Run> {
     throwIfStopped();
@@ -568,8 +578,10 @@ class CursorSdkAgent implements AgentSession {
       throwIfStopped();
       const skills = resolveSkills ? await resolveSkills() : undefined;
       const userAndContext = renderSelectedCursorSkills(input.text, skills);
-      const text = this.instructions
-        ? RUN_INSTRUCTIONS_START + this.instructions + RUN_INSTRUCTIONS_END + userAndContext
+      const workspaceInstructions = await resolveInstructions?.();
+      const instructions = composeSystemPromptParts(workspaceInstructions, this.instructions);
+      const text = instructions
+        ? RUN_INSTRUCTIONS_START + instructions + RUN_INSTRUCTIONS_END + userAndContext
         : userAndContext;
       if ((await this.credentials.read()) !== apiKey) {
         throw new Error("Cursor SDK sign-in changed. Send your message again.");
