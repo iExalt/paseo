@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
+import { selectP5Turn } from "./interactions.mjs";
 
 export const sdkVersion = "1.4.2";
 export const model = "paseo-loopback";
@@ -98,8 +99,9 @@ function shellMessages(workspace, script = "cursor-canary.sh") {
   };
 }
 
-export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTurn, models }) {
+export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTurn, models, p5 }) {
   const shell = shellMessages(workspace);
+  const protectedShell = shellMessages(workspace, "p5-protected.sh");
   const skillShell = shellMessages(workspace, "cursor-selected-canary.sh");
   const streams = new Map();
   const initialRequests = new Map();
@@ -144,9 +146,16 @@ export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTu
   function startShellIfReady(key) {
     const stream = streams.get(key);
     const request = initialRequests.get(key);
-    if (!stream || (selectSkillTurn && !request) || stream.shell) return;
+    if (!stream || ((selectSkillTurn || p5) && !request) || stream.shell || stream.p5) return;
     initialRequests.delete(key);
-    stream.shell = request && selectSkillTurn(request) ? skillShell : shell;
+    const p5Turn =
+      p5 && request && selectP5Turn(request, { bytes, frame, number, fields, concat: join });
+    if (p5Turn) {
+      stream.p5 = p5Turn;
+      p5Turn.start(stream.response);
+      return;
+    }
+    stream.shell = request && selectSkillTurn?.(request) ? skillShell : shell;
     stream.response.write(stream.shell.started);
     stream.response.write(stream.shell.execute);
   }
@@ -156,7 +165,7 @@ export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTu
     const nested = outer[4] ?? Buffer.from(outer[1]?.toString() ?? "", "hex");
     const client = fields(nested);
     if (models && Buffer.isBuffer(client[1])) wire.push(client[1]);
-    if (selectSkillTurn && client[1]) {
+    if ((selectSkillTurn || p5) && client[1]) {
       // RunSSE only carries the request ID. The initial run action and its
       // selected context, including images, arrive on the BidiAppend channel.
       const key = fields(outer[2])[1].toString();
@@ -172,11 +181,27 @@ export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTu
     }
     const exec = client[2];
     const reply = exec && fields(exec);
-    const result = reply?.[2];
-    if (!result) return send(proto);
+    if (!reply) return send(proto);
     const key = fields(outer[2])[1].toString();
-    const active = streams.get(key);
+    return handleExecReply(streams.get(key), reply, send);
+  }
+
+  function handleExecReply(active, reply, send) {
+    const result = reply[2];
     const stream = active?.response;
+    if (active?.p5 && !active.shell) {
+      assert.ok(stream && !stream.writableEnded, "MCP reply has no active run");
+      send(proto);
+      const action = active.p5.reply(reply, stream);
+      if (action === "finish") finish(stream);
+      if (action === "protected") {
+        active.shell = protectedShell;
+        stream.write(protectedShell.started);
+        stream.write(protectedShell.execute);
+      }
+      return;
+    }
+    if (!result) return send(proto);
     assert.ok(stream && !stream.writableEnded, "Shell reply has no active run");
     const decoded = fields(result);
     assert.ok(Buffer.isBuffer(decoded[1]), "SDK shell did not report success");
@@ -187,6 +212,10 @@ export async function startBackend(workspace, { allowCodexPrewarm, selectSkillTu
     shellReplies++;
     send(proto);
     stream.write(active.shell.finished(result));
+    finish(stream);
+  }
+
+  function finish(stream) {
     stream.write(interaction(1, bytes(1, assistantText)));
     stream.write(interaction(14, join(number(1, 12), number(2, 3), number(3, 2))));
     stream.end(frame(Buffer.from("{}"), 2));

@@ -1,4 +1,11 @@
-import type { LocalAgentStore, Run, RunResult, SDKMessage, SDKUserMessage } from "@cursor/sdk";
+import type {
+  LocalAgentStore,
+  Run,
+  RunResult,
+  SDKCustomTool,
+  SDKMessage,
+  SDKUserMessage,
+} from "@cursor/sdk";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import type {
@@ -76,7 +83,19 @@ export async function openOwnedCursorExecution(
   );
   const suffix = import.meta.url.endsWith(".ts") ? "ts" : "js";
   const entry = fileURLToPath(new URL(`./cursor-owner-worker.${suffix}`, import.meta.url));
-  const owned = await openOwnedProcess(entry, home, generation, enroll, storeOwner.handle);
+  let answerQuestion: SDKCustomTool["execute"] | undefined;
+  const owned = await openOwnedProcess(entry, home, generation, enroll, async (method, input) => {
+    if (method === "question") {
+      if (!answerQuestion || !process?.channel.connected)
+        throw new Error("Cursor SDK question handler is unavailable.");
+      const { args, context } = input as {
+        args: Parameters<SDKCustomTool["execute"]>[0];
+        context: Parameters<SDKCustomTool["execute"]>[1];
+      };
+      return answerQuestion(args, context);
+    }
+    return storeOwner.handle(method, input);
+  });
   process = owned;
   let ending: Promise<void> | undefined;
   async function closeWriter() {
@@ -91,6 +110,10 @@ export async function openOwnedCursorExecution(
   }
 
   return {
+    attachQuestionHandler(execute: SDKCustomTool["execute"], abort: () => void) {
+      answerQuestion = execute;
+      void owned.channel.whenClosed.then(abort);
+    },
     prepare: (input: CursorOwnerStart) => owned.channel.request<void>("prepare", input),
     async send(input: SDKUserMessage): Promise<Run> {
       const info = await owned.channel.request<CursorOwnerRunInfo>("dispatch", input);
