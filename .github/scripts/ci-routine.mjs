@@ -209,6 +209,12 @@ export function planCommands(selection, cwd = root) {
         ],
         "integration",
       );
+    add(
+      "Cursor SDK loopback parity",
+      "bash",
+      ["packages/server/test-fixtures/cursor-sdk/loopback.sh"],
+      "integration",
+    );
     integration(
       "focused server integration",
       [
