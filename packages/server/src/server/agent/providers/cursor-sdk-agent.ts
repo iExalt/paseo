@@ -613,8 +613,6 @@ class CursorSdkAgent implements AgentSession {
     throwIfStopped();
     const { store } = this.binding;
     await assertCursorRunReleased(store, this.journal, this.id, this.cwd);
-    await clearUnusedCursorReservation(this.sdk.Agent, store, this.id, this.cwd);
-    await this.disposeIdleNative();
     const generation = randomUUID();
     await execution.prepareOwner(generation);
     let enrolling = false;
@@ -632,6 +630,8 @@ class CursorSdkAgent implements AgentSession {
         execution.bindRun,
       );
       execution.attachFinish(owned.finish);
+      await clearUnusedCursorReservation(this.sdk.Agent, store, this.id, this.cwd);
+      await this.disposeIdleNative();
       return owned;
     } catch (error) {
       // A host can have systemd without sharing the daemon's execution domain.

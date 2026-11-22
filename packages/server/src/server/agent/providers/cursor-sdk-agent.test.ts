@@ -9,12 +9,22 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import pino from "pino";
 import { createDaemonTestContext } from "../../test-utils/daemon-test-context.js";
 import { createTestAgentClients } from "../../test-utils/fake-agent-client.js";
+import { openOwnedCursorExecution } from "../execution-owner/cursor-owned-execution.js";
+import { supportsExecutionOwner } from "../execution-owner/execution-owner.js";
 import { hasHeldMessages } from "../held-messages.js";
 import { startAgentRun } from "../agent-prompt.js";
 import { AgentManager } from "../agent-manager.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
 import { clearUnusedCursorReservation, CursorSdkAgentClient } from "./cursor-sdk-agent.js";
 import { listCursorSdkModels as listCursorModels } from "./cursor-sdk-availability.js";
+
+vi.mock("../execution-owner/execution-owner.js", async (load) => ({
+  ...(await load<typeof import("../execution-owner/execution-owner.js")>()),
+  supportsExecutionOwner: vi.fn(async () => false),
+}));
+vi.mock("../execution-owner/cursor-owned-execution.js", () => ({
+  openOwnedCursorExecution: vi.fn(),
+}));
 
 const provider = "cursor-sdk";
 const agentId = "agent-test";
@@ -50,6 +60,8 @@ function makeRun(messages: SDKMessage[], result: RunResult, createdAt = Date.UTC
 const stores: string[] = [];
 
 afterEach(async () => {
+  vi.mocked(supportsExecutionOwner).mockReset();
+  vi.mocked(openOwnedCursorExecution).mockReset();
   for (const store of stores.splice(0)) await rm(store, { recursive: true, force: true });
 });
 
@@ -88,6 +100,54 @@ function fixture() {
 }
 
 describe("Cursor SDK provider", () => {
+  it("reuses the direct agent if an available execution owner fails enrollment", async () => {
+    const { client, config, sdk, send, agent } = fixture();
+    vi.mocked(supportsExecutionOwner).mockResolvedValueOnce(true);
+    vi.mocked(openOwnedCursorExecution).mockRejectedValueOnce(new Error("Owner did not enroll."));
+    send.mockResolvedValueOnce(makeRun([], { id: runId, status: "finished" }));
+    const session = await client.createSession(config);
+    try {
+      await session.run("Use the original direct session");
+      expect(openOwnedCursorExecution).toHaveBeenCalledOnce();
+      expect(agent[Symbol.asyncDispose]).not.toHaveBeenCalled();
+      expect(sdk.Agent.resume).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledOnce();
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("joins an enrolled owner if disposing the direct agent fails before dispatch", async () => {
+    const { client, config, sdk, send, agent, storePath } = fixture();
+    const finish = vi.fn(async () => {});
+    const prepare = vi.fn();
+    const ownedSend = vi.fn();
+    vi.mocked(supportsExecutionOwner).mockResolvedValueOnce(true);
+    vi.mocked(openOwnedCursorExecution).mockImplementationOnce(
+      async (_, __, ___, generation, enroll) => {
+        await enroll({
+          backend: "windows-job",
+          generation,
+          hostId: "a".repeat(64),
+          receipt: join(storePath, "not-written"),
+        });
+        return { finish, prepare, send: ownedSend };
+      },
+    );
+    agent[Symbol.asyncDispose].mockRejectedValueOnce(new Error("Direct disposal failed."));
+    const session = await client.createSession(config);
+    try {
+      await expect(session.run("Do not dispatch")).rejects.toThrow("Direct disposal failed.");
+      await vi.waitFor(() => expect(finish).toHaveBeenCalledExactlyOnceWith(true, false));
+      expect(prepare).not.toHaveBeenCalled();
+      expect(ownedSend).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(sdk.Agent.resume).not.toHaveBeenCalled();
+    } finally {
+      await session.close();
+    }
+  });
+
   it("lists commands from a daemon launched with inherited agent identity", async () => {
     vi.stubEnv("PASEO_AGENT_ID", "launcher-agent");
     vi.stubEnv("PASEO_AGENT_CWD", "/launcher-workspace");
