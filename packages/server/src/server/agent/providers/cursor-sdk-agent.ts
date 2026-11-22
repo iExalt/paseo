@@ -4,6 +4,7 @@ import {
   withCursorShellEnvironment,
 } from "./cursor-sdk-shell-environment.js";
 import { renderSelectedCursorSkills } from "../cursor-skill-catalog.js";
+import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import type {
@@ -42,6 +43,10 @@ import type {
   SteerActiveTurnOptions,
   SteerResult,
 } from "../agent-sdk-types.js";
+import { openOwnedCursorExecution } from "../execution-owner/cursor-owned-execution.js";
+import type { CursorOwnerStart } from "../execution-owner/cursor-owner-worker.js";
+import { UnadmittedExecutionError } from "../execution-owner/owned-process.js";
+import { supportsExecutionOwner } from "../execution-owner/execution-owner.js";
 import { cursorSkillReferences, renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import type { ProviderRuntimeSettings } from "../provider-launch-config.js";
 import { runProviderRefreshActivity } from "../provider-refresh-deadline.js";
@@ -63,9 +68,9 @@ import {
   readCursorHistory,
   interruptedCursorRunMessage,
 } from "./cursor-sdk-history.js";
-import { assertCursorRunReleased } from "./cursor-sdk-recovery.js";
+import { assertCursorRunReleased, reconcileReleasedTurn } from "./cursor-sdk-recovery.js";
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
-import { CursorRunController } from "./cursor-sdk-run-controller.js";
+import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
 import { CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
 import {
   cursorCatalogOptionKeys,
@@ -381,12 +386,11 @@ export class CursorSdkAgentClient implements AgentClient {
     const controls = cursorParameterControls(model);
     const strict = nativeId === undefined;
     const providerOptions = resolveSessionOptions(config, model, controls, strict);
-    const options: AgentOptions = {
+    const options: CursorOwnerStart["options"] = {
       model: selectCursorModel(model.sdkId, providerOptions),
       name: config.title ?? undefined,
       local: {
         cwd,
-        store,
         settingSources: [],
         sandboxOptions: { enabled: false },
         autoReview: false,
@@ -394,10 +398,11 @@ export class CursorSdkAgentClient implements AgentClient {
       mcpServers: { ...config.mcpServers, ...launchContext?.mcpServers },
     };
 
+    const nativeOptions = { ...options, local: { ...options.local, store } } satisfies AgentOptions;
     const agent = await withCursorShellEnvironment(shellEnvironment, () =>
       nativeId
-        ? sdk.Agent.resume(nativeId, { ...options, apiKey })
-        : sdk.Agent.create({ ...options, apiKey }),
+        ? sdk.Agent.resume(nativeId, { ...nativeOptions, apiKey })
+        : sdk.Agent.create({ ...nativeOptions, apiKey }),
     );
     const agentId = agent.agentId;
     return new CursorSdkAgent(
@@ -413,11 +418,13 @@ export class CursorSdkAgentClient implements AgentClient {
       binding,
       new CursorTurnJournal(this.storePath, agentId),
       shellEnvironment,
+      dirname(this.storePath),
+      options,
       {
         read: () => this.requireApiKey(),
         resume: (key, selection) =>
           withCursorShellEnvironment(shellEnvironment, () =>
-            sdk.Agent.resume(agentId, { ...options, apiKey: key, model: selection }),
+            sdk.Agent.resume(agentId, { ...nativeOptions, apiKey: key, model: selection }),
           ),
       },
     );
@@ -474,6 +481,8 @@ class CursorSdkAgent implements AgentSession {
     private readonly binding: ReturnType<typeof createCursorRunBinding>,
     private readonly journal: CursorTurnJournal,
     private readonly shellEnvironment: Awaited<ReturnType<typeof prepareCursorShellEnvironment>>,
+    private readonly paseoHome: string,
+    private readonly ownedOptions: CursorOwnerStart["options"],
     private readonly credentials: {
       read: () => Promise<string>;
       resume: (apiKey: string, model: ModelSelection) => Promise<SDKAgent>;
@@ -481,7 +490,14 @@ class CursorSdkAgent implements AgentSession {
   ) {
     this.native = native;
     this.id = native.agent.agentId;
-    this.runs = new CursorRunController(this.id, journal, (event) => this.emit(event), mapUsage);
+    this.runs = new CursorRunController(
+      this.id,
+      journal,
+      (event) => this.emit(event),
+      mapUsage,
+      (turn, proof) =>
+        reconcileReleasedTurn(this.binding.store, this.journal, this.id, turn, proof),
+    );
   }
 
   get controls(): AgentOptionSelectControl[] {
@@ -513,8 +529,8 @@ class CursorSdkAgent implements AgentSession {
     return this.runs.start(
       prompt,
       input,
-      (message, bind, throwIfStopped) =>
-        this.sendNative(message, requested, bind, throwIfStopped, resolveSkills),
+      (message, bind, throwIfStopped, execution) =>
+        this.sendNative(message, requested, bind, throwIfStopped, resolveSkills, execution),
       options?.clientMessageId,
     );
   }
@@ -525,6 +541,7 @@ class CursorSdkAgent implements AgentSession {
     bind: (runId: string) => Promise<void>,
     throwIfStopped: () => void,
     resolveSkills: AgentRunOptions["resolveCursorSkills"],
+    execution: CursorTurnExecution,
   ): Promise<Run> {
     throwIfStopped();
     assertNoInheritedAgentIdentity();
@@ -547,15 +564,7 @@ class CursorSdkAgent implements AgentSession {
     }
     const model = selectCursorModel(selected.sdkId, options);
     throwIfStopped();
-    let native = this.native;
-    if (native?.apiKey !== apiKey) {
-      native = await this.rebind(apiKey, model);
-      if ((await this.credentials.read()) !== apiKey) {
-        throw new Error("Cursor SDK sign-in changed. Send your message again.");
-      }
-    }
-    const { agent } = native;
-    const run = await this.binding.send(this.id, bind, async () => {
+    const prepareInput = async () => {
       throwIfStopped();
       const skills = resolveSkills ? await resolveSkills() : undefined;
       const userAndContext = renderSelectedCursorSkills(input.text, skills);
@@ -566,15 +575,96 @@ class CursorSdkAgent implements AgentSession {
         throw new Error("Cursor SDK sign-in changed. Send your message again.");
       }
       throwIfStopped();
-      return withCursorShellEnvironment(this.shellEnvironment, () =>
-        agent.send({ ...input, text }, { model }),
-      );
-    });
+      return { ...input, text };
+    };
+    const owned = await this.tryOwnedExecution(execution, throwIfStopped);
+    const run = owned
+      ? await this.sendOwned(owned, apiKey, model, prepareInput)
+      : await this.sendDirect(model, apiKey, prepareInput, bind);
     if (this.model === requested.model && this.options === requested.options) {
       this.model = selected;
       this.modelControls = controls;
     }
     return run;
+  }
+
+  private async sendOwned(
+    owned: Awaited<ReturnType<typeof openOwnedCursorExecution>>,
+    apiKey: string,
+    model: ModelSelection,
+    prepareInput: () => Promise<SDKUserMessage>,
+  ): Promise<Run> {
+    const env = { ...process.env };
+    // The current credential is sent only in the admitted SDK options.
+    for (const key of Object.keys(env)) {
+      if (key.toUpperCase() === "CURSOR_API_KEY") delete env[key];
+    }
+    await owned.prepare({
+      agentId: this.id,
+      options: { ...this.ownedOptions, apiKey, model },
+      env,
+      shellEnvironment: this.shellEnvironment,
+    });
+    // Re-read credential and Stop after the worker's potentially async resume.
+    return owned.send(await prepareInput());
+  }
+
+  private async tryOwnedExecution(execution: CursorTurnExecution, throwIfStopped: () => void) {
+    if (!(await supportsExecutionOwner())) return;
+    throwIfStopped();
+    const { store } = this.binding;
+    await assertCursorRunReleased(store, this.journal, this.id, this.cwd);
+    const generation = randomUUID();
+    await execution.prepareOwner(generation);
+    let transitioning = false;
+    try {
+      const owned = await openOwnedCursorExecution(
+        store,
+        this.id,
+        this.paseoHome,
+        generation,
+        async (owner, assertLaunchAvailable) => {
+          throwIfStopped();
+          // The SDK writer remains gated while the existing first-turn
+          // reservation is cleared. Failure leaves the new owner unadmitted.
+          transitioning = true;
+          await clearUnusedCursorReservation(this.sdk.Agent, store, this.id, this.cwd);
+          throwIfStopped();
+          assertLaunchAvailable();
+          await execution.enroll(owner);
+        },
+        execution.bindRun,
+      );
+      execution.attachFinish(owned.finish);
+      await this.disposeIdleNative();
+      return owned;
+    } catch (error) {
+      if (error instanceof UnadmittedExecutionError) {
+        execution.deferUnadmittedCleanup(error.drained);
+        throw error;
+      }
+      // A host can have systemd without sharing the daemon's execution domain.
+      // Fall back only before mutating the SDK reservation or enrolling the owner.
+      if (transitioning) throw error;
+      await execution.discardUnadmittedOwner();
+      throwIfStopped();
+      return;
+    }
+  }
+
+  private async sendDirect(
+    model: ModelSelection,
+    apiKey: string,
+    prepareInput: () => Promise<SDKUserMessage>,
+    bind: (runId: string) => Promise<void>,
+  ): Promise<Run> {
+    const native = this.native?.apiKey === apiKey ? this.native : await this.rebind(apiKey, model);
+    return this.binding.send(this.id, bind, async () => {
+      const input = await prepareInput();
+      return withCursorShellEnvironment(this.shellEnvironment, () =>
+        native.agent.send(input, { model }),
+      );
+    });
   }
 
   private async resolveExactModel(id: string, apiKey?: string): Promise<ResolvedCursorModel> {
@@ -588,14 +678,17 @@ class CursorSdkAgent implements AgentSession {
     const { store } = this.binding;
     await assertCursorRunReleased(store, this.journal, this.id, this.cwd);
     await clearUnusedCursorReservation(this.sdk.Agent, store, this.id, this.cwd);
-    if (this.native) {
-      // Disposal can fail partway. A later turn may retry teardown but cannot send on that handle.
-      this.native.apiKey = null;
-      await this.native.agent[Symbol.asyncDispose]();
-      this.native = undefined;
-    }
+    await this.disposeIdleNative();
     const agent = await this.credentials.resume(apiKey, model);
     return (this.native = { agent, apiKey });
+  }
+
+  private async disposeIdleNative(): Promise<void> {
+    if (!this.native) return;
+    // A later turn may retry teardown after a disposal failure. It cannot use this handle.
+    this.native.apiKey = null;
+    await this.native.agent[Symbol.asyncDispose]();
+    this.native = undefined;
   }
 
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {

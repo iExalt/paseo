@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
-import { join } from "node:path";
+import { appendFile, mkdir, open, readFile, readdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import {
   AgentTimelineItemPayloadSchema,
   CursorSkillReferenceSchema,
@@ -8,6 +8,7 @@ import {
 import { z } from "zod";
 import { writeFileAtomic, writeJsonFileAtomic } from "../../atomic-file.js";
 import type { AgentPromptInput, AgentTimelineItem } from "../agent-sdk-types.js";
+import { executionOwnerSchema } from "../execution-owner/execution-owner.js";
 
 const userMessageSchema = z.object({
   type: z.literal("user_message"),
@@ -21,9 +22,14 @@ const turnSchema = z.object({
   id: z.string().min(1),
   createdAt: z.string(),
   nativeRunId: z.string().optional(),
+  executionOwner: executionOwnerSchema.optional(),
+  executionIntent: z.uuid().optional(),
+  executionRunIds: z.array(z.string()).optional(),
   followUpIds: z.array(z.string()).optional(),
   unresolvedNativeFollowUp: z.boolean().optional(),
   joined: z.boolean().optional(),
+  recovered: z.boolean().optional(),
+  ownerStopPending: z.boolean().optional(),
   user: userMessageSchema,
   steers: z.array(
     z.object({
@@ -52,6 +58,16 @@ function fileKey(id: string): string {
   return createHash("sha256").update(id).digest("hex");
 }
 
+async function syncPath(path: string): Promise<void> {
+  // Windows FlushFileBuffers requires a writable file handle.
+  const file = await open(path, process.platform === "win32" ? "r+" : "r");
+  try {
+    await file.sync();
+  } finally {
+    await file.close();
+  }
+}
+
 /** Paseo owns the submitted text and identity. Cursor may omit both from canceled runs. */
 export class CursorTurnJournal {
   private readonly directory: string;
@@ -69,17 +85,33 @@ export class CursorTurnJournal {
   async saveInput(turnId: string, messageId: string, input: AgentPromptInput): Promise<void> {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     // Retain structured attachment refs and image content independently of the model's echo.
-    await writeJsonFileAtomic(
-      join(this.directory, `${fileKey(turnId)}-${fileKey(messageId)}.input.json`),
-      input,
-    );
+    await writeJsonFileAtomic(this.inputPath(turnId, messageId), input);
+  }
+
+  private inputPath(turnId: string, messageId: string): string {
+    return join(this.directory, `${fileKey(turnId)}-${fileKey(messageId)}.input.json`);
+  }
+
+  async enrollExecutionOwner(turn: CursorHistoryTurn): Promise<void> {
+    await syncPath(this.inputPath(turn.id, turn.user.messageId));
+    await this.save(turn);
+    if (process.platform === "win32") return;
+    const parent = dirname(this.directory);
+    await syncPath(parent);
+    await syncPath(dirname(parent));
   }
 
   async save(turn: CursorHistoryTurn): Promise<void> {
     const data = JSON.stringify(turn);
-    await this.write(turn.id, () =>
-      writeFileAtomic(join(this.directory, `${fileKey(turn.id)}.turn.json`), data),
-    );
+    const file = join(this.directory, `${fileKey(turn.id)}.turn.json`);
+    const durable = turn.executionOwner !== undefined || turn.executionIntent !== undefined;
+    await this.write(turn.id, async () => {
+      await writeFileAtomic(file, data);
+      if (durable) {
+        await syncPath(file);
+        if (process.platform !== "win32") await syncPath(this.directory);
+      }
+    });
   }
 
   async append(turnId: string, item: AgentTimelineItem): Promise<void> {
