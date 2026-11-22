@@ -590,6 +590,11 @@ export async function createPaseoDaemon(
   rootLogger: Logger,
   dependencies: PaseoDaemonDependencies = {},
 ): Promise<PaseoDaemon> {
+  // The daemon has no caller. Managed agents receive their identity at session launch.
+  delete process.env.PASEO_AGENT_ID;
+  delete process.env.PASEO_AGENT_CWD;
+  delete process.env.PASEO_WORKSPACE_ID;
+
   configureGitProcessPolicy(config.git ?? resolveGitProcessPolicy({ env: process.env }));
   const logger = rootLogger.child({ module: "bootstrap" });
   const obsoleteTimelineDirectory = path.join(config.paseoHome, "agent-timelines");
