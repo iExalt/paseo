@@ -15,6 +15,7 @@ import { hasHeldMessages } from "../held-messages.js";
 import { startAgentRun } from "../agent-prompt.js";
 import { AgentManager } from "../agent-manager.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
+import { CursorQuestions } from "./cursor-sdk-questions.js";
 import { clearUnusedCursorReservation, CursorSdkAgentClient } from "./cursor-sdk-agent.js";
 import { listCursorSdkModels as listCursorModels } from "./cursor-sdk-availability.js";
 
@@ -167,6 +168,7 @@ describe("Cursor SDK provider", () => {
     sdk.Agent.cancelRun.mockRejectedValueOnce(new Error("Reservation could not be cleared."));
     vi.mocked(supportsExecutionOwner).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
     const abandoned = vi.fn();
+    const attachQuestionHandler = vi.fn();
     const prepare = vi.fn(async () => {});
     const ownedSend = vi.fn().mockResolvedValue(makeRun([], { id: runId, status: "finished" }));
     vi.mocked(openOwnedCursorExecution).mockImplementation(
@@ -185,7 +187,7 @@ describe("Cursor SDK provider", () => {
           abandoned();
           throw error;
         }
-        return { finish: async () => {}, prepare, send: ownedSend };
+        return { attachQuestionHandler, finish: async () => {}, prepare, send: ownedSend };
       },
     );
     const session = await client.createSession(config);
@@ -199,6 +201,16 @@ describe("Cursor SDK provider", () => {
       await session.interrupt();
       await session.run("Retry the turn");
       expect(sdk.Agent.cancelRun).toHaveBeenCalledTimes(2);
+      expect(attachQuestionHandler).toHaveBeenCalledExactlyOnceWith(
+        expect.any(Function),
+        expect.any(Function),
+      );
+      expect(attachQuestionHandler.mock.invocationCallOrder[0]).toBeLessThan(
+        prepare.mock.invocationCallOrder[0],
+      );
+      expect(attachQuestionHandler.mock.invocationCallOrder[0]).toBeLessThan(
+        ownedSend.mock.invocationCallOrder[0],
+      );
       expect(prepare).toHaveBeenCalledOnce();
       expect(ownedSend).toHaveBeenCalledOnce();
       expect(send).not.toHaveBeenCalled();
@@ -512,7 +524,9 @@ describe("Cursor SDK provider", () => {
       {
         text: "<paseo_instructions>\nProject instructions\n\nUpdated\n</paseo_instructions>\n\na follow-up",
       },
-      { model: { id: "model", params: [{ id: "reasoning", value: "high" }] } },
+      expect.objectContaining({
+        model: { id: "model", params: [{ id: "reasoning", value: "high" }] },
+      }),
     );
     await resumed.close();
   });
@@ -838,9 +852,12 @@ it("keeps the canonical model and parameters when a new account changes its alia
     send.mockResolvedValue(result);
     sdk.Agent.resume.mockResolvedValue({ ...agent, send: replacementSend });
     await session.run("original account");
-    expect(send).toHaveBeenCalledWith(expect.anything(), {
-      model: { id: "auto", params: [{ id: "fast", value: "true" }] },
-    });
+    expect(send).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        model: { id: "auto", params: [{ id: "fast", value: "true" }] },
+      }),
+    );
 
     await session.applyOptions?.({ [fast]: false });
     key = "replacement";
@@ -861,10 +878,7 @@ it("keeps the canonical model and parameters when a new account changes its alia
       agentId,
       expect.objectContaining({ apiKey: "replacement", model: selection }),
     );
-    expect(replacementSend.mock.calls.map((call) => call[1])).toEqual([
-      { model: selection },
-      { model: selection },
-    ]);
+    expect(replacementSend.mock.calls.map((call) => call[1].model)).toEqual([selection, selection]);
     expect(catalog.mock.calls.map(([apiKey]) => apiKey)).toEqual(["original", "replacement"]);
     expect((await session.getRuntimeInfo()).model).toBe("default");
     expect(session.controls?.[0]).toMatchObject({ choices: [{ value: "true" }] });
@@ -878,4 +892,38 @@ it("keeps the canonical model and parameters when a new account changes its alia
     await session.close();
     vi.unstubAllEnvs();
   }
+});
+
+it("coalesces SDK question callback replay and fences a stopped turn", async () => {
+  const emit = vi.fn();
+  const questions = new CursorQuestions(emit);
+  const controller = new AbortController();
+  const tool = questions.tool(controller.signal);
+  const input = {
+    questions: [{ header: "Pick", question: "Pick one", options: [{ label: "Yes" }] }],
+  };
+  const context = { sessionId: "task-session", toolCallId: "same-call" };
+
+  const answer = tool.execute(input, context);
+  const changed = { questions: [{ ...input.questions[0], question: "A different question" }] };
+  expect(tool.execute(input, context)).toBe(answer);
+  expect(await tool.execute(changed, context)).toMatchObject({ isError: true });
+  const [request] = questions.requests();
+  expect(emit).toHaveBeenCalledTimes(1);
+  expect(() =>
+    questions.respond(request.id, { behavior: "allow", updatedInput: { answers: { Pick: "No" } } }),
+  ).toThrow("valid answer");
+  expect(questions.requests()).toEqual([request]);
+  questions.respond(request.id, { behavior: "allow", updatedInput: { answers: { Pick: "Yes" } } });
+  expect(await answer).toEqual({ answers: { Pick: "Yes" } });
+  expect(tool.execute(input, context)).toBe(answer);
+  expect(await tool.execute(changed, context)).toMatchObject({ isError: true });
+
+  const other = tool.execute(input, { ...context, sessionId: "another-task" });
+  const [pending] = questions.requests();
+  controller.abort();
+  expect(await other).toMatchObject({ isError: true });
+  expect(questions.requests()).toEqual([]);
+  expect(() => questions.respond(pending.id, { behavior: "allow" })).toThrow("no longer pending");
+  expect(await tool.execute(input, context)).toMatchObject({ isError: true });
 });
