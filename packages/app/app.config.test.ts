@@ -118,6 +118,7 @@ const {
   configureGradleWrapper,
   configureAndroidBuildGradle,
   configureAndroidAppBuildGradle,
+  configureHermesCommand,
 } = require("./plugins/with-android-gradle");
 
 describe("withAndroidGradle", () => {
@@ -150,6 +151,23 @@ describe("withAndroidGradle", () => {
     );
     expect(configureAndroidAppBuildGradle(configured)).toBe(configured);
     expect(() => configureAndroidAppBuildGradle("android {}\n")).toThrow("ProGuard");
+  });
+  it("lets the paseoHermesCommand property replace React Native's hermesc", () => {
+    const template = [
+      "react {",
+      '    hermesCommand = new File("hermes-compiler").getAbsolutePath() + "/hermesc/%OS-BIN%/hermesc"',
+      '    // hermesCommand = "$rootDir/my-custom-hermesc/bin/hermesc"',
+      "}",
+    ].join("\n");
+    const configured = configureHermesCommand(template);
+    expect(configured).toBe(
+      template.replace(
+        "hermesCommand = new File",
+        "hermesCommand = findProperty('paseoHermesCommand') ?: new File",
+      ),
+    );
+    expect(configureHermesCommand(configured)).toBe(configured);
+    expect(() => configureHermesCommand("react {}\n")).toThrow("hermesCommand");
   });
   it("pins AGP 9 without changing other build dependencies", () => {
     const configured = configureAndroidBuildGradle(
