@@ -87,9 +87,15 @@ access, and an unreachable model catalog.
 files and network that user can reach. Tools run without a sandbox or interactive approval
 prompts. Inference requests go to Cursor.
 
-Paseo passes its instructions as context with the prompt so Cursor retains its built-in
-instructions. Resume uses the same native conversation and workspace. The daemon keeps its
-Cursor SDK state under `$PASEO_HOME/cursor-sdk`.
+For a trusted registered workspace, Paseo adds `AGENTS.md` from the workspace root through
+the agent's working directory, the root `.cursorrules` file, and top-level `.cursor/rules/*.mdc`
+rules marked `alwaysApply: true`. This text accompanies the prompt and Cursor keeps its
+built-in instructions. Ambient settings, hooks, Cursor plugins, custom subagent definitions,
+and file-configured MCP stay disabled. Paseo accepts MCP servers explicitly supplied to the
+agent.
+
+Resume uses the same native conversation and workspace. The daemon keeps its Cursor SDK
+state under `$PASEO_HOME/cursor-sdk`.
 
 ## ACP catalog
 

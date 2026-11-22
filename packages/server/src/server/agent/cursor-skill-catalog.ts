@@ -123,10 +123,11 @@ async function canonicalDirectoryStamp(boundary: string, directory: string): Pro
   return identities.join("/");
 }
 
-async function readSkillFile(
+export async function readBoundedCursorFile(
   path: string,
   root: string,
-  source: CursorSkillRoot,
+  source: Pick<CursorSkillRoot, "boundary" | "excludedRoots">,
+  maxBytes: number,
 ): Promise<{ bytes: Buffer; path: string } | null> {
   const candidate = await realpath(path);
   if (!isPathInsideRoot(root, candidate) || !isAllowedSkillPath(source, candidate)) return null;
@@ -142,7 +143,7 @@ async function readSkillFile(
   const file = await open(candidate, flags);
   try {
     const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.size > maxSkillBytes) return null;
+    if (!before.isFile() || before.size > maxBytes) return null;
     const openedPath = process.platform === "linux" ? `/proc/self/fd/${file.fd}` : candidate;
     if ((await realpath(openedPath)) !== candidate) return null;
     const verified = await stat(candidate, { bigint: true });
@@ -198,7 +199,12 @@ async function readSkill(
   directory: string,
 ): Promise<ResolvedCursorSkill | null> {
   try {
-    const resolved = await readSkillFile(join(root, directory, "SKILL.md"), root, source);
+    const resolved = await readBoundedCursorFile(
+      join(root, directory, "SKILL.md"),
+      root,
+      source,
+      maxSkillBytes,
+    );
     if (!resolved || (await realpath(source.path)) !== root) return null;
     const { bytes, path } = resolved;
     const markdown = bytes.toString("utf8");
