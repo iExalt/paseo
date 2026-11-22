@@ -650,6 +650,7 @@ export interface ImportProviderSessionContext {
 export interface ImportedTimelineEntry {
   item: AgentTimelineItem;
   timestamp?: string;
+  turnId?: string;
   /** Set on the last entry of a turn the provider reported stats for. */
   turnMetrics?: AgentMetric[];
 }

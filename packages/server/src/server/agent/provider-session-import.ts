@@ -35,14 +35,18 @@ export async function importSessionFromPersistence(input: {
   const persistence =
     input.persistence ?? buildImportPersistenceHandle(input.provider, input.request, storedConfig);
   const session = await input.resumeSession(persistence, config, input.context.launchContext);
-  const history = await collectImportedHistory(session.streamHistory());
-
-  return {
-    session,
-    config: storedConfig,
-    persistence: canonicalImportPersistence(persistence, session),
-    ...history,
-  };
+  try {
+    const history = await collectImportedHistory(session.streamHistory());
+    return {
+      session,
+      config: storedConfig,
+      persistence: canonicalImportPersistence(persistence, session),
+      ...history,
+    };
+  } catch (error) {
+    await session.close().catch(() => undefined);
+    throw error;
+  }
 }
 
 /**
@@ -106,6 +110,7 @@ export class ImportedHistory {
         this.timeline.push({
           item: event.item,
           ...(event.timestamp ? { timestamp: event.timestamp } : {}),
+          ...(event.turnId ? { turnId: event.turnId } : {}),
         });
         return;
       default:

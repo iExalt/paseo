@@ -11,6 +11,7 @@ import { checkBaseline, prepareBaseline, shellEnvironment } from "./baseline.mjs
 import { apiKey, assistantText, callId, model, sdkVersion, startBackend } from "./backend.mjs";
 import { checkP5Interactions, prepareP5Fixture } from "./interactions.mjs";
 import { checkOwnedRecovery } from "./owned-recovery.mjs";
+import { checkMaintenance } from "./maintenance.mjs";
 import { checkLifecycle } from "./lifecycle.mjs";
 import { checkControls, controlCatalog } from "./controls.mjs";
 import {
@@ -48,6 +49,7 @@ const p5Fixture = useCallerFixture
   : undefined;
 const backend = await startBackend(workspace, {
   p5: !!p5Fixture,
+  maintenance: mode === "green",
   allowCodexPrewarm: mode === "baseline",
   selectSkillTurn: fixtures ? assertSkillTurnRequest : undefined,
   models: mode === "green" ? controlCatalog(model) : undefined,
@@ -353,6 +355,19 @@ try {
     });
     await checkCallerEnvironment({ ...callerProof, agents: callerAgents });
     await checkInteractions(false);
+    await checkMaintenance({
+      backend,
+      cli,
+      home,
+      listener: () => listener,
+      model,
+      paseoHome,
+      require,
+      startDaemon,
+      stopDaemon,
+      workspace,
+      workspaceId,
+    });
     await checkLifecycle({
       backend,
       listener: () => listener,
