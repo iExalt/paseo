@@ -310,3 +310,47 @@ test("a recovered terminal answer labels a durable partial projection", async ()
     ]);
   });
 });
+
+test("replays a manual compaction from the native stream if the daemon journal missed it", async () => {
+  await withStore(async (_root, store, journal) => {
+    const runId = "native-manual-summary";
+    const turn: CursorHistoryTurn = {
+      id: "paseo-manual-summary",
+      compact: true,
+      nativeRunId: runId,
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "/compact", messageId: "command-message" },
+      steers: [],
+      recovered: true,
+      joined: true,
+      terminal: { status: "finished", fallback: "stored summary" },
+    };
+    await journal.admit(turn, "/compact");
+    await store.runs.create({ run: { ...localRun(runId, "finished"), result: "stored summary" } });
+    for (const status of ["running", "completed"] as const) {
+      await store.runEvents.append({
+        runId,
+        eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
+        payload: sdk.createSdkMessageRunStreamEvent({
+          type: "summary",
+          run_id: runId,
+          agent_id: agentId,
+          status,
+        }),
+      });
+    }
+    const read = async () =>
+      messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
+    const compaction = { type: "compaction", status: "completed", trigger: "manual" } as const;
+    const rows = [
+      { turnId: turn.id, item: turn.user },
+      { turnId: turn.id, item: compaction },
+      { turnId: turn.id, item: { type: "assistant_message", text: "stored summary" } },
+    ];
+    expect(await read()).toEqual(rows);
+    await journal.append(turn.id, compaction);
+    expect(await read()).toEqual(rows);
+    await journal.append(turn.id, { type: "assistant_message", text: "stored summary" });
+    expect(await read()).toEqual(rows);
+  });
+});

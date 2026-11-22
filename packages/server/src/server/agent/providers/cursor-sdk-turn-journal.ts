@@ -20,6 +20,7 @@ const userMessageSchema = z.object({
 
 const turnSchema = z.object({
   id: z.string().min(1),
+  compact: z.literal(true).optional(),
   createdAt: z.string(),
   nativeRunId: z.string().optional(),
   executionOwner: executionOwnerSchema.optional(),

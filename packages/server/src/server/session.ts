@@ -181,6 +181,7 @@ import {
 import { listPendingAgentPermissions } from "./agent/permission-list.js";
 import { parsePluginClientId } from "./plugins/plugin-session-identity.js";
 import { buildAgentForkContextAttachment } from "./agent/activity-curator.js";
+import { cursorCompactCommand } from "./agent/providers/cursor-sdk-maintenance.js";
 import {
   assertCursorSkillTarget,
   buildAgentPrompt,
@@ -6656,9 +6657,10 @@ export class Session {
   ): Promise<boolean> {
     const target = this.resolveCursorCatalogTarget(existing, stored, msg.draftConfig);
     if (!target) return false;
-    const commands = this.supports(CLIENT_CAPS.cursorSdkSkillSelection)
+    const skills = this.supports(CLIENT_CAPS.cursorSdkSkillSelection)
       ? await this.listCursorSkillCommands(target, existing || stored ? msg.agentId : undefined)
       : [];
+    const commands = existing || stored ? [cursorCompactCommand, ...skills] : skills;
     this.emit({
       type: "list_commands_response",
       payload: { agentId: msg.agentId, commands, error: null, requestId: msg.requestId },
