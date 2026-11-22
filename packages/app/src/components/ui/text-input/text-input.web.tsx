@@ -14,6 +14,8 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
     const {
       initialValue = "",
       onChangeText,
+      onFocus,
+      selectTextOnFocus,
       onPasteImages: _,
       onPasteError: __,
       variant: ___,
@@ -57,6 +59,26 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
       onChangeTextRef.current?.(nextText);
     }, []);
 
+    const handleFocus: EditingTextInputProps["onFocus"] = (event) => {
+      const input = event.target as unknown as HTMLInputElement | HTMLTextAreaElement;
+      const valueAtFocus = input.value;
+      if (valueAtFocus) {
+        // Safari needs deferred selection after a pointer focus. Skip it after an edit.
+        let edited = false;
+        const markEdited = () => {
+          edited = true;
+        };
+        input.addEventListener("input", markEdited, { once: true });
+        setTimeout(() => {
+          input.removeEventListener("input", markEdited);
+          if (!edited && document.activeElement === input && input.value === valueAtFocus) {
+            input.select();
+          }
+        }, 0);
+      }
+      onFocus?.(event);
+    };
+
     useImperativeHandle(
       ref,
       () => ({
@@ -97,6 +119,7 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
         ref={inputRef}
         defaultValue={initialTextRef.current}
         onChangeText={handleChangeText}
+        onFocus={selectTextOnFocus ? handleFocus : onFocus}
       />
     );
   },

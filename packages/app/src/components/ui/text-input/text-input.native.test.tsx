@@ -8,6 +8,11 @@ import type { EditingTextInputHandle } from "./types";
 
 const bottomSheetTextInputRender = vi.hoisted(() => vi.fn());
 
+vi.mock("react-native", async (importOriginal) => {
+  const reactNative = await importOriginal<typeof import("react-native")>();
+  return { ...reactNative, Platform: { ...reactNative.Platform, OS: "android" } };
+});
+
 vi.mock("@gorhom/bottom-sheet", async () => {
   const ReactModule = await import("react");
   return {
@@ -86,6 +91,27 @@ describe("EditingTextInputNative", () => {
     ).toBeNull();
     expect(bottomSheetTextInputRender).toHaveBeenCalledOnce();
     expect(bottomSheetTextInputRender.mock.calls[0]?.[0]).toMatchObject({ testID: "inside" });
+  });
+
+  it.each(["", "6767"])("applies select on focus to existing Android text %j", (initialValue) => {
+    const onFocus = vi.fn();
+    act(() => {
+      root?.render(
+        <BottomSheetScope attachContentDrag={attachNoContentDrag}>
+          <EditingTextInput initialValue={initialValue} selectTextOnFocus onFocus={onFocus} />
+        </BottomSheetScope>,
+      );
+    });
+    const input = container?.querySelector("input");
+    if (!input) throw new Error("Expected Android text input");
+    const setSelection = vi.fn();
+    Object.assign(input, { setSelection });
+
+    expect(bottomSheetTextInputRender.mock.lastCall?.[0].selectTextOnFocus).toBe(false);
+    act(() => input.focus());
+
+    expect(onFocus).toHaveBeenCalledOnce();
+    expect(setSelection.mock.calls).toEqual(initialValue ? [[0, initialValue.length]] : []);
   });
 
   it("keeps its editing handle and selection when native editing rerenders the leaf", () => {
