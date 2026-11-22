@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "../support/fixtures";
+import type { CursorSkillReference } from "@getpaseo/protocol/messages";
 import {
   attachFileFromMenu,
   composerLocator,
@@ -106,7 +107,13 @@ interface PopoverFrameRecorderWindow extends Window {
 }
 
 interface ListCommandsReply {
-  commands: readonly { name: string; description: string; argumentHint: string; kind?: string }[];
+  commands: readonly {
+    name: string;
+    description: string;
+    argumentHint: string;
+    kind?: string;
+    skill?: CursorSkillReference;
+  }[];
   error: string | null;
 }
 
@@ -121,12 +128,8 @@ async function installListCommandsStub(
   source:
     | (() => ListCommandsReply | Promise<ListCommandsReply>)
     | {
-        commands?: () => readonly {
-          name: string;
-          description: string;
-          argumentHint: string;
-          kind?: string;
-        }[];
+        commands?: () => ListCommandsReply["commands"];
+        legacyHost?: boolean;
         onSocket?: (send: (message: string) => void) => void;
       } = () => TEST_COMMANDS_REPLY,
 ): Promise<void> {
@@ -156,10 +159,17 @@ async function installListCommandsStub(
             payload?: {
               commands?: unknown;
               error?: string | null;
+              status?: string;
+              features?: Record<string, unknown>;
             };
           };
         };
         const payload = parsed.message?.payload;
+        if (options?.legacyHost && payload?.status === "server_info" && payload.features) {
+          delete payload.features.cursorSdkSkillSelection;
+          ws.send(JSON.stringify(parsed));
+          return;
+        }
         if (
           parsed.type === "session" &&
           parsed.message?.type === "list_commands_response" &&
@@ -183,6 +193,28 @@ async function installListCommandsStub(
     });
     options?.onSocket?.((message) => ws.send(message));
   });
+}
+
+function cursorSkillCollisionCommands(edited: boolean): ListCommandsReply {
+  const name = "review-fixture";
+  return {
+    commands: [
+      {
+        name,
+        description: edited ? "Run the edited workspace skill" : "Run the selected workspace skill",
+        argumentHint: "",
+        kind: "skill",
+        skill: {
+          name,
+          scope: "workspace",
+          id: "a".repeat(64),
+          revision: (edited ? "c" : "b").repeat(64),
+        },
+      },
+      { name, description: "Run the command", argumentHint: "", kind: "command" },
+    ],
+    error: null,
+  };
 }
 
 function createHeldReply(): {
@@ -244,6 +276,7 @@ async function openReadyMockAgent(
   page: Page,
   options?: { expectWorkspaceTab?: boolean },
 ): Promise<{
+  agentId: string;
   cleanup: () => Promise<void>;
 }> {
   const session = await seedMockAgentWorkspace({
@@ -257,7 +290,7 @@ async function openReadyMockAgent(
       await expectWorkspaceTabVisible(page, session.agentId);
     }
     await expectComposerVisible(page);
-    return { cleanup: session.cleanup };
+    return { agentId: session.agentId, cleanup: session.cleanup };
   } catch (error) {
     await session.cleanup();
     throw error;
@@ -1021,6 +1054,92 @@ test.describe("Composer autocomplete", () => {
       await session.cleanup();
     }
   });
+
+  for (const mobile of [false, true]) {
+    test.describe(
+      mobile ? "Cursor skills on a phone viewport" : "Cursor skills on desktop web",
+      () => {
+        if (mobile)
+          test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+        test("keeps a selected skill separate from a same-name command and persists the draft", async ({
+          page,
+        }, testInfo) => {
+          let edited = false;
+          let sendCatalogChange: ((message: string) => void) | undefined;
+          await installListCommandsStub(page, {
+            commands: () => cursorSkillCollisionCommands(edited).commands,
+            legacyHost: true,
+            onSocket: (send) => {
+              sendCatalogChange = send;
+            },
+          });
+          const agent = await openReadyMockAgent(page, { expectWorkspaceTab: !mobile });
+          try {
+            const input = composerLocator(page);
+            const menu = page.getByTestId("composer-autocomplete-popover");
+            const chip = page.getByTestId("composer-skill-attachment-pill");
+            await input.fill("/review");
+            await expect(
+              menu.getByRole("button", { name: "/review-fixture, Run the command" }),
+            ).toBeVisible();
+            await menu
+              .getByRole("button", { name: "/review-fixture, Run the selected workspace skill" })
+              .click();
+            await expect(chip).toHaveText(/review-fixture/);
+            await expect(input).toHaveValue("");
+
+            await input.fill("Keep my text $review");
+            await expect(
+              menu.getByRole("button", {
+                name: "$review-fixture, Run the selected workspace skill",
+              }),
+            ).toBeVisible();
+            await expect(menu.getByRole("button", { name: /Run the command/ })).toHaveCount(0);
+            edited = true;
+            expect(sendCatalogChange).toBeDefined();
+            sendCatalogChange!(
+              JSON.stringify({
+                type: "session",
+                message: {
+                  type: "agent.commands.changed",
+                  payload: { agentId: agent.agentId, cwd: "/repo", provider: "mock" },
+                },
+              }),
+            );
+            await expect(
+              menu.getByRole("button", { name: "$review-fixture, Run the edited workspace skill" }),
+            ).toBeVisible();
+            await expect(input).toHaveValue("Keep my text $review");
+            await page.screenshot({ path: testInfo.outputPath("cursor-dollar-menu.png") });
+            await menu
+              .getByRole("button", { name: "$review-fixture, Run the edited workspace skill" })
+              .click();
+            await expect(input).toHaveValue("Keep my text ");
+            await expect(chip).toHaveCount(1);
+
+            await page.reload();
+            await expect(input).toHaveValue("Keep my text ");
+            await expect(chip).toHaveText(/review-fixture/);
+            await page.getByRole("button", { name: "Send message", exact: true }).click();
+            await expect(
+              page.getByRole("alert").filter({ hasText: "Update the Paseo host" }),
+            ).toBeVisible();
+            await expect(input).toHaveValue("Keep my text ");
+            await expect(chip).toHaveText(/review-fixture/);
+            if (!mobile) await chip.hover();
+            await page
+              .getByRole("button", { name: "Remove skill review-fixture", exact: true })
+              .click();
+            await expect(chip).toHaveCount(0);
+            await expect(input).toHaveValue("Keep my text ");
+          } finally {
+            await agent.cleanup();
+          }
+        });
+      },
+    );
+  }
 
   test.describe("compact sidebar layering", () => {
     test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });

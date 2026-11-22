@@ -1,3 +1,4 @@
+import { cursorSkillRoots } from "./agent/cursor-skill-catalog.js";
 import { unarchiveWorkspaceAgents } from "./workspace-archive-service.js";
 import { createRestartRecovery } from "./agent/restart-recovery/index.js";
 import { sendPromptToAgent, unarchiveAgentState } from "./agent/agent-prompt.js";
@@ -1010,6 +1011,7 @@ export async function createPaseoDaemon(
       ),
   });
   const agentManager = new AgentManager({
+    resolveCursorSkillRoots: (target) => cursorSkillRoots(target, workspaceRegistry ?? undefined),
     pluginLifecycle: pluginRuntime,
     pluginSessions: pluginRuntime,
     clients: initialAgentManagerState.clients,

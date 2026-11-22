@@ -233,6 +233,7 @@ export const en = {
       openImage: "Open image attachment",
       removeImage: "Remove image attachment",
       removeFile: "Remove file attachment",
+      removeSkill: "Remove skill {{name}}",
       openGithub: "Open {{kind}} {{number}}",
       removeGithub: "Remove {{kind}} {{number}}",
       element: "Element",

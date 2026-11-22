@@ -125,7 +125,7 @@ export function parseAgentMessages(text: string): AgentMessage[] | null {
 }
 
 function renderMessageText(block: AgentPromptContentBlock): string[] {
-  if (block.type === "image") return [];
+  if (block.type === "image" || block.type === "cursor_skill") return [];
   if (block.type === "text") return [block.text];
   return [renderPromptAttachmentAsText(block)];
 }
@@ -173,7 +173,10 @@ export function envelopeMessage(
     prompt:
       typeof prompt === "string"
         ? envelope
-        : [{ type: "text", text: envelope }, ...prompt.filter((block) => block.type === "image")],
+        : [
+            { type: "text", text: envelope },
+            ...prompt.filter((block) => block.type === "image" || block.type === "cursor_skill"),
+          ],
   };
 }
 

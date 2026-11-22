@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import type { CursorSkillReference } from "@getpaseo/protocol/messages";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { AutocompleteOption, AutocompleteStatus } from "@/components/ui/autocomplete";
@@ -43,6 +44,7 @@ interface UseAgentAutocompleteInput {
   agentId: string;
   draft?: DraftCommandTarget;
   onAutocompleteApplied?: () => void;
+  onSkillSelected?: (skill: CursorSkillReference) => void;
   onClientSlashCommand?: (command: ClientSlashCommand) => void;
   canExecuteClientSlashCommand?: boolean;
   pluginClientSlashCommands?: readonly PluginClientSlashCommand[];
@@ -65,7 +67,7 @@ type AgentAutocompleteOption =
       type: "plugin_command";
       command: PluginClientSlashCommand;
     })
-  | (AutocompleteOption & { type: "provider_command" })
+  | (AutocompleteOption & { type: "provider_command"; skill?: CursorSkillReference })
   | (AutocompleteOption & {
       type: "workspace_entry";
       entryPath: string;
@@ -120,6 +122,27 @@ function isSameSlashCommand(a: SlashCommandRange | null, b: SlashCommandRange | 
   return a?.start === b?.start && a?.query === b?.query;
 }
 
+function commandReplacement(
+  selected: AgentAutocompleteOption,
+  current: AgentAutocompleteSnapshot,
+  provider: string | undefined,
+): string {
+  if (current.skillMention) {
+    return applySkillMentionReplacement({
+      text: current.text,
+      command: current.skillMention,
+      commandName: selected.id,
+      provider,
+    });
+  }
+  if (!current.slashCommand) return `/${selected.id} `;
+  return applySlashCommandReplacement({
+    text: current.text,
+    command: current.slashCommand,
+    commandName: selected.id,
+  });
+}
+
 interface DirectorySuggestionEntry {
   path: string;
   kind: "file" | "directory";
@@ -144,6 +167,7 @@ function resolveDraftQueryConfig(draft?: DraftCommandTarget): DraftCommandConfig
   return {
     provider: draftConfig.provider,
     cwd,
+    ...(draft.skillScope ? { skillScope: draft.skillScope } : {}),
     ...(modeId ? { modeId } : {}),
     ...(model ? { model } : {}),
     ...(thinkingOptionId ? { thinkingOptionId } : {}),
@@ -225,6 +249,9 @@ function mapCommandToOption(
   return {
     ...base,
     type: "provider_command",
+    ...(entry.command.skill
+      ? { id: `skill:${entry.command.skill.id}`, skill: entry.command.skill }
+      : {}),
     icon: isSkill ? "skill" : "command",
     description: entry.command.description,
     tag: isSkill ? context.t("agentAutocomplete.skillTag") : undefined,
@@ -256,7 +283,7 @@ function buildAutocompleteOptions(input: BuildAutocompleteOptionsInput): AgentAu
     const rootCommands: AvailableCommand[] = mergeSlashCommandSources({
       builtIn: CLIENT_SLASH_COMMANDS,
       plugins: input.pluginCommands,
-      provider: input.commands,
+      provider: input.commands.filter((command) => !command.skill),
       onPluginCollision(command, winner) {
         console.warn(
           `[Plugins] Client slash command /${command.name} from ${command.pluginId} ignored; ${winner} command wins`,
@@ -268,6 +295,7 @@ function buildAutocompleteOptions(input: BuildAutocompleteOptionsInput): AgentAu
         if (entry.source === "built-in") return { source: "client", command: entry.command };
         return entry;
       });
+    rootCommands.push(...providerCommands.filter((entry) => entry.command.skill));
     const availableCommands: AvailableCommand[] =
       input.mode === "skill" || input.activeSlashCommand?.position === "inline"
         ? filterInlineSkillCommandEntries(providerCommands)
@@ -278,7 +306,11 @@ function buildAutocompleteOptions(input: BuildAutocompleteOptionsInput): AgentAu
     );
     const context = {
       query: input.commandFilterQuery,
-      prefix: input.mode === "skill" && input.provider === "codex" ? "$" : "/",
+      prefix:
+        input.mode === "skill" &&
+        (input.provider === "codex" || input.commands.some((command) => command.skill))
+          ? "$"
+          : "/",
       pluginNames: input.pluginNames,
       t: input.t,
     };
@@ -545,6 +577,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     draft,
     onAutocompleteApplied,
     onClientSlashCommand,
+    onSkillSelected,
     canExecuteClientSlashCommand,
     pluginClientSlashCommands = [],
   } = input;
@@ -676,7 +709,10 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       buildAutocompleteOptions({
         activeFileMention,
         commandFilterQuery,
-        commands: commandsQuery.commands,
+        commands:
+          draft?.status === "ready" && draft.skillScope === "user"
+            ? commandsQuery.commands.filter((command) => command.skill?.scope !== "workspace")
+            : commandsQuery.commands,
         pluginCommands: pluginClientSlashCommands,
         pluginNames,
         activeSlashCommand,
@@ -713,6 +749,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     commandsQuery.commands,
     commandsQuery.error,
     commandsState,
+    draft,
     fileSuggestionsQuery.data,
     fileSuggestionsQuery.error,
     fileSuggestionsQuery.isLoading,
@@ -738,63 +775,42 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
         activeSkillMention,
         activeFileMention,
       });
-      const selectedIsCommand =
-        selected.type === "client_command" ||
-        selected.type === "plugin_command" ||
-        selected.type === "provider_command";
-      if (snapshot && selectedIsCommand && !current.slashCommand && !current.skillMention) return;
-      if (
-        selected.type === "client_command" &&
-        selected.command.execution === "immediate" &&
-        canExecuteClientSlashCommand &&
-        onClientSlashCommand
-      ) {
-        onClientSlashCommand(selected.command);
-        return;
-      }
-
-      if (selectedIsCommand) {
-        if (current.skillMention) {
-          setUserInput(
-            applySkillMentionReplacement({
-              text: current.text,
-              command: current.skillMention,
-              commandName: selected.id,
-              provider,
-            }),
-          );
-          onAutocompleteApplied?.();
+      if (selected.type === "workspace_entry") {
+        if (!current.fileMention) return;
+        setUserInput(
+          applyFileMentionReplacement({
+            text: current.text,
+            mention: current.fileMention,
+            relativePath: selected.entryPath,
+          }),
+        );
+      } else {
+        const token = current.skillMention ?? current.slashCommand;
+        if (snapshot && !token) return;
+        if (
+          selected.type === "client_command" &&
+          selected.command.execution === "immediate" &&
+          canExecuteClientSlashCommand &&
+          onClientSlashCommand
+        ) {
+          onClientSlashCommand(selected.command);
           return;
         }
-        if (!current.slashCommand) {
-          setUserInput(`/${selected.id} `);
-          onAutocompleteApplied?.();
-          return;
+        if (selected.type === "provider_command" && selected.skill) {
+          if (!token || !onSkillSelected) return;
+          setUserInput(current.text.slice(0, token.start) + current.text.slice(token.end));
+          onSkillSelected(selected.skill);
+        } else {
+          setUserInput(commandReplacement(selected, current, provider));
         }
-
-        const nextInput = applySlashCommandReplacement({
-          text: current.text,
-          command: current.slashCommand,
-          commandName: selected.id,
-        });
-        setUserInput(nextInput);
-        onAutocompleteApplied?.();
-        return;
       }
-
-      if (!current.fileMention) return;
-      const nextInput = applyFileMentionReplacement({
-        text: current.text,
-        mention: current.fileMention,
-        relativePath: selected.entryPath,
-      });
-      setUserInput(nextInput);
       onAutocompleteApplied?.();
     },
     [
       canExecuteClientSlashCommand,
       onAutocompleteApplied,
       onClientSlashCommand,
+      onSkillSelected,
       setUserInput,
       userInput,
       cursorIndex,

@@ -1,3 +1,4 @@
+import { cursorSkillReferences } from "../prompt-attachments.js";
 import { randomUUID } from "node:crypto";
 import type { Run, RunResult, SDKUserMessage } from "@cursor/sdk";
 import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
@@ -78,6 +79,7 @@ export class CursorRunController {
   ): Promise<{ turnId: string; completion: Promise<AgentRunResult> }> {
     if (this.active) throw new Error("Cursor SDK is still running or stopping its current turn.");
     const id = randomUUID();
+    const cursorSkills = cursorSkillReferences(typeof prompt === "string" ? undefined : prompt);
     const record: CursorHistoryTurn = {
       id,
       user: {
@@ -85,6 +87,7 @@ export class CursorRunController {
         messageId: clientMessageId ?? `${id}:user`,
         ...(clientMessageId ? { clientMessageId } : {}),
         text,
+        ...(cursorSkills.length ? { cursorSkills } : {}),
       },
       createdAt: new Date().toISOString(),
       steers: [],

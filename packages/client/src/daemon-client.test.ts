@@ -1287,6 +1287,7 @@ test("advertises client capabilities in hello", async () => {
       owned_subscriptions: true,
       binary_chunking_v1: true,
       agent_command_updates: true,
+      cursor_sdk_skill_selection: true,
       compact_provider_snapshots: true,
       custom_mode_icons: true,
       project_updates: true,
@@ -9813,6 +9814,36 @@ test("queueing a message requires a host that queues, without sending anything",
     client.sendAgentMessage("recipient", "later", { activeTurnBehavior: "queue" }),
   ).rejects.toThrow("Update the Paseo host to queue messages");
   expect(transport.sent).toHaveLength(0);
+});
+
+test("refuses selected Cursor skills on older hosts without sending a frame", async () => {
+  const mock = createMockTransport();
+  const client = new DaemonClient({
+    url: "ws://test",
+    clientId: "skill-selection-gate",
+    transportFactory: () => mock.transport,
+    reconnect: { enabled: false },
+  });
+  clients.push(client);
+  const connecting = client.connect();
+  mock.triggerOpen();
+  await connecting;
+  await expect(
+    client.sendAgentMessage("recipient", "Keep this draft", {
+      attachments: [
+        {
+          type: "cursor_skill",
+          reference: {
+            name: "review",
+            scope: "workspace",
+            id: "a".repeat(64),
+            revision: "b".repeat(64),
+          },
+        },
+      ],
+    }),
+  ).rejects.toThrow("Update the Paseo host to send selected Cursor skills.");
+  expect(mock.sent).toHaveLength(0);
 });
 
 test("measures an outbound message in UTF-8 bytes against the daemon's message limit", async () => {

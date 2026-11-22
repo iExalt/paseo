@@ -3,6 +3,7 @@ export const CLIENT_CAPS = {
   binaryChunkingV1: "binary_chunking_v1",
   // COMPAT(agentCommandUpdates): added in v0.23.2, remove gate after 2027-05-06.
   agentCommandUpdates: "agent_command_updates",
+  cursorSdkSkillSelection: "cursor_sdk_skill_selection",
   helloRejection: "hello_rejection",
   replyRuleNotifications: "reply_rule_notifications",
   // COMPAT(ownedSubscriptions): added in v0.8.0, remove legacy ownership after 2027-03-09.

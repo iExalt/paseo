@@ -59,6 +59,12 @@ export function getAgentAttachmentPillContent(
   t: TFunction,
 ): AttachmentPillContent {
   switch (attachment.type) {
+    case "cursor_skill":
+      return {
+        icon: attachmentFileIcon,
+        title: attachment.reference.name,
+        subtitle: t("agentAutocomplete.skillTag"),
+      };
     case "review":
       return {
         icon: attachmentReviewIcon,

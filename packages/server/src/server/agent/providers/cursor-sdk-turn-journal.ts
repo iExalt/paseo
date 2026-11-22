@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import { appendFile, mkdir, readFile, readdir } from "node:fs/promises";
 import { join } from "node:path";
-import { AgentTimelineItemPayloadSchema } from "@getpaseo/protocol/messages";
+import {
+  AgentTimelineItemPayloadSchema,
+  CursorSkillReferenceSchema,
+} from "@getpaseo/protocol/messages";
 import { z } from "zod";
 import { writeFileAtomic, writeJsonFileAtomic } from "../../atomic-file.js";
 import type { AgentPromptInput, AgentTimelineItem } from "../agent-sdk-types.js";
@@ -11,6 +14,7 @@ const userMessageSchema = z.object({
   text: z.string(),
   messageId: z.string(),
   clientMessageId: z.string().optional(),
+  cursorSkills: z.array(CursorSkillReferenceSchema).optional(),
 });
 
 const turnSchema = z.object({
