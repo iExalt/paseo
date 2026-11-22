@@ -6,7 +6,7 @@ import React, {
   useReducer,
   useState,
 } from "react";
-import { TextInput } from "react-native";
+import { Platform, TextInput } from "react-native";
 import { BottomSheetTextInput } from "@gorhom/bottom-sheet";
 import PasteInput, {
   type PastedFile,
@@ -32,6 +32,8 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
     const {
       initialValue = "",
       onChangeText,
+      onFocus,
+      selectTextOnFocus,
       onPasteImages,
       onPasteError,
       variant = isInsideBottomSheet ? "bottom-sheet" : "default",
@@ -146,12 +148,27 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
       [onPasteError, onPasteImages],
     );
 
+    const selectOnAndroidFocus = Platform.OS === "android" && selectTextOnFocus;
+    const handleFocus: EditingTextInputProps["onFocus"] = (event) => {
+      // Android's selectTextOnFocus can select newly typed text during a later layout.
+      // setSelection uses the native edit count, so a keystroke already entered wins.
+      if (textRef.current.length > 0) {
+        inputRef.current?.setSelection?.(0, textRef.current.length);
+      }
+      onFocus?.(event);
+    };
+    const focusProps = {
+      onFocus: selectOnAndroidFocus ? handleFocus : onFocus,
+      selectTextOnFocus: selectOnAndroidFocus ? false : selectTextOnFocus,
+    };
+
     const autoFocus = replacement.revision === 0 ? props.autoFocus : replacement.autoFocus;
 
     if (onPasteImages || onPasteError) {
       return (
         <PasteInput
           {...props}
+          {...focusProps}
           autoFocus={autoFocus}
           key={replacement.revision}
           ref={assignInputRef as React.Ref<PasteTextInputInstance>}
@@ -165,6 +182,7 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
       return (
         <BottomSheetTextInput
           {...props}
+          {...focusProps}
           autoFocus={autoFocus}
           key={replacement.revision}
           ref={assignInputRef as unknown as React.Ref<never>}
@@ -176,6 +194,7 @@ export const EditingTextInput = forwardRef<EditingTextInputHandle, EditingTextIn
     return (
       <TextInput
         {...props}
+        {...focusProps}
         autoFocus={autoFocus}
         key={replacement.revision}
         ref={assignInputRef as React.Ref<TextInput>}
