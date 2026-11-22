@@ -6,6 +6,7 @@ import type { WaitForFinishResult } from "@getpaseo/client/internal/daemon-clien
 import type { FinishObservationResult } from "./internal/observation-buffer.js";
 import type { AgentMessageDelivery } from "../agent-messages/index.js";
 import type { HeldMessageOutcome } from "../held-messages.js";
+import type { AgentAddress } from "@getpaseo/protocol/addresses";
 import { getParentAddressFromLabels } from "@getpaseo/protocol/agent-labels";
 import {
   endsSubscription,
@@ -21,12 +22,21 @@ import {
 } from "./internal/following.js";
 export { createJsonFinishSubscriptionStore } from "./internal/json-store.js";
 
+export function isFinishNotificationParent(
+  caller: AgentAddress,
+  childLabels: Record<string, unknown> | null | undefined,
+  childServerId: string,
+): boolean {
+  const parent = getParentAddressFromLabels(childLabels, childServerId);
+  return parent?.agentId === caller.agentId && parent.serverId === caller.serverId;
+}
+
 export interface FinishSubscription {
   id: string;
   callerAgentId: string;
   childAgentId: string;
   serverId?: string;
-  /** Creation subscriptions stop reporting after the child is detached. */
+  /** Parent-only subscriptions stop reporting after the child is detached. */
   requireParentOwnership?: boolean;
   /**
    * Set once the child ended a turn while it was still working and the caller was told so.
@@ -189,11 +199,11 @@ export function createFinishSubscriptions(deps: Dependencies): FinishSubscriptio
   ): Promise<boolean> {
     if (!(await deps.callerIsActive(record.callerAgentId))) return true;
     if (!record.requireParentOwnership || !result?.final) return false;
-    const parent = getParentAddressFromLabels(
+    return !isFinishNotificationParent(
+      { agentId: record.callerAgentId, serverId: deps.serverId },
       result.final.labels,
       record.serverId ?? deps.serverId,
     );
-    return parent?.agentId !== record.callerAgentId || parent.serverId !== deps.serverId;
   }
   function reasonFor(result: FinishObservationResult): FinishNotificationReason {
     if (result.reason === "host unreachable" || result.reason === "host removed")

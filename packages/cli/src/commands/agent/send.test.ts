@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
 import { DaemonClient } from "@getpaseo/client/internal/daemon-client";
+import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import { connectToDaemon } from "../../utils/client.js";
 import { addSendOptions, buildNoWaitResult, runSendCommand } from "./send.js";
 import { resolvePromptInput } from "../../utils/prompt-input.js";
@@ -57,6 +58,24 @@ describe("agent send --if-running", () => {
     );
     expect(parseSend(["agent-1", "hello", "--if-running", "queue"]).ifRunning).toBe("queue");
     expect(() => parseSend(["agent-1", "hello", "--if-running", "later"])).toThrow();
+  });
+
+  it.each([
+    { flag: undefined, expected: undefined },
+    { flag: "--notify-on-finish", expected: true },
+    { flag: "--no-notify-on-finish", expected: false },
+  ])("forwards only explicit notification intent ($flag)", async ({ flag, expected }) => {
+    const { sendAgentMessage } = createClient();
+    vi.mocked(resolveCallerAgentId).mockResolvedValueOnce("caller");
+    const args = ["agent-1", "hello", "--no-wait"];
+    if (flag) args.push(flag);
+
+    await runSendCommand("agent-1", "hello", { ...parseSend(args), daemonTarget }, new Command());
+
+    const sent = sendAgentMessage.mock.calls[0]![2]!;
+    expect(sent.sourceAgentId).toBe("caller");
+    if (expected === undefined) expect(sent).not.toHaveProperty("notifyOnFinish");
+    else expect(sent.notifyOnFinish).toBe(expected);
   });
 
   it("waits for the message it sent, so a held message is not reported early", async () => {

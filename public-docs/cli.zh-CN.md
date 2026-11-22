@@ -454,7 +454,7 @@ paseo agent update <id> --features-json '{"choice":"a,b","count":2,"custom":{"le
 
 `run` 和 `send` 默认会等待；`--no-wait` 在启动或分发被确认后返回。父子关系是独立的：在受管的调用方中，`run` 默认创建子 Agent，即使在不同的 `--workspace` 中也是如此。`--relationship detached` 创建独立的工作；`--relationship subagent` 需要调用方上下文。
 
-对于已解析的调用方，创建和发送默认会收到完成、错误和权限通知。对即发即弃的工作使用 `--no-notify-on-finish`，或用 `--notify-on-finish` 显式声明意图。人工操作的 shell 没有父级回调。没有回调可用时，请使用 `wait`、`agent status` 或 `agent activity`；启用通知时请避免反复轮询。
+确定调用方后，`run` 默认会发送完成、错误和权限通知。`send` 默认仅在接收方是调用方的直接子 Agent 时发送这些通知。使用 `--notify-on-finish` 订阅任意接收方的通知，或用 `--no-notify-on-finish` 关闭通知。人工操作的 shell 没有父级回调。没有回调可用时，请使用 `wait`、`agent status` 或 `agent activity`；启用通知时请避免反复轮询。
 
 在受管会话中，即使 `paseo` 不在 `PATH` 中，也应使用 daemon 提供的 `"$PASEO_CLI"`，并保留调用方和主目录的环境变量值。保留可执行文件路径两侧的引号。Detached 启动已经具有独立的父子关系；不要在启动后清除父级标签。参阅[调用方上下文与策略](/docs/mcp#caller-context-and-daemon-selection)。
 

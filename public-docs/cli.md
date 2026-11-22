@@ -495,7 +495,7 @@ Combined updates apply mode, model, thinking, each feature, then metadata. This 
 
 `run` and `send` wait by default; `--no-wait` returns after startup or dispatch acknowledgement. Parentage is independent: in a managed caller, `run` defaults to a subagent, even in a different `--workspace`. `--relationship detached` creates independent work; `--relationship subagent` requires caller context.
 
-For a resolved caller, create/send default to finish, error, and permission notifications. Use `--no-notify-on-finish` for fire-and-forget work, or `--notify-on-finish` to state the intent explicitly. A human shell has no parent callback. Use `wait`, `agent status`, or `agent activity` when no callback is available; avoid repeated polling when notifications are enabled.
+For a resolved caller, `run` defaults to finish, error, and permission notifications. `send` enables these notifications by default only for direct children of the caller. Use `--notify-on-finish` to subscribe for any recipient or `--no-notify-on-finish` to opt out. A human shell has no parent callback. Use `wait`, `agent status`, or `agent activity` when no callback is available; avoid repeated polling when notifications are enabled.
 
 Use the daemon-provided `"$PASEO_CLI"` inside managed sessions, even when `paseo` is not on `PATH`, and preserve caller/home environment values. Keep the quotes around the executable path. Detached launches already have independent parentage; do not clear parent labels afterward. See [caller context and policy](/docs/mcp#caller-context-and-daemon-selection).
 

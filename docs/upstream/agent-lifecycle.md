@@ -148,7 +148,7 @@ Setup belongs to the workspace, including combined workspace-plus-agent creation
 
 Users can also detach an existing subagent from the subagents track. Detach is deliberately a manual lifecycle gesture, not an provider-native tool. It removes the parent and open-tab lifecycle labels: it does not stop, archive, move, or restart the agent. The agent keeps its current `cwd` and `workspaceId`, leaves the former parent's track, and behaves like a root agent for tab close, workspace activity, and future parent archive.
 
-`notifyOnFinish` defaults to `true` for agent-scoped creation and prompt follow-ups because most delegated work needs to report back to the creating agent. Set it to `false` for explicit reporting or no completion callback.
+Agent-scoped creation enables finish notifications by default. When you send a prompt, the daemon defaults to notifying you only for your direct children. Set `notifyOnFinish` to `true` to subscribe for any recipient or `false` to opt out.
 
 Agent-originated messages and automatic notifications share a recipient-daemon delivery module. A queued receipt acknowledges admission before provider dispatch. The module keeps one ordered queue per recipient, and the recipient reads its prompts in the order the daemon admitted them. Nothing overtakes an older queued message. A prompt takes its place when the daemon admits it, even while the provider is still starting an earlier turn, and a message stays in the queue until the turn that carries it starts. The turn has started when the agent manager acknowledges the run start; a turn that fails after that point is not delivered again.
 

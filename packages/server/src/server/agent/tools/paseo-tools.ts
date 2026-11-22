@@ -3,6 +3,7 @@ import { changeRequestStatusSchema } from "../../../services/change-request-sour
 import { registerPluginTools } from "./plugin-tools.js";
 import {
   acceptOnDispatch,
+  isFinishNotificationParent,
   type FinishSubscriptions,
   type FinishRegistration,
 } from "../finish-subscriptions/index.js";
@@ -10,7 +11,6 @@ import type { HeldMessageOutcome } from "../held-messages.js";
 import type { AgentMessageDelivery } from "../agent-messages/index.js";
 import {
   createHostResolver,
-  HostOperationRejectedError,
   type HostOperation,
   type HostOperations,
   type ToolHosts,
@@ -674,20 +674,25 @@ function createToolCatalog(
     if (!options.finishSubscriptions) throw new Error("Finish subscriptions are not configured");
     return options.finishSubscriptions();
   }
-  async function prepareRemoteNotification(
-    name: string,
+  async function prepareSendNotification(
+    child: { id: string; labels?: Record<string, unknown> | null },
     destination: string | undefined,
-    input: Record<string, unknown>,
+    notifyOnFinish: boolean | undefined,
   ): Promise<FinishRegistration | undefined> {
+    if (!callerAgentId) return undefined;
+    const serverId = options.serverId ?? "self";
+    const caller = { agentId: callerAgentId, serverId };
     if (
-      name !== "send_agent_prompt" ||
-      destination === options.serverId ||
-      !callerAgentId ||
-      input.notifyOnFinish === false
+      !(notifyOnFinish ?? isFinishNotificationParent(caller, child.labels, destination ?? serverId))
     )
       return undefined;
     return finishSubscriptions().register(
-      { childAgentId: input.agentId as string, callerAgentId, serverId: destination },
+      {
+        childAgentId: child.id,
+        callerAgentId,
+        serverId: destination,
+        requireParentOwnership: notifyOnFinish === undefined,
+      },
       true,
     );
   }
@@ -734,6 +739,7 @@ function createToolCatalog(
       if (!options.hosts) throw new Error("Connected hosts are not configured");
       return options.hosts();
     },
+    prepareRemoteSendNotification: prepareSendNotification,
     local: {
       createAgent: (args, context) => localHostOperations.get("create_agent")!(args, context),
       createWorkspace: (args, context) =>
@@ -775,13 +781,10 @@ function createToolCatalog(
       };
       handler = async ({ serverId, ...input }, context) => {
         const destination = serverId ?? options.serverId;
-        const remoteNotification = await prepareRemoteNotification(name, destination, input);
         try {
           const response = await hostResolver.use(serverId, (host) =>
             host[operation](input, context),
           );
-          if (response.isError) await remoteNotification?.reject();
-          else remoteNotification?.accept();
           await registerRemoteCreation(name, destination, input, response);
           return {
             ...response,
@@ -791,11 +794,6 @@ function createToolCatalog(
             },
           };
         } catch (error) {
-          // A lost response does not establish whether the remote daemon admitted the prompt.
-          // Reconcile the child rather than silently dropping notification intent.
-          if (error instanceof PaseoToolInputError || error instanceof HostOperationRejectedError)
-            await remoteNotification?.reject();
-          else remoteNotification?.accept();
           if (!options.serverId) throw error;
           const failure = {
             serverId: destination,
@@ -1233,9 +1231,8 @@ function createToolCatalog(
     notifyOnFinish: z
       .boolean()
       .optional()
-      .default(true)
       .describe(
-        "Get notified when the prompted agent finishes, errors, or needs permission. Set false for explicit reporting or no completion callback.",
+        "Get notified when the prompted agent finishes, errors, or needs permission. Defaults on for your direct children. Set true to opt in for any recipient, or false to opt out.",
       ),
   };
   const topLevelSendAgentPromptInputSchema = {
@@ -2045,7 +2042,7 @@ function createToolCatalog(
       title: "Send agent prompt",
       description:
         scope === "agent"
-          ? "Send a message to another agent. The response returns at once. Its guidance says whether the message waits for the running turn to end, joins it, or interrupts it, and how to deliver a waiting message now. Leave activeTurnBehavior out unless the message cannot wait. The recipient reads your messages in the order you sent them. A steer the recipient has not read is lost if its turn stops or is interrupted, along with the messages it carried. Completion reports include the target’s last response by default. Paseo supplies caller identity."
+          ? "Send a message to another agent. The response returns at once. Its guidance says whether the message waits for the running turn to end, joins it, or interrupts it, and how to deliver a waiting message now. Leave activeTurnBehavior out unless the message cannot wait. The recipient reads your messages in the order you sent them. A steer the recipient has not read is lost if its turn stops or is interrupted, along with the messages it carried. Finish notifications are enabled by default for direct children, and their completion reports include the target’s last response by default. Paseo supplies caller identity."
           : "Send a prompt to an agent. An active turn receives the prompt if it supports steering. Use interrupt to replace it.",
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
@@ -2066,25 +2063,19 @@ function createToolCatalog(
       prompt,
       sessionMode,
       ifRunning,
-      notifyOnFinish = Boolean(callerAgentId),
+      notifyOnFinish,
       activeTurnBehavior: legacyActiveTurnBehavior,
     }) => {
       const activeTurnBehavior: AgentSendBehavior =
         legacyActiveTurnBehavior ?? ifRunning ?? (callerAgentId ? "queue" : "steer");
-      if (callerAgentId && !agentManager.getAgent(agentId) && !(await agentStorage.get(agentId))) {
+      const recipient = callerAgentId
+        ? (agentManager.getAgent(agentId) ?? (await agentStorage.get(agentId)))
+        : undefined;
+      if (callerAgentId && !recipient) {
         throw new PaseoToolInputError(`Agent ${agentId} not found`);
       }
-      const notifying = Boolean(callerAgentId && notifyOnFinish);
       const notification =
-        notifying && callerAgentId
-          ? await (() => {
-              if (!options.finishSubscriptions)
-                throw new Error("Finish subscriptions are not configured");
-              return options
-                .finishSubscriptions()
-                .register({ childAgentId: agentId, callerAgentId }, true);
-            })()
-          : undefined;
+        recipient && (await prepareSendNotification(recipient, undefined, notifyOnFinish));
       function confirmDispatch(
         _disposition: PromptDispatchDisposition,
         held?: Promise<HeldMessageOutcome>,
@@ -2139,7 +2130,7 @@ function createToolCatalog(
             messageId: receipt.messageId,
             activeTurnBehavior: receipt.activeTurnBehavior,
             status: agentManager.getAgent(agentId)?.lifecycle ?? "idle",
-            guidance: notifying
+            guidance: notification
               ? `${receipt.guidance} ${PROMPTED_AGENT_NOTIFICATION_GUIDANCE}`
               : receipt.guidance,
           },
@@ -2183,7 +2174,7 @@ function createToolCatalog(
         agentId,
         disposition,
         status: currentSnapshot?.lifecycle ?? "idle",
-        guidance: notifying
+        guidance: notification
           ? PROMPTED_AGENT_NOTIFICATION_GUIDANCE
           : "Dispatch acknowledged. Observe completion using get_agent_status/get_agent_activity or SDK/RPC subscriptions and wait APIs.",
       };

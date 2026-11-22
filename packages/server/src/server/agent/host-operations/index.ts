@@ -21,6 +21,7 @@ import {
   inheritWorkspaceBackground,
   type BackgroundCaller,
 } from "../create-agent/intent.js";
+import type { FinishRegistration } from "../finish-subscriptions/index.js";
 import { expandUserPath } from "../../path-utils.js";
 import type { PaseoToolExecutionContext, PaseoToolResult } from "../tools/types.js";
 
@@ -206,6 +207,11 @@ export function createHostResolver(input: {
   /** The destination can't see the caller, so its background and mode defaults resolve before routing. */
   caller: () => (BackgroundCaller & { provider: string; currentModeId: string | null }) | null;
   lockedCwd?: string;
+  prepareRemoteSendNotification: (
+    agent: AgentSnapshotPayload,
+    destination: string,
+    notifyOnFinish: boolean | undefined,
+  ) => Promise<FinishRegistration | undefined>;
 }) {
   return {
     directory: () => input.hosts().directory(),
@@ -277,8 +283,13 @@ export function createHostResolver(input: {
             )?.agent;
             if (!agent)
               throw new HostOperationRejectedError(new Error(`Agent ${agentId} not found`));
+            const notification = await input.prepareRemoteSendNotification(
+              agent,
+              destination,
+              args.notifyOnFinish as boolean | undefined,
+            );
             const receipt = await client
-              .sendMessage(agentId, args.prompt as string, {
+              .sendMessage(agent.id, args.prompt as string, {
                 sessionMode: input.callerAgentId
                   ? (args.sessionMode as string | undefined)
                   : undefined,
@@ -286,22 +297,31 @@ export function createHostResolver(input: {
                 sourceAgentServerId: input.callerAgentId ? input.serverId : undefined,
                 activeTurnBehavior: args.activeTurnBehavior as AgentActiveTurnBehavior | undefined,
               })
-              .catch((error) => {
-                if (isAmbiguousPromptFailure(error)) throw error;
+              .catch(async (error) => {
+                // A lost response may follow admission. Keep observing that turn.
+                if (isAmbiguousPromptFailure(error)) {
+                  notification?.accept();
+                  throw error;
+                }
+                await notification?.reject();
                 throw new HostOperationRejectedError(error);
               });
+            notification?.accept();
             return result({
               success: true,
               ...receipt,
               status: agent.status,
               guidance:
-                receipt.deliveryStatus === "queued"
-                  ? `${
+                (receipt.deliveryStatus === "queued"
+                  ? (
                       // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove after
                       // 2027-05-22 once connected-host floor >= v0.17.2. Older hosts return no guidance.
                       receipt.guidance ?? "Queued for delivery after the current turn ends."
-                    } You will get notified when the prompted agent finishes, errors, or needs permission unless notifyOnFinish is false.`
-                  : "Dispatch acknowledged. Observe completion using get_agent_status/get_agent_activity or SDK/RPC subscriptions and wait APIs.",
+                    )
+                  : "Dispatch acknowledged.") +
+                (notification
+                  ? " You will get notified when the prompted agent finishes, errors, or needs permission."
+                  : " Observe completion using get_agent_status/get_agent_activity or SDK/RPC subscriptions and wait APIs."),
             });
           },
           async getStatus(args) {
