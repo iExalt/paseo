@@ -59,7 +59,8 @@ function fileKey(id: string): string {
 }
 
 async function syncPath(path: string): Promise<void> {
-  const file = await open(path, "r");
+  // Windows FlushFileBuffers requires a writable file handle.
+  const file = await open(path, process.platform === "win32" ? "r+" : "r");
   try {
     await file.sync();
   } finally {
