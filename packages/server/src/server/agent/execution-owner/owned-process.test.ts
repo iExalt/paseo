@@ -37,7 +37,8 @@ test.each(["expired", "disconnected"] as const)(
     const stdout = new PassThrough();
     const child = Object.assign(new EventEmitter(), { stdin, stdout });
     const abandon = vi.fn(async () => {});
-    launch.mockResolvedValue({ child, attest: async () => owner, abandon });
+    const watchWorker = vi.fn(async () => {});
+    launch.mockResolvedValue({ child, attest: async () => ({ owner, watchWorker }), abandon });
     const peer = createOwnerChannel(stdin, stdout, async () => {});
     const namespaces =
       process.platform === "linux"

@@ -34,5 +34,8 @@ export function requestExecutionOwnerStop(owner: ExecutionOwner): Promise<void> 
 }
 
 export async function supportsExecutionOwner(): Promise<boolean> {
-  return process.platform === "win32" || (await supportsLinuxExecutionOwner());
+  return (
+    (process.platform === "win32" && process.arch === "x64") ||
+    (await supportsLinuxExecutionOwner())
+  );
 }

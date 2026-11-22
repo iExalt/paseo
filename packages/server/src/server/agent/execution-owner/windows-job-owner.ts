@@ -2,10 +2,11 @@ import { execFile, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdir, readFile, rm } from "node:fs/promises";
 import { join } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { z } from "zod";
 import { writeFileAtomic } from "../../atomic-file.js";
-import { windowsJobSource } from "./windows-job-script.js";
+import { stageWindowsKeeper } from "./windows-keeper-binary.js";
 
 export const windowsExecutionOwnerSchema = z.object({
   backend: z.literal("windows-job"),
@@ -16,6 +17,7 @@ export const windowsExecutionOwnerSchema = z.object({
 export type WindowsExecutionOwner = z.infer<typeof windowsExecutionOwnerSchema>;
 
 const exec = promisify(execFile);
+export const windowsOwnerPipePrefix = String.raw`\\.\pipe\paseo-owner-`;
 let identity: Promise<string | undefined> | undefined;
 
 async function getHostIdentity(): Promise<string | undefined> {
@@ -32,10 +34,6 @@ async function getHostIdentity(): Promise<string | undefined> {
   } catch {
     return;
   }
-}
-
-function powershellString(value: string): string {
-  return "'" + value.replaceAll("'", "''") + "'";
 }
 
 function windowsArgument(value: string): string {
@@ -55,38 +53,44 @@ export async function startWindowsExecutionOwner(
   await mkdir(directory, { recursive: true, mode: 0o700 });
   const receipt = join(directory, `${generation}.released`);
   const job = `Local\\PaseoOwner-${generation}`;
-  const argv = [command, ...args].map(windowsArgument).join(" ");
-  const invoke = [command, argv, job, receipt, generation].map(powershellString).join(", ");
-  const script = `\n$ErrorActionPreference = 'Stop'\nAdd-Type -TypeDefinition @'\n${windowsJobSource}\n'@\n[PaseoJobOwner]::Run(${invoke})\n`;
-  const executable = join(root, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
-  const child = spawn(
-    executable,
-    [
-      "-NoLogo",
-      "-NoProfile",
-      "-NonInteractive",
-      "-EncodedCommand",
-      Buffer.from(script, "utf16le").toString("base64"),
-    ],
-    {
-      detached: true,
-      windowsHide: true,
-      stdio: ["pipe", "pipe", "ignore"],
-      env: {
-        SystemRoot: root,
-        WINDIR: root,
-        TEMP: process.env.TEMP,
-        TMP: process.env.TMP,
-        PATH: join(root, "System32"),
-        ELECTRON_RUN_AS_NODE: "1",
-      },
+  const pipe = windowsOwnerPipePrefix + generation;
+  const argv = [command, ...args, "--paseo-owner-pipe", pipe].map(windowsArgument).join(" ");
+  const executable = await stageWindowsKeeper();
+  const child = spawn(executable, [command, argv, job, receipt, generation, pipe], {
+    detached: true,
+    windowsHide: true,
+    stdio: ["pipe", "pipe", "ignore"],
+    env: {
+      SystemRoot: root,
+      WINDIR: root,
+      TEMP: process.env.TEMP,
+      TMP: process.env.TMP,
+      PATH: join(root, "System32"),
+      ELECTRON_RUN_AS_NODE: "1",
     },
-  );
+  });
   child.unref();
   return {
     child,
-    async attest(_pid: number): Promise<WindowsExecutionOwner> {
-      return { backend: "windows-job", generation, hostId, receipt };
+    async attest(_pid: number) {
+      const owner: WindowsExecutionOwner = { backend: "windows-job", generation, hostId, receipt };
+      return {
+        owner,
+        async watchWorker(connected: () => boolean, onExit: () => void) {
+          // A blocked relay can delay stdout EOF while a descendant survives.
+          // Only the keeper's retained process handle can confirm worker exit.
+          while (connected()) {
+            const exited = await readFile(`${receipt}.writer-exited`, "utf8").catch(
+              () => undefined,
+            );
+            if (exited === generation) {
+              onExit();
+              return;
+            }
+            await delay(100, undefined, { ref: false });
+          }
+        },
+      };
     },
     async abandon() {
       child.kill();
@@ -114,4 +118,5 @@ export async function forgetWindowsExecutionOwner(owner: WindowsExecutionOwner):
   if ((await inspectWindowsExecutionOwner(owner)) !== "released") return;
   await rm(owner.receipt);
   await rm(`${owner.receipt}.stop`, { force: true });
+  await rm(`${owner.receipt}.writer-exited`, { force: true });
 }

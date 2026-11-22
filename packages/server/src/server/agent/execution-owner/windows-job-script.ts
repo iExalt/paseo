@@ -1,9 +1,13 @@
-// The Windows owner runs outside the Job. It admits a suspended process into
-// the Job atomically and records an empty membership before dropping its handle.
+// The Windows keeper owns the Job, the original SDK process handle, and the
+// daemon pipes. The SDK receives a separate, PID-verified local pipe.
 export const windowsJobSource = String.raw`
 using System;
 using System.ComponentModel;
 using System.IO;
+using System.IO.Pipes;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using Microsoft.Win32.SafeHandles;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
@@ -17,7 +21,12 @@ public static class PaseoJobOwner {
     public IntPtr Reserved2, Input, Output, Error;
   }
   [StructLayout(LayoutKind.Sequential)] struct ExtendedStartup { public Startup Startup; public IntPtr Attributes; }
-  [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr Process, Thread; public int Pid, Tid; }
+  [StructLayout(LayoutKind.Sequential)] struct PipeSecurityAttributes {
+    public int Size;
+    public IntPtr Descriptor;
+    public int Inherit;
+  }
+  [StructLayout(LayoutKind.Sequential)] struct ProcessInfo { public IntPtr Process, Thread; public uint Pid, Tid; }
   [StructLayout(LayoutKind.Sequential)] struct Limits {
     public long PerProcessTime, PerJobTime;
     public uint Flags;
@@ -44,8 +53,10 @@ public static class PaseoJobOwner {
   [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern bool CreateProcess(string application, StringBuilder command, IntPtr processSecurity, IntPtr threadSecurity, bool inherit, uint flags, IntPtr environment, string cwd, ref ExtendedStartup startup, out ProcessInfo process);
   [DllImport("kernel32.dll", SetLastError=true)] static extern uint ResumeThread(IntPtr thread);
   [DllImport("kernel32.dll", SetLastError=true)] static extern IntPtr GetStdHandle(int which);
-  [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetHandleInformation(IntPtr handle, uint mask, uint flags);
-  [DllImport("kernel32.dll", SetLastError=true)] static extern bool SetStdHandle(int which, IntPtr handle);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern uint WaitForSingleObject(IntPtr handle, uint timeout);
+  [DllImport("kernel32.dll", SetLastError=true, CharSet=CharSet.Unicode)] static extern SafePipeHandle CreateNamedPipe(string name, uint openMode, uint pipeMode, uint instances, uint outputSize, uint inputSize, uint defaultTimeout, ref PipeSecurityAttributes security);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool GetNamedPipeClientProcessId(SafePipeHandle pipe, out uint pid);
+  [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateProcess(IntPtr process, uint code);
   [DllImport("kernel32.dll", SetLastError=true)] static extern bool TerminateJobObject(IntPtr job, uint code);
   [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr handle);
 
@@ -53,51 +64,134 @@ public static class PaseoJobOwner {
     if (!success) throw new Win32Exception(Marshal.GetLastWin32Error(), step);
   }
 
-  public static void Run(string executable, string argv, string jobName, string receipt, string generation) {
+  public static int Main(string[] args) {
+    if (args.Length != 6) return 2;
+    try { Run(args[0], args[1], args[2], args[3], args[4], args[5]); return 0; }
+    catch (Exception error) { Console.Error.WriteLine(error.GetType().Name + ": " + error.Message); return 1; }
+  }
+
+  sealed class WorkerChannel : IDisposable {
+    readonly NamedPipeServerStream pipe;
+    readonly IntPtr outputHandle = GetStdHandle(-11);
+    readonly Stream daemonInput = Console.OpenStandardInput();
+    readonly Stream daemonOutput = Console.OpenStandardOutput();
+    int closed, daemonEnded;
+    public bool DaemonEnded { get { return Interlocked.CompareExchange(ref daemonEnded, 0, 0) != 0; } }
+
+    public WorkerChannel(string name) {
+      PipeSecurity access = new PipeSecurity();
+      access.SetAccessRuleProtection(true, false);
+      using (WindowsIdentity identity = WindowsIdentity.GetCurrent()) {
+        access.AddAccessRule(new PipeAccessRule(identity.User, PipeAccessRights.FullControl, AccessControlType.Allow));
+      }
+      GCHandle descriptor = GCHandle.Alloc(access.GetSecurityDescriptorBinaryForm(), GCHandleType.Pinned);
+      try {
+        PipeSecurityAttributes security = new PipeSecurityAttributes {
+          Size = Marshal.SizeOf(typeof(PipeSecurityAttributes)), Descriptor = descriptor.AddrOfPinnedObject(),
+        };
+        // OVERLAPPED | FIRST_PIPE_INSTANCE | DUPLEX; reject remote peers.
+        SafePipeHandle handle = CreateNamedPipe(name, 0x40080003, 8, 1, 65536, 65536, 0, ref security);
+        if (handle.IsInvalid) {
+          int failure = Marshal.GetLastWin32Error();
+          handle.Dispose();
+          throw new Win32Exception(failure, "create worker pipe");
+        }
+        try { pipe = new NamedPipeServerStream(PipeDirection.InOut, true, false, handle); }
+        catch { handle.Dispose(); throw; }
+      } finally { descriptor.Free(); }
+    }
+
+    static void StartThread(Action work) {
+      Thread thread = new Thread(() => work());
+      thread.IsBackground = true;
+      thread.Start();
+    }
+
+    public void Start(ProcessInfo worker) {
+      StartThread(() => {
+        try {
+          for (;;) {
+            pipe.WaitForConnection();
+            uint peer;
+            if (GetNamedPipeClientProcessId(pipe.SafePipeHandle, out peer) &&
+                peer == worker.Pid && WaitForSingleObject(worker.Process, 0) == 258) break;
+            pipe.Disconnect();
+          }
+          StartThread(() => {
+            try { daemonInput.CopyTo(pipe); }
+            catch (IOException) { }
+            catch (ObjectDisposedException) { }
+            finally {
+              Interlocked.Exchange(ref daemonEnded, 1);
+              Dispose();
+            }
+          });
+          byte[] bytes = new byte[65536];
+          while (Interlocked.CompareExchange(ref closed, 0, 0) == 0) {
+            int length = pipe.Read(bytes, 0, bytes.Length);
+            if (length == 0 || Interlocked.CompareExchange(ref closed, 0, 0) != 0 ||
+                WaitForSingleObject(worker.Process, 0) != 258) break;
+            daemonOutput.Write(bytes, 0, length);
+          }
+        } catch (IOException) { }
+          catch (InvalidOperationException) { }
+          finally { Dispose(); }
+      });
+    }
+
+    public void Dispose() {
+      if (Interlocked.Exchange(ref closed, 1) != 0) return;
+      StartThread(() => {
+        try { pipe.Dispose(); }
+        finally { CloseHandle(outputHandle); }
+      });
+    }
+  }
+
+  static void Run(string executable, string argv, string jobName, string receipt, string generation, string pipeName) {
     IntPtr job = CreateJobObject(IntPtr.Zero, jobName);
     int jobError = Marshal.GetLastWin32Error();
     Check(job != IntPtr.Zero, "create execution job");
     ProcessInfo worker = new ProcessInfo();
     IntPtr attributes = IntPtr.Zero;
     IntPtr jobList = IntPtr.Zero;
-    IntPtr inherited = IntPtr.Zero;
+    WorkerChannel channel = null;
     bool initialized = false;
     try {
       if (jobError == 183) throw new InvalidOperationException("Execution job name is already in use.");
       ExtendedLimits limits = new ExtendedLimits { Basic = new Limits { Flags = 0x2000 } };
       Check(SetInformationJobObject(job, 9, ref limits, Marshal.SizeOf(typeof(ExtendedLimits))), "set execution job limits");
       IntPtr size = IntPtr.Zero;
-      InitializeProcThreadAttributeList(IntPtr.Zero, 2, 0, ref size);
+      InitializeProcThreadAttributeList(IntPtr.Zero, 1, 0, ref size);
       if (size == IntPtr.Zero) throw new InvalidOperationException("Cannot size launch attributes.");
       attributes = Marshal.AllocHGlobal(size);
-      Check(InitializeProcThreadAttributeList(attributes, 2, 0, ref size), "initialize launch attributes");
+      Check(InitializeProcThreadAttributeList(attributes, 1, 0, ref size), "initialize launch attributes");
       initialized = true;
       // PROC_THREAD_ATTRIBUTE_JOB_LIST places the worker in the Job on creation.
       jobList = Marshal.AllocHGlobal(IntPtr.Size);
       Marshal.WriteIntPtr(jobList, job);
       Check(UpdateProcThreadAttribute(attributes, 0, new IntPtr(0x0002000d), jobList, new IntPtr(IntPtr.Size), IntPtr.Zero, IntPtr.Zero), "enroll launch in execution job");
-      Startup io = new Startup {
-        Size = Marshal.SizeOf(typeof(ExtendedStartup)), Flags = 0x100,
-        Input = GetStdHandle(-10), Output = GetStdHandle(-11), Error = GetStdHandle(-12),
-      };
-      IntPtr[] handles = new IntPtr[] { io.Input, io.Output, io.Error };
-      inherited = Marshal.AllocHGlobal(IntPtr.Size * handles.Length);
-      for (int i = 0; i < handles.Length; i++) {
-        Check(SetHandleInformation(handles[i], 1, 1), "enable private pipe inheritance");
-        Marshal.WriteIntPtr(inherited, IntPtr.Size * i, handles[i]);
-      }
-      // PROC_THREAD_ATTRIBUTE_HANDLE_LIST restricts inheritance to these three pipes.
-      Check(UpdateProcThreadAttribute(attributes, 0, new IntPtr(0x00020002), inherited, new IntPtr(IntPtr.Size * handles.Length), IntPtr.Zero, IntPtr.Zero), "limit worker handle inheritance");
+      channel = new WorkerChannel(pipeName);
+      Startup io = new Startup { Size = Marshal.SizeOf(typeof(ExtendedStartup)) };
       ExtendedStartup startup = new ExtendedStartup { Attributes = attributes, Startup = io };
       // EXTENDED_STARTUPINFO_PRESENT | CREATE_SUSPENDED | CREATE_NO_WINDOW
-      Check(CreateProcess(executable, new StringBuilder(argv), IntPtr.Zero, IntPtr.Zero, true, 0x08080004, IntPtr.Zero, null, ref startup, out worker), "create enrolled worker");
-      // The Job owner must not mask EOF when the SDK worker alone dies.
-      Check(SetStdHandle(-10, IntPtr.Zero), "release owner stdin");
-      Check(SetStdHandle(-11, IntPtr.Zero), "release owner stdout");
-      Check(CloseHandle(io.Input), "close keeper stdin copy");
-      Check(CloseHandle(io.Output), "close keeper stdout copy");
+      // The worker cannot inherit any keeper handle. Its Job is applied before it can run.
+      Check(CreateProcess(executable, new StringBuilder(argv), IntPtr.Zero, IntPtr.Zero, false, 0x08080004, IntPtr.Zero, null, ref startup, out worker), "create enrolled worker");
+      channel.Start(worker);
       Check(ResumeThread(worker.Thread) != UInt32.MaxValue, "resume enclosed worker");
+      bool writerExited = false;
       for (;;) {
+        uint writerState = WaitForSingleObject(worker.Process, 0);
+        if (!writerExited && writerState == 0) {
+          channel.Dispose();
+          try {
+            File.WriteAllText(receipt + ".writer-exited", generation, Encoding.ASCII);
+            writerExited = true;
+          } catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        } else if (writerState == 258 && channel.DaemonEnded) {
+          TerminateProcess(worker.Process, 1);
+        }
         Accounting value;
         Check(QueryInformationJobObject(job, 1, out value, Marshal.SizeOf(typeof(Accounting)), IntPtr.Zero), "query execution job membership");
         if (value.ActiveProcesses == 0) break;
@@ -116,12 +210,12 @@ public static class PaseoJobOwner {
       }
       File.Move(temporary, receipt);
     } finally {
+      if (channel != null) channel.Dispose();
       if (worker.Thread != IntPtr.Zero) CloseHandle(worker.Thread);
       if (worker.Process != IntPtr.Zero) CloseHandle(worker.Process);
       if (initialized) DeleteProcThreadAttributeList(attributes);
       if (attributes != IntPtr.Zero) Marshal.FreeHGlobal(attributes);
       if (jobList != IntPtr.Zero) Marshal.FreeHGlobal(jobList);
-      if (inherited != IntPtr.Zero) Marshal.FreeHGlobal(inherited);
       CloseHandle(job);
     }
   }

@@ -1,8 +1,11 @@
+import { once } from "node:events";
 import { readlink } from "node:fs/promises";
+import { createConnection } from "node:net";
+import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { inspectExecutionOwner, type ExecutionOwner } from "./execution-owner.js";
 import { startLinuxExecutionOwner } from "./linux-systemd-owner.js";
-import { startWindowsExecutionOwner } from "./windows-job-owner.js";
+import { startWindowsExecutionOwner, windowsOwnerPipePrefix } from "./windows-job-owner.js";
 import { createOwnerChannel, ownerDeferred } from "./owner-channel.js";
 
 type Handler = Parameters<typeof createOwnerChannel>[2];
@@ -45,10 +48,48 @@ async function currentNamespaces(): Promise<string[]> {
   );
 }
 
+async function connectWindowsWorkerPipe() {
+  const [option, name] = process.argv.slice(2);
+  if (option !== "--paseo-owner-pipe" || !name?.startsWith(windowsOwnerPipePrefix)) {
+    throw new Error("Windows execution owner pipe is missing.");
+  }
+  const deadline = AbortSignal.timeout(4_000);
+  for (;;) {
+    const socket = createConnection(name);
+    try {
+      await once(socket, "connect", { signal: deadline });
+      return socket;
+    } catch (error) {
+      socket.destroy();
+      if ((error as NodeJS.ErrnoException).code !== "EBUSY" || deadline.aborted) throw error;
+      await delay(25, undefined, { signal: deadline, ref: false });
+    }
+  }
+}
+
 export async function connectOwnedProcess(handle: Handler): Promise<Channel> {
-  const channel = createOwnerChannel(process.stdin, process.stdout, handle);
+  const socket = process.platform === "win32" ? await connectWindowsWorkerPipe() : undefined;
+  const channel = createOwnerChannel(socket ?? process.stdin, socket ?? process.stdout, handle);
   await channel.request("hello", { pid: process.pid, namespaces: await currentNamespaces() });
   return channel;
+}
+
+function workerArguments(entry: string): string[] {
+  const archive =
+    process.platform === "win32" && process.versions.electron
+      ? /[\\/]app\.asar[\\/]/i.exec(entry)
+      : null;
+  if (archive) {
+    const runner = join(
+      entry.slice(0, archive.index),
+      "app.asar.unpacked",
+      "dist",
+      "daemon",
+      "node-entrypoint-runner.js",
+    );
+    return [runner, "node-script", entry];
+  }
+  return [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry];
 }
 
 /** Start a worker over inherited pipes and commit its domain before enabling dispatch. */
@@ -60,7 +101,7 @@ export async function openOwnedProcess(
   handle: Handler,
 ): Promise<OwnedProcess> {
   const namespaces = await currentNamespaces();
-  const args = [...(entry.endsWith(".ts") ? ["--import", "tsx"] : []), entry];
+  const args = workerArguments(entry);
   const launch =
     process.platform === "win32"
       ? await startWindowsExecutionOwner(process.execPath, args, home, generation)
@@ -98,8 +139,7 @@ export async function openOwnedProcess(
       ) {
         throw new Error("Execution owner uses a different host namespace.");
       }
-      const attestation = await launch.attest(pid);
-      const owner = "owner" in attestation ? attestation.owner : attestation;
+      const { owner, watchWorker } = await launch.attest(pid);
       const assertLaunchAvailable = () => {
         if (timeout.aborted || !channel.connected)
           throw new Error("Execution owner disconnected during enrollment.");
@@ -112,9 +152,7 @@ export async function openOwnedProcess(
       await enrollment;
       assertLaunchAvailable();
       authorized = true;
-      if ("watchWorker" in attestation) {
-        void attestation.watchWorker(() => channel.connected, channel.close);
-      }
+      void watchWorker(() => channel.connected, channel.close);
       ready.resolve(owner);
     } catch (error) {
       ready.reject(error);
