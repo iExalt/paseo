@@ -1,4 +1,8 @@
-import { readAgentProfile, profileConfig } from "../../utils/agent-profile.js";
+import {
+  mergeProfileControls,
+  readAgentProfile,
+  profileConfig,
+} from "../../utils/agent-profile.js";
 import type { Command } from "commander";
 import type { AgentProviderNotice } from "@getpaseo/protocol/agent-types";
 import type { AgentSnapshotPayload } from "@getpaseo/protocol/messages";
@@ -107,6 +111,10 @@ export async function applyAgentChanges(
   client: AgentUpdateClient,
   agentId: string,
   changes: AgentChanges,
+  applyOptions?: (
+    options: Record<string, unknown>,
+    thinkingOptionId?: string | null,
+  ) => Promise<AgentProviderNotice | null>,
 ): Promise<AppliedAgentChanges> {
   if (
     changes.thinkingOptionId !== undefined &&
@@ -119,7 +127,7 @@ export async function applyAgentChanges(
     } satisfies CommandError;
   }
 
-  const steps = createAgentUpdateSteps(client, agentId, changes);
+  const steps = createAgentUpdateSteps(client, agentId, changes, applyOptions);
   let notice: AgentProviderNotice | null = null;
   const notices: AgentProviderNotice[] = [];
   const completedSteps: string[] = [];
@@ -147,6 +155,10 @@ function createAgentUpdateSteps(
   client: AgentUpdateClient,
   agentId: string,
   changes: AgentChanges,
+  applyOptions?: (
+    options: Record<string, unknown>,
+    thinkingOptionId?: string | null,
+  ) => Promise<AgentProviderNotice | null>,
 ): AgentUpdateStep[] {
   const steps: AgentUpdateStep[] = [];
   if (changes.modeId !== undefined) {
@@ -163,21 +175,30 @@ function createAgentUpdateSteps(
       },
     });
   }
-  if (changes.thinkingOptionId !== undefined) {
+  const features = Object.entries(changes.features ?? {});
+  const combined = applyOptions && features.length > 0 && changes.thinkingOptionId !== undefined;
+  if (changes.thinkingOptionId !== undefined && !combined) {
     const thinkingOptionId = changes.thinkingOptionId;
     steps.push({
       name: "thinking",
       apply: () => client.setAgentThinkingOption(agentId, thinkingOptionId),
     });
   }
-  for (const [featureId, value] of Object.entries(changes.features ?? {})) {
+  if (applyOptions && (features.length > 1 || combined)) {
     steps.push({
-      name: `feature ${featureId}`,
-      apply: async () => {
-        await client.setAgentFeature(agentId, featureId, value);
-        return null;
-      },
+      name: combined ? "thinking and options" : "options",
+      apply: () => applyOptions(Object.fromEntries(features), changes.thinkingOptionId),
     });
+  } else {
+    for (const [featureId, value] of features) {
+      steps.push({
+        name: `feature ${featureId}`,
+        apply: async () => {
+          await client.setAgentFeature(agentId, featureId, value);
+          return null;
+        },
+      });
+    }
   }
   if (changes.metadata) {
     const metadata = changes.metadata;
@@ -397,7 +418,17 @@ export async function runUpdateCommand(
           options.profile,
           changes,
         )
-      : await applyAgentChanges(client, agentId, changes);
+      : await applyAgentChanges(
+          client,
+          agentId,
+          changes,
+          fetchResult.agent.provider === "cursor-sdk"
+            ? (patch, thinkingOptionId) =>
+                thinkingOptionId === undefined
+                  ? client.setAgentOptions(agentId, patch)
+                  : client.applyAgentConfig(agentId, { options: patch, thinkingOptionId })
+            : undefined,
+        );
 
     const updatedResult = await client.fetchAgent({ agentId });
     if (!updatedResult) {
@@ -444,10 +475,7 @@ export async function applySavedProfile(
     ...profileConfig(profile),
     ...(changes.modelId !== undefined ? { modelId: changes.modelId } : {}),
     ...(changes.modeId !== undefined ? { modeId: changes.modeId } : {}),
-    ...(changes.thinkingOptionId !== undefined
-      ? { thinkingOptionId: changes.thinkingOptionId }
-      : {}),
-    featureValues: { ...profile.featureValues, ...changes.features },
+    ...mergeProfileControls(profile, changes.thinkingOptionId, changes.features ?? {}),
   };
   let notice: AgentProviderNotice | null;
   try {

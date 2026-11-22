@@ -91,7 +91,7 @@ export async function inspectProviderCapabilities(
     enabled: summary.enabled,
     status: summary.status,
     modes: summary.modes,
-    selectedModel: selectedModel ?? null,
+    selectedModel: draft.model ?? selectedModel ?? null,
     features: featuresFromControls(draft),
   });
 }

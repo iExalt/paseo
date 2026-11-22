@@ -645,6 +645,8 @@ export interface AgentSessionConfig {
   thinkingOptionId?: string;
   title?: string | null;
   providerOptions?: ProviderOptions;
+  /** Launch-only options supplied by the caller before provider defaults are applied. */
+  requestedProviderOptions?: ProviderOptions;
   toolPolicy?: ToolPolicy;
   mcpServers?: Record<string, McpServerConfig>;
   /**
@@ -764,8 +766,15 @@ export interface AgentSession {
   canResumeRuntime?(): boolean;
   /** A returned model is the effective selection committed by this mutation.
    * Returning void means the requested selection was accepted. No status read is required. */
-  setModel?(modelId: string | null): Promise<void | { model: string | null }>;
-  setThinkingOption?(thinkingOptionId: string | null): Promise<void | AgentProviderNotice>;
+  setModel?(modelId: string | null): Promise<void | {
+    model: string | null;
+    optionsPatch?: ProviderOptions;
+  }>;
+  setThinkingOption?(
+    thinkingOptionId: string | null,
+  ): Promise<
+    void | AgentProviderNotice | { optionsPatch: ProviderOptions; notice?: AgentProviderNotice }
+  >;
   /**
    * Apply an options patch. `options` holds only the keys the patch touches, resolved against
    * the `config.json` defaults; `null` means nothing is set for the key, so return it to the
@@ -779,7 +788,10 @@ export interface AgentSession {
    * state moved anyway, report the moved values once as `options_changed` after the call has
    * ended, so the stored options still match what runs.
    */
-  applyOptions?(options: ProviderOptions): Promise<Record<string, unknown> | void>;
+  applyOptions?(
+    options: ProviderOptions,
+    thinkingOptionId?: string | null,
+  ): Promise<Record<string, unknown> | void>;
   revertConversation?(input: { messageId: string }): Promise<void>;
   revertFiles?(input: { messageId: string }): Promise<void>;
   revertBoth?(input: { messageId: string }): Promise<void>;
@@ -827,6 +839,7 @@ export interface ResolveAgentDefaultModeInput {
 }
 
 export interface AgentDraftControls {
+  model?: string;
   controls: AgentOptionControl[];
   options: ProviderOptions;
 }

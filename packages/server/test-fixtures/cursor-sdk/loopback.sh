@@ -17,6 +17,7 @@ cc -Wall -Wextra -Werror "$fixture/no-socket-proxy.c" -o "$scratch/no-socket-pro
 trace() {
   local receipt="$1"
   shift
+  # Stop the traced processes only for the socket syscalls checked by the receipt.
   sudo -n unshare --net --pid --fork --kill-child --mount-proc /bin/bash -ec '
     ip link set lo up
     uid="$1"
@@ -26,7 +27,7 @@ trace() {
     setpriv --reuid "$uid" --regid "$gid" --clear-groups --no-new-privs --bounding-set=-all \
       env -i PATH=/usr/bin:/bin TMPDIR="$scratch" "$@"
   ' sh "$(id -u)" "$(id -g)" "$scratch" \
-    /usr/bin/timeout --kill-after=3s 100s strace -f -qq -s 64 \
+    /usr/bin/timeout --kill-after=3s 100s strace --seccomp-bpf -f -qq -s 64 \
     -e trace=connect,sendto,sendmsg,sendmmsg -o "$receipt" "$scratch/no-socket-proxy" "$@" </dev/null
 }
 
