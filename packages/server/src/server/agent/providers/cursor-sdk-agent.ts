@@ -70,6 +70,7 @@ import {
   interruptedCursorRunMessage,
 } from "./cursor-sdk-history.js";
 import { assertCursorRunReleased, reconcileReleasedTurn } from "./cursor-sdk-recovery.js";
+import { cursorCompactCommand, isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
 import { CursorQuestions, cursorQuestionToolName } from "./cursor-sdk-questions.js";
@@ -545,6 +546,7 @@ class CursorSdkAgent implements AgentSession {
           resolveSkills,
           resolveInstructions,
           execution,
+          isCursorCompactPrompt(prompt),
         ),
       options?.clientMessageId,
     );
@@ -558,6 +560,7 @@ class CursorSdkAgent implements AgentSession {
     resolveSkills: AgentRunOptions["resolveCursorSkills"],
     resolveInstructions: AgentRunOptions["resolveCursorWorkspaceInstructions"],
     execution: CursorTurnExecution,
+    compact: boolean,
   ): Promise<Run> {
     throwIfStopped();
     assertNoInheritedAgentIdentity();
@@ -568,6 +571,9 @@ class CursorSdkAgent implements AgentSession {
       if (!run || run.status === "running" || (run.status === "queued" && run.startedAt != null)) {
         throw new Error(interruptedCursorRunMessage(current.activeRunId));
       }
+    }
+    if (compact && !current?.latestCheckpoint) {
+      throw new Error("This Cursor SDK chat has no saved conversation to summarize yet.");
     }
     const apiKey = await this.credentials.read();
     const selected = await this.resolveExactModel(requested.model.id, apiKey);
@@ -580,8 +586,18 @@ class CursorSdkAgent implements AgentSession {
     }
     const model = selectCursorModel(selected.sdkId, options);
     throwIfStopped();
-    const prepareInput = async () => {
+    const checkDispatch = async () => {
+      if ((await this.credentials.read()) !== apiKey) {
+        throw new Error("Cursor SDK sign-in changed. Send your message again.");
+      }
       throwIfStopped();
+    };
+    const prepareInput = async (): Promise<SDKUserMessage | null> => {
+      throwIfStopped();
+      if (compact) {
+        await checkDispatch();
+        return null;
+      }
       const skills = resolveSkills ? await resolveSkills() : undefined;
       const userAndContext = renderSelectedCursorSkills(input.text, skills);
       const workspaceInstructions = await resolveInstructions?.();
@@ -589,10 +605,7 @@ class CursorSdkAgent implements AgentSession {
       const text = instructions
         ? RUN_INSTRUCTIONS_START + instructions + RUN_INSTRUCTIONS_END + userAndContext
         : userAndContext;
-      if ((await this.credentials.read()) !== apiKey) {
-        throw new Error("Cursor SDK sign-in changed. Send your message again.");
-      }
-      throwIfStopped();
+      await checkDispatch();
       return { ...input, text };
     };
     const owned = await this.tryOwnedExecution(execution, throwIfStopped);
@@ -600,7 +613,7 @@ class CursorSdkAgent implements AgentSession {
     owned?.attachQuestionHandler(question.execute, execution.abortInteractions);
     const run = owned
       ? await this.sendOwned(owned, apiKey, model, prepareInput)
-      : await this.sendDirect(model, apiKey, prepareInput, bind, question);
+      : await this.sendDirect(model, apiKey, prepareInput, bind, question, compact);
     if (this.model === requested.model && this.options === requested.options) {
       this.model = selected;
       this.modelControls = controls;
@@ -612,7 +625,7 @@ class CursorSdkAgent implements AgentSession {
     owned: Awaited<ReturnType<typeof openOwnedCursorExecution>>,
     apiKey: string,
     model: ModelSelection,
-    prepareInput: () => Promise<SDKUserMessage>,
+    prepareInput: () => Promise<SDKUserMessage | null>,
   ): Promise<Run> {
     const env = { ...process.env };
     // The current credential is sent only in the admitted SDK options.
@@ -675,13 +688,19 @@ class CursorSdkAgent implements AgentSession {
   private async sendDirect(
     model: ModelSelection,
     apiKey: string,
-    prepareInput: () => Promise<SDKUserMessage>,
+    prepareInput: () => Promise<SDKUserMessage | null>,
     bind: (runId: string) => Promise<void>,
     question: ReturnType<CursorQuestions["tool"]>,
+    compact: boolean,
   ): Promise<Run> {
-    const native = this.native?.apiKey === apiKey ? this.native : await this.rebind(apiKey, model);
+    // summarize() uses the handle's model, unlike send({ model }).
+    const native =
+      !compact && this.native?.apiKey === apiKey ? this.native : await this.rebind(apiKey, model);
     return this.binding.send(this.id, bind, async () => {
       const input = await prepareInput();
+      if (input === null) {
+        return withCursorShellEnvironment(this.shellEnvironment, () => native.agent.summarize());
+      }
       return withCursorShellEnvironment(this.shellEnvironment, () =>
         native.agent.send(input, {
           model,
@@ -739,7 +758,7 @@ class CursorSdkAgent implements AgentSession {
   }
 
   listCommands(): Promise<AgentSlashCommand[]> {
-    return Promise.resolve([]);
+    return Promise.resolve([cursorCompactCommand]);
   }
 
   async getRuntimeInfo(): Promise<AgentRuntimeInfo> {
