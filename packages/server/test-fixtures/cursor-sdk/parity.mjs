@@ -8,6 +8,7 @@ import { dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { checkBaseline, prepareBaseline, shellEnvironment } from "./baseline.mjs";
 import { apiKey, assistantText, callId, model, sdkVersion, startBackend } from "./backend.mjs";
+import { checkLifecycle } from "./lifecycle.mjs";
 
 const exec = promisify(execFile);
 const root = resolve(process.argv[2] ?? ".");
@@ -66,20 +67,31 @@ let child;
 let daemonLog = "";
 let listener;
 
-async function startDaemon() {
+async function startDaemon({ listen = env.PASEO_LISTEN, offline = false } = {}) {
+  const daemonEnv = {
+    ...env,
+    PASEO_LISTEN: listen,
+    ...(offline
+      ? {
+          CURSOR_API_KEY: "",
+          CURSOR_API_BASE_URL: "http://127.0.0.1:1",
+          CURSOR_BACKEND_URL: "http://127.0.0.1:1",
+        }
+      : {}),
+  };
   child = fork(join(root, "packages/server/dist/server/server/daemon-worker.js"), {
-    cwd: workspace,
+    cwd: tmp,
     env:
       mode === "baseline"
         ? {
-            ...env,
+            ...daemonEnv,
             PASEO_AGENT_ID: "stale-launcher",
             PASEO_AGENT_CWD: "/stale-launcher",
             PASEO_WORKSPACE_ID: "stale-launcher",
             PARITY_STARTUP_ENV: "daemon-wide",
             PARITY_CODEX: codex,
           }
-        : env,
+        : daemonEnv,
     silent: true,
   });
   for (const stream of [child.stdout, child.stderr]) {
@@ -200,6 +212,17 @@ try {
     });
   } else {
     await checkCompleted(await launch(workspaceId, "Run the shell canary."));
+    await checkLifecycle({
+      backend,
+      listener: () => listener,
+      paseoHome,
+      require,
+      startDaemon,
+      stopDaemon,
+      workspace,
+      workspaceId,
+      canary,
+    });
   }
 } catch (error) {
   if (daemonLog) console.error(daemonLog);

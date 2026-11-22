@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { realpath } from "node:fs/promises";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -7,16 +6,13 @@ import type {
   LocalAgentStore,
   ModelSelection,
   Run,
-  RunResult,
   SDKAgent,
-  SDKMessage,
   SDKModel,
   SDKUserMessage,
   TokenUsage,
 } from "@cursor/sdk";
 import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { getAgentProviderDefinition } from "@getpaseo/protocol/provider-manifest";
-import { z } from "zod";
 import { resolvePaseoHome } from "../../paseo-home.js";
 import type {
   AgentClient,
@@ -34,12 +30,12 @@ import type {
   AgentSessionConfig,
   AgentSlashCommand,
   AgentStreamEvent,
-  AgentTimelineItem,
   AgentUsage,
   FetchCatalogOptions,
   ProviderCatalog,
   ProviderRefreshContext,
-  ToolCallTimelineItem,
+  SteerActiveTurnOptions,
+  SteerResult,
 } from "../agent-sdk-types.js";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import type { ProviderRuntimeSettings } from "../provider-launch-config.js";
@@ -51,6 +47,17 @@ import {
   getCursorSdkEnvKey,
   readCursorSdkStoredKey,
 } from "./cursor-sdk-auth.js";
+import {
+  type HistorySdk,
+  openCursorHistorySession,
+  readCursorHistory,
+  interruptedCursorRunMessage,
+} from "./cursor-sdk-history.js";
+import { assertCursorRunReleased } from "./cursor-sdk-recovery.js";
+import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
+import { CursorRunController } from "./cursor-sdk-run-controller.js";
+import { CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
+
 const MODE = "unrestricted";
 const MODES = getAgentProviderDefinition(PROVIDER).modes;
 const DEFAULT_MODEL = "auto";
@@ -62,6 +69,7 @@ const MISSING_CREDENTIAL =
 const CAPABILITIES = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
+  supportsOfflineHistory: true,
   supportsDynamicModes: false,
   supportsMcpServers: true,
   supportsPaseoCli: false,
@@ -69,21 +77,7 @@ const CAPABILITIES = {
   supportsToolInvocations: true,
 };
 
-type CursorSdk = Pick<typeof import("@cursor/sdk"), "Agent" | "JsonlLocalAgentStore">;
-
-// The public SDK messages API returns the checkpoint turn as an opaque value.
-const checkpointPromptSchema = z.object({
-  turn: z.object({
-    case: z.literal("agentConversationTurn"),
-    value: z.object({
-      userMessage: z.object({
-        text: z.string(),
-        messageId: z.string().optional(),
-        startedAtMs: z.bigint(),
-      }),
-    }),
-  }),
-});
+type CursorSdk = HistorySdk & Pick<typeof import("@cursor/sdk"), "Agent" | "JsonlLocalAgentStore">;
 
 function modelId(id?: string | null): string {
   return id?.trim() || DEFAULT_MODEL;
@@ -152,11 +146,6 @@ function makePrompt(input: AgentPromptInput): SDKUserMessage {
   return images.length ? { text, images } : { text };
 }
 
-function historyPrompt(text: string): string {
-  const end = text.startsWith(RUN_INSTRUCTIONS_START) ? text.indexOf(RUN_INSTRUCTIONS_END) : -1;
-  return end < 0 ? text : text.slice(end + RUN_INSTRUCTIONS_END.length);
-}
-
 // Cursor.models.list has no AbortSignal. A worker lets us close the request before
 // releasing the refresh deadline, including on a stalled SDK connection.
 export async function listCursorModels(
@@ -202,16 +191,20 @@ export class CursorSdkAgentClient implements AgentClient {
   readonly provider = PROVIDER;
   readonly capabilities = CAPABILITIES;
 
-  private store: LocalAgentStore | undefined;
+  private binding?: ReturnType<typeof createCursorRunBinding>;
   private catalog: SDKModel[] | undefined;
-  private readonly storePath = join(resolvePaseoHome(), "cursor-sdk");
 
   constructor(
     private readonly runtimeSettings?: ProviderRuntimeSettings,
     private readonly loadSdk: () => Promise<CursorSdk> = () => import("@cursor/sdk"),
     private readonly listModels = listCursorModels,
     private readonly readStoredKey = readCursorSdkStoredKey,
+    private readonly storePath = join(resolvePaseoHome(), "cursor-sdk"),
   ) {}
+
+  private getBinding(sdk: CursorSdk): ReturnType<typeof createCursorRunBinding> {
+    return (this.binding ??= createCursorRunBinding(new sdk.JsonlLocalAgentStore(this.storePath)));
+  }
 
   private async requireApiKey(): Promise<string> {
     const key = getCursorSdkEnvKey(this.runtimeSettings) ?? (await this.readStoredKey());
@@ -309,30 +302,49 @@ export class CursorSdkAgentClient implements AgentClient {
     if (!id.startsWith("agent-") || typeof savedCwd !== "string") {
       throw new Error("Cursor SDK can only resume a saved local agent and workspace.");
     }
+    if (options?.purpose === "history") {
+      const sdk = await this.loadSdk();
+      return openCursorHistorySession({
+        sdk,
+        store: this.getBinding(sdk).store,
+        journal: new CursorTurnJournal(this.storePath, id),
+        handle,
+        id,
+        model: modelId(overrides?.model),
+        mode: MODE,
+        modes: MODES,
+        capabilities: CAPABILITIES,
+      });
+    }
+
     const cwd = await realpath(savedCwd);
     if (overrides?.cwd && (await realpath(overrides.cwd)) !== cwd) {
       throw new Error("Cursor SDK must resume its original workspace.");
     }
-    return this.openSession(
-      { ...overrides, provider: PROVIDER, cwd },
-      launchContext,
-      id,
-      options?.purpose === "history",
-    );
+    return this.openSession({ ...overrides, provider: PROVIDER, cwd }, launchContext, id);
   }
 
   private async openSession(
     config: AgentSessionConfig,
     launchContext?: AgentLaunchContext,
     nativeId?: string,
-    historyOnly = false,
   ): Promise<AgentSession> {
     assertNoInheritedAgentIdentity();
     assertMode(config.modeId);
     const apiKey = await this.requireApiKey();
     const cwd = await realpath(config.cwd);
     const sdk = await this.loadSdk();
-    const store = (this.store ??= new sdk.JsonlLocalAgentStore(this.storePath));
+    const binding = this.getBinding(sdk);
+    const { store } = binding;
+    if (nativeId) {
+      await assertCursorRunReleased(
+        store,
+        new CursorTurnJournal(this.storePath, nativeId),
+        nativeId,
+        cwd,
+      );
+      await clearUnusedCursorReservation(sdk.Agent, store, nativeId, cwd);
+    }
     const id = modelId(config.model);
     const providerOptions = config.providerOptions ?? {};
     const controls = await this.getControls(id);
@@ -350,9 +362,6 @@ export class CursorSdkAgentClient implements AgentClient {
       mcpServers: { ...config.mcpServers, ...launchContext?.mcpServers },
     };
 
-    if (nativeId && !historyOnly) {
-      await clearUnusedCursorReservation(sdk.Agent, store, nativeId, cwd);
-    }
     const agent = nativeId
       ? await sdk.Agent.resume(nativeId, options)
       : await sdk.Agent.create(options);
@@ -364,8 +373,9 @@ export class CursorSdkAgentClient implements AgentClient {
       controls,
       (model) => this.getControls(model),
       composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
-      sdk.Agent,
-      store,
+      sdk,
+      binding,
+      new CursorTurnJournal(this.storePath, agent.agentId),
     );
   }
 }
@@ -388,115 +398,12 @@ export async function clearUnusedCursorReservation(
   }
 }
 
-function mapTool(
-  message: Extract<SDKMessage, { type: "tool_call" }>,
-  previous?: ToolCallTimelineItem,
-): ToolCallTimelineItem {
-  const prior = previous?.detail.type === "unknown" ? previous.detail : undefined;
-  const base = {
-    type: "tool_call" as const,
-    callId: `${message.run_id}:${message.call_id}`,
-    name: message.name,
-    detail: {
-      type: "unknown" as const,
-      input: message.args ?? prior?.input ?? null,
-      output: message.result ?? prior?.output ?? null,
-    },
-  };
-  if (message.status === "error") {
-    return { ...base, status: "failed", error: message.result ?? "Cursor tool failed." };
-  }
-  return { ...base, status: message.status, error: null };
-}
-
-function cursorUserMessageId(runId: string): string {
-  return `${runId}:user`;
-}
-
-function streamItems(
-  message: SDKMessage,
-  tools: Map<string, ToolCallTimelineItem>,
-  historyUserMessageId?: string,
-): AgentTimelineItem[] {
-  switch (message.type) {
-    case "assistant":
-      return message.message.content.flatMap((block) =>
-        block.type === "text" && block.text
-          ? [{ type: "assistant_message" as const, text: block.text }]
-          : [],
-      );
-    case "thinking":
-      return message.text ? [{ type: "reasoning", text: message.text }] : [];
-    case "tool_call": {
-      const key = `${message.run_id}:${message.call_id}`;
-      const item = mapTool(message, tools.get(key));
-      tools.set(key, item);
-      return [item];
-    }
-    case "user": {
-      if (!historyUserMessageId) {
-        return []; // The adapter already emitted the submitted prompt for this run.
-      }
-      const text = historyPrompt(message.message.content.map((block) => block.text).join(""));
-      return text ? [{ type: "user_message", text, messageId: historyUserMessageId }] : [];
-    }
-    default:
-      return [];
-  }
-}
-
-function terminalTools(
-  tools: Map<string, ToolCallTimelineItem>,
-  status: RunResult["status"],
-): ToolCallTimelineItem[] {
-  return Array.from(tools.values()).flatMap((item): ToolCallTimelineItem[] => {
-    if (item.status !== "running") {
-      return [];
-    }
-    return [
-      status === "cancelled"
-        ? { ...item, status: "canceled" }
-        : { ...item, status: "failed", error: "Cursor did not return a tool result." },
-    ];
-  });
-}
-
-function writeHistoryItem(
-  items: AgentTimelineItem[],
-  positions: Map<string, number>,
-  item: AgentTimelineItem,
-): void {
-  if (item.type === "tool_call") {
-    const position = positions.get(item.callId) ?? items.length;
-    positions.set(item.callId, position);
-    items[position] = item;
-    return;
-  }
-  const previous = items.at(-1);
-  if (
-    (item.type === "assistant_message" || item.type === "reasoning") &&
-    previous?.type === item.type
-  ) {
-    previous.text += item.text;
-    return;
-  }
-  items.push(item);
-}
-
-interface Turn {
-  id: string;
-  native: Promise<Run>;
-  completion: Promise<AgentRunResult>;
-  stop?: Promise<void>;
-  stopping: boolean;
-}
-
 class CursorSdkAgent implements AgentSession {
   readonly provider = PROVIDER;
   readonly id: string;
   readonly capabilities = CAPABILITIES;
 
-  private active: Turn | undefined;
+  private readonly runs: CursorRunController;
   private closing: Promise<void> | undefined;
   private closed = false;
   private readonly listeners = new Set<(event: AgentStreamEvent) => void>();
@@ -509,10 +416,12 @@ class CursorSdkAgent implements AgentSession {
     private modelControls: AgentOptionSelectControl[],
     private readonly getControls: (model: string) => Promise<AgentOptionSelectControl[]>,
     private readonly instructions: string | undefined,
-    private readonly sdkAgent: CursorSdk["Agent"],
-    private readonly store: LocalAgentStore,
+    private readonly sdk: CursorSdk,
+    private readonly binding: ReturnType<typeof createCursorRunBinding>,
+    private readonly journal: CursorTurnJournal,
   ) {
     this.id = agent.agentId;
+    this.runs = new CursorRunController(this.id, journal, (event) => this.emit(event), mapUsage);
   }
 
   get controls(): AgentOptionSelectControl[] {
@@ -530,205 +439,61 @@ class CursorSdkAgent implements AgentSession {
     }
   }
 
-  private begin(prompt: AgentPromptInput, options?: AgentRunOptions): Turn {
+  private begin(prompt: AgentPromptInput, options?: AgentRunOptions) {
     if (this.closed || this.closing) {
       throw new Error("Cursor SDK session is closing or closed.");
     }
-    if (this.active) {
-      throw new Error("Cursor SDK is still running or stopping its current turn.");
-    }
-    assertNoInheritedAgentIdentity();
-    const id = randomUUID();
     const input = makePrompt(prompt);
     const text = this.instructions
       ? RUN_INSTRUCTIONS_START + this.instructions + RUN_INSTRUCTIONS_END + input.text
       : input.text;
-    const native = Promise.resolve().then(() =>
-      this.agent.send(
-        { ...input, text },
-        {
-          model: selectModel(this.model, this.options, this.modelControls),
-        },
-      ),
+    return this.runs.start(
+      prompt,
+      { ...input, text },
+      (message, bind) => this.sendNative(message, bind),
+      options?.clientMessageId,
     );
-    const completion = this.consume(id, native, input.text, options?.clientMessageId);
-    const turn: Turn = { id, native, completion, stopping: false };
-    this.active = turn;
-    void turn.completion.catch(() => {});
-    return turn;
+  }
+
+  private async sendNative(
+    input: SDKUserMessage,
+    bind: (runId: string) => Promise<void>,
+  ): Promise<Run> {
+    assertNoInheritedAgentIdentity();
+    const { store } = this.binding;
+    const current = await store.agents.get({ agentId: this.id });
+    if (current?.activeRunId) {
+      const run = await store.runs.get({ agentId: this.id, runId: current.activeRunId });
+      if (!run || run.status === "running" || (run.status === "queued" && run.startedAt != null)) {
+        throw new Error(interruptedCursorRunMessage(current.activeRunId));
+      }
+    }
+    return this.binding.send(this.id, bind, () =>
+      this.agent.send(input, { model: selectModel(this.model, this.options, this.modelControls) }),
+    );
   }
 
   async run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult> {
-    return this.begin(prompt, options).completion;
+    return (await this.begin(prompt, options)).completion;
   }
 
   async startTurn(
     prompt: AgentPromptInput,
     options?: AgentRunOptions,
   ): Promise<{ turnId: string }> {
-    return { turnId: this.begin(prompt, options).id };
+    const { turnId } = await this.begin(prompt, options);
+    return { turnId };
   }
 
-  private async consume(
-    turnId: string,
-    native: Promise<Run>,
-    text: string,
-    clientMessageId?: string,
-  ): Promise<AgentRunResult> {
-    const provider = PROVIDER;
-    const timeline: AgentTimelineItem[] = [];
-    const tools = new Map<string, ToolCallTimelineItem>();
-    let streamedText = "";
-    let errorCode: string | undefined;
-    const emitItem = (item: AgentTimelineItem) => {
-      timeline.push(item);
-      if (item.type === "assistant_message") {
-        streamedText += item.text;
-      }
-      this.emit({ type: "timeline", item, provider, turnId });
-    };
-    try {
-      await Promise.resolve();
-      this.emit({ type: "turn_started", provider, turnId });
-      const run = await native;
-      emitItem({
-        type: "user_message",
-        text,
-        messageId: cursorUserMessageId(run.id),
-        ...(clientMessageId ? { clientMessageId } : {}),
-      });
-      let streamError: unknown;
-      try {
-        for await (const message of run.stream()) {
-          for (const item of streamItems(message, tools)) {
-            emitItem(item);
-          }
-        }
-      } catch (error) {
-        streamError = error;
-      }
-      const result = await run.wait();
-      const usage = mapUsage(result.usage);
-      for (const item of terminalTools(tools, result.status)) {
-        emitItem(item);
-      }
-      if (result.status === "error") {
-        errorCode = result.error?.code;
-        throw new Error(result.error?.message ?? "Cursor SDK run failed.");
-      }
-      if (result.status === "cancelled") {
-        this.emit({ type: "turn_canceled", provider, turnId, reason: "Cursor SDK run canceled." });
-        return { sessionId: this.id, finalText: streamedText, timeline, usage, canceled: true };
-      }
-      if (streamError) {
-        throw streamError;
-      }
-      if (!streamedText && result.result) {
-        emitItem({ type: "assistant_message", text: result.result });
-      }
-      this.emit({ type: "turn_completed", provider, turnId, usage });
-      return { sessionId: this.id, finalText: result.result ?? streamedText, timeline, usage };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.emit({ type: "turn_failed", provider, turnId, error: message, code: errorCode });
-      throw error;
-    } finally {
-      if (this.active?.id === turnId && !this.active.stopping) {
-        this.active = undefined;
-      }
-    }
+  async steerActiveTurn(
+    prompt: AgentPromptInput,
+    options: SteerActiveTurnOptions,
+  ): Promise<SteerResult> {
+    return this.runs.steer(prompt, options);
   }
 
-  async *streamHistory(): AsyncGenerator<AgentStreamEvent> {
-    const local = { runtime: "local" as const, cwd: this.cwd, store: this.store };
-    let cursor: string | undefined;
-    const runs = new Map<string, Run>();
-    do {
-      const page = await this.sdkAgent.listRuns(this.id, { ...local, cursor });
-      for (const run of page.items) {
-        if (run.status !== "running") {
-          runs.set(run.id, run);
-        }
-      }
-      cursor = page.nextCursor;
-    } while (cursor);
-    const ordered = [...runs.values()].sort((a, b) => (a.createdAt ?? 0) - (b.createdAt ?? 0));
-    const prompts = await this.checkpointPromptsByRun(ordered);
-    for (const run of ordered) {
-      const turnId = run.id;
-      const timestamp =
-        run.createdAt === undefined ? undefined : new Date(run.createdAt).toISOString();
-      const tools = new Map<string, ToolCallTimelineItem>();
-      const items: AgentTimelineItem[] = [];
-      const positions = new Map<string, number>();
-      const prompt = prompts.get(run.id);
-      const messageId = prompt?.messageId ?? cursorUserMessageId(run.id);
-      for await (const message of run.stream()) {
-        for (const item of streamItems(message, tools, messageId)) {
-          writeHistoryItem(items, positions, item);
-        }
-      }
-      const result = await run.wait();
-      for (const item of terminalTools(tools, result.status)) {
-        writeHistoryItem(items, positions, item);
-      }
-      if (!items.some((item) => item.type === "assistant_message") && result.result) {
-        items.push({ type: "assistant_message", text: result.result });
-      }
-      if (result.status === "error") {
-        items.push({ type: "error", message: result.error?.message ?? "Cursor SDK run failed." });
-      }
-      if (prompt && !items.some((item) => item.type === "user_message")) {
-        yield { type: "timeline", item: prompt, provider: PROVIDER, turnId, timestamp };
-      }
-      for (const item of items) {
-        yield { type: "timeline", item, provider: PROVIDER, turnId, timestamp };
-      }
-    }
-  }
-
-  private async checkpointPromptsByRun(runs: Run[]) {
-    const byRun = new Map<string, Extract<AgentTimelineItem, { type: "user_message" }>>();
-    if (runs.length === 0) return byRun;
-    const messages = await this.sdkAgent.messages.list(this.id, {
-      runtime: "local",
-      cwd: this.cwd,
-      store: this.store,
-    });
-    const prompts = messages
-      .flatMap(({ message }) => {
-        const parsed = checkpointPromptSchema.safeParse(message);
-        if (!parsed.success) return [];
-        const { text, messageId, startedAtMs } = parsed.data.turn.value.userMessage;
-        const time = Number(startedAtMs);
-        return Number.isSafeInteger(time) && time > 0
-          ? [{ text: historyPrompt(text), messageId, time }]
-          : [];
-      })
-      .sort((a, b) => a.time - b.time);
-    // The SDK checkpoint contains prompts but no run IDs. Only use a single
-    // prompt inside the run's time window, and consume each checkpoint once.
-    let nextPrompt = 0;
-    for (const run of runs) {
-      if (nextPrompt >= prompts.length) break;
-      const stored = await this.store.runs.get({ agentId: this.id, runId: run.id });
-      if (stored?.endedAt == null) continue;
-      const start = stored.startedAt ?? stored.createdAt;
-      while (nextPrompt < prompts.length && prompts[nextPrompt].time < start) nextPrompt++;
-      const first = nextPrompt;
-      while (nextPrompt < prompts.length && prompts[nextPrompt].time <= stored.endedAt) {
-        nextPrompt++;
-      }
-      if (nextPrompt === first + 1) {
-        const { text, messageId } = prompts[first];
-        byRun.set(run.id, {
-          type: "user_message",
-          text,
-          messageId: messageId?.trim() || cursorUserMessageId(run.id),
-        });
-      }
-    }
-    return byRun;
+  streamHistory(): AsyncGenerator<AgentStreamEvent> {
+    return readCursorHistory(this.sdk, this.binding.store, this.journal, this.id);
   }
 
   listCommands(): Promise<AgentSlashCommand[]> {
@@ -788,35 +553,8 @@ class CursorSdkAgent implements AgentSession {
     };
   }
 
-  async interrupt(): Promise<void> {
-    const turn = this.active;
-    if (!turn) {
-      return;
-    }
-    turn.stopping = true;
-    turn.stop ??= this.stop(turn);
-    try {
-      await turn.stop;
-    } catch (error) {
-      turn.stop = undefined;
-      throw error;
-    }
-  }
-
-  private async stop(turn: Turn): Promise<void> {
-    const run = await turn.native.catch(() => undefined);
-    if (run) {
-      if (run.status === "running" && !run.supports("cancel")) {
-        throw new Error("Cursor SDK cannot confirm cancellation for this run.");
-      }
-      await run.cancel();
-      // A wait started after cancel joins the SDK's local execution controller.
-      await run.wait();
-    }
-    await turn.completion.catch(() => {});
-    if (this.active === turn) {
-      this.active = undefined;
-    }
+  interrupt(): Promise<void> {
+    return this.runs.interrupt();
   }
 
   async close(): Promise<void> {
