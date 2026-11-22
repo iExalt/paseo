@@ -133,8 +133,9 @@ Delegation: --no-wait changes waiting, not parentage. An agent-launched run
 without --relationship detached becomes the caller's subagent, even in a new
 workspace or project; pass --relationship detached for independent work. Use
 agent detach <id> to make an existing subagent independent; never edit labels.
-Caller completion notifications are enabled by default; use
---no-notify-on-finish when appropriate.
+An agent-launched run notifies its caller by default. Send defaults to
+notifying only when the recipient is the caller's direct child. Use
+--notify-on-finish to opt in for any recipient or --no-notify-on-finish to opt out.
 
 Placement: for a visible worker, create its workspace first with
 workspace create --project <id> --no-background --json, then
