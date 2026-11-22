@@ -557,6 +557,7 @@ function wrapClientProvider(
   const listImportableSessions = inner.listImportableSessions?.bind(inner);
   const importSession = inner.importSession?.bind(inner);
   const listControls = inner.listControls?.bind(inner);
+  const listCommands = inner.listCommands?.bind(inner);
   const archiveNativeSession = inner.archiveNativeSession?.bind(inner);
   const unarchiveNativeSession = inner.unarchiveNativeSession?.bind(inner);
   const configuredModelIds = [...profileModels, ...additionalModels].map((model) => model.id);
@@ -631,6 +632,14 @@ function wrapClientProvider(
           })
       : undefined,
     effectiveOptions: (own) => withDefaults(own) ?? {},
+    listCommands: listCommands
+      ? (config) =>
+          listCommands({
+            ...config,
+            provider: inner.provider,
+            providerOptions: withDefaults(config.providerOptions),
+          })
+      : undefined,
     listControls: listControls
       ? async (config) =>
           await listControls({

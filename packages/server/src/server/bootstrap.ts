@@ -555,6 +555,11 @@ export async function createPaseoDaemon(
   rootLogger: Logger,
   dependencies: PaseoDaemonDependencies = {},
 ): Promise<PaseoDaemon> {
+  // The daemon has no caller. Managed agents receive their identity at session launch.
+  delete process.env.PASEO_AGENT_ID;
+  delete process.env.PASEO_AGENT_CWD;
+  delete process.env.PASEO_WORKSPACE_ID;
+
   // Start hardware detection at the beginning of bootstrap so it overlaps with disk/registry init
   // and does not hold up the listener when probes are slow.
   const hostMachineKindReady = primeHostMachineKind();
