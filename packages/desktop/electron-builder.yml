@@ -101,6 +101,10 @@ win:
   extraResources:
     - from: bin/paseo.cmd
       to: bin/paseo.cmd
+    - from: ../server/dist/server/server/agent/execution-owner
+      to: execution-owner
+      filter:
+        - paseo-execution-owner-x64.exe
   target:
     - target: nsis
       arch:

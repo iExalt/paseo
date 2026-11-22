@@ -9,12 +9,24 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import pino from "pino";
 import { createDaemonTestContext } from "../../test-utils/daemon-test-context.js";
 import { createTestAgentClients } from "../../test-utils/fake-agent-client.js";
+import { openOwnedCursorExecution } from "../execution-owner/cursor-owned-execution.js";
+import { supportsExecutionOwner } from "../execution-owner/execution-owner.js";
 import { hasHeldMessages } from "../held-messages.js";
 import { startAgentRun } from "../agent-prompt.js";
 import { AgentManager } from "../agent-manager.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
 import { clearUnusedCursorReservation, CursorSdkAgentClient } from "./cursor-sdk-agent.js";
 import { listCursorSdkModels as listCursorModels } from "./cursor-sdk-availability.js";
+
+vi.mock("../execution-owner/execution-owner.js", async (load) => ({
+  ...(await load<typeof import("../execution-owner/execution-owner.js")>()),
+  supportsExecutionOwner: vi.fn(async () => false),
+}));
+vi.mock("../execution-owner/cursor-owned-execution.js", () => ({
+  openOwnedCursorExecution: vi.fn(),
+}));
+
+const assertMockLaunchAvailable = () => {};
 
 const provider = "cursor-sdk";
 const agentId = "agent-test";
@@ -50,22 +62,33 @@ function makeRun(messages: SDKMessage[], result: RunResult, createdAt = Date.UTC
 const stores: string[] = [];
 
 afterEach(async () => {
+  vi.mocked(supportsExecutionOwner).mockReset();
+  vi.mocked(openOwnedCursorExecution).mockReset();
   for (const store of stores.splice(0)) await rm(store, { recursive: true, force: true });
 });
 
-function fixture() {
+function fixture(initialReservation?: string) {
   const modelList = vi.fn(async (_apiKey: string) => [model]);
   const storePath = mkdtempSync(join(tmpdir(), "paseo-cursor-adapter-"));
   stores.push(storePath);
   const cwd = realpathSync(process.cwd());
+  let reservation = initialReservation;
   const sdk = {
     JsonlLocalAgentStore: class {
-      readonly agents = { get: async () => ({ agentId, cwd }) };
-      readonly runs = { get: vi.fn(), list: async () => ({ items: [] }) };
+      readonly agents = { get: async () => ({ agentId, cwd, activeRunId: reservation }) };
+      readonly runs = {
+        get: vi.fn(async () =>
+          reservation ? { runId: reservation, turnNumber: 1, status: "queued" } : undefined,
+        ),
+        list: async () => ({ items: [] }),
+      };
     },
     Agent: {
       create: vi.fn(),
       resume: vi.fn(),
+      cancelRun: vi.fn(async () => {
+        reservation = undefined;
+      }),
       messages: { list: vi.fn().mockResolvedValue([]) },
     },
   };
@@ -88,6 +111,102 @@ function fixture() {
 }
 
 describe("Cursor SDK provider", () => {
+  it("reuses the direct agent if an available execution owner fails enrollment", async () => {
+    const { client, config, sdk, send, agent } = fixture();
+    vi.mocked(supportsExecutionOwner).mockResolvedValueOnce(true);
+    vi.mocked(openOwnedCursorExecution).mockRejectedValueOnce(new Error("Owner did not enroll."));
+    send.mockResolvedValueOnce(makeRun([], { id: runId, status: "finished" }));
+    const session = await client.createSession(config);
+    try {
+      await session.run("Use the original direct session");
+      expect(openOwnedCursorExecution).toHaveBeenCalledOnce();
+      expect(agent[Symbol.asyncDispose]).not.toHaveBeenCalled();
+      expect(sdk.Agent.resume).not.toHaveBeenCalled();
+      expect(send).toHaveBeenCalledOnce();
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("joins an enrolled owner if disposing the direct agent fails before dispatch", async () => {
+    const { client, config, sdk, send, agent, storePath } = fixture();
+    const finish = vi.fn(async () => {});
+    const prepare = vi.fn();
+    const ownedSend = vi.fn();
+    vi.mocked(supportsExecutionOwner).mockResolvedValueOnce(true);
+    vi.mocked(openOwnedCursorExecution).mockImplementationOnce(
+      async (_, __, ___, generation, enroll) => {
+        await enroll(
+          {
+            backend: "windows-job",
+            generation,
+            hostId: "a".repeat(64),
+            receipt: join(storePath, "not-written"),
+          },
+          assertMockLaunchAvailable,
+        );
+        return { finish, prepare, send: ownedSend };
+      },
+    );
+    agent[Symbol.asyncDispose].mockRejectedValueOnce(new Error("Direct disposal failed."));
+    const session = await client.createSession(config);
+    try {
+      await expect(session.run("Do not dispatch")).rejects.toThrow("Direct disposal failed.");
+      await vi.waitFor(() => expect(finish).toHaveBeenCalledExactlyOnceWith(true, false));
+      expect(prepare).not.toHaveBeenCalled();
+      expect(ownedSend).not.toHaveBeenCalled();
+      expect(send).not.toHaveBeenCalled();
+      expect(sdk.Agent.resume).not.toHaveBeenCalled();
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("can retry after clearing the first SDK reservation fails before owner admission", async () => {
+    const { client, config, sdk, send, agent, storePath } = fixture("unused-reservation");
+    sdk.Agent.cancelRun.mockRejectedValueOnce(new Error("Reservation could not be cleared."));
+    vi.mocked(supportsExecutionOwner).mockResolvedValueOnce(true).mockResolvedValueOnce(true);
+    const abandoned = vi.fn();
+    const prepare = vi.fn(async () => {});
+    const ownedSend = vi.fn().mockResolvedValue(makeRun([], { id: runId, status: "finished" }));
+    vi.mocked(openOwnedCursorExecution).mockImplementation(
+      async (_, __, ___, generation, enroll) => {
+        try {
+          await enroll(
+            {
+              backend: "windows-job",
+              generation,
+              hostId: "a".repeat(64),
+              receipt: join(storePath, "not-written"),
+            },
+            assertMockLaunchAvailable,
+          );
+        } catch (error) {
+          abandoned();
+          throw error;
+        }
+        return { finish: async () => {}, prepare, send: ownedSend };
+      },
+    );
+    const session = await client.createSession(config);
+    try {
+      await expect(session.run("First attempt")).rejects.toThrow(
+        "Reservation could not be cleared.",
+      );
+      expect(abandoned).toHaveBeenCalledOnce();
+      expect(agent[Symbol.asyncDispose]).not.toHaveBeenCalled();
+      expect(ownedSend).not.toHaveBeenCalled();
+      await session.interrupt();
+      await session.run("Retry the turn");
+      expect(sdk.Agent.cancelRun).toHaveBeenCalledTimes(2);
+      expect(prepare).toHaveBeenCalledOnce();
+      expect(ownedSend).toHaveBeenCalledOnce();
+      expect(send).not.toHaveBeenCalled();
+    } finally {
+      await session.close();
+    }
+  });
+
   it("lists commands from a daemon launched with inherited agent identity", async () => {
     vi.stubEnv("PASEO_AGENT_ID", "launcher-agent");
     vi.stubEnv("PASEO_AGENT_CWD", "/launcher-workspace");

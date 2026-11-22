@@ -1,4 +1,5 @@
 import type { LocalAgentRunDocument, LocalAgentStore, RunResult, SDKMessage } from "@cursor/sdk";
+import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
 import type {
   AgentCapabilityFlags,
@@ -123,7 +124,7 @@ function writeHistoryItem(
 }
 
 export function interruptedCursorRunMessage(runId: string): string {
-  return `Cursor SDK run ${runId} has no confirmed shutdown and its tools could still be running. Check that its tools have exited on the original host before starting work in a new Cursor SDK session. The saved history is still available.`;
+  return `Cursor SDK run ${runId} has no confirmed shutdown and its tools could still be running. This chat can resume once Paseo confirms that the previous tools have exited on the original host. The saved history is still available.`;
 }
 
 export function cursorUnresolvedSteerMessage(): string {
@@ -154,7 +155,12 @@ export async function* readCursorHistory(
   const byRun = new Map(
     records.filter((record) => record.nativeRunId).map((record) => [record.nativeRunId, record]),
   );
-  const ownedFollowUpIds = new Set(records.flatMap((record) => record.followUpIds ?? []));
+  const ownedFollowUpIds = new Set(
+    records.flatMap((record) => [
+      ...(record.followUpIds ?? []),
+      ...(record.executionRunIds ?? []).filter((runId) => runId !== record.nativeRunId),
+    ]),
+  );
   const replay = [
     ...runs.flatMap((run) => {
       if (ownedFollowUpIds.has(run.runId)) return [];
@@ -212,6 +218,39 @@ function turnRecoveryNote(record: CursorHistoryTurn): string {
   return "Cursor SDK admission was interrupted before delivery could be confirmed.";
 }
 
+async function readJournalItems(
+  sdk: HistorySdk,
+  store: LocalAgentStore,
+  journal: CursorTurnJournal,
+  record: CursorHistoryTurn,
+  run?: LocalAgentRunDocument,
+): Promise<{ events: AgentTimelineItem[]; incomplete: boolean }> {
+  const events = await journal.readItems(record.id);
+  if (!run || (!record.recovered && (events.length > 0 || record.terminal))) {
+    return { events, incomplete: false };
+  }
+  const native: AgentTimelineItem[] = [];
+  for (const runId of record.executionRunIds ?? [run.runId]) {
+    for (const event of await readNativeItems(sdk, store, runId, { includeUser: false }))
+      native.push(event);
+  }
+  if (events.length === 0) return { events: native, incomplete: isPartialAnswer(record, native) };
+  return {
+    events,
+    incomplete:
+      isPartialAnswer(record, events) || (native.length > 0 && !isDeepStrictEqual(events, native)),
+  };
+}
+
+function isPartialAnswer(record: CursorHistoryTurn, events: AgentTimelineItem[]): boolean {
+  if (!record.recovered || record.terminal?.status !== "finished" || !record.terminal.fallback)
+    return false;
+  const assistant = events
+    .flatMap((event) => (event.type === "assistant_message" ? [event.text] : []))
+    .join("");
+  return Boolean(assistant && assistant !== record.terminal.fallback);
+}
+
 async function readJournalTurn(
   sdk: HistorySdk,
   store: LocalAgentStore,
@@ -219,10 +258,7 @@ async function readJournalTurn(
   record: CursorHistoryTurn,
   run?: LocalAgentRunDocument,
 ): Promise<TurnProjection> {
-  let events = await journal.readItems(record.id);
-  if (!record.terminal && events.length === 0 && run) {
-    events = await readNativeItems(sdk, store, run.runId, { includeUser: false });
-  }
+  const { events, incomplete } = await readJournalItems(sdk, store, journal, record, run);
   const items: AgentTimelineItem[] = [record.user];
   let steerIndex = 0;
   for (const [index, event] of events.entries()) {
@@ -234,8 +270,16 @@ async function readJournalTurn(
   for (const steer of record.steers.slice(steerIndex)) items.push(steer.user);
   // A partial journal cannot be aligned to a native suffix when Cursor omitted
   // an event or the output repeated. Keep that prefix and label the gap.
-  if (!record.joined && (!record.terminal || record.nativeRunId)) {
+  if (!record.joined && !record.recovered && (!record.terminal || record.nativeRunId)) {
     items.push({ type: "error", message: turnRecoveryNote(record) });
+  } else if (record.recovered && record.unresolvedNativeFollowUp) {
+    items.push({ type: "error", message: cursorUnresolvedSteerMessage() });
+  }
+  if (incomplete) {
+    items.push({
+      type: "error",
+      message: "Some saved Cursor SDK output could not be matched to this turn's timeline.",
+    });
   }
   if (record.terminal?.status === "error") {
     return { items, errorCard: renderErrorCard(record.terminal.message, record.terminal.code) };

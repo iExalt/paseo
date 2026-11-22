@@ -12,17 +12,33 @@ import type {
   SteerResult,
   ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
+import {
+  forgetReleasedExecutionOwner,
+  type ExecutionOwner,
+} from "../execution-owner/execution-owner.js";
+import { waitForExecutionOwner } from "../execution-owner/owned-process.js";
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
 import { cursorUnresolvedSteerMessage, streamItems, terminalTools } from "./cursor-sdk-history.js";
+import type { OwnerTerminalProof } from "./cursor-sdk-recovery.js";
 import { CursorToolProcesses } from "./cursor-sdk-tool-processes.js";
 import type { CursorHistoryTurn, CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
 
 const OPERATION_DEADLINE_MS = 1_500;
 
+export interface CursorTurnExecution {
+  prepareOwner: (generation: string) => Promise<void>;
+  discardUnadmittedOwner: () => Promise<void>;
+  deferUnadmittedCleanup: (drained: Promise<void>) => void;
+  enroll: (owner: ExecutionOwner) => Promise<void>;
+  bindRun: (nativeRunId: string) => Promise<void>;
+  attachFinish: (finish: (waitForTools: boolean, cancelTools: boolean) => Promise<void>) => void;
+}
+
 type NativeSend = (
   input: SDKUserMessage,
   bind: (nativeRunId: string) => Promise<void>,
   throwIfStopped: () => void,
+  execution: CursorTurnExecution,
 ) => Promise<Run>;
 
 interface CursorTurn {
@@ -30,6 +46,12 @@ interface CursorTurn {
   native: Promise<Run>;
   completion: Promise<AgentRunResult>;
   toolProcesses: CursorToolProcesses;
+  unadmittedCleanup?: Promise<void>;
+  finishExecution?: (waitForTools: boolean, cancelTools: boolean) => Promise<void>;
+  completedWriter?: boolean;
+  nativeStopConfirmed?: boolean;
+  sdkWriterFinished?: boolean;
+  nativeStopRejected?: boolean;
   stop?: Promise<void>;
   steer?: Promise<SteerResult>;
   followUp?: Run;
@@ -68,6 +90,10 @@ export class CursorRunController {
     private readonly journal: CursorTurnJournal,
     private readonly emit: (event: AgentStreamEvent) => void,
     private readonly mapUsage: (usage: RunResult["usage"]) => AgentUsage | undefined,
+    private readonly reconcileOwnedTerminal?: (
+      turn: CursorHistoryTurn,
+      proof: OwnerTerminalProof,
+    ) => Promise<void>,
   ) {}
 
   async start(
@@ -93,6 +119,38 @@ export class CursorRunController {
       steers: [],
     };
     const toolProcesses = new CursorToolProcesses();
+    const execution: CursorTurnExecution = {
+      prepareOwner: async (generation) => {
+        record.executionIntent = generation;
+        await this.journal.enrollExecutionOwner(record);
+      },
+      discardUnadmittedOwner: async () => {
+        if (record.executionOwner) throw new Error("Cannot discard an enrolled execution owner.");
+        delete record.executionIntent;
+        await this.journal.save(record);
+      },
+      deferUnadmittedCleanup: (drained) => {
+        turn.unadmittedCleanup = drained;
+      },
+      enroll: async (owner) => {
+        if (record.executionOwner)
+          throw new Error("Cursor SDK turn already has an execution owner.");
+        record.executionOwner = owner;
+        await this.journal.enrollExecutionOwner(record);
+      },
+      bindRun: async (nativeRunId) => {
+        if (!record.executionOwner)
+          throw new Error("Cursor SDK turn has no enrolled execution owner.");
+        record.executionRunIds ??= [];
+        if (record.executionRunIds.includes(nativeRunId)) return;
+        record.nativeRunId ??= nativeRunId;
+        record.executionRunIds.push(nativeRunId);
+        await this.journal.save(record);
+      },
+      attachFinish: (finish) => {
+        turn.finishExecution = finish;
+      },
+    };
     const native = Promise.resolve().then(async () => {
       await this.journal.admit(record, prompt);
       return toolProcesses.scope(() =>
@@ -107,6 +165,7 @@ export class CursorRunController {
           () => {
             if (turn.stopRequested) throw new Error("Cursor SDK turn stopped before dispatch.");
           },
+          execution,
         ),
       );
     });
@@ -199,7 +258,8 @@ export class CursorRunController {
     if (!turn) return;
     if (turn.record.unresolvedNativeFollowUp) throw new Error(cursorUnresolvedSteerMessage());
     turn.stopRequested = true;
-    const stop = (turn.stop ??= this.waitForStop(turn, this.stopNative(turn)));
+    if (!turn.stop) turn.nativeStopRejected = false;
+    const stop = (turn.stop ??= this.stopTurn(turn));
     void stop
       .finally(() => {
         if (turn.stop === stop) turn.stop = undefined;
@@ -211,24 +271,58 @@ export class CursorRunController {
     );
   }
 
+  private async stopTurn(turn: CursorTurn): Promise<void> {
+    if (turn.record.executionOwner) {
+      turn.record.ownerStopPending = true;
+      await this.journal.save(turn.record);
+    }
+    await this.waitForStop(turn, this.stopNative(turn));
+  }
+
   private async waitForStop(turn: CursorTurn, stop: Promise<void>): Promise<void> {
     await stop;
     await turn.completion.catch(() => undefined);
     if (turn.record.unresolvedNativeFollowUp) throw new Error(cursorUnresolvedSteerMessage());
-    if (!turn.record.joined && turn.record.nativeRunId) {
+    if (!turn.record.joined && (turn.record.nativeRunId || turn.record.executionOwner)) {
       throw new Error("Cursor SDK could not confirm that the run and its tools have stopped.");
     }
   }
 
   private async stopNative(turn: CursorTurn): Promise<void> {
+    if (await this.stopCompletedWriter(turn)) return;
     const run = turn.current ?? (await turn.native.catch(() => undefined));
-    if (run) await this.requestCancellation(turn, run);
+    if (await this.stopCompletedWriter(turn)) return;
+    if (!run) return;
+    try {
+      await this.requestCancellation(turn, run);
+    } catch (error) {
+      if (!(await this.stopCompletedWriter(turn))) throw error;
+    }
+  }
+
+  private async stopCompletedWriter(turn: CursorTurn): Promise<boolean> {
+    if (!turn.record.executionOwner || !turn.sdkWriterFinished) return false;
+    // Once the final SDK writer is being fenced, its pipe may be closed. Stop
+    // still targets this turn's exact retained execution domain.
+    turn.nativeStopConfirmed = true;
+    turn.nativeStopRejected = false;
+    await this.finishOwnedExecution(turn, true, true);
+    return true;
   }
 
   private requestCancellation(turn: CursorTurn, run: Run): Promise<void> {
     const inFlight = turn.cancellations.get(run);
     if (inFlight) return inFlight;
-    const cancel = this.cancel(run);
+    const cancel = this.cancel(run).then(
+      () => {
+        turn.nativeStopConfirmed = true;
+        return undefined;
+      },
+      (error: unknown) => {
+        turn.nativeStopRejected = true;
+        throw error;
+      },
+    );
     turn.cancellations.set(run, cancel);
     void cancel.catch(() => {
       if (turn.cancellations.get(run) === cancel) turn.cancellations.delete(run);
@@ -293,14 +387,65 @@ export class CursorRunController {
         if (turn.record.unresolvedNativeFollowUp) {
           return await this.holdUnconfirmed(turn, cursorUnresolvedSteerMessage());
         }
-        if (turn.stopRequested || observed.result.status === "cancelled") {
-          await this.confirmToolExit(turn);
+        if (turn.record.executionOwner) {
+          turn.sdkWriterFinished = true;
+          const mustStop = turn.stopRequested && !turn.nativeStopRejected;
+          const naturallyFinished = !mustStop && observed.result.status === "finished";
+          if (naturallyFinished && turn.nativeStopRejected) turn.record.ownerStopPending = false;
+          await this.finishOwnedExecution(
+            turn,
+            !naturallyFinished,
+            observed.result.status === "cancelled" && turn.nativeStopConfirmed === true,
+          );
+          turn.completedWriter = naturallyFinished;
+          if (turn.stopRequested && !turn.nativeStopRejected && naturallyFinished) {
+            await this.finishOwnedExecution(turn);
+            turn.completedWriter = false;
+          }
+        } else {
+          if (turn.stopRequested || observed.result.status === "cancelled")
+            await this.confirmToolExit(turn);
+          turn.record.joined = true;
         }
-        turn.record.joined = true;
         return observed;
       }
       turn.followUp = undefined;
       run = followUp;
+    }
+  }
+
+  private async finishOwnedExecution(
+    turn: CursorTurn,
+    waitForTools = true,
+    cancelTools = turn.nativeStopConfirmed === true,
+  ): Promise<void> {
+    const owner = turn.record.executionOwner;
+    if (!owner) return;
+    try {
+      if (turn.finishExecution) await turn.finishExecution(waitForTools, cancelTools);
+      else await waitForExecutionOwner(owner);
+    } catch {
+      await this.holdUnconfirmed(
+        turn,
+        "Paseo could not confirm that the previous execution owner stopped. The saved chat is still available.",
+      );
+    }
+  }
+
+  private async commitTerminalTurn(turn: CursorTurn): Promise<void> {
+    if (!turn.record.executionOwner || turn.record.joined) return this.journal.save(turn.record);
+    try {
+      if (!this.reconcileOwnedTerminal)
+        throw new Error("Cursor SDK owner reconciliation unavailable.");
+      await this.reconcileOwnedTerminal(
+        turn.record,
+        turn.completedWriter ? "completed-writer" : "domain-released",
+      );
+    } catch {
+      return await this.holdUnconfirmed(
+        turn,
+        "The old Cursor SDK owner stopped, but its saved run could not be reconciled.",
+      );
     }
   }
 
@@ -391,14 +536,30 @@ export class CursorRunController {
   ): Promise<never> {
     const message = messageOf(error);
     turn.record.terminal = { status: "error", message, code: errorCode };
-    if (admitted && !turn.record.joined) {
+    if (turn.unadmittedCleanup) {
+      // This launcher never returned its dispatch channel. A journal write
+      // started just before disconnect can complete, but cannot start the SDK.
+      await turn.unadmittedCleanup;
+      delete turn.record.executionOwner;
+      delete turn.record.executionIntent;
+      delete turn.record.ownerStopPending;
+    }
+    if (turn.record.executionOwner && !turn.record.joined) {
+      turn.sdkWriterFinished = true;
+      await this.finishOwnedExecution(turn);
+      turn.completedWriter = false;
+    }
+    if (admitted && !turn.record.joined && !turn.record.executionOwner) {
       await this.journal.save(turn.record).catch(() => {});
       return await this.holdUnconfirmed(turn, message);
     }
     try {
-      await this.journal.save(turn.record);
+      await this.commitTerminalTurn(turn);
     } finally {
-      if (this.active === turn && (turn.record.joined || !turn.record.nativeRunId)) {
+      if (
+        this.active === turn &&
+        (turn.record.joined || (!turn.record.nativeRunId && !turn.record.executionOwner))
+      ) {
         this.active = undefined;
       }
       // startTurn rejection is projected by AgentManager before a turn has started.
@@ -428,8 +589,21 @@ export class CursorRunController {
             status: "finished",
             fallback: result.result,
           };
-    await this.journal.save(turn.record);
+    await this.commitTerminalTurn(turn);
+    if (turn.stopRequested && !turn.nativeStopRejected && turn.completedWriter) {
+      await this.finishOwnedExecution(turn);
+      turn.record.ownerStopPending = false;
+      await this.journal.save(turn.record);
+    }
     if (this.active === turn) this.active = undefined;
+    const owner = turn.record.executionOwner;
+    if (owner && turn.completedWriter) {
+      // The turn has passed its last Stop gate. Retire the domain only after
+      // an intentional background process exits on its own.
+      void waitForExecutionOwner(owner)
+        .then(() => forgetReleasedExecutionOwner(owner))
+        .catch(() => undefined);
+    }
     if (result.status === "cancelled") {
       this.emit({
         type: "turn_canceled",
