@@ -6,6 +6,8 @@ import type { RunResult, SDKMessage, SDKModel, SDKUserMessage, SendOptions } fro
 import { AgentTimelineItemPayloadSchema } from "@getpaseo/protocol/messages";
 import { describe, expect, it, vi } from "vitest";
 import pino from "pino";
+import { createDaemonTestContext } from "../../test-utils/daemon-test-context.js";
+import { createTestAgentClients } from "../../test-utils/fake-agent-client.js";
 import { AgentManager } from "../agent-manager.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
 import {
@@ -74,6 +76,69 @@ function fixture() {
 }
 
 describe("Cursor SDK provider", () => {
+  it("lists commands from a daemon launched with inherited agent identity", async () => {
+    vi.stubEnv("PASEO_AGENT_ID", "launcher-agent");
+    vi.stubEnv("PASEO_AGENT_CWD", "/launcher-workspace");
+    vi.stubEnv("PASEO_WORKSPACE_ID", "launcher-workspace");
+    const { client: cursorClient, sdk, send } = fixture();
+    const onLaunchContext = vi.fn();
+    try {
+      const ctx = await createDaemonTestContext({
+        providerOverrides: { [provider]: { enabled: true } },
+        agentClients: {
+          ...createTestAgentClients({ onLaunchContext }),
+          [provider]: cursorClient,
+        },
+      });
+      try {
+        const cwd = await realpath(ctx.daemon.paseoHome);
+        const draft = { provider, cwd, model: model.id };
+        const commands = await ctx.client.listCommands({
+          agentId: "__new_agent__",
+          draftConfig: draft,
+        });
+        expect(commands).toMatchObject({ commands: [], error: null });
+        expect(sdk.Agent.create).not.toHaveBeenCalled();
+
+        const { workspace } = await ctx.client.createWorkspace({
+          source: { kind: "directory", path: cwd },
+          title: "Isolated command discovery",
+        });
+        if (!workspace) throw new Error("Failed to create test workspace");
+        const cursor = await ctx.client.createAgent({ ...draft, workspaceId: workspace.id });
+        expect(sdk.Agent.create).toHaveBeenCalledOnce();
+        await expect(ctx.client.listCommands({ agentId: cursor.id })).resolves.toMatchObject({
+          commands: [],
+          error: null,
+        });
+        expect(send).not.toHaveBeenCalled();
+
+        const managed = await ctx.client.createAgent({
+          provider: "codex",
+          cwd,
+          workspaceId: workspace.id,
+        });
+        expect(onLaunchContext).toHaveBeenCalledWith(
+          expect.objectContaining({
+            env: expect.objectContaining({
+              PASEO_AGENT_ID: managed.id,
+              PASEO_AGENT_CWD: cwd,
+              PASEO_WORKSPACE_ID: workspace.id,
+            }),
+          }),
+          expect.anything(),
+        );
+        expect(process.env.PASEO_AGENT_ID).toBeUndefined();
+        expect(process.env.PASEO_AGENT_CWD).toBeUndefined();
+        expect(process.env.PASEO_WORKSPACE_ID).toBeUndefined();
+      } finally {
+        await ctx.cleanup();
+      }
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("requires a credential before opening an agent", async () => {
     vi.stubEnv("CURSOR_API_KEY", "");
     try {
