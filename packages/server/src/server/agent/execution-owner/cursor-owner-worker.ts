@@ -84,6 +84,11 @@ async function main() {
       if (!agent || dispatched) throw new Error("Cursor SDK owner has no pending dispatch.");
       dispatched = true;
       const native = agent;
+      if (value === null) {
+        return withCursorShellEnvironment(shellEnvironment, async () =>
+          describe(await native.summarize()),
+        );
+      }
       return withCursorShellEnvironment(shellEnvironment, async () =>
         describe(
           await native.send(value as SDKUserMessage, {

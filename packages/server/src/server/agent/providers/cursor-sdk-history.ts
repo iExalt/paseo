@@ -64,6 +64,7 @@ function cursorUserMessageId(runId: string): string {
 export function streamItems(
   message: SDKMessage,
   tools: Map<string, ToolCallTimelineItem>,
+  summaryTrigger?: "manual" | "auto",
 ): AgentTimelineItem[] {
   switch (message.type) {
     case "assistant":
@@ -74,6 +75,36 @@ export function streamItems(
       );
     case "thinking":
       return message.text ? [{ type: "reasoning", text: message.text }] : [];
+    case "summary":
+      // The compaction card has no failed/canceled state. Use the run status for
+      // progress so an interrupted summary cannot leave a stale loading card.
+      if (message.status === "running") return [];
+      if (message.status === "error") {
+        return [
+          {
+            type: "notification",
+            level: "warning",
+            message: "Cursor SDK could not summarize this conversation.",
+          },
+        ];
+      }
+      return [
+        {
+          type: "compaction",
+          status: "completed",
+          ...(summaryTrigger ? { trigger: summaryTrigger } : {}),
+        },
+        ...(message.fallback
+          ? [
+              {
+                type: "notification" as const,
+                level: "warning" as const,
+                message:
+                  "Cursor SDK saved a trimmed transcript after it could not generate a summary.",
+              },
+            ]
+          : []),
+      ];
     case "tool_call": {
       const key = `${message.run_id}:${message.call_id}`;
       const item = mapTool(message, tools.get(key));
@@ -231,8 +262,22 @@ async function readJournalItems(
   }
   const native: AgentTimelineItem[] = [];
   for (const runId of record.executionRunIds ?? [run.runId]) {
-    for (const event of await readNativeItems(sdk, store, runId, { includeUser: false }))
+    for (const event of await readNativeItems(sdk, store, runId, {
+      includeUser: false,
+      summaryTrigger: record.compact ? "manual" : "auto",
+    }))
       native.push(event);
+  }
+  // summarize() returns its text in wait(), outside the native summary event stream.
+  const last = events.at(-1);
+  if (
+    record.compact &&
+    run.status === "finished" &&
+    last?.type === "assistant_message" &&
+    last.text === run.result &&
+    !native.some((item) => item.type === "assistant_message")
+  ) {
+    native.push(last);
   }
   if (events.length === 0) return { events: native, incomplete: isPartialAnswer(record, native) };
   return {
@@ -335,7 +380,7 @@ async function readNativeItems(
   sdk: HistorySdk,
   store: LocalAgentStore,
   runId: string,
-  options: { includeUser: boolean },
+  options: { includeUser: boolean; summaryTrigger?: "auto" | "manual" },
 ): Promise<AgentTimelineItem[]> {
   // JsonlLocalAgentStore returns one finite snapshot even when a writer is live.
   const page = await store.runEvents.list({ runId, limit: Number.MAX_SAFE_INTEGER });
@@ -355,7 +400,7 @@ async function readNativeItems(
         items.push({ type: "user_message", text, messageId });
       }
     }
-    items.push(...streamItems(message, tools));
+    items.push(...streamItems(message, tools, options.summaryTrigger));
   }
   return items;
 }
