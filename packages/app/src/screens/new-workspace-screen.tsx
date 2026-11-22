@@ -1,3 +1,4 @@
+import type { DraftCommandTarget } from "@/agent-commands";
 import { useAddHost } from "@/hosts/add-host";
 import type { CreateWorkspaceRequestOptions } from "@getpaseo/client/internal/daemon-client";
 import type { AgentSnapshotPayload, CreationSnapshot } from "@getpaseo/protocol/messages";
@@ -420,6 +421,26 @@ function buildComposerInitialValues(input: {
     };
   }
   return undefined;
+}
+
+function scopeNewWorkspaceCommands(draft: DraftCommandTarget | undefined, isWorktree: boolean) {
+  return isWorktree && draft?.status === "ready"
+    ? { ...draft, skillScope: "user" as const }
+    : draft;
+}
+
+function validateNewWorkspaceSkills(
+  isWorktree: boolean,
+  attachments: MessagePayload["attachments"],
+) {
+  if (
+    isWorktree &&
+    attachments.some(
+      (attachment) => attachment.kind === "skill" && attachment.reference.scope === "workspace",
+    )
+  ) {
+    throw new Error("Remove the selected workspace skill and select it again in the new worktree.");
+  }
 }
 
 const pendingWorkspaceSubmissions = new Map<string, Promise<SubmitOutcome>>();
@@ -1299,6 +1320,7 @@ export function NewWorkspaceScreen({
     async (payload: MessagePayload) => {
       try {
         setErrorMessage(null);
+        validateNewWorkspaceSkills(effectiveIsolation === "worktree", payload.attachments);
         await composerState?.persistFormPreferences();
         await updateFormPreferences({ launchTarget });
         if (isEmptyWorkspaceSubmission(payload)) {
@@ -1356,6 +1378,7 @@ export function NewWorkspaceScreen({
     },
     [
       composerState,
+      effectiveIsolation,
       draftContextScopeKey,
       creationIdentity,
       chatDraft.clear,
@@ -1535,6 +1558,11 @@ export function NewWorkspaceScreen({
   const importSession = useImportSession({ serverId: selectedServerId });
 
   const isComposerFullscreen = composerEditing.isFullscreen(isTerminalLaunch);
+  const commandDraft = useMemo(
+    () => scopeNewWorkspaceCommands(composerState?.commandDraft, effectiveIsolation === "worktree"),
+    [composerState?.commandDraft, effectiveIsolation],
+  );
+
   const composer = isTerminalLaunch ? (
     <Composer
       key="terminal"
@@ -1591,7 +1619,7 @@ export function NewWorkspaceScreen({
       clearDraft={handleClearDraft}
       autoFocus
       autoFocusKey={launchFocusKey}
-      commandDraft={composerState?.commandDraft}
+      commandDraft={commandDraft}
       agentControls={agentControlsWithDisabled}
     />
   );

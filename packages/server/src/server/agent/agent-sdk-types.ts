@@ -1,3 +1,5 @@
+import type { CursorSkillReference } from "@getpaseo/protocol/messages";
+import type { ResolvedCursorSkill } from "./cursor-skill-catalog.js";
 import type {
   AgentOptionControl,
   AgentOptionSelectControl,
@@ -206,6 +208,8 @@ export interface AgentRunOptions {
   resumeFrom?: AgentPersistenceHandle;
   maxThinkingTokens?: number;
   clientMessageId?: string;
+  /** Revalidates the selected references at native dispatch. */
+  resolveCursorSkills?: () => Promise<ResolvedCursorSkill[]>;
 }
 
 export interface AgentSteerOptions extends AgentRunOptions {
@@ -405,7 +409,13 @@ export interface PluginTimelineItem {
 }
 
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      cursorSkills?: CursorSkillReference[];
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem
@@ -564,6 +574,7 @@ export interface AgentSlashCommand {
   description: string;
   argumentHint: string;
   kind?: AgentSlashCommandKind;
+  skill?: CursorSkillReference;
 }
 
 export interface ListImportableSessionsOptions {

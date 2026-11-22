@@ -1,3 +1,4 @@
+import type { CursorSkillReference } from "./cursor-skill.js";
 import type { AgentMessage } from "./agent-message.js";
 import type {
   AgentAttachment,
@@ -397,7 +398,13 @@ export interface AgentTaskItem {
 }
 
 export type AgentTimelineItem =
-  | { type: "user_message"; text: string; messageId?: string; clientMessageId?: string }
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      cursorSkills?: CursorSkillReference[];
+    }
   | { type: "assistant_message"; text: string; messageId?: string }
   | { type: "reasoning"; text: string }
   | ToolCallTimelineItem

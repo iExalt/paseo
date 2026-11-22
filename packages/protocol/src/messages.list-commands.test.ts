@@ -107,3 +107,34 @@ describe("list_commands_request schema", () => {
     expect(parsed.payload.commands[0]?.kind).toBe("command");
   });
 });
+
+test("keeps the selected Cursor skill reference distinct from a same-name command", () => {
+  const skill = { name: "taste", scope: "workspace", id: "a".repeat(64), revision: "b".repeat(64) };
+  const command = {
+    name: "taste",
+    description: "Run a command",
+    argumentHint: "",
+    kind: "command",
+  };
+  const selected = { ...command, description: "Run a selected skill", kind: "skill", skill };
+  const reply = {
+    type: "list_commands_response",
+    payload: { agentId: "agent", requestId: "list", commands: [command, selected], error: null },
+  };
+  expect(SessionOutboundMessageSchema.parse(reply)).toEqual(reply);
+
+  const send = {
+    type: "send_agent_message_request",
+    requestId: "send",
+    agentId: "agent",
+    text: "Keep my text.",
+    attachments: [{ type: "cursor_skill", reference: skill }],
+  };
+  expect(SessionInboundMessageSchema.parse(send)).toEqual(send);
+  expect(
+    SessionInboundMessageSchema.safeParse({
+      ...send,
+      attachments: [{ type: "cursor_skill", reference: { ...skill, id: "/outside/SKILL.md" } }],
+    }).success,
+  ).toBe(false);
+});

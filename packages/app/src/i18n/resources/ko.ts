@@ -186,6 +186,7 @@ export const ko: TranslationResources = {
       openImage: "이미지 첨부 열기",
       removeImage: "이미지 첨부 제거",
       removeFile: "파일 첨부 제거",
+      removeSkill: "스킬 {{name}} 제거",
       openGithub: "{{kind}} {{number}} 열기",
       removeGithub: "{{kind}} {{number}} 제거",
       element: "요소",

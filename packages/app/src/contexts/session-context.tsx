@@ -1,8 +1,9 @@
+import { agentCommandsQueryRoot } from "@/agent-commands/cache";
 import { useRef, ReactNode, useCallback, useEffect } from "react";
 import { Buffer } from "buffer";
 import { AppState } from "react-native";
 import { observeOpenWorkspaceAgentIds } from "@/stores/workspace-layout-store";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQueryClient, type QueryFilters } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useClientActivity } from "@/hooks/use-client-activity";
 import { useAppVisible } from "@/hooks/use-app-visible";
@@ -478,6 +479,30 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
   useEffect(() => {
     viewedTimelineSyncRef.current?.setConnected(isConnected);
   }, [isConnected]);
+
+  useEffect(() => {
+    if (
+      !isConnected ||
+      client.getLastServerInfoMessage()?.features?.cursorSdkSkillSelection !== true
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    const observation = client.observeEvents(["agent.commands.changed"], {
+      signal: controller.signal,
+    });
+    const filters: QueryFilters = {
+      queryKey: agentCommandsQueryRoot(serverId),
+      predicate: (query) => query.meta?.agentCommandProvider === "cursor-sdk",
+    };
+    void observation.ready
+      .then(async () => {
+        if (!controller.signal.aborted) await queryClient.cancelQueries(filters);
+        return controller.signal.aborted ? undefined : queryClient.invalidateQueries(filters);
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [client, isConnected, queryClient, serverId]);
 
   // Daemon message handlers - directly update Zustand store
   useEffect(() => {

@@ -9,6 +9,12 @@ import { promisify } from "node:util";
 import { checkBaseline, prepareBaseline, shellEnvironment } from "./baseline.mjs";
 import { apiKey, assistantText, callId, model, sdkVersion, startBackend } from "./backend.mjs";
 import { checkLifecycle } from "./lifecycle.mjs";
+import {
+  assertSkillTurnRequest,
+  checkDraftSkills,
+  checkSelectedSkills,
+  installSkillFixtures,
+} from "./skills.mjs";
 
 const exec = promisify(execFile);
 const root = resolve(process.argv[2] ?? ".");
@@ -25,7 +31,11 @@ const paseoHome = join(tmp, "paseo");
 const canary = "PASEO_LOCAL_CANARY";
 
 await Promise.all([mkdir(workspace), mkdir(home), mkdir(paseoHome)]);
-const backend = await startBackend(workspace, { allowCodexPrewarm: mode === "baseline" });
+const fixtures = mode === "green" ? await installSkillFixtures(workspace, home) : undefined;
+const backend = await startBackend(workspace, {
+  allowCodexPrewarm: mode === "baseline",
+  selectSkillTurn: fixtures ? assertSkillTurnRequest : undefined,
+});
 const codexProvider =
   mode === "baseline"
     ? await prepareBaseline(root, workspace, home, codex, backend.origin)
@@ -172,6 +182,7 @@ async function checkCompleted(run) {
   assert.equal(run.status, "completed");
   const { entries } = await cli("logs", run.agentId);
   const items = entries.map(({ item }) => item);
+  assert.ok(items.every((item) => item.type !== "user_message" || item.cursorSkills === undefined));
   assert.deepEqual(
     items.filter((item) => item.type === "assistant_message").map(({ text }) => text),
     [assistantText],
@@ -211,7 +222,27 @@ try {
       checkCompleted,
     });
   } else {
+    const selection = await checkDraftSkills({
+      cli,
+      workspace,
+      paseoHome,
+      backend,
+      require,
+      listener: () => listener,
+    });
     await checkCompleted(await launch(workspaceId, "Run the shell canary."));
+    await checkSelectedSkills({
+      backend,
+      listener: () => listener,
+      require,
+      startDaemon,
+      stopDaemon,
+      cli,
+      workspace,
+      workspaceId,
+      fixtures,
+      selection,
+    });
     await checkLifecycle({
       backend,
       listener: () => listener,

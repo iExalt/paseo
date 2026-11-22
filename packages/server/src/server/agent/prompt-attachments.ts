@@ -1,8 +1,33 @@
 import { getForgeDefinitionOrNeutral } from "@getpaseo/protocol/forge-manifest";
-import type { AgentAttachment } from "@getpaseo/protocol/messages";
+import type { AgentAttachment, CursorSkillReference } from "@getpaseo/protocol/messages";
 import type { AgentPromptContentBlock, AgentPromptInput } from "./agent-sdk-types.js";
 
 const REVIEW_LINE_MARKERS = { add: "+", remove: "-", context: " " } as const;
+
+export function cursorSkillReferences(
+  blocks: readonly AgentPromptContentBlock[] | undefined,
+): CursorSkillReference[] {
+  return blocks?.flatMap((block) => (block.type === "cursor_skill" ? [block.reference] : [])) ?? [];
+}
+
+export function withoutCursorSkills(
+  attachments: AgentAttachment[] | undefined,
+): AgentAttachment[] | undefined {
+  return attachments?.filter((attachment) => attachment.type !== "cursor_skill");
+}
+
+export function assertCursorSkillTarget(
+  blocks: readonly AgentPromptContentBlock[] | undefined,
+  provider: string | undefined,
+  callerAgentId?: string,
+): void {
+  if (
+    blocks?.some((block) => block.type === "cursor_skill") &&
+    (provider !== "cursor-sdk" || callerAgentId)
+  ) {
+    throw new Error("Selected Cursor skills require a user message to a Cursor SDK agent.");
+  }
+}
 
 export function buildAgentPrompt(
   text: string,
@@ -39,6 +64,8 @@ export function buildAgentPrompt(
 
 export function renderPromptAttachmentAsText(attachment: AgentAttachment): string {
   switch (attachment.type) {
+    case "cursor_skill":
+      return "";
     case "forge_change_request": {
       return renderChangeRequestAttachment({
         forge: attachment.forge,

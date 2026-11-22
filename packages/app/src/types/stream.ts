@@ -1,3 +1,4 @@
+import type { CursorSkillReference } from "@getpaseo/protocol/messages";
 import type { AgentMessage } from "@getpaseo/protocol/agent-message";
 import type {
   AgentProvider,
@@ -914,6 +915,19 @@ export function handoffCreatedAgentUserMessageToStream(params: {
   });
 }
 
+function hasUserMessageContent(
+  textHasContent: boolean,
+  references?: CursorSkillReference[],
+): boolean {
+  return textHasContent || Boolean(references?.length);
+}
+
+function cursorSkillAttachments(
+  references: readonly CursorSkillReference[] | undefined,
+): AgentAttachment[] | undefined {
+  return references?.map((reference) => ({ type: "cursor_skill", reference }));
+}
+
 function appendUserMessage(
   state: StreamItem[],
   text: string,
@@ -923,9 +937,10 @@ function appendUserMessage(
   clientMessageId?: string,
   timelineCursor?: TimelinePosition,
   turnId?: string,
+  cursorSkills?: CursorSkillReference[],
 ): StreamItem[] {
   const { chunk, hasContent } = normalizeChunk(text);
-  if (!hasContent) {
+  if (!hasContent && !cursorSkills?.length) {
     return state;
   }
 
@@ -937,6 +952,7 @@ function appendUserMessage(
     timelineCursor,
     turnId,
     text: chunk,
+    attachments: cursorSkillAttachments(cursorSkills),
     timestamp,
   });
   return upsertUserMessage(state, nextItem);
@@ -1555,6 +1571,7 @@ function reduceTimelineEvent(
         item.clientMessageId,
         timelineCursor,
         event.turnId,
+        item.cursorSkills,
       );
     case "assistant_message":
       return appendAssistantMessage(
@@ -1907,6 +1924,7 @@ function applyCanonicalUserMessageEvent(params: {
   const { tail, head, event, timestamp, timelineCursor, unmatchedInsert = "tail" } = params;
   if (event.type !== "timeline" || event.item.type !== "user_message") return null;
   const normalized = normalizeChunk(event.item.text);
+  const hasContent = hasUserMessageContent(normalized.hasContent, event.item.cursorSkills);
 
   const flushedTail = head.length > 0 ? flushHeadToTail(tail, head) : tail;
   const flushedHead = head.length > 0 ? [] : head;
@@ -1919,6 +1937,7 @@ function applyCanonicalUserMessageEvent(params: {
     turnId: event.turnId,
     timelineCursor,
     text: normalized.chunk,
+    attachments: cursorSkillAttachments(event.item.cursorSkills),
     timestamp,
   });
   if (unmatchedInsert === "head") {
@@ -1926,7 +1945,7 @@ function applyCanonicalUserMessageEvent(params: {
       tail,
       head,
       message: canonical,
-      insert: normalized.hasContent ? "head" : "none",
+      insert: hasContent ? "head" : "none",
       presentation: "existing",
     });
     const reconciledTail = canonical.clientMessageId
@@ -1954,7 +1973,7 @@ function applyCanonicalUserMessageEvent(params: {
           : [],
     };
   }
-  const reconciled = placeCanonicalUserMessageAtTail(flushedTail, canonical, normalized.hasContent);
+  const reconciled = placeCanonicalUserMessageAtTail(flushedTail, canonical, hasContent);
   const reconciledTail = canonical.clientMessageId
     ? reconcileCanonicalUserTurnMembership(
         reconciled.items,
