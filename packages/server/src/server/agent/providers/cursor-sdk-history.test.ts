@@ -204,3 +204,109 @@ test("a named SDK-owned follow-up is replayed once within its admitted Paseo tur
     ]);
   });
 });
+
+test("a recovered interruption keeps the native prefix committed before the first projection", async () => {
+  await withStore(async (root, store, journal) => {
+    const runId = "native-before-projection";
+    const turn: CursorHistoryTurn = {
+      id: "original-turn",
+      nativeRunId: runId,
+      executionRunIds: [runId],
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "original input", messageId: "original-message" },
+      steers: [],
+    };
+    await journal.admit(turn, turn.user.text);
+    await store.runs.create({ run: localRun(runId, "running") });
+    const event: sdk.SDKMessage = {
+      type: "tool_call",
+      run_id: runId,
+      agent_id: agentId,
+      call_id: "original-tool",
+      name: "shell",
+      status: "running",
+    };
+    await store.runEvents.append({
+      runId,
+      eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
+      payload: sdk.createSdkMessageRunStreamEvent(event),
+    });
+    const assistant: sdk.SDKMessage = {
+      type: "assistant",
+      run_id: runId,
+      agent_id: agentId,
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "captured before projection" }],
+      },
+    };
+    await store.runEvents.append({
+      runId,
+      eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
+      payload: sdk.createSdkMessageRunStreamEvent(assistant),
+    });
+    const read = async () =>
+      messages(
+        await Array.fromAsync(
+          readCursorHistory(
+            sdk,
+            new sdk.JsonlLocalAgentStore(root),
+            new CursorTurnJournal(root, agentId),
+            agentId,
+          ),
+        ),
+      );
+    const before = await read();
+    expect(before).toHaveLength(4);
+    expect(before[1]).toMatchObject({
+      turnId: turn.id,
+      item: { callId: `${runId}:original-tool` },
+    });
+    await store.runs.update({ run: localRun(runId, "cancelled") });
+    turn.terminal = { status: "error", message: "The previous run was interrupted." };
+    turn.recovered = true;
+    turn.joined = true;
+    await journal.save(turn);
+    const after = await read();
+    expect(after).toEqual([
+      ...before.slice(0, -1),
+      {
+        turnId: undefined,
+        item: {
+          type: "assistant_message",
+          text: "[System Error] The previous run was interrupted.",
+        },
+      },
+    ]);
+    expect(await read()).toEqual(after);
+    expect(await journal.readItems(turn.id)).toEqual([]);
+  });
+});
+
+test("a recovered terminal answer labels a durable partial projection", async () => {
+  await withStore(async (_root, store, journal) => {
+    const runId = "native-finished-before-projection";
+    const turn: CursorHistoryTurn = {
+      id: "partial-turn",
+      nativeRunId: runId,
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "original", messageId: "original-message" },
+      steers: [],
+      recovered: true,
+      joined: true,
+      terminal: { status: "finished", fallback: "first second" },
+    };
+    await journal.admit(turn, "original");
+    await journal.append(turn.id, { type: "assistant_message", text: "first" });
+    await store.runs.create({ run: { ...localRun(runId, "finished"), result: "first second" } });
+    const rows = messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
+    expect(rows).toEqual([
+      { turnId: turn.id, item: turn.user },
+      { turnId: turn.id, item: { type: "assistant_message", text: "first" } },
+      {
+        turnId: turn.id,
+        item: { type: "error", message: expect.stringContaining("Some saved Cursor SDK output") },
+      },
+    ]);
+  });
+});

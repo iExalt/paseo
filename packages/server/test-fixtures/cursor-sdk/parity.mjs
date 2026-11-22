@@ -5,10 +5,11 @@ import { once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { checkBaseline, prepareBaseline, shellEnvironment } from "./baseline.mjs";
 import { apiKey, assistantText, callId, model, sdkVersion, startBackend } from "./backend.mjs";
+import { checkOwnedRecovery } from "./owned-recovery.mjs";
 import { checkLifecycle } from "./lifecycle.mjs";
 import { checkControls, controlCatalog } from "./controls.mjs";
 import {
@@ -21,7 +22,10 @@ import {
 const exec = promisify(execFile);
 const root = resolve(process.argv[2] ?? ".");
 const [, , , mode, codex] = process.argv;
-assert.ok(mode === "green" || mode === "baseline", "Expected green or baseline");
+assert.ok(
+  mode === "green" || mode === "baseline" || mode === "owner",
+  "Expected green, baseline, or owner",
+);
 const require = createRequire(join(root, "packages/server/package.json"));
 const sdkPackage = join(dirname(require.resolve("@cursor/sdk")), "../../package.json");
 assert.equal(JSON.parse(await readFile(sdkPackage, "utf8")).version, sdkVersion);
@@ -34,8 +38,10 @@ const canary = "PASEO_LOCAL_CANARY";
 
 await Promise.all([mkdir(workspace), mkdir(home), mkdir(paseoHome)]);
 const fixtures = mode === "green" ? await installSkillFixtures(workspace, home) : undefined;
-const callerWorkspace =
-  mode === "green" ? await prepareCallerFixture({ root, paseoHome, home, workspace }) : undefined;
+const useCallerFixture = mode === "green" || (mode === "owner" && process.platform === "linux");
+const callerWorkspace = useCallerFixture
+  ? await prepareCallerFixture({ root, paseoHome, home, workspace })
+  : undefined;
 const backend = await startBackend(workspace, {
   allowCodexPrewarm: mode === "baseline",
   selectSkillTurn: fixtures ? assertSkillTurnRequest : undefined,
@@ -49,7 +55,7 @@ await writeFile(
   join(workspace, "cursor-canary.sh"),
   [
     ...(mode === "baseline" ? shellEnvironment : []),
-    ...(mode === "green"
+    ...(useCallerFixture
       ? [
           `if [ -n "\${P3_LABEL:-}" ]; then exec "${process.execPath}" p3-shell.mjs; fi`,
           'printf "%s\\n" "${PASEO_HOME:-absent}" "${PASEO_CLI:-absent}" > cursor-cli-disabled.txt',
@@ -75,10 +81,28 @@ await writeFile(
   }),
 );
 
+const platformEnv =
+  process.platform === "win32"
+    ? {
+        SystemRoot: process.env.SystemRoot,
+        ComSpec: process.env.ComSpec,
+        PATHEXT: process.env.PATHEXT,
+        USERPROFILE: home,
+        TEMP: tmp,
+        TMP: tmp,
+      }
+    : {};
+const shellPath =
+  process.platform === "win32"
+    ? [process.env.PASEO_WINDOWS_FIXTURE_SHELL_DIR, process.env.PATH]
+        .filter(Boolean)
+        .join(delimiter)
+    : "/usr/bin:/bin";
 const env = {
+  ...platformEnv,
   HOME: home,
-  PATH: `${dirname(process.execPath)}:/usr/bin:/bin`,
-  SHELL: mode === "green" ? "/bin/bash" : "/bin/sh",
+  PATH: [dirname(process.execPath), shellPath].join(delimiter),
+  SHELL: useCallerFixture ? "/bin/bash" : "/bin/sh",
   PASEO_HOME: paseoHome,
   PASEO_LISTEN: "127.0.0.1:0",
   PASEO_RELAY_ENABLED: "false",
@@ -142,8 +166,10 @@ async function stopDaemon(signal = "SIGTERM") {
   if (!child || child.exitCode !== null || child.signalCode !== null) return;
   const finished = once(child, "exit", { signal: AbortSignal.timeout(5000) });
   assert.ok(child.kill(signal), "Unable to signal fixture daemon");
-  const [, exitSignal] = await finished;
-  if (signal === "SIGKILL") assert.equal(exitSignal, signal);
+  const [code, exitSignal] = await finished;
+  if (signal === "SIGKILL") {
+    assert.ok(exitSignal === signal || (process.platform === "win32" && code !== 0));
+  }
 }
 
 async function cli(...args) {
@@ -221,6 +247,8 @@ async function checkCompleted(run) {
   console.log("PASS Cursor SDK shell canary, client tool result, assistant text, and usage");
 }
 
+const windowsOwnerReplay = mode === "owner" && process.platform === "win32";
+let failure;
 try {
   await startDaemon();
   const workspaceId = callerWorkspace ?? (await createWorkspace());
@@ -239,6 +267,26 @@ try {
       workspaceId,
       checkCompleted,
     });
+  } else if (mode === "owner") {
+    const caller = { root, require, paseoHome, workspace, workspaceId, listener: () => listener };
+    const callerCanary = join(workspace, "cursor-canary.sh");
+    const callerScript = await readFile(callerCanary);
+    const callerAgents = useCallerFixture ? await checkCallerEnvironment(caller) : undefined;
+    await checkOwnedRecovery({
+      backend,
+      listener: () => listener,
+      paseoHome,
+      require,
+      startDaemon,
+      stopDaemon,
+      workspace,
+      workspaceId,
+      canary,
+    });
+    if (callerAgents) {
+      await writeFile(callerCanary, callerScript);
+      await checkCallerEnvironment({ ...caller, agents: callerAgents });
+    }
   } else {
     const selection = await checkDraftSkills({
       cli,
@@ -300,16 +348,26 @@ try {
     });
   }
 } catch (error) {
+  failure = { error };
   if (daemonLog) console.error(daemonLog);
-  throw error;
 } finally {
   try {
-    await stopDaemon();
-  } finally {
     try {
-      await backend.close();
+      await stopDaemon();
     } finally {
-      await rm(tmp, { recursive: true, force: true });
+      try {
+        await backend.close();
+      } finally {
+        await rm(tmp, {
+          recursive: true,
+          force: true,
+          maxRetries: windowsOwnerReplay ? 5 : 0,
+        });
+      }
     }
+  } catch (error) {
+    if (failure && windowsOwnerReplay) console.error("Windows owner fixture cleanup failed", error);
+    else failure = { error };
   }
 }
+if (failure) throw failure.error;
