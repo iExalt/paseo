@@ -5,6 +5,7 @@ import {
   cursorQuestionToolDescriptor,
   cursorQuestionToolName,
 } from "../providers/cursor-sdk-questions.js";
+import { cursorSpeakToolDescriptor, cursorSpeakToolName } from "../providers/cursor-sdk-voice.js";
 import { proxyCursorStore } from "./cursor-store-proxy.js";
 import { ownerDeferred } from "./owner-channel.js";
 import { connectOwnedProcess } from "./owned-process.js";
@@ -84,14 +85,15 @@ async function main() {
       if (!agent || dispatched) throw new Error("Cursor SDK owner has no pending dispatch.");
       dispatched = true;
       const native = agent;
-      if (value === null) {
+      const { input, voice } = value as { input: SDKUserMessage | null; voice: boolean };
+      if (input === null) {
         return withCursorShellEnvironment(shellEnvironment, async () =>
           describe(await native.summarize()),
         );
       }
       return withCursorShellEnvironment(shellEnvironment, async () =>
         describe(
-          await native.send(value as SDKUserMessage, {
+          await native.send(input, {
             model,
             local: {
               customTools: {
@@ -99,6 +101,14 @@ async function main() {
                   ...cursorQuestionToolDescriptor,
                   execute: (args, context) => channel.request("question", { args, context }),
                 },
+                ...(voice
+                  ? {
+                      [cursorSpeakToolName]: {
+                        ...cursorSpeakToolDescriptor,
+                        execute: (args, context) => channel.request("speak", { args, context }),
+                      },
+                    }
+                  : {}),
               },
             },
           }),

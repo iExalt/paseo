@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import pino from "pino";
 import { describe, expect, test, vi } from "vitest";
 
-import { VoiceSession, type VoiceSessionHost } from "./voice-session.js";
+import { VoiceSession, type VoiceSessionHost, type VoiceSessionOptions } from "./voice-session.js";
 import type { ManagedAgent } from "../../agent/agent-manager.js";
 import type { SessionOutboundMessage } from "../../messages.js";
 import type {
@@ -82,7 +82,10 @@ function createFakeHost(): FakeVoiceHost {
   };
 }
 
-function createVoiceSession(tts: TextToSpeechProvider | null = null) {
+function createVoiceSession(
+  tts: TextToSpeechProvider | null = null,
+  bridge?: VoiceSessionOptions["voiceBridge"],
+) {
   let speakHandler: VoiceSpeakHandler | undefined;
   const detector = new FakeVoiceTurnDetectionSession();
   const sttSession = new FakeVoiceSttSession();
@@ -102,7 +105,9 @@ function createVoiceSession(tts: TextToSpeechProvider | null = null) {
     sttLanguage: "en",
     tts,
     voiceBridge: {
-      registerVoiceSpeakHandler: (_id, handler) => {
+      ...bridge,
+      registerVoiceSpeakHandler: (id, handler) => {
+        bridge?.registerVoiceSpeakHandler?.(id, handler);
         speakHandler = handler;
       },
     },
@@ -114,9 +119,11 @@ function createVoiceSession(tts: TextToSpeechProvider | null = null) {
     detector,
     sttSession,
     host,
-    speak: (args: Parameters<VoiceSpeakHandler>[0]) => {
+    speak: (
+      args: Omit<Parameters<VoiceSpeakHandler>[0], "callerAgentId"> & { callerAgentId?: string },
+    ) => {
       if (!speakHandler) throw new Error("Voice speak handler not registered");
-      return speakHandler(args);
+      return speakHandler({ callerAgentId: VOICE_AGENT_ID, ...args });
     },
   };
 }
@@ -325,4 +332,56 @@ describe("VoiceSession streaming transcription", () => {
 
     await voiceSession.cleanup();
   });
+});
+
+test("serializes toggles and reserves the voice agent until old config restoration finishes", async () => {
+  const registrations = new Map<string, VoiceSpeakHandler>();
+  const bridge = {
+    registerVoiceSpeakHandler(id: string, handler: VoiceSpeakHandler) {
+      if (registrations.has(id)) throw new Error("Agent is already speaking");
+      registrations.set(id, handler);
+    },
+    unregisterVoiceSpeakHandler(id: string) {
+      registrations.delete(id);
+    },
+  };
+  const first = createVoiceSession(null, bridge);
+  const second = createVoiceSession(null, bridge);
+  const enabled = Promise.withResolvers<void>();
+  const restore = Promise.withResolvers<void>();
+  const loading = Promise.withResolvers<void>();
+  const originalReload = first.host.reloadAgentSession;
+  first.host.reloadAgentSession = vi
+    .fn(originalReload)
+    .mockImplementationOnce(async (id, overrides) => {
+      await enabled.promise;
+      return originalReload(id, overrides);
+    })
+    .mockImplementationOnce(async (id, overrides) => {
+      loading.resolve();
+      await restore.promise;
+      return originalReload(id, overrides);
+    });
+  try {
+    const enable = first.voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    const disable = first.voiceSession.handleSetVoiceMode(false);
+    enabled.resolve();
+    await enable;
+    await loading.promise;
+    await expect(second.voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID)).rejects.toThrow(
+      "already speaking",
+    );
+    await expect(first.speak({ text: "stale", callerAgentId: VOICE_AGENT_ID })).rejects.toThrow(
+      "unavailable",
+    );
+    restore.resolve();
+    await disable;
+    await second.voiceSession.handleSetVoiceMode(true, VOICE_AGENT_ID);
+    expect(second.voiceSession.isActiveForAgent(VOICE_AGENT_ID)).toBe(true);
+    expect(first.voiceSession.isActiveForAgent(VOICE_AGENT_ID)).toBe(false);
+  } finally {
+    enabled.resolve();
+    restore.resolve();
+    await Promise.all([first.voiceSession.cleanup(), second.voiceSession.cleanup()]);
+  }
 });

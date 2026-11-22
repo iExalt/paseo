@@ -6,6 +6,7 @@ import type {
   AgentOptionToggleControl,
   AgentProviderNotice,
   AgentTaskItem,
+  AgentUsage,
   JsonValue,
   ProviderOptions,
   ToolPolicy,
@@ -20,6 +21,7 @@ export type {
   AgentOptionToggleControl,
   AgentProviderNotice,
   AgentTaskItem,
+  AgentUsage,
 };
 
 export type AgentProvider = string;
@@ -227,15 +229,6 @@ export type SteerResult =
 
 export interface SteerActiveTurnOptions extends AgentSteerOptions {
   expectedTurnId: string;
-}
-
-export interface AgentUsage {
-  inputTokens?: number;
-  cachedInputTokens?: number;
-  outputTokens?: number;
-  totalCostUsd?: number;
-  contextWindowMaxTokens?: number;
-  contextWindowUsedTokens?: number;
 }
 
 export const TOOL_CALL_ICON_NAMES = [
@@ -715,6 +708,7 @@ export interface AgentUsageSession {
 
 export interface AgentSession {
   usageSession?(): AgentUsageSession | null;
+  readLastUsage?(): Promise<AgentUsage | undefined>;
   readonly provider: AgentProvider;
   readonly id: string | null;
   readonly capabilities: AgentCapabilityFlags;

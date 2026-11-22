@@ -215,7 +215,11 @@ export interface AgentRunOptions {
 export interface AgentUsage {
   inputTokens?: number;
   cachedInputTokens?: number;
+  cacheWriteTokens?: number;
   outputTokens?: number;
+  /** Included in outputTokens when the provider reports this breakdown. */
+  reasoningTokens?: number;
+  totalTokens?: number;
   totalCostUsd?: number;
   contextWindowMaxTokens?: number;
   contextWindowUsedTokens?: number;

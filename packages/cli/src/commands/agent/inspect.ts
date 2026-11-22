@@ -32,6 +32,9 @@ interface AgentInspect {
     InputTokens: number | null;
     OutputTokens: number | null;
     CachedTokens: number | null;
+    CacheWriteTokens?: number;
+    ReasoningTokens?: number;
+    TotalTokens?: number;
     CostUsd: number | null;
     ContextWindowUsedTokens: number | null;
     ContextWindowMaxTokens: number | null;
@@ -119,6 +122,9 @@ function buildLastUsage(snapshot: AgentSnapshotPayload): AgentInspect["LastUsage
     InputTokens: snapshot.lastUsage.inputTokens ?? null,
     OutputTokens: snapshot.lastUsage.outputTokens ?? null,
     CachedTokens: snapshot.lastUsage.cachedInputTokens ?? null,
+    CacheWriteTokens: snapshot.lastUsage.cacheWriteTokens,
+    ReasoningTokens: snapshot.lastUsage.reasoningTokens,
+    TotalTokens: snapshot.lastUsage.totalTokens,
     CostUsd: snapshot.lastUsage.totalCostUsd ?? null,
     ContextWindowUsedTokens: snapshot.lastUsage.contextWindowUsedTokens ?? null,
     ContextWindowMaxTokens: snapshot.lastUsage.contextWindowMaxTokens ?? null,

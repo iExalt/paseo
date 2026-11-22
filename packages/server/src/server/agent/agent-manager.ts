@@ -81,7 +81,7 @@ import {
 } from "./agent-sdk-types.js";
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import type { JsonValue, ProviderOptions } from "@getpaseo/protocol/agent-types";
-import { toStoredAgentRecord } from "./agent-projections.js";
+import { readStoredAgentUsage, toStoredAgentRecord } from "./agent-projections.js";
 import { optionsForCursorControls } from "./providers/cursor-sdk-model.js";
 import {
   applyProviderOptionsPatch,
@@ -230,6 +230,13 @@ async function resolveResumePurpose(
   }
 }
 
+function shouldAttachCursorVoice(
+  adapter: AgentProvider,
+  purpose: PluginSessionOpenRequest["purpose"] | undefined,
+): boolean {
+  return adapter === "cursor-sdk" && purpose === "interactive";
+}
+
 function restoredProviderState(
   client: AgentClient,
   record: StoredAgentRecord | null,
@@ -243,8 +250,7 @@ function restoredProviderState(
       supportsOfflineHistory && purpose === "history" && record.lastStatus === "error"
         ? "error"
         : undefined,
-    lastUsage:
-      record.totalCostUsd !== undefined ? { totalCostUsd: record.totalCostUsd } : undefined,
+    lastUsage: readStoredAgentUsage(record),
   };
 }
 
@@ -1960,6 +1966,14 @@ export class AgentManager {
         : undefined;
     if (purpose === "history") this.historySessions.add(session);
     await this.requireExternalMcpSupport(session, providerLaunchConfig, launchContext);
+    const restored = restoredProviderState(client, record, purpose);
+    const nativeUsage = await session.readLastUsage?.().catch((error: unknown) => {
+      this.logger.warn(
+        { err: error, agentId: resolvedAgentId },
+        "Could not restore provider usage",
+      );
+      return undefined;
+    });
     return this.registerSession(session, storedConfig, resolvedAgentId, {
       launchedOptions: optionsForCursorControls(launchedOptions, historicalControls),
       historicalControls,
@@ -1971,7 +1985,8 @@ export class AgentManager {
       launchEnv,
       persistence: handle,
       restoring: true,
-      ...restoredProviderState(client, record, purpose),
+      ...restored,
+      lastUsage: nativeUsage ? withKnownCost(nativeUsage, restored.lastUsage) : restored.lastUsage,
     });
   }
 
@@ -2680,8 +2695,7 @@ export class AgentManager {
         persistence: record.persistence ?? null,
         historyPrimed: true,
         lastUserMessageAt: record.lastUserMessageAt ? new Date(record.lastUserMessageAt) : null,
-        lastUsage:
-          record.totalCostUsd !== undefined ? { totalCostUsd: record.totalCostUsd } : undefined,
+        lastUsage: readStoredAgentUsage(record),
         lastError: record.lastError ?? undefined,
         attention,
         internal: record.internal,
@@ -6113,7 +6127,10 @@ export class AgentManager {
     if (terminalDisposition === "stale") return;
     if (event.usage) {
       if (!fromHistory) this.recordSpend(agent, event.usage);
-      agent.lastUsage = { ...agent.lastUsage, ...event.usage };
+      agent.lastUsage =
+        this.adapterOf(agent.provider) === "cursor-sdk"
+          ? withKnownCost(event.usage, agent.lastUsage)
+          : { ...agent.lastUsage, ...event.usage };
     }
     // If no usage on turn_completed, keep lastUsage as-is so context window
     // data accumulated during streaming isn't lost when the provider omits
@@ -7043,20 +7060,23 @@ export class AgentManager {
       mcpServerOwners,
       env: launchEnv,
     };
-    const useNativeTools =
-      this.agentToolsEnabled &&
-      isPaseoToolPolicyEnabled(paseoToolPolicy) &&
-      client.capabilities.supportsNativePaseoTools;
+    const allowPaseoTools = this.agentToolsEnabled && isPaseoToolPolicyEnabled(paseoToolPolicy);
+    const useNativeTools = allowPaseoTools && client.capabilities.supportsNativePaseoTools;
+    const useCursorVoice =
+      allowPaseoTools && shouldAttachCursorVoice(this.adapterOf(client.provider), opening?.purpose);
     if (
       this.paseoToolCatalogFactory &&
-      (useNativeTools || this.getPluginTools(agentId).length > 0)
+      (useNativeTools || useCursorVoice || this.getPluginTools(agentId).length > 0)
     ) {
       try {
         const catalog = await this.paseoToolCatalogFactory({
           callerAgentId: agentId,
           paseoToolPolicy,
+          ...(useCursorVoice ? { voiceOnly: true } : {}),
         });
-        if (useNativeTools) context.paseoTools = catalog;
+        if (useNativeTools || (useCursorVoice && catalog.getTool("speak"))) {
+          context.paseoTools = catalog;
+        }
       } catch (error) {
         this.detachPluginTools(agentId);
         throw error;
