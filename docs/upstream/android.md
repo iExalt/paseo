@@ -113,6 +113,12 @@ personal dogfooding. Android system-trace spans require the separate `PASEO_PROF
 watchdog recording does not send duplicate spans to that sink by default. Normal store/release
 workflows leave diagnostics disabled.
 
+On an ARM64 Linux host, set `PASEO_HERMES_COMMAND` to a native `hermesc` built from the Hermes tag
+matching `hermes-compiler`'s version: npm ships the Linux `hermesc` for x86-64 only, and React
+Native's Gradle plugin stops on `linux-aarch64`. A relative path resolves against the repository
+root. The variable sets the `paseoHermesCommand` Gradle property, which a direct `./gradlew` run can
+pass as `-PpaseoHermesCommand=PATH`. Unset, the build uses the npm `hermesc` as before.
+
 The older `android`, `android:development`, and `ios` commands remain aliases for development.
 `android:production` still builds and installs a release through Expo; use `build:apk` when you
 need an artifact. `android:clear` removes the generated Android project.
