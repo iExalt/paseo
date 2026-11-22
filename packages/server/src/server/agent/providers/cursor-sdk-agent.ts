@@ -39,6 +39,9 @@ import type {
   AgentStreamEvent,
   AgentUsage,
   FetchCatalogOptions,
+  ImportProviderSessionContext,
+  ImportProviderSessionInput,
+  ListImportableSessionsOptions,
   ProviderCatalog,
   ProviderRefreshContext,
   SteerActiveTurnOptions,
@@ -49,6 +52,7 @@ import type { CursorOwnerStart } from "../execution-owner/cursor-owner-worker.js
 import { UnadmittedExecutionError } from "../execution-owner/owned-process.js";
 import { supportsExecutionOwner } from "../execution-owner/execution-owner.js";
 import { cursorSkillReferences, renderPromptAttachmentAsText } from "../prompt-attachments.js";
+import { importSessionFromPersistence } from "../provider-session-import.js";
 import type { ProviderRuntimeSettings } from "../provider-launch-config.js";
 import { runProviderRefreshActivity } from "../provider-refresh-deadline.js";
 import { composeSystemPromptParts } from "../system-prompt.js";
@@ -70,6 +74,10 @@ import {
   interruptedCursorRunMessage,
 } from "./cursor-sdk-history.js";
 import { assertCursorRunReleased, reconcileReleasedTurn } from "./cursor-sdk-recovery.js";
+import {
+  listCursorLocalSessions,
+  readCursorLocalSessionForImport,
+} from "./cursor-sdk-local-sessions.js";
 import { cursorCompactCommand, isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
@@ -99,6 +107,7 @@ const MISSING_CREDENTIAL =
 const CAPABILITIES = {
   supportsStreaming: true,
   supportsSessionPersistence: true,
+  supportsSessionListing: true,
   supportsOfflineHistory: true,
   supportsDynamicModes: false,
   supportsMcpServers: true,
@@ -318,6 +327,39 @@ export class CursorSdkAgentClient implements AgentClient {
       controls,
       options: resolveSessionOptions(config, model, controls, false),
     };
+  }
+
+  async listImportableSessions(options?: ListImportableSessionsOptions) {
+    const sdk = await this.loadSdk();
+    return listCursorLocalSessions(this.getBinding(sdk).store, options);
+  }
+
+  async importSession(input: ImportProviderSessionInput, context: ImportProviderSessionContext) {
+    const sdk = await this.loadSdk();
+    const { agent, lastRun } = await readCursorLocalSessionForImport(
+      this.getBinding(sdk).store,
+      input,
+    );
+    if (!lastRun.model?.id) throw new Error("Cursor SDK could not identify the saved model.");
+    const providerOptions = Object.fromEntries(
+      (lastRun.model.params ?? []).map(({ id, value }) => ["cursor_model_" + id, value]),
+    );
+    return importSessionFromPersistence({
+      provider: PROVIDER,
+      request: { ...input, cwd: agent.cwd },
+      context: {
+        ...context,
+        config: { ...context.config, requestedProviderOptions: providerOptions },
+      },
+      config: { model: lastRun.model.id, title: agent.name ?? undefined, providerOptions },
+      persistence: {
+        provider: PROVIDER,
+        sessionId: agent.agentId,
+        nativeHandle: agent.agentId,
+        metadata: { cwd: agent.cwd },
+      },
+      resumeSession: this.resumeSession.bind(this),
+    });
   }
 
   createSession(
