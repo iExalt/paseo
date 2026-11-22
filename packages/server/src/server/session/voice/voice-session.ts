@@ -208,6 +208,8 @@ export class VoiceSession {
   private readonly getSpeechReadiness?: () => SpeechReadinessSnapshot;
 
   private voiceModeAgentId: string | null = null;
+  private voiceModeChange: Promise<void> = Promise.resolve();
+  private voiceActivation: AbortController | null = null;
   private voiceModeBaseConfig: VoiceModeBaseConfig | null = null;
 
   constructor(options: VoiceSessionOptions) {
@@ -351,7 +353,19 @@ export class VoiceSession {
   /**
    * Handle voice mode toggle
    */
-  async handleSetVoiceMode(enabled: boolean, agentId?: string, requestId?: string): Promise<void> {
+  handleSetVoiceMode(enabled: boolean, agentId?: string, requestId?: string): Promise<void> {
+    const change = this.voiceModeChange.then(() =>
+      this.closed ? undefined : this.applyVoiceMode(enabled, agentId, requestId),
+    );
+    this.voiceModeChange = change.catch(() => {});
+    return change;
+  }
+
+  private async applyVoiceMode(
+    enabled: boolean,
+    agentId?: string,
+    requestId?: string,
+  ): Promise<void> {
     const startedAt = Date.now();
     try {
       this.sessionLogger.info(
@@ -451,6 +465,7 @@ export class VoiceSession {
         });
       }
     } catch (error) {
+      await this.rollbackFailedVoiceActivation(enabled);
       const errorMessage = error instanceof Error ? error.message : "Failed to set voice mode";
       const unavailable = this.getVoiceFeatureUnavailableResponseMetadata(error);
       this.sessionLogger.error(
@@ -477,6 +492,12 @@ export class VoiceSession {
         return;
       }
       throw error;
+    }
+  }
+
+  private async rollbackFailedVoiceActivation(enabled: boolean): Promise<void> {
+    if (enabled && !this.isVoiceMode && this.voiceModeAgentId) {
+      await this.disableVoiceModeForActiveAgent(true);
     }
   }
 
@@ -518,42 +539,54 @@ export class VoiceSession {
         { agentId, refreshedAgentId: refreshed.id, elapsedMs: Date.now() - startedAt },
         "enableVoiceModeForAgent.reloadAgentSession.done",
       );
+      if (
+        existing.provider === "cursor-sdk" &&
+        !refreshed.session?.capabilities.supportsVoicePlayback
+      ) {
+        await this.disableVoiceModeForActiveAgent(true, agentId);
+        throw new Error("Voice playback is unavailable for this Cursor SDK session.");
+      }
       return refreshed.id;
     } catch (error) {
-      this.unregisterVoiceSpeakHandler?.(agentId);
-      this.unregisterVoiceCallerContext?.(agentId);
-      this.voiceModeBaseConfig = null;
+      if (this.voiceActivation) await this.disableVoiceModeForActiveAgent(false, agentId);
       throw error;
     }
   }
 
-  private async disableVoiceModeForActiveAgent(restoreAgentConfig: boolean): Promise<void> {
-    await this.stopVoiceTurnController();
+  private async disableVoiceModeForActiveAgent(
+    restoreAgentConfig: boolean,
+    agentId = this.voiceModeAgentId,
+  ): Promise<void> {
+    this.isVoiceMode = false;
+    const activation = this.voiceActivation;
+    activation?.abort();
+    this.ttsManager.cancelPendingPlaybacks("voice mode disabled");
 
-    const agentId = this.voiceModeAgentId;
-    if (!agentId) {
-      this.voiceModeBaseConfig = null;
-      return;
-    }
-
-    if (restoreAgentConfig && this.voiceModeBaseConfig) {
-      const baseConfig = this.voiceModeBaseConfig;
-      try {
-        await this.host.reloadAgentSession(agentId, {
-          systemPrompt: buildVoiceModeSystemPrompt(baseConfig.systemPrompt, false),
-        });
-      } catch (error) {
-        this.sessionLogger.warn(
-          { err: error, agentId },
-          "Failed to restore agent config while disabling voice mode",
-        );
+    try {
+      await this.stopVoiceTurnController();
+      if (agentId && restoreAgentConfig && this.voiceModeBaseConfig) {
+        try {
+          await this.host.reloadAgentSession(agentId, {
+            systemPrompt: buildVoiceModeSystemPrompt(this.voiceModeBaseConfig.systemPrompt, false),
+          });
+        } catch (error) {
+          this.sessionLogger.warn(
+            { err: error, agentId },
+            "Failed to restore agent config while disabling voice mode",
+          );
+        }
       }
+    } finally {
+      // Keep the source's registration until its reload is done, so a second
+      // source cannot acquire the agent while the old configuration is restoring.
+      if (agentId && activation && this.voiceActivation === activation) {
+        this.unregisterVoiceSpeakHandler?.(agentId);
+        this.unregisterVoiceCallerContext?.(agentId);
+        this.voiceActivation = null;
+      }
+      this.voiceModeBaseConfig = null;
+      this.voiceModeAgentId = null;
     }
-
-    this.unregisterVoiceSpeakHandler?.(agentId);
-    this.unregisterVoiceCallerContext?.(agentId);
-    this.voiceModeBaseConfig = null;
-    this.voiceModeAgentId = null;
   }
 
   private handleDictationManagerMessage(msg: DictationStreamOutboundMessage): void {
@@ -1051,7 +1084,17 @@ export class VoiceSession {
   }
 
   private registerVoiceBridgeForAgent(agentId: string): void {
-    this.registerVoiceSpeakHandler?.(agentId, async ({ text, signal }) => {
+    const activation = new AbortController();
+    this.registerVoiceSpeakHandler?.(agentId, async ({ text, callerAgentId, signal }) => {
+      if (
+        this.closed ||
+        !this.isVoiceMode ||
+        activation.signal.aborted ||
+        this.voiceModeAgentId !== callerAgentId ||
+        callerAgentId !== agentId
+      ) {
+        throw new Error("Voice mode is unavailable for this agent.");
+      }
       this.sessionLogger.info(
         {
           agentId,
@@ -1060,9 +1103,11 @@ export class VoiceSession {
         },
         "Voice speak tool call received by session handler",
       );
-      const abortSignal = signal
-        ? AbortSignal.any([signal, this.abortController.signal])
-        : this.abortController.signal;
+      const abortSignal = AbortSignal.any([
+        this.abortController.signal,
+        activation.signal,
+        ...(signal ? [signal] : []),
+      ]);
       await this.ttsManager.generateAndWaitForPlayback(
         text,
         (msg) => this.emit(msg),
@@ -1084,6 +1129,7 @@ export class VoiceSession {
       });
     });
 
+    this.voiceActivation = activation;
     this.registerVoiceCallerContext?.(agentId, {
       childAgentDefaultLabels: {},
       allowCustomCwd: false,
