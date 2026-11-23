@@ -7,15 +7,13 @@ import { Value } from "@bufbuild/protobuf";
 
 const untrustedId = "wks_cursor_parity_untrusted";
 const questionServer = "custom-user-tools";
-const questionTool = "ask_user_question";
+const questionTool = "ask_question";
 const explicitServer = "paseo_explicit";
 const token = "PASEO_P5_ONLY_FROM_ANSWER";
 const workspaceMarker = "PASEO_P5_TRUSTED_AGENTS";
 const cursorMarker = "PASEO_P5_TRUSTED_CURSOR_RULE";
 const excluded = ["PASEO_P5_CONTEXTUAL_RULE", "PASEO_P5_UNTRUSTED_AGENTS", "PASEO_P5_USER_RULE"];
-const questions = [
-  { header: "Destination", question: "Where should I put the result?", options: [] },
-];
+const questions = [{ question: "Where should I put the result?", options: ["Report", "Chat"] }];
 
 const stdioFixture = `
 import { writeFileSync } from "node:fs";
@@ -203,7 +201,7 @@ export async function checkP5Interactions({
     modeId: "unrestricted",
     model,
   };
-  const answer = { behavior: "allow", updatedInput: { answers: { Destination: token } } };
+  const answer = { behavior: "allow", updatedInput: { answers: { "Question 1": token } } };
   const protectedFile = join(workspace, "p5-protected.txt");
   const pending = async (id) => {
     const state = await client.waitForAgentUpsert(
@@ -213,7 +211,15 @@ export async function checkP5Interactions({
     );
     const [question] = state.pendingPermissions;
     assert.equal(question.kind, "question");
-    assert.deepEqual(question.input.questions, questions);
+    assert.deepEqual(question.input.questions, [
+      {
+        ...questions[0],
+        options: [{ label: "Report" }, { label: "Chat" }],
+        header: "Question 1",
+        multiSelect: false,
+        allowOther: true,
+      },
+    ]);
     return question.id;
   };
   async function start(mode) {
@@ -285,7 +291,7 @@ export async function checkP5Interactions({
       client.respondToPermissionAndWait(
         allowed.id,
         allowed.request,
-        { behavior: "allow", updatedInput: { answers: { Destination: 123 } } },
+        { behavior: "allow", updatedInput: { answers: { "Question 1": 123 } } },
         2000,
       ),
       /valid answer for every Cursor SDK question/i,
