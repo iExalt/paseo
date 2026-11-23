@@ -5,7 +5,8 @@ import { createPaseoDaemon, formatListenTarget } from "./bootstrap.js";
 import { loadConfig } from "./config.js";
 import { resolvePaseoHome } from "./paseo-home.js";
 import { createRootLogger } from "./logger.js";
-import type { DaemonLifecycleIntent } from "./bootstrap.js";
+import type { DaemonLifecycleIntent, PaseoDaemonDependencies } from "./bootstrap.js";
+import { BuiltinPluginLoader } from "./plugins/builtin/index.js";
 import { getProcessDiagnostics } from "./process-diagnostics.js";
 import { createInstalledDesktopRestarter } from "./installed-desktop-restart.js";
 import { resolveDaemonVersion } from "./daemon-version.js";
@@ -358,6 +359,14 @@ async function main() {
 
   installSupervisorLivenessGuard();
 
+  const daemonDependencies: PaseoDaemonDependencies = {};
+  if (process.env.PASEO_DEFER_TERMINAL_WORKER_LAUNCH === "1") {
+    daemonDependencies.deferTerminalWorkerLaunch = true;
+  }
+  if (process.env.PASEO_DISABLE_BUILTIN_PLUGINS === "1") {
+    daemonDependencies.builtinPlugins = new BuiltinPluginLoader(undefined, []);
+  }
+
   try {
     daemon = await createPaseoDaemon(
       {
@@ -365,6 +374,7 @@ async function main() {
         onLifecycleIntent: handleLifecycleIntent,
       },
       logger,
+      daemonDependencies,
     );
   } catch (err) {
     logger.fatal({ err }, "Daemon bootstrap failed");

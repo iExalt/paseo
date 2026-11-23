@@ -171,8 +171,9 @@ export async function checkControls({
 
   try {
     await client.connect();
-    assert.equal((await inspect("auto")).selectedModel, "default");
-    assert.equal((await inspect("auto-smart")).selectedModel, "auto-smart");
+    const [autoInspect, smartInspect] = await Promise.all([inspect("auto"), inspect("auto-smart")]);
+    assert.equal(autoInspect.selectedModel, "default");
+    assert.equal(smartInspect.selectedModel, "auto-smart");
     const staleDraft = await client.createAgent({
       workspaceId,
       config: {
@@ -184,57 +185,49 @@ export async function checkControls({
     });
     await send(staleDraft.id, "Run after selecting Auto in the draft.");
     await effective(staleDraft.id, "default", null, null);
-    const unavailableDefault = await run(
-      "--provider",
-      "cursor-sdk",
-      "--model",
-      "fixture-high-only",
-    );
+    const [unavailableDefault, , explicit] = await Promise.all([
+      run("--provider", "cursor-sdk", "--model", "fixture-high-only"),
+      assert.rejects(
+        run("--provider", "cursor-sdk", "--model", model, "--feature", "cursor_model_fats=false"),
+        (error) =>
+          /Unsupported Cursor SDK model option/.test(
+            String(error.stdout ?? "") + String(error.stderr ?? ""),
+          ),
+      ),
+      run("--provider", "cursor-sdk", "--model", "fixture-alias", "--feature", `${fast}=false`),
+      cli(
+        "profile",
+        "add",
+        JSON.stringify({
+          id: "p7-controls",
+          name: "P7 controls",
+          provider: "cursor-sdk",
+          model,
+          thinkingOptionId: "none",
+          featureValues: { [reasoning]: "none" },
+        }),
+      ),
+    ]);
     assert.equal(unavailableDefault.status, "completed");
     await effective(unavailableDefault.agentId, "fixture-high-only", null, null);
-    await assert.rejects(
-      run("--provider", "cursor-sdk", "--model", model, "--feature", "cursor_model_fats=false"),
-      (error) =>
-        /Unsupported Cursor SDK model option/.test(
-          String(error.stdout ?? "") + String(error.stderr ?? ""),
-        ),
-    );
-    const explicit = await run(
-      "--provider",
-      "cursor-sdk",
-      "--model",
-      "fixture-alias",
-      "--feature",
-      `${fast}=false`,
-    );
     assert.equal(explicit.status, "completed");
     await effective(explicit.agentId, model, "false", "high");
 
-    await cli(
-      "profile",
-      "add",
-      JSON.stringify({
-        id: "p7-controls",
-        name: "P7 controls",
-        provider: "cursor-sdk",
-        model,
-        thinkingOptionId: "none",
-        featureValues: { [reasoning]: "none" },
-      }),
-    );
-    const profile = await run("--profile", "p7-controls", "--thinking", "high");
+    const [profile] = await Promise.all([
+      run("--profile", "p7-controls", "--thinking", "high"),
+      assert.rejects(
+        run(
+          "--provider",
+          "cursor-sdk",
+          "--model",
+          model,
+          "--features-json",
+          JSON.stringify({ [fast]: "invalid" }),
+        ),
+      ),
+    ]);
     assert.equal(profile.status, "completed");
     await effective(profile.agentId, model, "false", "high");
-    await assert.rejects(
-      run(
-        "--provider",
-        "cursor-sdk",
-        "--model",
-        model,
-        "--features-json",
-        JSON.stringify({ [fast]: "invalid" }),
-      ),
-    );
     await cli(
       "agent",
       "update",
@@ -244,28 +237,37 @@ export async function checkControls({
     );
     await send(explicit.agentId, "Run the updated canary.");
     await effective(explicit.agentId, model, "true", "none");
-    await assert.rejects(
-      cli(
-        "agent",
-        "update",
-        explicit.agentId,
-        "--features-json",
-        JSON.stringify({ [fast]: false, [reasoning]: "none" }),
+    await Promise.all([
+      assert.rejects(
+        cli(
+          "agent",
+          "update",
+          explicit.agentId,
+          "--features-json",
+          JSON.stringify({ [fast]: false, [reasoning]: "none" }),
+        ),
+        (error) =>
+          /Unsupported Cursor SDK model option combination/.test(
+            String(error.stdout ?? "") + String(error.stderr ?? ""),
+          ),
       ),
-      (error) =>
-        /Unsupported Cursor SDK model option combination/.test(
-          String(error.stdout ?? "") + String(error.stderr ?? ""),
+      assert.rejects(
+        cli(
+          "agent",
+          "update",
+          explicit.agentId,
+          "--thinking",
+          "none",
+          "--feature",
+          `${fast}=false`,
         ),
-    );
+        (error) =>
+          /Unsupported Cursor SDK model option combination/.test(
+            String(error.stdout ?? "") + String(error.stderr ?? ""),
+          ),
+      ),
+    ]);
     await effective(explicit.agentId, model, "true", "none");
-    await assert.rejects(
-      cli("agent", "update", explicit.agentId, "--thinking", "none", "--feature", `${fast}=false`),
-      (error) =>
-        /Unsupported Cursor SDK model option combination/.test(
-          String(error.stdout ?? "") + String(error.stderr ?? ""),
-        ),
-    );
-    await effective(explicit.agentId, model, "true", "none", false);
     await cli(
       "agent",
       "update",
