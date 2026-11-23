@@ -1,5 +1,22 @@
 import type { SDKMessage, TokenUsage } from "@cursor/sdk";
-import type { AgentUsage, ToolCallDetail, ToolCallTimelineItem } from "../agent-sdk-types.js";
+import type {
+  AgentTimelineItem,
+  AgentUsage,
+  ToolCallDetail,
+  ToolCallTimelineItem,
+} from "../agent-sdk-types.js";
+import {
+  cursorTodos,
+  deleteDetail,
+  editFallback,
+  globDetail,
+  grepDetail,
+  lsDetail,
+  planDetail,
+  readLintsDetail,
+  semSearchDetail,
+  todosDetail,
+} from "./cursor-sdk-tool-details.js";
 
 export function addCursorUsage(first: TokenUsage | undefined, next: TokenUsage): TokenUsage {
   if (!first) return next;
@@ -46,7 +63,7 @@ type CursorTool = Extract<SDKMessage, { type: "tool_call" }>;
 // Bump when the projection changes. Replay re-projects only unstamped or older
 // rows: their raw payload may have been truncated for the journal, so a current
 // row's stored detail (built from the full payload) is better than a rebuild.
-const PROJECTION = 2;
+const PROJECTION = 3;
 
 // The untouched Cursor payload behind a row. Typed rows keep it in metadata so
 // projection can rerun on journal replay and recovery can compare raw rows.
@@ -80,6 +97,7 @@ function resultError(name: string, output: unknown): string | undefined {
   )?.trim();
   // Cursor reports some failures, such as a missing file, only as "error".
   if (!message || message.toLowerCase() === "error") {
+    if (name === "mcp") return "MCP tool failed.";
     return `${name.charAt(0).toUpperCase()}${name.slice(1)} failed.`;
   }
   return message;
@@ -103,7 +121,7 @@ function fileToolDetail(
     case "edit": {
       const unifiedDiff = string(value?.diffString) ?? string(args.patchContent);
       return unifiedDiff === undefined
-        ? undefined
+        ? editFallback(args.path, args)
         : { type: "edit", filePath: args.path, unifiedDiff };
     }
   }
@@ -136,31 +154,54 @@ function taskDetail(
   };
 }
 
+function shellDetail(
+  args: Record<string, unknown>,
+  value: Record<string, unknown> | undefined,
+): ToolCallDetail | undefined {
+  if (typeof args.command !== "string") return;
+  const exitCode = value?.exitCode;
+  return {
+    type: "shell",
+    command: args.command,
+    cwd: string(args.workingDirectory),
+    ...(value
+      ? {
+          output: [string(value.stdout), string(value.stderr)].filter(Boolean).join("\n"),
+          exitCode: typeof exitCode === "number" ? exitCode : undefined,
+        }
+      : {}),
+  };
+}
+
 function toolDetail(
   name: string,
   args: Record<string, unknown>,
   value: Record<string, unknown> | undefined,
 ): ToolCallDetail | undefined {
-  if (name === "shell" && typeof args.command === "string") {
-    const exitCode = value?.exitCode;
-    return {
-      type: "shell",
-      command: args.command,
-      cwd: string(args.workingDirectory),
-      ...(value
-        ? {
-            output: [string(value.stdout), string(value.stderr)].filter(Boolean).join("\n"),
-            exitCode: typeof exitCode === "number" ? exitCode : undefined,
-          }
-        : {}),
-    };
+  switch (name) {
+    case "shell":
+      return shellDetail(args, value);
+    case "task":
+      return taskDetail(args, value);
+    case "grep":
+      return grepDetail(args, value);
+    case "glob":
+      return globDetail(args, value);
+    case "semSearch":
+      return semSearchDetail(args, value);
+    case "ls":
+      return lsDetail(args, value);
+    case "delete":
+      return deleteDetail(args);
+    case "readLints":
+      return readLintsDetail(args, value);
+    case "createPlan":
+      return planDetail(args);
+    case "updateTodos":
+      return todosDetail(value);
+    default:
+      return fileToolDetail(name, args, value);
   }
-  if (name === "task") return taskDetail(args, value);
-  if (name === "grep" || name === "glob") {
-    const query = string(name === "grep" ? args.pattern : args.globPattern);
-    return query ? { type: "search", query, toolName: name } : undefined;
-  }
-  return fileToolDetail(name, args, value);
 }
 
 function mcpText(result: Record<string, unknown> | undefined): string | undefined {
@@ -245,6 +286,21 @@ function project(item: ToolCallTimelineItem): ToolCallTimelineItem {
   if (Object.keys(metadata).length > 0) projected.metadata = metadata;
   else delete projected.metadata;
   return failed ? { ...projected, status: "failed", error: failed } : projected;
+}
+
+// Claude and Codex show todo updates as a task list, not a tool row. A
+// completed updateTodos call becomes that list; a running one shows nothing
+// yet; a failed, canceled or listless one stays a row.
+export function cursorTimelineItems(item: ToolCallTimelineItem): AgentTimelineItem[] {
+  const raw = rawCursorTool(item);
+  if (raw?.name !== "updateTodos") return [item];
+  if (item.status === "running") return [];
+  const envelope = record(raw.output);
+  const todos =
+    item.status === "completed" && envelope?.status === "success"
+      ? cursorTodos(record(envelope.value))
+      : undefined;
+  return todos ? [{ type: "todo", items: todos }] : [item];
 }
 
 function cursorToolInput(message: CursorTool, previousInput: unknown): unknown {

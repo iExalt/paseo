@@ -781,7 +781,7 @@ describe("Cursor SDK provider", () => {
       status: "running",
       error: null,
       detail: { type: "read", filePath: "test.txt" },
-      metadata: { cursorSdk: { projection: 2, input: tool.args, output: null } },
+      metadata: { cursorSdk: { projection: 3, input: tool.args, output: null } },
     };
     const canceledTool = { ...running, status: "canceled" };
     expect(
