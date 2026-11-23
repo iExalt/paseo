@@ -218,7 +218,7 @@ Build workspace dependencies first in a fresh checkout; see [development setup](
 
 ### Cursor SDK loopback parity
 
-The routine integration lane runs the built daemon and the pinned Cursor SDK against a scripted loopback service. The record includes a shell-written file, the shell result and assistant text in the CLI timeline, and token usage. The Linux launcher needs passwordless sudo for a private network namespace, plus a C compiler, `ip`, `setpriv`, and `strace`. The daemon, SDK, and shell run as your current user with dummy credentials and a temporary home. A syscall filter blocks connections through host proxy sockets and keeps the local stream pairs used for child-process IPC.
+The routine integration lane runs the built daemon and the pinned Cursor SDK against a scripted loopback service. The record includes a shell-written file, the shell result and assistant text in the CLI timeline, and token usage. The Linux launcher needs no privileges, only a C compiler, `strace` 6.6 or later, and a kernel with Landlock ABI 4 (Linux 6.7 or later). The daemon, SDK, and shell run as your current user with dummy credentials and a temporary home. A Landlock ruleset lets the whole process tree connect only to TCP ports in the kernel’s ephemeral range, where the fixture and daemon listen, so the Cursor API port is unreachable. A syscall filter blocks connections through host proxy sockets and keeps the local stream pairs used for child-process IPC. The `strace` receipt fails the run if any process addresses a destination other than loopback.
 
 ```bash
 mise exec -- npm run build:server

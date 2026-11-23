@@ -2,8 +2,10 @@
 #include <errno.h>
 #include <linux/audit.h>
 #include <linux/filter.h>
+#include <linux/landlock.h>
 #include <linux/seccomp.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/prctl.h>
@@ -24,8 +26,50 @@
 #define RETURN(action) BPF_STMT(BPF_RET | BPF_K, action)
 #define DENY RETURN(SECCOMP_RET_ERRNO | EAFNOSUPPORT)
 
+static int landlock_abi(void) {
+  return (int)syscall(SYS_landlock_create_ruleset, NULL, 0, LANDLOCK_CREATE_RULESET_VERSION);
+}
+
+// Restrict TCP connects to the kernel's ephemeral port range, which is where
+// the loopback backend and daemon bind with port 0. The Cursor API on 443 and
+// every other well-known port become unreachable without privileges.
+static int restrict_tcp_connect(void) {
+  int abi = landlock_abi();
+  if (abi < 4) {
+    fprintf(stderr, "Cursor fixture needs Landlock ABI 4 for TCP rules; found %d\n", abi);
+    return -1;
+  }
+  unsigned low, high;
+  FILE *range = fopen("/proc/sys/net/ipv4/ip_local_port_range", "r");
+  if (!range) return -1;
+  int fields = fscanf(range, "%u %u", &low, &high);
+  fclose(range);
+  if (fields != 2 || low < 1024 || high > 65535 || low > high) {
+    fputs("Cursor fixture rejected the ephemeral port range\n", stderr);
+    return -1;
+  }
+  struct landlock_ruleset_attr attr = {.handled_access_net = LANDLOCK_ACCESS_NET_CONNECT_TCP};
+  int ruleset = (int)syscall(SYS_landlock_create_ruleset, &attr, sizeof(attr), 0);
+  if (ruleset < 0) return -1;
+  for (unsigned port = low; port <= high; port++) {
+    struct landlock_net_port_attr rule = {
+      .allowed_access = LANDLOCK_ACCESS_NET_CONNECT_TCP,
+      .port = port,
+    };
+    if (syscall(SYS_landlock_add_rule, ruleset, LANDLOCK_RULE_NET_PORT, &rule, 0) < 0) {
+      close(ruleset);
+      return -1;
+    }
+  }
+  int restricted = prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0
+                       ? -1
+                       : (int)syscall(SYS_landlock_restrict_self, ruleset, 0);
+  close(ruleset);
+  return restricted;
+}
+
 static int restrict_sockets(void) {
-  // A pathname UNIX socket can connect to a host proxy across a net namespace.
+  // A pathname or abstract UNIX socket can reach a host proxy that the Landlock TCP rules miss.
   // Keep only the connected stream pairs Node needs for child-process IPC.
   struct sock_filter instructions[] = {
     LOAD(arch),
@@ -71,19 +115,23 @@ static int preflight(void) {
   close(pair[0]);
   close(pair[1]);
 
-  // TEST-NET-1 is reserved for documentation.
-  struct sockaddr_in destination = {.sin_family = AF_INET, .sin_port = htons(9)};
+  // TEST-NET-1 is reserved for documentation; 443 is the Cursor API's port.
+  struct sockaddr_in destination = {.sin_family = AF_INET, .sin_port = htons(443)};
   if (inet_pton(AF_INET, "192.0.2.1", &destination.sin_addr) != 1) return 1;
   int fd = socket(AF_INET, SOCK_STREAM, 0);
   if (fd < 0) return 1;
   int blocked = connect(fd, (struct sockaddr *)&destination, sizeof(destination)) == -1 &&
-                errno == ENETUNREACH;
+                errno == EACCES;
   close(fd);
   return !blocked;
 }
 
 int main(int argc, char **argv) {
   if (argc < 2) return 2;
+  if (restrict_tcp_connect() < 0) {
+    perror("Cursor fixture Landlock");
+    return 1;
+  }
   if (restrict_sockets() < 0) {
     perror("Cursor fixture seccomp");
     return 1;
