@@ -127,8 +127,18 @@ function buildCanonicalDetailDisplay(input: ToolCallDisplayInput): DetailDisplay
   }
 }
 
+// Cursor SDK tool names are camelCase identifiers with no Paseo equivalent.
+const CURSOR_TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
+  ["delete", "Delete"],
+  ["ls", "List directory"],
+  ["readLints", "Read lints"],
+  ["updateTodos", "Update todos"],
+]);
+
 function buildUnknownDetailOverride(input: ToolCallDisplayInput): DetailDisplay {
   const cursorSdk = input.metadata?.cursorSdk;
+  const cursorName = isRecord(cursorSdk) ? CURSOR_TOOL_DISPLAY_NAMES.get(input.name) : undefined;
+  if (cursorName) return { displayName: cursorName };
   if (isRecord(cursorSdk) && cursorSdk.name === "mcp") {
     const toolName = readString(cursorSdk.toolName);
     if (toolName) {
