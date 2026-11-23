@@ -454,6 +454,8 @@ export type AgentStreamEvent =
       usage: AgentUsage;
       turnId?: string;
       sessionOnly?: boolean;
+      clearContextWindowUsed?: boolean;
+      clearContextWindowMax?: boolean;
     }
   /** Full replacement of the metrics shown for the session. An empty list clears them. */
   | { type: "session_metrics_updated"; provider: AgentProvider; metrics: AgentMetric[] }

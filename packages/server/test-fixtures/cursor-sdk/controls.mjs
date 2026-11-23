@@ -63,6 +63,24 @@ export function controlCatalog(model) {
       parameters,
       variants: [fastVariant, { ...highVariant, isDefault: true }],
     },
+    {
+      id: "fixture-context",
+      displayName: "Fixture Context",
+      parameters: [
+        {
+          id: "context",
+          displayName: "Context",
+          values: [
+            { value: "300k", displayName: "300K" },
+            { value: "1m", displayName: "1M" },
+          ],
+        },
+      ],
+      variants: [
+        { displayName: "300K", isDefault: true, params: [{ id: "context", value: "300k" }] },
+        { displayName: "1M", params: [{ id: "context", value: "1m" }] },
+      ],
+    },
   ];
 }
 

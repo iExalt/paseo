@@ -5,6 +5,50 @@ import type { ProviderOptionsPatch } from "../option-controls.js";
 
 const DEFAULT_MODEL = "auto";
 const PARAMETER_PREFIX = "cursor_model_";
+const CONTEXT_OPTION_KEY = PARAMETER_PREFIX + "context";
+
+/**
+ * Verified fixed context-window sizes for Cursor SDK models whose `/v1/models`
+ * entry omits a `context` parameter. Models with dynamic routing (`auto`,
+ * `default`, `auto-smart`) or unverified Cursor-enforced caps stay omitted.
+ */
+const CURSOR_MODEL_CONTEXT_WINDOW_FALLBACKS: Readonly<Record<string, number>> = {
+  "claude-opus-4-5": 200_000,
+  "claude-haiku-4-5": 200_000,
+  "gpt-5.3-codex": 272_000,
+};
+
+export function parseCursorContextWindowParam(value: unknown): number | undefined {
+  if (typeof value !== "string") return undefined;
+  const match = /^(\d+(?:\.\d+)?)\s*([km])$/i.exec(value.trim());
+  if (!match) return undefined;
+  const amount = Number(match[1]);
+  const multiplier = match[2].toLowerCase() === "m" ? 1_000_000 : 1_000;
+  const tokens = Math.round(amount * multiplier);
+  return Number.isSafeInteger(tokens) && tokens > 0 ? tokens : undefined;
+}
+
+export function resolveCursorContextWindowMaxTokens(
+  model: Pick<SDKModel, "id" | "parameters" | "variants">,
+  options: ProviderOptions = {},
+): number | undefined {
+  const fromOption = parseCursorContextWindowParam(options[CONTEXT_OPTION_KEY]);
+  if (fromOption !== undefined) return fromOption;
+
+  const defaultParam = model.variants
+    ?.find((variant) => variant.isDefault)
+    ?.params.find((param) => param.id === "context")?.value;
+  const fromDefaultVariant = parseCursorContextWindowParam(defaultParam);
+  if (fromDefaultVariant !== undefined) return fromDefaultVariant;
+
+  const contextParameter = model.parameters?.find((parameter) => parameter.id === "context");
+  if (contextParameter?.values.length === 1) {
+    const sole = parseCursorContextWindowParam(contextParameter.values[0]?.value);
+    if (sole !== undefined) return sole;
+  }
+
+  return CURSOR_MODEL_CONTEXT_WINDOW_FALLBACKS[model.id.trim().toLowerCase()];
+}
 
 export function findCursorModel(models: SDKModel[], id: string): SDKModel | undefined {
   return (
