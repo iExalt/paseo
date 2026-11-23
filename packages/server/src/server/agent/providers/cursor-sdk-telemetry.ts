@@ -6,6 +6,7 @@ import type {
   ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
 import {
+  computerUseDetail,
   cursorTodos,
   deleteDetail,
   editFallback,
@@ -14,6 +15,7 @@ import {
   lsDetail,
   planDetail,
   readLintsDetail,
+  recordScreenDetail,
   semSearchDetail,
   todosDetail,
 } from "./cursor-sdk-tool-details.js";
@@ -203,6 +205,10 @@ function toolDetail(
       return planDetail(args);
     case "updateTodos":
       return todosDetail(value);
+    case "computerUse":
+      return computerUseDetail(args, value);
+    case "recordScreen":
+      return recordScreenDetail(args, value);
     case "generateImage": {
       const description = string(args.description)?.trim();
       return {
@@ -333,6 +339,21 @@ function generatedImageItems(item: ToolCallTimelineItem, raw: CursorRawTool): Ag
   return image ? [item, image] : [item];
 }
 
+// Show the screenshot a computer-use call took after its row. Cursor returns its
+// path on success and on failure, where it shows the screen the action left.
+function screenshotItems(item: ToolCallTimelineItem, raw: CursorRawTool): AgentTimelineItem[] {
+  const envelope = record(raw.output);
+  const fields = record(envelope?.status === "success" ? envelope.value : envelope?.error);
+  const image =
+    item.status === "completed" || item.status === "failed"
+      ? renderProviderImagePathAsAssistantMarkdown({
+          path: string(fields?.screenshotPath),
+          altText: "Screenshot",
+        })
+      : null;
+  return image ? [item, image] : [item];
+}
+
 // MCP image content to show inline after its row. Only live rows have it:
 // the journal truncates the base64 data.
 export function cursorMcpImages(item: AgentTimelineItem): ProviderImageOutput[] {
@@ -356,6 +377,7 @@ export function cursorMcpImages(item: AgentTimelineItem): ProviderImageOutput[] 
 export function cursorTimelineItems(item: ToolCallTimelineItem): AgentTimelineItem[] {
   const raw = rawCursorTool(item);
   if (raw?.name === "generateImage") return generatedImageItems(item, raw);
+  if (raw?.name === "computerUse") return screenshotItems(item, raw);
   if (raw?.name !== "updateTodos") return [item];
   if (item.status === "running") return [];
   const envelope = record(raw.output);
