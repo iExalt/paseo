@@ -66,10 +66,18 @@ function string(value: unknown): string | undefined {
 
 type CursorTool = Extract<SDKMessage, { type: "tool_call" }>;
 
-// Bump when the projection changes. Replay re-projects only unstamped or older
-// rows: their raw payload may have been truncated for the journal, so a current
-// row's stored detail (built from the full payload) is better than a rebuild.
-const PROJECTION = 3;
+// Every projected row records the projection version of its tool. Replay
+// re-projects only unstamped or older rows: their raw payload may have been
+// truncated for the journal, so a current row's stored detail (built from the
+// full payload) is better than a rebuild. When one tool's projection changes,
+// give it an entry here with the next version so other tools' rows stay as
+// written. A change that affects every tool bumps the default and every entry.
+const DEFAULT_PROJECTION = 3;
+const TOOL_PROJECTIONS: Readonly<Record<string, number>> = {};
+
+function projectionOf(name: string): number {
+  return TOOL_PROJECTIONS[name] ?? DEFAULT_PROJECTION;
+}
 
 // The untouched Cursor payload behind a row. Typed rows keep it in metadata so
 // projection can rerun on journal replay and recovery can compare raw rows.
@@ -90,6 +98,11 @@ function rawCursorTool(item: ToolCallTimelineItem): CursorRawTool | undefined {
   return { name, input: item.detail.input, output: item.detail.output, truncated: meta?.truncated };
 }
 
+function toolFailed(name: string): string {
+  if (name === "mcp") return "MCP tool failed.";
+  return `${name.charAt(0).toUpperCase()}${name.slice(1)} failed.`;
+}
+
 // Local Cursor runs report every finished call as "completed" and put
 // failures in the result envelope.
 function resultError(name: string, output: unknown): string | undefined {
@@ -99,14 +112,19 @@ function resultError(name: string, output: unknown): string | undefined {
   const message = (
     typeof error === "string"
       ? error
-      : (string(record(error)?.message) ?? string(record(error)?.error))
+      : (string(record(error)?.message) ??
+        string(record(error)?.error) ??
+        string(record(envelope.value)?.message))
   )?.trim();
   // Cursor reports some failures, such as a missing file, only as "error".
-  if (!message || message.toLowerCase() === "error") {
-    if (name === "mcp") return "MCP tool failed.";
-    return `${name.charAt(0).toUpperCase()}${name.slice(1)} failed.`;
-  }
+  if (!message || message.toLowerCase() === "error") return toolFailed(name);
   return message;
+}
+
+// A failed call's error is shown as text; older rows stored the raw result.
+function failureText(name: string, output: unknown): string {
+  const text = string(output) ?? string(record(output)?.message);
+  return resultError(name, output) ?? (text?.trim() || toolFailed(name));
 }
 
 function fileToolDetail(
@@ -263,7 +281,7 @@ function projectMcp(item: ToolCallTimelineItem, raw: CursorRawTool): ToolCallTim
       ...item.metadata,
       cursorSdk: {
         name: "mcp",
-        projection: PROJECTION,
+        projection: projectionOf("mcp"),
         toolName,
         input: raw.input,
         output: raw.output,
@@ -276,9 +294,7 @@ function projectMcp(item: ToolCallTimelineItem, raw: CursorRawTool): ToolCallTim
 
 // Cursor reports a nonzero exit as a successful call carrying the exit code.
 // Claude and Codex mark such commands failed, even where the exit is expected,
-// as with grep finding nothing. This reads only the typed
-// detail, so it also fixes stamped rows without rebuilding them from a
-// possibly truncated payload.
+// as with grep finding nothing.
 function shellExitFailure(item: ToolCallTimelineItem): ToolCallTimelineItem {
   if (item.status !== "completed" || item.detail.type !== "shell") return item;
   const { exitCode } = item.detail;
@@ -286,19 +302,33 @@ function shellExitFailure(item: ToolCallTimelineItem): ToolCallTimelineItem {
   return { ...item, status: "failed", error: `Command exited with code ${exitCode}.` };
 }
 
+// Rules that read only the row and its short error, so they also fix stamped
+// rows without rebuilding them from a possibly truncated payload.
+function settle(item: ToolCallTimelineItem, raw: CursorRawTool): ToolCallTimelineItem {
+  if (item.status === "failed" && typeof item.error !== "string") {
+    return { ...item, error: failureText(raw.name, raw.output) };
+  }
+  return shellExitFailure(item);
+}
+
 // Replay a journaled row. Current rows were projected and expanded when they
 // were written; rows from older daemons get the current projection and the
 // items it adds, such as a task list or a generated image.
 export function replayCursorTool(item: ToolCallTimelineItem): AgentTimelineItem[] {
-  return record(item.metadata?.cursorSdk)?.projection === PROJECTION
-    ? [shellExitFailure(item)]
+  const raw = rawCursorTool(item);
+  if (!raw) return [item];
+  return record(item.metadata?.cursorSdk)?.projection === projectionOf(raw.name)
+    ? [settle(item, raw)]
     : cursorTimelineItems(project(item));
 }
 
 function project(item: ToolCallTimelineItem): ToolCallTimelineItem {
   const raw = rawCursorTool(item);
   if (!raw) return item;
-  if (raw.name === "mcp") return projectMcp(item, raw);
+  return settle(raw.name === "mcp" ? projectMcp(item, raw) : projectTool(item, raw), raw);
+}
+
+function projectTool(item: ToolCallTimelineItem, raw: CursorRawTool): ToolCallTimelineItem {
   const args = record(raw.input);
   const envelope = record(raw.output);
   const value = envelope?.status === "success" ? record(envelope.value) : undefined;
@@ -308,18 +338,16 @@ function project(item: ToolCallTimelineItem): ToolCallTimelineItem {
   const failed = item.status === "completed" ? resultError(raw.name, raw.output) : undefined;
   // Unknown rows already carry the payload as their detail; typed rows keep it here.
   const cursorSdk: Record<string, unknown> = {
+    projection: projectionOf(raw.name),
     ...(raw.truncated ? { truncated: raw.truncated } : {}),
-    ...(detail ? { projection: PROJECTION, input: raw.input, output: raw.output } : {}),
+    ...(detail ? { input: raw.input, output: raw.output } : {}),
   };
-  const metadata: Record<string, unknown> = { ...item.metadata, cursorSdk };
-  if (Object.keys(cursorSdk).length === 0) delete metadata.cursorSdk;
   const projected: ToolCallTimelineItem = {
     ...item,
     detail: detail ?? { type: "unknown", input: raw.input, output: raw.output },
+    metadata: { ...item.metadata, cursorSdk },
   };
-  if (Object.keys(metadata).length > 0) projected.metadata = metadata;
-  else delete projected.metadata;
-  return failed ? { ...projected, status: "failed", error: failed } : shellExitFailure(projected);
+  return failed ? { ...projected, status: "failed", error: failed } : projected;
 }
 
 // Show a generated image inline after its row, as Codex does. The result
@@ -417,7 +445,7 @@ export function mapCursorTool(
     ...(truncated ? { metadata: { cursorSdk: { truncated } } } : {}),
   };
   if (message.status === "error") {
-    return project({ ...base, status: "failed", error: output ?? "Cursor tool failed." });
+    return project({ ...base, status: "failed", error: failureText(message.name, output) });
   }
   return project({ ...base, status: message.status, error: null });
 }
