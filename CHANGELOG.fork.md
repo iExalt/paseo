@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.34.0](https://github.com/iExalt/paseo/compare/paseo-v0.33.0...paseo-v0.34.0) (2026-11-23)
+
+
+### Features
+
+* **cursor-sdk:** discover Codex-aligned skill directories ([#571](https://github.com/iExalt/paseo/issues/571)) ([97df4a5](https://github.com/iExalt/paseo/commit/97df4a5bdcb1462df41fda88bf5948b1ad6f2159))
+* **cursor-sdk:** discover namespaced Codex plugin skills ([#573](https://github.com/iExalt/paseo/issues/573)) ([2319bb2](https://github.com/iExalt/paseo/commit/2319bb2cd05038a2889264ea31d0b3f1c090b4b7))
+* **cursor-sdk:** load Codex-aligned AGENTS instructions ([#570](https://github.com/iExalt/paseo/issues/570)) ([bbdef78](https://github.com/iExalt/paseo/commit/bbdef78efc52475b2e651bd7ca3ad89ce70b29e8))
+
 ## [0.33.0](https://github.com/iExalt/paseo/compare/paseo-v0.32.1...paseo-v0.33.0) (2026-11-23)
 
 
