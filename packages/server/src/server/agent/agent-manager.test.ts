@@ -1121,6 +1121,48 @@ test("notification batches share the run they start or join", async () => {
   }
 });
 
+test("passes global instructions into a Cursor SDK turn without a workspace", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "agent-manager-cursor-global-"));
+  const codexHome = join(cwd, ".codex");
+  mkdirSync(codexHome);
+  writeFileSync(join(codexHome, "AGENTS.md"), "global canary");
+  writeFileSync(join(cwd, "AGENTS.md"), "project canary");
+  const config = {
+    provider: "cursor-sdk",
+    cwd,
+    modeId: "unrestricted",
+  } satisfies AgentSessionConfig;
+  const session = new TestAgentSession(config);
+  const resolveInstructions = deferred<string | undefined>();
+  const start = session.startTurn.bind(session);
+  vi.spyOn(session as AgentSession, "startTurn").mockImplementation(async (_prompt, options) => {
+    resolveInstructions.resolve(await options?.resolveCursorWorkspaceInstructions?.());
+    return start();
+  });
+  const manager = new AgentManager({
+    clients: {
+      "cursor-sdk": new (class extends TestAgentClient {
+        override async createSession(): Promise<AgentSession> {
+          return session;
+        }
+      })(),
+    },
+    logger,
+  });
+  vi.stubEnv("CODEX_HOME", codexHome);
+  let agentId: string | undefined;
+  try {
+    const agent = await manager.createAgent(config, undefined, { workspaceId: undefined });
+    agentId = agent.id;
+    await startAgentRun(manager, agent.id, "Read the global instructions.", logger);
+    await expect(resolveInstructions.promise).resolves.toBe("Global instructions:\nglobal canary");
+  } finally {
+    if (agentId) await manager.closeAgent(agentId);
+    vi.unstubAllEnvs();
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("an unavailable steer waits for the active turn instead of interrupting it", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = "unavailable";

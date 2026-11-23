@@ -3846,12 +3846,12 @@ export class AgentManager {
     agent: ActiveManagedAgent,
     options: AgentRunOptions | undefined,
   ): AgentRunOptions | undefined {
-    if (this.adapterOf(agent.provider) !== "cursor-sdk" || !agent.workspaceId) return options;
+    if (this.adapterOf(agent.provider) !== "cursor-sdk") return options;
     return {
       ...options,
       resolveCursorWorkspaceInstructions: async () => {
         const target = { cwd: agent.config.cwd, workspaceId: agent.workspaceId };
-        const roots = await this.resolveCursorSkillRoots(target);
+        const roots = target.workspaceId ? await this.resolveCursorSkillRoots(target) : [];
         return readCursorWorkspaceInstructions(target.cwd, roots);
       },
     };
