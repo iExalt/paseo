@@ -584,7 +584,7 @@ test("deduplicates linked native usage and prefers a newer durable fallback over
   });
 });
 
-test("replays a manual compaction from the native stream if the daemon journal missed it", async () => {
+test("replays a manual compaction as only its card, even when the journal saved the summary", async () => {
   await withStore(async (_root, store, journal) => {
     const runId = "native-manual-summary";
     const turn: CursorHistoryTurn = {
@@ -612,13 +612,22 @@ test("replays a manual compaction from the native stream if the daemon journal m
         }),
       });
     }
+    await store.runEvents.append({
+      runId,
+      eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
+      payload: sdk.createSdkMessageRunStreamEvent({
+        type: "assistant",
+        run_id: runId,
+        agent_id: agentId,
+        message: { role: "assistant", content: [{ type: "text", text: "stored summary" }] },
+      }),
+    });
     const read = async () =>
       messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
     const compaction = { type: "compaction", status: "completed", trigger: "manual" } as const;
     const rows = [
       { turnId: turn.id, item: turn.user },
       { turnId: turn.id, item: compaction },
-      { turnId: turn.id, item: { type: "assistant_message", text: "stored summary" } },
     ];
     expect(await read()).toEqual(rows);
     await journal.append(turn.id, compaction);

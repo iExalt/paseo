@@ -279,14 +279,12 @@ export async function checkMaintenance({
           item.trigger === "manual",
       ),
     );
-    assert.ok(
-      compacted.some(
-        ({ item, turnId }) =>
-          turnId === commandRow.turnId &&
-          item.type === "assistant_message" &&
-          item.text === summaryText,
-      ),
-    );
+    // The compaction card stands in for the summary text.
+    const summaryRows = (entries) =>
+      entries.filter(
+        ({ item, turnId }) => turnId === commandRow.turnId && item.type === "assistant_message",
+      );
+    assert.deepEqual(summaryRows(compacted), []);
     const summaryRun = (await nativeRuns()).items.find((run) => run.result === summaryText);
     assert.equal(summaryRun?.model?.id, externalModel);
     assert.ok(
@@ -315,6 +313,7 @@ export async function checkMaintenance({
           turnId === commandRow.turnId && item.type === "compaction" && item.trigger === "manual",
       ),
     );
+    assert.deepEqual(summaryRows(cold), []);
     await send(agentId, maintenancePrefix + " continue after restart.");
     assert.equal((await snapshot(agentId)).persistence.nativeHandle, id);
     const followed = (await timeline(agentId)).entries;
