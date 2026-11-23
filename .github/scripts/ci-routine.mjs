@@ -193,7 +193,7 @@ export function planCommands(selection, cwd = root) {
     );
   }
   if (selection.domains.includes("server")) {
-    const integration = (name, files, args = []) =>
+    const integration = (name, files, args = [], { workers = 1, fileParallelism = false } = {}) =>
       add(
         name,
         "npm",
@@ -203,7 +203,8 @@ export function planCommands(selection, cwd = root) {
           "--",
           "vitest",
           "run",
-          "--maxWorkers=1",
+          ...(fileParallelism ? ["--fileParallelism"] : []),
+          `--maxWorkers=${workers}`,
           ...files,
           ...args,
         ],
@@ -225,13 +226,10 @@ export function planCommands(selection, cwd = root) {
         "src/server/agent/model-catalog.e2e.test.ts",
         "src/server/plugins/plugin-paseo-api.e2e.test.ts",
         "src/server/push/lifecycle.e2e.test.ts",
+        "src/server/session.create-agent-worktree-autoarchive.e2e.test.ts",
       ],
       ["-t", "^(?!.*Antigravity creates an agent and answers a prompt with real agy).*$"],
-    );
-    integration(
-      "worktree autoarchive",
-      ["src/server/session.create-agent-worktree-autoarchive.e2e.test.ts"],
-      ["-t", "creates a worktree and auto-archives both"],
+      { workers: 2, fileParallelism: true },
     );
     integration(
       "versioned OpenCode runtime",

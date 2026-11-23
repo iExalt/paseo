@@ -397,7 +397,7 @@ test("v2 native tool bridge preserves caller identity", async () => {
   }
 }, 120_000);
 
-test.each([
+test.concurrent.each([
   {
     major: 1,
     package: "opencode-ai@1.14.46",
@@ -469,6 +469,8 @@ test.each([
           "install",
           "--prefix",
           root,
+          "--cache",
+          path.join(root, "npm-cache"),
           "--no-audit",
           "--no-fund",
           "--fetch-timeout=30000",
