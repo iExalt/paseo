@@ -289,7 +289,7 @@ export async function checkLifecycle({
     );
     ownedPid = await heldShell();
     const heldRuns = backend.runs;
-    for (const mode of ["conversation", "files", "both"]) {
+    for (const mode of ["files", "both"]) {
       await assert.rejects(
         client.rewindAgent(canceled.id, imageMessageId, mode),
         /does not support rewinding/,

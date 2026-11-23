@@ -115,7 +115,11 @@ import {
   type ForegroundTurnWaiter,
   type PendingForegroundRun,
 } from "./agent-run-state.js";
-import { invokeRewindCapability, type RewindMode } from "./rewind/rewind.js";
+import {
+  assertRewindCapability,
+  invokeRewindCapability,
+  type RewindMode,
+} from "./rewind/rewind.js";
 import { parseAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import {
@@ -4515,6 +4519,8 @@ export class AgentManager {
     if (this.historySessions.has(agent.session)) {
       agent = await this.ensureInteractiveSession(agentId);
     }
+    // An unsupported mode must not stop the running turn first.
+    assertRewindCapability(agent.session, mode);
     // An interactive session must acquire its rewind lock without yielding.
 
     const submittedRow = this.timelineStore

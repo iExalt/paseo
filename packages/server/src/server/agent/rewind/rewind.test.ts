@@ -170,6 +170,22 @@ describe("AgentManager rewind", () => {
     expect(session.recordedRewinds).toEqual([{ mode: "files", messageId: "message-1" }]);
   });
 
+  test("keeps an in-flight turn running when the mode is unsupported", async () => {
+    const { manager, session, agentId } = await createRewindHarness();
+    Object.assign(session, {
+      capabilities: { ...REWIND_TEST_CAPABILITIES, supportsRewindFiles: false },
+    });
+    const run = manager.streamAgent(agentId, "keep working");
+    await run.next();
+
+    await expect(manager.rewind(agentId, "message-1", "files")).rejects.toThrow(
+      "Provider does not support rewinding files",
+    );
+
+    expect(session.aborted).toBe(false);
+    expect(session.recordedRewinds).toEqual([]);
+  });
+
   test("does not rewind when the in-flight turn rejects cancellation", async () => {
     class RejectingInterruptSession extends FakeRewindSession {
       override async interrupt(): Promise<void> {
