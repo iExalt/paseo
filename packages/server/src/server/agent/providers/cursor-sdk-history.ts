@@ -20,6 +20,7 @@ import type {
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
 import {
   addCursorUsage,
+  cursorTimelineItems,
   mapCursorTool,
   mapCursorUsage,
   projectCursorTool,
@@ -104,7 +105,7 @@ export function streamItems(
       const item = mapCursorTool(message, previous);
       if (isDeepStrictEqual(previous, item)) return [];
       tools.set(key, item);
-      return [item];
+      return cursorTimelineItems(item);
     }
     default:
       return [];
@@ -245,8 +246,8 @@ async function readJournalItems(
   record: CursorHistoryTurn,
   run?: LocalAgentRunDocument,
 ): Promise<{ events: AgentTimelineItem[]; incomplete: boolean }> {
-  const events = (await journal.readItems(record.id)).map((item) =>
-    item.type === "tool_call" ? projectCursorTool(item) : item,
+  const events = (await journal.readItems(record.id)).flatMap((item) =>
+    item.type === "tool_call" ? cursorTimelineItems(projectCursorTool(item)) : [item],
   );
   if (!run || (!record.recovered && (events.length > 0 || record.terminal))) {
     return { events, incomplete: false };

@@ -1,5 +1,22 @@
 import type { SDKMessage, TokenUsage } from "@cursor/sdk";
-import type { AgentUsage, ToolCallDetail, ToolCallTimelineItem } from "../agent-sdk-types.js";
+import type {
+  AgentTimelineItem,
+  AgentUsage,
+  ToolCallDetail,
+  ToolCallTimelineItem,
+} from "../agent-sdk-types.js";
+import {
+  cursorTodos,
+  deleteDetail,
+  editFallback,
+  globDetail,
+  grepDetail,
+  lsDetail,
+  planDetail,
+  readLintsDetail,
+  semSearchDetail,
+  todosDetail,
+} from "./cursor-sdk-tool-details.js";
 
 export function addCursorUsage(first: TokenUsage | undefined, next: TokenUsage): TokenUsage {
   if (!first) return next;
@@ -43,6 +60,49 @@ function string(value: unknown): string | undefined {
 
 type CursorTool = Extract<SDKMessage, { type: "tool_call" }>;
 
+// Bump when the projection changes. Replay re-projects only unstamped or older
+// rows: their raw payload may have been truncated for the journal, so a current
+// row's stored detail (built from the full payload) is better than a rebuild.
+const PROJECTION = 3;
+
+// The untouched Cursor payload behind a row. Typed rows keep it in metadata so
+// projection can rerun on journal replay and recovery can compare raw rows.
+interface CursorRawTool {
+  name: string;
+  input: unknown;
+  output: unknown;
+  truncated: unknown;
+}
+
+function rawCursorTool(item: ToolCallTimelineItem): CursorRawTool | undefined {
+  const meta = record(item.metadata?.cursorSdk);
+  const name = string(meta?.name) ?? item.name;
+  if (meta && "input" in meta && "output" in meta) {
+    return { name, input: meta.input, output: meta.output, truncated: meta.truncated };
+  }
+  if (item.detail.type !== "unknown") return;
+  return { name, input: item.detail.input, output: item.detail.output, truncated: meta?.truncated };
+}
+
+// Local Cursor runs report every finished call as "completed" and put
+// failures in the result envelope.
+function resultError(name: string, output: unknown): string | undefined {
+  const envelope = record(output);
+  if (envelope?.status !== "error") return;
+  const error = envelope.error;
+  const message = (
+    typeof error === "string"
+      ? error
+      : (string(record(error)?.message) ?? string(record(error)?.error))
+  )?.trim();
+  // Cursor reports some failures, such as a missing file, only as "error".
+  if (!message || message.toLowerCase() === "error") {
+    if (name === "mcp") return "MCP tool failed.";
+    return `${name.charAt(0).toUpperCase()}${name.slice(1)} failed.`;
+  }
+  return message;
+}
+
 function fileToolDetail(
   name: string,
   args: Record<string, unknown>,
@@ -61,97 +121,186 @@ function fileToolDetail(
     case "edit": {
       const unifiedDiff = string(value?.diffString) ?? string(args.patchContent);
       return unifiedDiff === undefined
-        ? undefined
+        ? editFallback(args.path, args)
         : { type: "edit", filePath: args.path, unifiedDiff };
     }
   }
 }
 
-function toolDetail(name: string, input: unknown, output: unknown): ToolCallDetail {
-  const args = record(input);
-  const result = record(output);
-  const value = result?.status === "success" ? record(result.value) : undefined;
-  // Keep unrecognized and error payloads inspectable in the generic details view.
-  if (args && (output == null || value)) {
-    if (name === "shell" && typeof args.command === "string") {
-      const exitCode = value?.exitCode;
-      const stdout = string(value?.stdout);
-      const stderr = string(value?.stderr);
-      return {
-        type: "shell",
-        command: args.command,
-        cwd: string(args.workingDirectory),
-        ...(value
-          ? {
-              output: [stdout, stderr].filter(Boolean).join("\n"),
-              exitCode: typeof exitCode === "number" ? exitCode : undefined,
-            }
-          : {}),
-      };
-    }
-
-    const file = fileToolDetail(name, args, value);
-    if (file) return file;
-
-    // The native task's agent ID and transcript path belong to Cursor. They
-    // cannot be offered as navigable Paseo child sessions.
-    if (name === "task" && value?.resultSuffix && typeof value.resultSuffix === "string") {
-      return {
-        type: "sub_agent",
-        description: string(args.description),
-        log: value.resultSuffix,
-      };
-    }
+function lastAssistantText(steps: unknown): string | undefined {
+  if (!Array.isArray(steps)) return;
+  for (let index = steps.length - 1; index >= 0; index -= 1) {
+    const text = string(record(record(steps[index])?.assistantMessage)?.text)?.trim();
+    if (text) return text;
   }
-  return { type: "unknown", input, output };
 }
 
-function mcpToolError(output: unknown): string | undefined {
-  const envelope = record(output);
-  if (envelope?.status !== "success") return;
-  const result = record(envelope.value);
-  if (result?.isError !== true) return;
+// Cursor's subagent IDs and transcripts belong to Cursor; they cannot be
+// offered as navigable Paseo child sessions, so the card carries the answer.
+function taskDetail(
+  args: Record<string, unknown>,
+  value: Record<string, unknown> | undefined,
+): ToolCallDetail {
+  const kind = record(args.subagentType);
+  const named = string(kind?.name)?.trim() || string(kind?.kind)?.trim();
+  // Steps can end without an assistant message; then the card has no answer.
+  const log = string(value?.resultSuffix)?.trim() || lastAssistantText(value?.conversationSteps);
+  return {
+    type: "sub_agent",
+    ...(named && named !== "unspecified" ? { subAgentType: named } : {}),
+    ...(string(args.description) ? { description: string(args.description) } : {}),
+    // COMPAT(subagent-log): apps before v0.14.1 require `log`.
+    log: log ?? "",
+  };
+}
 
-  const content: unknown[] = Array.isArray(result.content) ? result.content : [];
+function shellDetail(
+  args: Record<string, unknown>,
+  value: Record<string, unknown> | undefined,
+): ToolCallDetail | undefined {
+  if (typeof args.command !== "string") return;
+  const exitCode = value?.exitCode;
+  return {
+    type: "shell",
+    command: args.command,
+    cwd: string(args.workingDirectory),
+    ...(value
+      ? {
+          output: [string(value.stdout), string(value.stderr)].filter(Boolean).join("\n"),
+          exitCode: typeof exitCode === "number" ? exitCode : undefined,
+        }
+      : {}),
+  };
+}
+
+function toolDetail(
+  name: string,
+  args: Record<string, unknown>,
+  value: Record<string, unknown> | undefined,
+): ToolCallDetail | undefined {
+  switch (name) {
+    case "shell":
+      return shellDetail(args, value);
+    case "task":
+      return taskDetail(args, value);
+    case "grep":
+      return grepDetail(args, value);
+    case "glob":
+      return globDetail(args, value);
+    case "semSearch":
+      return semSearchDetail(args, value);
+    case "ls":
+      return lsDetail(args, value);
+    case "delete":
+      return deleteDetail(args);
+    case "readLints":
+      return readLintsDetail(args, value);
+    case "createPlan":
+      return planDetail(args);
+    case "updateTodos":
+      return todosDetail(value);
+    default:
+      return fileToolDetail(name, args, value);
+  }
+}
+
+function mcpText(result: Record<string, unknown> | undefined): string | undefined {
+  const content: unknown[] = Array.isArray(result?.content) ? result.content : [];
+  // Like Codex, show an image as a placeholder instead of shipping its base64.
   const text = content
-    .map((item) => string(record(record(item)?.text)?.text)?.trim())
+    .map((item) =>
+      record(item)?.image ? "[image]" : string(record(record(item)?.text)?.text)?.trim(),
+    )
     .filter(Boolean)
     .join("\n");
-  return text || "MCP tool returned an error.";
+  return text || undefined;
 }
 
-// Apply the same projection to live calls and rows saved by older daemons.
-export function projectCursorTool(item: ToolCallTimelineItem): ToolCallTimelineItem {
-  if (item.detail.type !== "unknown") return item;
-  const { input, output } = item.detail;
-  const args = record(input);
-  const raw = record(item.metadata?.cursorSdk);
-  if (item.name === "mcp") {
-    const providerIdentifier = string(args?.providerIdentifier)?.trim();
-    const toolName = string(args?.toolName)?.trim();
-    const error = item.status === "completed" ? mcpToolError(output) : undefined;
-    const name = toolName ? `${providerIdentifier || "mcp"}.${toolName}` : item.name;
-    const projected = {
-      ...item,
-      name,
-      metadata: {
-        ...item.metadata,
-        cursorSdk: { name: item.name, toolName, truncated: raw?.truncated },
+function mcpFailure(
+  item: ToolCallTimelineItem,
+  output: unknown,
+  result: Record<string, unknown> | undefined,
+): string | undefined {
+  if (item.status !== "completed") return;
+  const error = resultError("mcp", output);
+  if (error || result?.isError !== true) return error;
+  return mcpText(result) || "MCP tool returned an error.";
+}
+
+// Show MCP calls as Codex does: the tool's own arguments and result, not
+// Cursor's envelopes. Paseo tool presentation reads fields at the top level.
+function projectMcp(item: ToolCallTimelineItem, raw: CursorRawTool): ToolCallTimelineItem {
+  const args = record(raw.input);
+  const providerIdentifier = string(args?.providerIdentifier)?.trim();
+  const toolName = string(args?.toolName)?.trim();
+  const envelope = record(raw.output);
+  const result = envelope?.status === "success" ? record(envelope.value) : undefined;
+  const output = result ? (mcpText(result) ?? result.content ?? null) : null;
+  const failed = mcpFailure(item, raw.output, result);
+  const projected: ToolCallTimelineItem = {
+    ...item,
+    name: toolName ? `${providerIdentifier || "mcp"}.${toolName}` : item.name,
+    detail: { type: "unknown", input: args?.args ?? args ?? null, output },
+    metadata: {
+      ...item.metadata,
+      cursorSdk: {
+        name: "mcp",
+        projection: PROJECTION,
+        toolName,
+        input: raw.input,
+        output: raw.output,
+        ...(raw.truncated ? { truncated: raw.truncated } : {}),
       },
-    };
-    return error ? { ...projected, status: "failed", error } : projected;
-  }
-  if (item.name === "grep" || item.name === "glob") {
-    const query = string(item.name === "grep" ? args?.pattern : args?.globPattern);
-    if (query) {
-      return {
-        ...item,
-        detail: { type: "search", query, toolName: item.name },
-        metadata: { ...item.metadata, cursorSdk: { ...raw, input, output } },
-      };
-    }
-  }
-  return item;
+    },
+  };
+  return failed ? { ...projected, status: "failed", error: failed } : projected;
+}
+
+// Apply the current projection to rows saved by older daemons.
+export function projectCursorTool(item: ToolCallTimelineItem): ToolCallTimelineItem {
+  return record(item.metadata?.cursorSdk)?.projection === PROJECTION ? item : project(item);
+}
+
+function project(item: ToolCallTimelineItem): ToolCallTimelineItem {
+  const raw = rawCursorTool(item);
+  if (!raw) return item;
+  if (raw.name === "mcp") return projectMcp(item, raw);
+  const args = record(raw.input);
+  const envelope = record(raw.output);
+  const value = envelope?.status === "success" ? record(envelope.value) : undefined;
+  // Keep payloads that are neither pending nor a result envelope inspectable as raw JSON.
+  const recognized = raw.output == null || value !== undefined || envelope?.status === "error";
+  const detail = args && recognized ? toolDetail(raw.name, args, value) : undefined;
+  const failed = item.status === "completed" ? resultError(raw.name, raw.output) : undefined;
+  // Unknown rows already carry the payload as their detail; typed rows keep it here.
+  const cursorSdk: Record<string, unknown> = {
+    ...(raw.truncated ? { truncated: raw.truncated } : {}),
+    ...(detail ? { projection: PROJECTION, input: raw.input, output: raw.output } : {}),
+  };
+  const metadata: Record<string, unknown> = { ...item.metadata, cursorSdk };
+  if (Object.keys(cursorSdk).length === 0) delete metadata.cursorSdk;
+  const projected: ToolCallTimelineItem = {
+    ...item,
+    detail: detail ?? { type: "unknown", input: raw.input, output: raw.output },
+  };
+  if (Object.keys(metadata).length > 0) projected.metadata = metadata;
+  else delete projected.metadata;
+  return failed ? { ...projected, status: "failed", error: failed } : projected;
+}
+
+// Claude and Codex show todo updates as a task list, not a tool row. A
+// completed updateTodos call becomes that list; a running one shows nothing
+// yet; a failed, canceled or listless one stays a row.
+export function cursorTimelineItems(item: ToolCallTimelineItem): AgentTimelineItem[] {
+  const raw = rawCursorTool(item);
+  if (raw?.name !== "updateTodos") return [item];
+  if (item.status === "running") return [];
+  const envelope = record(raw.output);
+  const todos =
+    item.status === "completed" && envelope?.status === "success"
+      ? cursorTodos(record(envelope.value))
+      : undefined;
+  return todos ? [{ type: "todo", items: todos }] : [item];
 }
 
 function cursorToolInput(message: CursorTool, previousInput: unknown): unknown {
@@ -171,23 +320,19 @@ export function mapCursorTool(
   message: CursorTool,
   previous?: ToolCallTimelineItem,
 ): ToolCallTimelineItem {
-  const prior =
-    previous?.detail.type === "unknown" ? previous.detail : record(previous?.metadata?.cursorSdk);
+  const prior = previous ? rawCursorTool(previous) : undefined;
   const input = cursorToolInput(message, prior?.input);
   const output = message.result !== undefined ? message.result : (prior?.output ?? null);
-  const truncated = message.truncated ?? record(previous?.metadata?.cursorSdk)?.truncated;
-  const detail = toolDetail(message.name, input, output);
+  const truncated = message.truncated ?? prior?.truncated;
   const base = {
     type: "tool_call" as const,
     callId: `${message.run_id}:${message.call_id}`,
     name: message.name,
-    detail,
-    ...(detail.type !== "unknown" || truncated
-      ? { metadata: { cursorSdk: { input, output, truncated } } }
-      : {}),
+    detail: { type: "unknown" as const, input, output },
+    ...(truncated ? { metadata: { cursorSdk: { truncated } } } : {}),
   };
   if (message.status === "error") {
-    return projectCursorTool({ ...base, status: "failed", error: output ?? "Cursor tool failed." });
+    return project({ ...base, status: "failed", error: output ?? "Cursor tool failed." });
   }
-  return projectCursorTool({ ...base, status: message.status, error: null });
+  return project({ ...base, status: message.status, error: null });
 }

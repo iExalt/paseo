@@ -69,9 +69,11 @@ export function hasMeaningfulToolCallDetail(detail: ToolCallDetail | undefined):
     case "fetch":
       return hasMeaningfulFetchDetail(detail);
     case "worktree_setup":
-    // A sub-agent card is a launch marker; the child's activity lives in the sub-agent panel.
-    case "sub_agent":
       return false;
+    // A sub-agent card is a launch marker; the child's activity lives in the sub-agent panel.
+    // Providers without a navigable child session put the sub-agent's answer in `log`.
+    case "sub_agent":
+      return !detail.childSessionId && Boolean(detail.log?.trim());
     case "plain_text":
       return hasMeaningfulPlainTextDetail(detail);
     case "plan":
