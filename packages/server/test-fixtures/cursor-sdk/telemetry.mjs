@@ -126,7 +126,7 @@ export async function checkCompletedTelemetry(args, id) {
   }
 }
 
-export async function checkStoppedTelemetry(args) {
+export async function checkStoppedTelemetry(args, { checkContextWindow = false } = {}) {
   let client = await connect(args);
   const held = join(args.workspace, "p8-held.sh");
   const ready = join(args.workspace, "p8-held.pid");
@@ -149,6 +149,46 @@ export async function checkStoppedTelemetry(args) {
     assert.equal(cards[0].item.callId, callId);
     assert.ok(callId.startsWith(runId + ":"));
     assert.equal(cards[0].item.status, "canceled");
+    let contextId;
+    const contextExpected = {
+      inputTokens: 5_200,
+      cachedInputTokens: 1_100,
+      cacheWriteTokens: 0,
+      outputTokens: 400,
+      totalTokens: 5_600,
+      contextWindowUsedTokens: 4_500,
+      contextWindowMaxTokens: 300_000,
+    };
+    if (checkContextWindow) {
+      ({ id: contextId } = await client.createAgent({
+        provider: "cursor-sdk",
+        workspaceId: args.workspaceId,
+        cwd: args.workspace,
+        model: "fixture-context",
+        modeId: "unrestricted",
+      }));
+      assert.equal(
+        (await client.sendAgentMessage(contextId, "PASEO_P8_CONTEXT", { messageId: randomUUID() }))
+          .disposition,
+        "turn_started",
+      );
+      assert.equal((await client.waitForFinish(contextId, 12_000)).status, "idle");
+      await assertUsage({
+        client,
+        args,
+        id: contextId,
+        usage: contextExpected,
+        status: "finished",
+      });
+      const contextInspect = await args.cli("agent", "inspect", contextId);
+      assert.equal(contextInspect.LastUsage.ContextWindowUsedTokens, 4_500);
+      assert.equal(contextInspect.LastUsage.ContextWindowMaxTokens, 300_000);
+      assert.equal(contextInspect.LastUsage.ContextWindowPercent, 2);
+      await client.setAgentOptions(contextId, { cursor_model_context: "1m" });
+      const updated = (await client.fetchAgent(contextId)).agent;
+      assert.equal(updated.lastUsage?.contextWindowMaxTokens, 1_000_000);
+      assert.equal(updated.lastUsage?.contextWindowUsedTokens, 4_500);
+    }
     const address = args.listener();
     await client.close();
     await args.stopDaemon("SIGTERM");
@@ -165,6 +205,20 @@ export async function checkStoppedTelemetry(args) {
     await writeFile(path, JSON.stringify(stored));
     await args.startDaemon({ listen: address });
     client = await connect(args);
+    if (contextId) {
+      // Open history-mode session first so readLastUsage() runs before asserting the snapshot.
+      await client.fetchAgentTimeline(contextId, { limit: 100 });
+      await assertUsage({
+        client,
+        args,
+        id: contextId,
+        usage: { ...contextExpected, contextWindowMaxTokens: 1_000_000 },
+        status: "finished",
+      });
+      console.log(
+        "PASS multi-step model-call-completed context window, option switch, and restart persistence",
+      );
+    }
     assert.deepEqual(toolCards(await client.fetchAgentTimeline(id, { limit: 100 })), cards);
     await assertUsage({ client, args, id, usage: stoppedUsage, status: "cancelled" });
     assert.deepEqual(toolCards(await client.fetchAgentTimeline(id, { limit: 100 })), cards);
@@ -179,60 +233,5 @@ export async function checkStoppedTelemetry(args) {
   } finally {
     await client.close();
     await Promise.all([held, ready].map((path) => rm(path, { force: true })));
-  }
-}
-
-export async function checkContextWindowTelemetry(args) {
-  let client = await connect(args);
-  try {
-    const { id } = await client.createAgent({
-      provider: "cursor-sdk",
-      workspaceId: args.workspaceId,
-      cwd: args.workspace,
-      model: "fixture-context",
-      modeId: "unrestricted",
-    });
-    const send = (text) => client.sendAgentMessage(id, text, { messageId: randomUUID() });
-    assert.equal((await send("PASEO_P8_CONTEXT")).disposition, "turn_started");
-    assert.equal((await client.waitForFinish(id, 12_000)).status, "idle");
-    const expected = {
-      inputTokens: 5_200,
-      cachedInputTokens: 1_100,
-      cacheWriteTokens: 0,
-      outputTokens: 400,
-      totalTokens: 5_600,
-      contextWindowUsedTokens: 4_500,
-      contextWindowMaxTokens: 300_000,
-    };
-    await assertUsage({ client, args, id, usage: expected, status: "finished" });
-    const inspect = await args.cli("agent", "inspect", id);
-    assert.equal(inspect.LastUsage.ContextWindowUsedTokens, 4_500);
-    assert.equal(inspect.LastUsage.ContextWindowMaxTokens, 300_000);
-    assert.equal(inspect.LastUsage.ContextWindowPercent, 2);
-
-    await client.setAgentOptions(id, { cursor_model_context: "1m" });
-    const updated = (await client.fetchAgent(id)).agent;
-    assert.equal(updated.lastUsage?.contextWindowMaxTokens, 1_000_000);
-    assert.equal(updated.lastUsage?.contextWindowUsedTokens, 4_500);
-
-    const address = args.listener();
-    await client.close();
-    await args.stopDaemon("SIGTERM");
-    await args.startDaemon({ listen: address });
-    client = await connect(args);
-    // Open history-mode session first so readLastUsage() runs before asserting the snapshot.
-    await client.fetchAgentTimeline(id, { limit: 100 });
-    await assertUsage({
-      client,
-      args,
-      id,
-      usage: { ...expected, contextWindowMaxTokens: 1_000_000 },
-      status: "finished",
-    });
-    console.log(
-      "PASS multi-step model-call-completed context window, option switch, and restart persistence",
-    );
-  } finally {
-    await client.close();
   }
 }
