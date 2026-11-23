@@ -7,6 +7,7 @@ import type { Run, RunResult } from "@cursor/sdk";
 import { afterEach, expect, test, vi } from "vitest";
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
 import { CursorRunController } from "./cursor-sdk-run-controller.js";
+import { mapCursorUsage } from "./cursor-sdk-telemetry.js";
 import { CursorToolProcesses } from "./cursor-sdk-tool-processes.js";
 import { CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
 
@@ -509,4 +510,268 @@ test("keeps compaction and ordinary steering separate and settles a canceled sum
   expect(next.run.run.steer).not.toHaveBeenCalled();
   next.run.finish();
   expect((await next.turn.completion).canceled).toBeFalsy();
+});
+
+test("reports per-step context window from latest model-call-completed instead of cumulative turn sum", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cursor-sdk-controller-context-"));
+  roots.push(root);
+  const journal = new CursorTurnJournal(root, sessionId);
+  const events: AgentStreamEvent[] = [];
+  const controller = new CursorRunController(
+    sessionId,
+    journal,
+    (event) => events.push(event),
+    mapCursorUsage,
+  );
+  const finished = Promise.withResolvers<RunResult>();
+  const run: Run = {
+    id: "run-multistep",
+    agentId: sessionId,
+    supports: () => true,
+    unsupportedReason: () => undefined,
+    onDidChangeStatus: () => () => {},
+    get status() {
+      return "finished" as const;
+    },
+    conversation: async () => [],
+    async *stream() {
+      yield {
+        type: "tool_call",
+        agent_id: sessionId,
+        run_id: "run-multistep",
+        call_id: "c1",
+        name: "read",
+        status: "completed",
+        args: { path: "a.ts" },
+        result: { status: "success", value: { content: "ok" } },
+      };
+      await finished.promise;
+    },
+    wait: () => finished.promise,
+    cancel: vi.fn(async () => {}),
+  };
+
+  let executionRef: Parameters<Parameters<CursorRunController["start"]>[2]>[3] | undefined;
+  const started = await controller.start(
+    "multi-step",
+    { text: "multi-step" },
+    async (_input, bind, _throwIfStopped, execution) => {
+      executionRef = execution;
+      execution.setContextWindowMaxTokens(300_000);
+      await bind(run.id);
+      return run;
+    },
+    "msg-multistep",
+  );
+  executionRef!.onModelCallCompleted({ inputTokens: 10_000, outputTokens: 500 });
+  executionRef!.onModelCallCompleted({ inputTokens: 14_000, outputTokens: 800 });
+  finished.resolve({
+    id: run.id,
+    status: "finished",
+    usage: {
+      inputTokens: 24_000,
+      cacheReadTokens: 10_000,
+      cacheWriteTokens: 0,
+      outputTokens: 1_300,
+      totalTokens: 25_300,
+    },
+  });
+  const result = await started.completion;
+  expect(result.usage).toEqual({
+    inputTokens: 24_000,
+    cachedInputTokens: 10_000,
+    cacheWriteTokens: 0,
+    outputTokens: 1_300,
+    totalTokens: 25_300,
+    contextWindowUsedTokens: 14_800,
+    contextWindowMaxTokens: 300_000,
+  });
+  const midTurnContext = events
+    .filter((event) => event.type === "usage_updated")
+    .map((event) => event.usage.contextWindowUsedTokens);
+  expect(midTurnContext).toEqual([10_500, 14_800]);
+  const saved = (await journal.read())[0];
+  expect(saved?.lastUsage?.contextWindowUsedTokens).toBe(14_800);
+  expect(saved?.lastUsage?.contextWindowMaxTokens).toBe(300_000);
+});
+
+test("uses single-step fallback only without tool calls, and clears context on auto and manual compaction", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cursor-sdk-controller-compact-"));
+  roots.push(root);
+  const journal = new CursorTurnJournal(root, sessionId);
+  const events: AgentStreamEvent[] = [];
+  const controller = new CursorRunController(
+    sessionId,
+    journal,
+    (event) => events.push(event),
+    mapCursorUsage,
+  );
+
+  // 1. Single-step turn with no model-call-completed and 0 tools falls back cleanly.
+  const singleResult = await (
+    await controller.start(
+      "hello",
+      { text: "hello" },
+      async (_input, bind, _throwIfStopped, execution) => {
+        execution.setContextWindowMaxTokens(300_000);
+        await bind("run-single");
+        return {
+          id: "run-single",
+          agentId: sessionId,
+          supports: () => true,
+          unsupportedReason: () => undefined,
+          onDidChangeStatus: () => () => {},
+          status: "finished",
+          conversation: async () => [],
+          async *stream() {},
+          wait: async () => ({
+            id: "run-single",
+            status: "finished",
+            usage: {
+              inputTokens: 2_000,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 200,
+              totalTokens: 2_200,
+            },
+          }),
+          cancel: async () => {},
+        };
+      },
+    )
+  ).completion;
+  expect(singleResult.usage?.contextWindowUsedTokens).toBe(2_200);
+
+  // 2. Multi-step turn (tool call present) with no model-call-completed does not overcount.
+  const multiNoDelta = await (
+    await controller.start(
+      "tools",
+      { text: "tools" },
+      async (_input, bind, _throwIfStopped, execution) => {
+        execution.setContextWindowMaxTokens(300_000);
+        await bind("run-tools-nodelta");
+        return {
+          id: "run-tools-nodelta",
+          agentId: sessionId,
+          supports: () => true,
+          unsupportedReason: () => undefined,
+          onDidChangeStatus: () => () => {},
+          status: "finished",
+          conversation: async () => [],
+          async *stream() {
+            yield {
+              type: "tool_call",
+              agent_id: sessionId,
+              run_id: "run-tools-nodelta",
+              call_id: "t1",
+              name: "read",
+              status: "completed",
+              args: { path: "x.ts" },
+              result: { status: "success", value: { content: "x" } },
+            };
+          },
+          wait: async () => ({
+            id: "run-tools-nodelta",
+            status: "finished",
+            usage: {
+              inputTokens: 450_000,
+              cacheReadTokens: 400_000,
+              cacheWriteTokens: 0,
+              outputTokens: 5_000,
+              totalTokens: 455_000,
+            },
+          }),
+          cancel: async () => {},
+        };
+      },
+    )
+  ).completion;
+  expect(multiNoDelta.usage?.contextWindowUsedTokens).toBeUndefined();
+
+  // 3. Auto-compaction followed by cancellation before next model call keeps context cleared.
+  events.length = 0;
+  const autoCompactCancel = await (
+    await controller.start(
+      "auto-compact",
+      { text: "auto-compact" },
+      async (_input, bind, _throwIfStopped, execution) => {
+        execution.setContextWindowMaxTokens(300_000);
+        await bind("run-autocompact");
+        return {
+          id: "run-autocompact",
+          agentId: sessionId,
+          supports: () => true,
+          unsupportedReason: () => undefined,
+          onDidChangeStatus: () => () => {},
+          status: "cancelled",
+          conversation: async () => [],
+          async *stream() {
+            execution.onModelCallCompleted({ inputTokens: 280_000, outputTokens: 1_000 });
+            yield {
+              type: "summary",
+              agent_id: sessionId,
+              run_id: "run-autocompact",
+              status: "completed",
+            };
+          },
+          wait: async () => ({
+            id: "run-autocompact",
+            status: "cancelled",
+            usage: {
+              inputTokens: 280_000,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 1_000,
+              totalTokens: 281_000,
+            },
+          }),
+          cancel: async () => {},
+        };
+      },
+    )
+  ).completion;
+  expect(autoCompactCancel.usage?.contextWindowUsedTokens).toBeUndefined();
+  expect(
+    events.some((event) => event.type === "usage_updated" && event.clearContextWindowUsed === true),
+  ).toBe(true);
+
+  // 4. Manual /compact disables single-step fallback and clears stale context.
+  events.length = 0;
+  const manualCompact = await (
+    await controller.start(
+      "/compact",
+      { text: "/compact" },
+      async (_input, bind, _throwIfStopped, execution) => {
+        execution.setContextWindowMaxTokens(300_000);
+        await bind("run-manual-compact");
+        return {
+          id: "run-manual-compact",
+          agentId: sessionId,
+          supports: () => true,
+          unsupportedReason: () => undefined,
+          onDidChangeStatus: () => () => {},
+          status: "finished",
+          conversation: async () => [],
+          async *stream() {},
+          wait: async () => ({
+            id: "run-manual-compact",
+            status: "finished",
+            result: "summary",
+            usage: {
+              inputTokens: 275_000,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 2_000,
+              totalTokens: 277_000,
+            },
+          }),
+          cancel: async () => {},
+        };
+      },
+    )
+  ).completion;
+  expect(manualCompact.usage?.contextWindowUsedTokens).toBeUndefined();
+  expect(
+    events.some((event) => event.type === "usage_updated" && event.clearContextWindowUsed === true),
+  ).toBe(true);
 });

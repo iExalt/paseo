@@ -22,6 +22,7 @@ const stoppedUsage = {
   outputTokens: 2,
   reasoningTokens: 1,
   totalTokens: 9,
+  contextWindowUsedTokens: 9,
 };
 
 async function connect({ listener, require }) {
@@ -48,7 +49,11 @@ async function assertUsage({ client, args, id, usage, status }) {
   const cards = toolCards(await client.fetchAgentTimeline(id, { limit: 100 }));
   const readingTurn = cards.find(({ item }) => item.callId.startsWith(run.runId + ":"))?.turnId;
   assert.ok(readingTurn, "Missing Paseo turn for the native run");
-  const expected = { ...usage, tokenReadingTurnId: readingTurn };
+  const expected = {
+    ...usage,
+    tokenReadingTurnId: readingTurn,
+    ...(usage.contextWindowUsedTokens !== undefined ? { contextReadingTurnId: readingTurn } : {}),
+  };
   assert.deepEqual(snapshot.lastUsage, expected);
   assert.deepEqual(cliSnapshot.lastUsage, expected);
   assert.deepEqual(run.usage, {
@@ -56,7 +61,7 @@ async function assertUsage({ client, args, id, usage, status }) {
     cacheReadTokens: usage.cachedInputTokens,
     cacheWriteTokens: usage.cacheWriteTokens,
     outputTokens: usage.outputTokens,
-    reasoningTokens: usage.reasoningTokens,
+    ...(usage.reasoningTokens !== undefined ? { reasoningTokens: usage.reasoningTokens } : {}),
     totalTokens: usage.totalTokens,
   });
   return run.runId;
@@ -174,5 +179,58 @@ export async function checkStoppedTelemetry(args) {
   } finally {
     await client.close();
     await Promise.all([held, ready].map((path) => rm(path, { force: true })));
+  }
+}
+
+export async function checkContextWindowTelemetry(args) {
+  let client = await connect(args);
+  try {
+    const { id } = await client.createAgent({
+      provider: "cursor-sdk",
+      workspaceId: args.workspaceId,
+      cwd: args.workspace,
+      model: "fixture-context",
+      modeId: "unrestricted",
+    });
+    const send = (text) => client.sendAgentMessage(id, text, { messageId: randomUUID() });
+    assert.equal((await send("PASEO_P8_CONTEXT")).disposition, "turn_started");
+    assert.equal((await client.waitForFinish(id, 12_000)).status, "idle");
+    const expected = {
+      inputTokens: 5_200,
+      cachedInputTokens: 1_100,
+      cacheWriteTokens: 0,
+      outputTokens: 400,
+      totalTokens: 5_600,
+      contextWindowUsedTokens: 4_500,
+      contextWindowMaxTokens: 300_000,
+    };
+    await assertUsage({ client, args, id, usage: expected, status: "finished" });
+    const inspect = await args.cli("agent", "inspect", id);
+    assert.equal(inspect.LastUsage.ContextWindowUsedTokens, 4_500);
+    assert.equal(inspect.LastUsage.ContextWindowMaxTokens, 300_000);
+    assert.equal(inspect.LastUsage.ContextWindowPercent, 2);
+
+    await client.setAgentOptions(id, { cursor_model_context: "1m" });
+    const updated = (await client.fetchAgent(id)).agent;
+    assert.equal(updated.lastUsage?.contextWindowMaxTokens, 1_000_000);
+    assert.equal(updated.lastUsage?.contextWindowUsedTokens, 4_500);
+
+    const address = args.listener();
+    await client.close();
+    await args.stopDaemon("SIGTERM");
+    await args.startDaemon({ listen: address });
+    client = await connect(args);
+    await assertUsage({
+      client,
+      args,
+      id,
+      usage: { ...expected, contextWindowMaxTokens: 1_000_000 },
+      status: "finished",
+    });
+    console.log(
+      "PASS multi-step model-call-completed context window, option switch, and restart persistence",
+    );
+  } finally {
+    await client.close();
   }
 }

@@ -435,6 +435,8 @@ export type AgentStreamEvent =
       usage: AgentUsage;
       turnId?: string;
       sessionOnly?: boolean;
+      clearContextWindowUsed?: boolean;
+      clearContextWindowMax?: boolean;
     }
   | {
       type: "mode_changed";

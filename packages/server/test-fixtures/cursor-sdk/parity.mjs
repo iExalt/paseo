@@ -13,7 +13,12 @@ import { checkP5Interactions, prepareP5Fixture } from "./interactions.mjs";
 import { checkOwnedRecovery } from "./owned-recovery.mjs";
 import { checkMaintenance } from "./maintenance.mjs";
 import { checkLifecycle } from "./lifecycle.mjs";
-import { checkCompletedTelemetry, checkStoppedTelemetry, finishedUsage } from "./telemetry.mjs";
+import {
+  checkCompletedTelemetry,
+  checkContextWindowTelemetry,
+  checkStoppedTelemetry,
+  finishedUsage,
+} from "./telemetry.mjs";
 import { checkControls, controlCatalog } from "./controls.mjs";
 import {
   assertSkillTurnRequest,
@@ -359,6 +364,7 @@ try {
     };
     await checkCompletedTelemetry(telemetry, completed.agentId);
     await checkStoppedTelemetry(telemetry);
+    if (mode === "green") await checkContextWindowTelemetry(telemetry);
     assert.deepEqual(
       (await readFile(join(workspace, "cursor-cli-disabled.txt"), "utf8")).trimEnd().split("\n"),
       [paseoHome, "absent"],

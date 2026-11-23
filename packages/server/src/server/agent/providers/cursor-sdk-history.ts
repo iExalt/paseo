@@ -555,6 +555,7 @@ export async function readCursorUsageHistory(
     createdAt: number;
     order: number;
     usage: AgentUsage | undefined;
+    compacted?: boolean;
   }> = records.map((turn) => {
     const ids = new Set([
       turn.nativeRunId,
@@ -576,6 +577,7 @@ export async function readCursorUsageHistory(
       createdAt: Date.parse(turn.createdAt),
       order,
       usage: turn.lastUsage ?? mapCursorUsage(usage),
+      compacted: turn.compact === true && turn.terminal?.status === "finished",
     };
   });
   for (const run of runs) {
@@ -597,8 +599,23 @@ export async function readCursorLastUsage(
   journal: CursorTurnJournal,
   id: string,
 ) {
-  const latest = (await readCursorUsageHistory(store, journal, id)).find(
-    ({ usage }) => usage !== undefined,
-  );
-  return latest && { ...latest.usage, tokenReadingTurnId: latest.turnId };
+  const readings = await readCursorUsageHistory(store, journal, id);
+  const latestIndex = readings.findIndex(({ usage }) => usage !== undefined);
+  if (latestIndex === -1) return undefined;
+  const latest = readings[latestIndex]!;
+  const compactedAfter = readings.slice(0, latestIndex).some((entry) => entry.compacted === true);
+  const usage = compactedAfter
+    ? {
+        ...latest.usage,
+        contextWindowUsedTokens: undefined,
+        contextReadingTurnId: undefined,
+      }
+    : latest.usage!;
+  return {
+    ...usage,
+    tokenReadingTurnId: latest.turnId,
+    ...(usage.contextWindowUsedTokens !== undefined
+      ? { contextReadingTurnId: usage.contextReadingTurnId ?? latest.turnId }
+      : {}),
+  };
 }

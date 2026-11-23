@@ -189,7 +189,14 @@ describe("Cursor SDK provider", () => {
           abandoned();
           throw error;
         }
-        return { attachQuestionHandler, finish: async () => {}, prepare, send: ownedSend };
+        return {
+          attachQuestionHandler,
+          attachSpeakHandler: vi.fn(),
+          attachModelCallHandler: vi.fn(),
+          finish: async () => {},
+          prepare,
+          send: ownedSend,
+        };
       },
     );
     const session = await client.createSession(config);
@@ -1174,6 +1181,147 @@ test("rewind moves the session to a fork and sends the next prompt there", async
     expect(agents.get(forkId)?.send).toHaveBeenCalledOnce();
     expect(agents.get(agentId)?.send).not.toHaveBeenCalled();
     expect((await store.agents.get({ agentId }))?.latestCheckpoint).toEqual(ref("b2"));
+  } finally {
+    await session.close();
+  }
+});
+
+test("reports model context limits in catalog, forwards model-call-completed deltas, and emits max updates on model/option changes", async () => {
+  const realSdk = await import("@cursor/sdk");
+  const storePath = await mkdtemp(join(tmpdir(), "paseo-cursor-context-"));
+  stores.push(storePath);
+  const cwd = await mkdtemp(join(tmpdir(), "paseo-cursor-context-cwd-"));
+  stores.push(cwd);
+
+  const neonModel: SDKModel = {
+    id: "gemini-4-neon",
+    displayName: "Gemini 4 Neon",
+    parameters: [{ id: "context", values: [{ value: "300k" }, { value: "1m" }] }],
+    variants: [
+      { displayName: "300K", isDefault: true, params: [{ id: "context", value: "300k" }] },
+      { displayName: "1M", params: [{ id: "context", value: "1m" }] },
+    ],
+  };
+  const autoModel: SDKModel = { id: "default", displayName: "Auto", aliases: ["auto"] };
+
+  const store = new realSdk.JsonlLocalAgentStore(storePath);
+  const contextAgentId = "agent-context-test";
+  await store.agents.create({
+    agent: {
+      agentId: contextAgentId,
+      cwd,
+      status: "idle",
+      activeRunId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+  });
+
+  const nativeSend = vi.fn(
+    async (_input: unknown, options?: { onDelta?: (arg: { update: unknown }) => void }) => {
+      options?.onDelta?.({
+        update: {
+          type: "model-call-completed",
+          modelCallId: "mc-1",
+          usage: {
+            inputTokens: 8_000,
+            outputTokens: 500,
+            cacheReadTokens: 4_000,
+            cacheWriteTokens: 0,
+          },
+        },
+      });
+      options?.onDelta?.({
+        update: {
+          type: "model-call-completed",
+          modelCallId: "mc-2",
+          usage: {
+            inputTokens: 11_000,
+            outputTokens: 600,
+            cacheReadTokens: 8_000,
+            cacheWriteTokens: 0,
+          },
+        },
+      });
+      return makeRun([], {
+        id: "run-ctx-1",
+        status: "finished",
+        usage: {
+          inputTokens: 19_000,
+          cacheReadTokens: 12_000,
+          cacheWriteTokens: 0,
+          outputTokens: 1_100,
+          totalTokens: 20_100,
+        },
+      });
+    },
+  );
+
+  const sdk = {
+    ...realSdk,
+    JsonlLocalAgentStore: function JsonlLocalAgentStore() {
+      return store;
+    },
+    Agent: {
+      create: vi.fn(async () => ({
+        agentId: contextAgentId,
+        send: nativeSend,
+        [Symbol.asyncDispose]: vi.fn(async () => {}),
+      })),
+      resume: vi.fn(),
+      cancelRun: vi.fn(),
+      messages: { list: vi.fn(async () => []) },
+    },
+  };
+  const client = new CursorSdkAgentClient(
+    { env: { CURSOR_API_KEY: "test-key" } },
+    vi.fn(async () => sdk) as unknown as NonNullable<
+      ConstructorParameters<typeof CursorSdkAgentClient>[1]
+    >,
+    vi.fn(async () => [neonModel, autoModel]),
+    undefined,
+    storePath,
+  );
+
+  const catalog = await client.fetchCatalog({});
+  expect(catalog.models.find((m) => m.id === "gemini-4-neon")?.contextWindowMaxTokens).toBe(
+    300_000,
+  );
+  expect(catalog.models.find((m) => m.id === "default")?.contextWindowMaxTokens).toBeUndefined();
+
+  const session = await client.createSession({ provider, cwd, model: "gemini-4-neon" });
+  const events: AgentStreamEvent[] = [];
+  session.subscribe((event) => events.push(event));
+  try {
+    const result = await session.run("inspect context");
+    expect(result.usage).toMatchObject({
+      contextWindowUsedTokens: 11_600,
+      contextWindowMaxTokens: 300_000,
+    });
+
+    events.length = 0;
+    await session.applyOptions!({ cursor_model_context: "1m" });
+    expect(events).toContainEqual({
+      type: "usage_updated",
+      provider,
+      sessionOnly: true,
+      usage: { contextWindowMaxTokens: 1_000_000 },
+    });
+    expect(await session.readLastUsage!()).toMatchObject({
+      contextWindowUsedTokens: 11_600,
+      contextWindowMaxTokens: 1_000_000,
+    });
+
+    events.length = 0;
+    await session.setModel("auto");
+    expect(events).toContainEqual({
+      type: "usage_updated",
+      provider,
+      sessionOnly: true,
+      usage: {},
+      clearContextWindowMax: true,
+    });
+    expect((await session.readLastUsage!())?.contextWindowMaxTokens).toBeUndefined();
   } finally {
     await session.close();
   }

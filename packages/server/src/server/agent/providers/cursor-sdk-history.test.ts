@@ -1050,3 +1050,55 @@ test("shows computer use and screen recording as cards, with the screenshot inli
   };
   expect(replayCursorTool(legacy)).toEqual([clicked, screenshot]);
 });
+
+test("readCursorLastUsage restores context window reading and clears it after a newer manual compaction", async () => {
+  await withStore(async (_root, store, journal) => {
+    const turn1: CursorHistoryTurn = {
+      id: "turn-1",
+      nativeRunId: "run-1",
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "first", messageId: "m1" },
+      steers: [],
+      joined: true,
+      terminal: { status: "finished" },
+      lastUsage: {
+        inputTokens: 20_000,
+        outputTokens: 1_000,
+        totalTokens: 21_000,
+        contextWindowUsedTokens: 12_500,
+        contextWindowMaxTokens: 300_000,
+      },
+    };
+    await journal.admit(turn1, "first");
+    expect(await readCursorLastUsage(store, journal, agentId)).toEqual({
+      inputTokens: 20_000,
+      outputTokens: 1_000,
+      totalTokens: 21_000,
+      contextWindowUsedTokens: 12_500,
+      contextWindowMaxTokens: 300_000,
+      tokenReadingTurnId: "turn-1",
+      contextReadingTurnId: "turn-1",
+    });
+
+    const compactTurn: CursorHistoryTurn = {
+      id: "turn-2",
+      compact: true,
+      nativeRunId: "run-2",
+      createdAt: new Date(time + 1000).toISOString(),
+      user: { type: "user_message", text: "/compact", messageId: "m2" },
+      steers: [],
+      joined: true,
+      terminal: { status: "finished", fallback: "compacted" },
+    };
+    await journal.admit(compactTurn, "/compact");
+    expect(await readCursorLastUsage(store, journal, agentId)).toEqual({
+      inputTokens: 20_000,
+      outputTokens: 1_000,
+      totalTokens: 21_000,
+      contextWindowUsedTokens: undefined,
+      contextReadingTurnId: undefined,
+      contextWindowMaxTokens: 300_000,
+      tokenReadingTurnId: "turn-1",
+    });
+  });
+});
