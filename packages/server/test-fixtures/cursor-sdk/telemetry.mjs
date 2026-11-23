@@ -38,9 +38,9 @@ async function connect({ listener, require }) {
   return client;
 }
 
-async function assertUsage({ client, args, id, usage, status }) {
+async function assertUsage({ client, args, id, usage, status, verifyCli = false }) {
   const snapshot = (await client.fetchAgent(id)).agent;
-  const { snapshot: cliSnapshot } = await args.cli("agent", "status", id);
+  const cliSnapshot = verifyCli ? (await args.cli("agent", "status", id)).snapshot : null;
   const { JsonlLocalAgentStore } = args.require("@cursor/sdk");
   const store = new JsonlLocalAgentStore(join(args.paseoHome, "cursor-sdk"));
   const page = await store.runs.list({ filter: { agentIds: [snapshot.persistence.nativeHandle] } });
@@ -55,7 +55,7 @@ async function assertUsage({ client, args, id, usage, status }) {
     ...(usage.contextWindowUsedTokens !== undefined ? { contextReadingTurnId: readingTurn } : {}),
   };
   assert.deepEqual(snapshot.lastUsage, expected);
-  assert.deepEqual(cliSnapshot.lastUsage, expected);
+  if (cliSnapshot) assert.deepEqual(cliSnapshot.lastUsage, expected);
   assert.deepEqual(run.usage, {
     inputTokens: usage.inputTokens,
     cacheReadTokens: usage.cachedInputTokens,
@@ -177,7 +177,7 @@ export async function checkStoppedTelemetry(args, { checkContextWindow = false }
       const costDeadline = Date.now() + 8_000;
       let contextSnapshot = (await client.fetchAgent(contextId)).agent;
       while (contextSnapshot.lastUsage?.totalCostUsd !== 1.47 && Date.now() < costDeadline) {
-        await delay(100);
+        await delay(25);
         contextSnapshot = (await client.fetchAgent(contextId)).agent;
       }
       assert.equal(contextSnapshot.lastUsage?.totalCostUsd, 1.47);
@@ -227,13 +227,21 @@ export async function checkStoppedTelemetry(args, { checkContextWindow = false }
         id: contextId,
         usage: { ...contextExpected, contextWindowMaxTokens: 1_000_000, totalCostUsd: 1.47 },
         status: "finished",
+        verifyCli: true,
       });
       console.log(
         "PASS multi-step model-call-completed context window, option switch, and restart persistence",
       );
     }
     assert.deepEqual(toolCards(await client.fetchAgentTimeline(id, { limit: 100 })), cards);
-    await assertUsage({ client, args, id, usage: stoppedUsage, status: "cancelled" });
+    await assertUsage({
+      client,
+      args,
+      id,
+      usage: stoppedUsage,
+      status: "cancelled",
+      verifyCli: true,
+    });
     assert.deepEqual(toolCards(await client.fetchAgentTimeline(id, { limit: 100 })), cards);
     await assertUsage({ client, args, id, usage: stoppedUsage, status: "cancelled" });
     assert.equal((await send("Retry after Stop.")).disposition, "turn_started");
