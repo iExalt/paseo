@@ -842,6 +842,8 @@ test("shows computer use and screen recording as cards, with the screenshot inli
     { type: "click", coordinate: { x: 5, y: 6 }, button: "left", count: 1, modifierKeys: "cmd" },
     { type: "key", key: "Shift", stroke: "down", holdDurationMs: 300 },
     { type: "mouseDown", button: "right" },
+    { type: "key", key: "Shift", stroke: "up" },
+    { type: "scroll", direction: "down", amount: 3, modifierKeys: "shift" },
     {
       type: "drag",
       path: [
@@ -856,7 +858,7 @@ test("shows computer use and screen recording as cards, with the screenshot inli
   const clickedArgs = { actions, description: "Submit the form" };
   const clickedResult = {
     status: "success",
-    value: { actionCount: 8, durationMs: 900, screenshotPath: "/tmp/after.png", log: "ok" },
+    value: { actionCount: 10, durationMs: 900, screenshotPath: "/tmp/after.png", log: "ok" },
   };
   const clicked = tool("computerUse", clickedArgs, clickedResult);
   const screenshot = {
@@ -875,6 +877,8 @@ test("shows computer use and screen recording as cards, with the screenshot inli
       "cmd+click (5, 6)",
       "key down Shift held 300 ms",
       "mouseDown right",
+      "key up Shift",
+      "shift+scroll down 3",
       "alt+drag middle (1, 1) -> (9, 9)",
       "screenshot",
       "",
