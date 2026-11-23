@@ -597,6 +597,9 @@ export class CursorRunController {
       });
     };
     const emitItem = async (item: AgentTimelineItem): Promise<void> => {
+      // A /compact turn shows only its compaction card; replay drops this text too.
+      const answerText = item.type === "assistant_message" && !isProviderImageMessage(item.text);
+      if (turn.record.compact && answerText) return;
       // Read images before the content limit truncates their data.
       const images = cursorMcpImages(item);
       if (item.type === "tool_call" && item.name === "shell" && item.status === "running") {
@@ -611,7 +614,7 @@ export class CursorRunController {
         }
       }
       timeline.push(item);
-      if (item.type === "assistant_message" && !isProviderImageMessage(item.text)) {
+      if (answerText && item.type === "assistant_message") {
         streamedText += item.text;
       }
       turn.emitted++;

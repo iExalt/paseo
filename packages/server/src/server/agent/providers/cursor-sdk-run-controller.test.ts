@@ -512,6 +512,28 @@ test("keeps compaction and ordinary steering separate and settles a canceled sum
   expect((await next.turn.completion).canceled).toBeFalsy();
 });
 
+test("shows only the compaction card when /compact finishes with a summary", async () => {
+  const { controller, events } = await fixture();
+  const native = nativeRun("/compact");
+  native.run.wait = async () => ({ id: native.run.id, status: "finished", result: "summary" });
+  native.run.stream = async function* () {
+    for (const status of ["running", "completed"] as const) {
+      yield { type: "summary", run_id: native.run.id, agent_id: sessionId, status };
+    }
+    yield {
+      type: "assistant",
+      agent_id: sessionId,
+      run_id: native.run.id,
+      message: { role: "assistant", content: [{ type: "text", text: "streamed summary" }] },
+    };
+    yield { type: "status", agent_id: sessionId, run_id: native.run.id, status: "FINISHED" };
+  };
+  const turn = await controller.start("/compact", { text: "/compact" }, async () => native.run);
+  await turn.completion;
+  const items = events.flatMap((event) => (event.type === "timeline" ? [event.item.type] : []));
+  expect(items).toEqual(["user_message", "compaction"]);
+});
+
 test("reports per-step context window from latest model-call-completed instead of cumulative turn sum", async () => {
   const root = await mkdtemp(join(tmpdir(), "cursor-sdk-controller-context-"));
   roots.push(root);
