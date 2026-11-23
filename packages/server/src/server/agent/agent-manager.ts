@@ -129,7 +129,11 @@ import {
   type ForegroundTurnWaiter,
   type PendingForegroundRun,
 } from "./agent-run-state.js";
-import { invokeRewindCapability, RewindCapabilityError, type RewindMode } from "./rewind/rewind.js";
+import {
+  assertRewindCapability,
+  invokeRewindCapability,
+  type RewindMode,
+} from "./rewind/rewind.js";
 import { parseAgentMessage, projectAgentMessages } from "./agent-messages/index.js";
 import { isStaleProviderSessionError } from "./stale-provider-session-error.js";
 import {
@@ -1012,6 +1016,23 @@ const RETIRED_INTERNAL_AGENT_LIMIT = 500;
 export interface RetiredInternalAgent {
   record: ArchivedStoredAgentRecord;
   lastMessage: string | null;
+}
+
+// A prompt replayed from provider history is already in the provider's own
+// history, so its ID is the one the provider rewinds to.
+function historyRowOptions(event: {
+  item: AgentTimelineItem;
+  timestamp?: string;
+  turnId?: string;
+}) {
+  const { item } = event;
+  return {
+    timestamp: event.timestamp,
+    turnId: event.turnId,
+    ...(item.type === "user_message" && item.messageId
+      ? { providerMessageId: item.messageId }
+      : {}),
+  };
 }
 
 export class AgentManager {
@@ -4926,10 +4947,11 @@ export class AgentManager {
   async rewind(agentId: string, messageId: string, mode: RewindMode): Promise<void> {
     this.assertAdmittingTurns();
     let agent = this.requireSessionAgent(agentId);
-    if (agent.provider === "cursor-sdk") throw new RewindCapabilityError(mode);
     if (this.historySessions.has(agent.session)) {
       agent = await this.ensureInteractiveSession(agentId);
     }
+    // An unsupported mode must not stop the running turn first.
+    assertRewindCapability(agent.session, mode);
     // An interactive session must acquire its rewind lock without yielding.
 
     const submittedRow = this.timelineStore
@@ -4968,6 +4990,7 @@ export class AgentManager {
           agentId,
           epoch: this.timelineStore.getEpoch(agentId),
         });
+        await this.restoreUsageAfterRewind(agent);
       }
       // Rewind stages provider events under the run lock; publish its final state directly.
       this.refreshSessionPersistence(agent);
@@ -4990,6 +5013,20 @@ export class AgentManager {
       throw error;
     } finally {
       this.runs.settleForegroundRun(agentId, lock.token);
+    }
+  }
+
+  /** A token reading from a rewound turn no longer describes the conversation. */
+  private async restoreUsageAfterRewind(agent: ActiveManagedAgent): Promise<void> {
+    if (!agent.session.readLastUsage) return;
+    try {
+      const usage = await agent.session.readLastUsage();
+      // Lifetime cost still counts the rewound turns.
+      const totalCostUsd = usage?.totalCostUsd ?? agent.lastUsage?.totalCostUsd;
+      if (usage) agent.lastUsage = { ...usage, totalCostUsd };
+      else agent.lastUsage = totalCostUsd === undefined ? undefined : { totalCostUsd };
+    } catch (error) {
+      this.logger.warn({ err: error, agentId: agent.id }, "Could not refresh usage after rewind");
     }
   }
 
@@ -6143,10 +6180,7 @@ export class AgentManager {
       return null;
     }
     const { event } = entry;
-    const row = this.recordTimeline(agent.id, event.item, {
-      timestamp: event.timestamp,
-      turnId: event.turnId,
-    });
+    const row = this.recordTimeline(agent.id, event.item, historyRowOptions(event));
     return { event, row };
   }
 
