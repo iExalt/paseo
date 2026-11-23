@@ -9,6 +9,7 @@ import { afterAll, describe, expect, test } from "vitest";
 import {
   MAX_PROVIDER_IMAGE_BYTES,
   isProviderImageMarkdown,
+  isProviderImageMessage,
   materializeProviderImage,
   renderProviderImageOutputAsAssistantMarkdown,
 } from "./provider-image-output.js";
@@ -430,4 +431,13 @@ describe("materializing from the original file", () => {
       expect(readFileSync(result.path).toString()).toBe("provider copy");
     },
   );
+});
+
+test("tells rendered image output apart from answer text", async () => {
+  const first = await renderImageMarkdown("/repo/a b.png");
+  const second = await renderImageMarkdown("C:\\repo\\b).png");
+  expect(isProviderImageMessage(first)).toBe(true);
+  expect(isProviderImageMessage(first + second)).toBe(true);
+  expect(isProviderImageMessage(`Here it is:${first}`)).toBe(false);
+  expect(isProviderImageMessage("![inline](/repo/a.png)")).toBe(false);
 });

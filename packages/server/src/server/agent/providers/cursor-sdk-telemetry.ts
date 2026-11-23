@@ -17,6 +17,10 @@ import {
   semSearchDetail,
   todosDetail,
 } from "./cursor-sdk-tool-details.js";
+import {
+  renderProviderImagePathAsAssistantMarkdown,
+  type ProviderImageOutput,
+} from "./provider-image-output.js";
 
 export function addCursorUsage(first: TokenUsage | undefined, next: TokenUsage): TokenUsage {
   if (!first) return next;
@@ -199,6 +203,14 @@ function toolDetail(
       return planDetail(args);
     case "updateTodos":
       return todosDetail(value);
+    case "generateImage": {
+      const description = string(args.description)?.trim();
+      return {
+        type: "plain_text",
+        icon: "sparkles",
+        ...(description ? { label: description, text: description } : {}),
+      };
+    }
     default:
       return fileToolDetail(name, args, value);
   }
@@ -256,9 +268,13 @@ function projectMcp(item: ToolCallTimelineItem, raw: CursorRawTool): ToolCallTim
   return failed ? { ...projected, status: "failed", error: failed } : projected;
 }
 
-// Apply the current projection to rows saved by older daemons.
-export function projectCursorTool(item: ToolCallTimelineItem): ToolCallTimelineItem {
-  return record(item.metadata?.cursorSdk)?.projection === PROJECTION ? item : project(item);
+// Replay a journaled row. Current rows were projected and expanded when they
+// were written; rows from older daemons get the current projection and the
+// items it adds, such as a task list or a generated image.
+export function replayCursorTool(item: ToolCallTimelineItem): AgentTimelineItem[] {
+  return record(item.metadata?.cursorSdk)?.projection === PROJECTION
+    ? [item]
+    : cursorTimelineItems(project(item));
 }
 
 function project(item: ToolCallTimelineItem): ToolCallTimelineItem {
@@ -288,11 +304,46 @@ function project(item: ToolCallTimelineItem): ToolCallTimelineItem {
   return failed ? { ...projected, status: "failed", error: failed } : projected;
 }
 
+// Show a generated image inline after its row, as Codex does. The result
+// carries the saved file's absolute path; the SDK drops the image bytes.
+function generatedImageItems(item: ToolCallTimelineItem, raw: CursorRawTool): AgentTimelineItem[] {
+  const envelope = record(raw.output);
+  const value = envelope?.status === "success" ? record(envelope.value) : undefined;
+  const image =
+    item.status === "completed"
+      ? renderProviderImagePathAsAssistantMarkdown({
+          path: string(value?.filePath),
+          // Prompts run long and can hold blank lines, which would break the image
+          // paragraph; the row above already shows the prompt.
+          altText: "Generated image",
+        })
+      : null;
+  return image ? [item, image] : [item];
+}
+
+// MCP image content to show inline after its row. Only live rows have it:
+// the journal truncates the base64 data.
+export function cursorMcpImages(item: AgentTimelineItem): ProviderImageOutput[] {
+  if (item.type !== "tool_call" || item.status !== "completed") return [];
+  const raw = record(item.metadata?.cursorSdk);
+  const envelope = record(raw?.output);
+  if (raw?.name !== "mcp" || envelope?.status !== "success") return [];
+  const content: unknown[] = Array.isArray(record(envelope.value)?.content)
+    ? (record(envelope.value)?.content as unknown[])
+    : [];
+  return content.flatMap((entry) => {
+    const image = record(record(entry)?.image);
+    const data = string(image?.data);
+    return data ? [{ data, mimeType: string(image?.mimeType) ?? null }] : [];
+  });
+}
+
 // Claude and Codex show todo updates as a task list, not a tool row. A
 // completed updateTodos call becomes that list; a running one shows nothing
 // yet; a failed, canceled or listless one stays a row.
 export function cursorTimelineItems(item: ToolCallTimelineItem): AgentTimelineItem[] {
   const raw = rawCursorTool(item);
+  if (raw?.name === "generateImage") return generatedImageItems(item, raw);
   if (raw?.name !== "updateTodos") return [item];
   if (item.status === "running") return [];
   const envelope = record(raw.output);

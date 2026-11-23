@@ -686,6 +686,44 @@ describe("Cursor SDK provider", () => {
     await session.close();
   });
 
+  it("shows MCP images live without hiding the final answer", async () => {
+    const { client, config, send } = fixture();
+    const call = { ...eventIds, type: "tool_call" as const, name: "mcp", call_id: "shot" };
+    const args = { providerIdentifier: "browser", toolName: "screenshot", args: {} };
+    const png = Buffer.from("not really a png").toString("base64");
+    const result = {
+      status: "success",
+      value: { isError: false, content: [{ image: { data: png, mimeType: "image/png" } }] },
+    };
+    send.mockResolvedValue(
+      makeRun(
+        [
+          { ...call, status: "running", args },
+          { ...call, status: "completed", args, result },
+        ],
+        { id: runId, status: "finished", result: "final answer" },
+      ),
+    );
+    const session = await client.createSession(config);
+    const live: AgentStreamEvent[] = [];
+    session.subscribe((event) => live.push(event));
+    await session.run("Take a screenshot.");
+    const items = live.flatMap((event) => (event.type === "timeline" ? [event.item] : []));
+    expect(items.map((item) => item.type)).toEqual([
+      "user_message",
+      "tool_call",
+      "tool_call",
+      "assistant_message",
+      "assistant_message",
+    ]);
+    expect(items[2]).toMatchObject({ detail: { type: "unknown", input: {}, output: "[image]" } });
+    expect(items[3]).toMatchObject({
+      text: expect.stringMatching(/^\n\n!\[Image\]\(file:\/\/.*paseo-attachments.*\.png\)\n\n$/),
+    });
+    expect(items[4]).toEqual({ type: "assistant_message", text: "final answer" });
+    await session.close();
+  });
+
   it("records CLI and desktop prompts once when Cursor omits user events, including after resume", async () => {
     const { client, config, sdk, send } = fixture();
     const manager = new AgentManager({

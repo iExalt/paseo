@@ -6,7 +6,7 @@ import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display"
 import { expect, test } from "vitest";
 import type { AgentStreamEvent, ToolCallTimelineItem } from "../agent-sdk-types.js";
 import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
-import { cursorTimelineItems, mapCursorTool, projectCursorTool } from "./cursor-sdk-telemetry.js";
+import { cursorTimelineItems, mapCursorTool, replayCursorTool } from "./cursor-sdk-telemetry.js";
 import { readCursorHistory, readCursorLastUsage } from "./cursor-sdk-history.js";
 import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 
@@ -645,7 +645,7 @@ test("replay keeps a current typed row whose journaled payload was truncated", (
   const stored = limitAgentTimelineItemContent(live) as ToolCallTimelineItem;
   expect(JSON.stringify(stored).length).toBeLessThan(JSON.stringify(live).length);
   expect(stored.detail).toEqual({ type: "sub_agent", description: "Review", log: "Done." });
-  expect(projectCursorTool(stored)).toEqual(stored);
+  expect(replayCursorTool(stored)).toEqual([stored]);
 });
 
 test("maps the remaining Cursor tools to typed cards", () => {
@@ -749,4 +749,43 @@ test("maps the remaining Cursor tools to typed cards", () => {
     { displayName: "Read lints", summary: "a.ts" },
   ]);
   expect(cursorTimelineItems(call("updateTodos", { todos: [] }))).toEqual([]);
+});
+
+test("shows a generated image after its row, once, live and on replay", () => {
+  const description = `Two phone layouts\n\n${"Dark, quiet chrome. ".repeat(12)}`;
+  const args = { description, filePath: "assets/layouts.jpg" };
+  const result = { status: "success", value: { filePath: "/repo/assets/layouts.jpg" } };
+  const live = mapCursorTool({
+    type: "tool_call",
+    agent_id: agentId,
+    run_id: "run",
+    call_id: "image",
+    name: "generateImage",
+    status: "completed",
+    args,
+    result,
+  });
+  const image = {
+    type: "assistant_message",
+    text: "\n\n![Generated image](file:///repo/assets/layouts.jpg)\n\n",
+  };
+  expect(cursorTimelineItems(live)).toEqual([live, image]);
+  expect(live.detail).toEqual({
+    type: "plain_text",
+    icon: "sparkles",
+    label: description.trim(),
+    text: description.trim(),
+  });
+  expect(buildToolCallDisplayModel(live).displayName).toBe("Generate image");
+  // The journal already holds the image written beside a current row.
+  expect(replayCursorTool(live)).toEqual([live]);
+  const legacy: ToolCallTimelineItem = {
+    type: "tool_call",
+    callId: "run:image",
+    name: "generateImage",
+    status: "completed",
+    error: null,
+    detail: { type: "unknown", input: args, output: result },
+  };
+  expect(replayCursorTool(legacy)).toEqual([live, image]);
 });
