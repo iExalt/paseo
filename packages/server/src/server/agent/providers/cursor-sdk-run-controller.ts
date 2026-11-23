@@ -701,8 +701,17 @@ export class CursorRunController {
       }
       // startTurn rejection is projected by AgentManager before a turn has started.
       if (admitted) {
-        if (usage)
-          this.emit({ type: "usage_updated", provider: PROVIDER, turnId: turn.record.id, usage });
+        if (usage) {
+          this.emit({
+            type: "usage_updated",
+            provider: PROVIDER,
+            turnId: turn.record.id,
+            usage,
+            ...(usage.contextWindowUsedTokens === undefined
+              ? { clearContextWindowUsed: true }
+              : {}),
+          });
+        }
         this.emit({
           type: "turn_failed",
           provider: PROVIDER,
@@ -746,8 +755,15 @@ export class CursorRunController {
         .catch(() => undefined);
     }
     if (result.status === "cancelled") {
-      if (usage)
-        this.emit({ type: "usage_updated", provider: PROVIDER, turnId: turn.record.id, usage });
+      if (usage) {
+        this.emit({
+          type: "usage_updated",
+          provider: PROVIDER,
+          turnId: turn.record.id,
+          usage,
+          ...(usage.contextWindowUsedTokens === undefined ? { clearContextWindowUsed: true } : {}),
+        });
+      }
       this.emit({
         type: "turn_canceled",
         provider: PROVIDER,

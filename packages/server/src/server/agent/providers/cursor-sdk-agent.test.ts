@@ -1326,3 +1326,93 @@ test("reports model context limits in catalog, forwards model-call-completed del
     await session.close();
   }
 });
+
+test("history-mode resume honors updated cursor_model_context and auto model without reverting to turn max", async () => {
+  const realSdk = await import("@cursor/sdk");
+  const storePath = await mkdtemp(join(tmpdir(), "paseo-cursor-history-ctx-"));
+  stores.push(storePath);
+  const cwd = await mkdtemp(join(tmpdir(), "paseo-cursor-history-ctx-cwd-"));
+  stores.push(cwd);
+
+  const histAgentId = "agent-history-ctx";
+  const store = new realSdk.JsonlLocalAgentStore(storePath);
+  await store.agents.create({
+    agent: {
+      agentId: histAgentId,
+      cwd,
+      status: "idle",
+      activeRunId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+  });
+  const journal = new CursorTurnJournal(storePath, histAgentId);
+  await journal.admit(
+    {
+      id: "turn-1",
+      nativeRunId: "run-1",
+      createdAt: new Date().toISOString(),
+      user: { type: "user_message", text: "hi", messageId: "m1" },
+      steers: [],
+      joined: true,
+      terminal: { status: "finished" },
+      lastUsage: {
+        inputTokens: 5_000,
+        outputTokens: 500,
+        totalTokens: 5_500,
+        contextWindowUsedTokens: 5_500,
+        contextWindowMaxTokens: 300_000,
+      },
+    },
+    "hi",
+  );
+
+  const sdk = {
+    ...realSdk,
+    JsonlLocalAgentStore: function JsonlLocalAgentStore() {
+      return store;
+    },
+    Agent: {
+      create: vi.fn(),
+      resume: vi.fn(),
+      cancelRun: vi.fn(),
+      messages: { list: vi.fn(async () => []) },
+    },
+  };
+  const client = new CursorSdkAgentClient(
+    { env: { CURSOR_API_KEY: "test-key" } },
+    vi.fn(async () => sdk) as unknown as NonNullable<
+      ConstructorParameters<typeof CursorSdkAgentClient>[1]
+    >,
+    vi.fn(async () => []),
+    undefined,
+    storePath,
+  );
+  const handle = {
+    provider,
+    sessionId: histAgentId,
+    nativeHandle: histAgentId,
+    metadata: { cwd },
+  };
+
+  const session1m = await client.resumeSession(
+    handle,
+    { model: "gemini-4-neon", providerOptions: { cursor_model_context: "1m" } },
+    undefined,
+    { purpose: "history" },
+  );
+  expect(await session1m.readLastUsage!()).toMatchObject({
+    contextWindowUsedTokens: 5_500,
+    contextWindowMaxTokens: 1_000_000,
+  });
+
+  const sessionAuto = await client.resumeSession(
+    handle,
+    { model: "auto", providerOptions: {} },
+    undefined,
+    { purpose: "history" },
+  );
+  const autoUsage = await sessionAuto.readLastUsage!();
+  expect(autoUsage?.contextWindowUsedTokens).toBe(5_500);
+  expect(autoUsage?.contextWindowMaxTokens).toBeUndefined();
+});

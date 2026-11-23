@@ -56,7 +56,7 @@ export function withCursorContextUsage(
   context: CursorContextWindowReading,
 ): AgentUsage | undefined {
   const { usedTokens, maxTokens } = context;
-  if (!usage && usedTokens === undefined && maxTokens === undefined) return undefined;
+  if (!usage && usedTokens === undefined) return undefined;
   return {
     ...usage,
     ...(usedTokens !== undefined ? { contextWindowUsedTokens: usedTokens } : {}),

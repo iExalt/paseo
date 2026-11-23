@@ -220,6 +220,8 @@ export async function checkContextWindowTelemetry(args) {
     await args.stopDaemon("SIGTERM");
     await args.startDaemon({ listen: address });
     client = await connect(args);
+    // Open history-mode session first so readLastUsage() runs before asserting the snapshot.
+    await client.fetchAgentTimeline(id, { limit: 100 });
     await assertUsage({
       client,
       args,

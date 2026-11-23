@@ -388,6 +388,7 @@ export class CursorSdkAgentClient implements AgentClient {
         handle,
         id,
         model: modelId(overrides?.model),
+        providerOptions: overrides?.providerOptions,
         mode: MODE,
         modes: MODES,
         capabilities: CAPABILITIES,

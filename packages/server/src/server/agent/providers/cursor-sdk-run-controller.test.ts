@@ -775,3 +775,139 @@ test("uses single-step fallback only without tool calls, and clears context on a
     events.some((event) => event.type === "usage_updated" && event.clearContextWindowUsed === true),
   ).toBe(true);
 });
+
+test("leaves lastUsage undefined on failed/cancelled turns without usage and clears stale context on cancelled multi-step turn without model-call-completed", async () => {
+  const root = await mkdtemp(join(tmpdir(), "cursor-sdk-controller-empty-turn-"));
+  roots.push(root);
+  const journal = new CursorTurnJournal(root, sessionId);
+  const events: AgentStreamEvent[] = [];
+  const controller = new CursorRunController(
+    sessionId,
+    journal,
+    (event) => events.push(event),
+    mapCursorUsage,
+  );
+
+  // Turn 1 sets valid usage and context occupancy.
+  await (
+    await controller.start(
+      "turn-1",
+      { text: "turn-1" },
+      async (_input, bind, _throwIfStopped, execution) => {
+        execution.setContextWindowMaxTokens(300_000);
+        await bind("run-t1");
+        return {
+          id: "run-t1",
+          agentId: sessionId,
+          supports: () => true,
+          unsupportedReason: () => undefined,
+          onDidChangeStatus: () => () => {},
+          status: "finished",
+          conversation: async () => [],
+          async *stream() {
+            execution.onModelCallCompleted({ inputTokens: 10_000, outputTokens: 500 });
+            yield { type: "status", agent_id: sessionId, run_id: "run-t1", status: "FINISHED" };
+          },
+          wait: async () => ({
+            id: "run-t1",
+            status: "finished",
+            usage: {
+              inputTokens: 10_000,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 500,
+              totalTokens: 10_500,
+            },
+          }),
+          cancel: async () => {},
+        };
+      },
+    )
+  ).completion;
+
+  // Turn 2 fails before any LLM usage on a 300k model: must not persist { contextWindowMaxTokens }.
+  await expect(
+    (
+      await controller.start(
+        "turn-2-fail",
+        { text: "turn-2-fail" },
+        async (_input, bind, _throwIfStopped, execution) => {
+          execution.setContextWindowMaxTokens(300_000);
+          await bind("run-t2-fail");
+          return {
+            id: "run-t2-fail",
+            agentId: sessionId,
+            supports: () => true,
+            unsupportedReason: () => undefined,
+            onDidChangeStatus: () => () => {},
+            status: "error",
+            conversation: async () => [],
+            async *stream() {},
+            wait: async () => ({
+              id: "run-t2-fail",
+              status: "error",
+              error: { message: "boom" },
+            }),
+            cancel: async () => {},
+          };
+        },
+      )
+    ).completion,
+  ).rejects.toThrow("boom");
+
+  const recordsAfterFail = await journal.read();
+  expect(recordsAfterFail[1]?.lastUsage).toBeUndefined();
+
+  // Turn 3 cancels after tool use + token usage with no model-call-completed: must clear stale context.
+  events.length = 0;
+  const cancelled = await (
+    await controller.start(
+      "turn-3-cancel",
+      { text: "turn-3-cancel" },
+      async (_input, bind, _throwIfStopped, execution) => {
+        execution.setContextWindowMaxTokens(300_000);
+        await bind("run-t3-cancel");
+        return {
+          id: "run-t3-cancel",
+          agentId: sessionId,
+          supports: () => true,
+          unsupportedReason: () => undefined,
+          onDidChangeStatus: () => () => {},
+          status: "cancelled",
+          conversation: async () => [],
+          async *stream() {
+            yield {
+              type: "tool_call",
+              agent_id: sessionId,
+              run_id: "run-t3-cancel",
+              call_id: "t-cancel",
+              name: "read",
+              status: "completed",
+              args: { path: "f.ts" },
+              result: { status: "success", value: { content: "f" } },
+            };
+          },
+          wait: async () => ({
+            id: "run-t3-cancel",
+            status: "cancelled",
+            usage: {
+              inputTokens: 25_000,
+              cacheReadTokens: 0,
+              cacheWriteTokens: 0,
+              outputTokens: 300,
+              totalTokens: 25_300,
+            },
+          }),
+          cancel: async () => {},
+        };
+      },
+    )
+  ).completion;
+  expect(cancelled.usage?.contextWindowUsedTokens).toBeUndefined();
+  expect(events).toContainEqual(
+    expect.objectContaining({
+      type: "usage_updated",
+      clearContextWindowUsed: true,
+    }),
+  );
+});
