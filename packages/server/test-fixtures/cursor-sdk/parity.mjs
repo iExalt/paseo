@@ -106,9 +106,11 @@ const shellPath =
         .filter(Boolean)
         .join(delimiter)
     : "/usr/bin:/bin";
+const nodeCompileCache = join(tmp, "node-compile-cache");
 const env = {
   ...platformEnv,
   HOME: home,
+  NODE_COMPILE_CACHE: nodeCompileCache,
   PATH: [dirname(process.execPath), shellPath].join(delimiter),
   SHELL: useCallerFixture ? "/bin/bash" : "/bin/sh",
   PASEO_HOME: paseoHome,
@@ -129,6 +131,8 @@ let listener;
 async function startDaemon({ listen = env.PASEO_LISTEN, offline = false } = {}) {
   const daemonEnv = {
     ...env,
+    PASEO_DEFER_TERMINAL_WORKER_LAUNCH: "1",
+    PASEO_DISABLE_BUILTIN_PLUGINS: "1",
     ...(mode === "green" ? { PASEO_AGENT_ID: "stale-launcher" } : {}),
     PASEO_LISTEN: listen,
     ...(offline
