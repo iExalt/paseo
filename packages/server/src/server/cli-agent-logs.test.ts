@@ -78,6 +78,7 @@ test("logs --since filters history and live output through the CLI and daemon", 
           ...env,
           HOME: cliHome,
           USERPROFILE: cliHome,
+          NODE_COMPILE_CACHE: join(cliHome, "node-compile-cache"),
         },
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 25_000,
@@ -266,7 +267,19 @@ test("logs --since filters history and live output through the CLI and daemon", 
         callerAgentId: nativeParent.id,
         relationship: "subagent",
       });
-      const subagents = await logs(["agent", "subagents", nativeParent.id.slice(0, 12), "--json"]);
+      const [subagents, nativePage] = await Promise.all([
+        logs(["agent", "subagents", nativeParent.id.slice(0, 12), "--json"]),
+        logs([
+          "agent",
+          "subagents",
+          "timeline",
+          nativeParent.id,
+          "native-child",
+          "--json",
+          "--limit",
+          "1",
+        ]),
+      ]);
       assert.strictEqual(subagents.exitCode, 0, subagents.stderr);
       const children = JSON.parse(subagents.stdout);
       assert.deepStrictEqual(
@@ -275,16 +288,6 @@ test("logs --since filters history and live output through the CLI and daemon", 
       );
       assert.strictEqual(children.providerSubagents[0].id, "native-child");
       assert.strictEqual(children.providerSubagents[0].parentSubagentId, "native-ancestor");
-      const nativePage = await logs([
-        "agent",
-        "subagents",
-        "timeline",
-        nativeParent.id,
-        "native-child",
-        "--json",
-        "--limit",
-        "1",
-      ]);
       assert.strictEqual(nativePage.exitCode, 0, nativePage.stderr);
       const nativeRows = JSON.parse(nativePage.stdout);
       assert.strictEqual(nativeRows.rows.length, 1);
@@ -314,19 +317,17 @@ test("logs --since filters history and live output through the CLI and daemon", 
         detail: { type: "unknown", input: { command: "test" }, output: toolOutput },
         error: null,
       });
-      const structured = await logs([
-        "agent",
-        "logs",
-        structuredAgent.id,
-        "--json",
-        "--limit",
-        "1",
+      const [structured, full] = await Promise.all([
+        logs(["agent", "logs", structuredAgent.id, "--json", "--limit", "1"]),
+        logs(["agent", "logs", structuredAgent.id, "--full", "--limit", "1"]),
       ]);
       assert.strictEqual(structured.exitCode, 0, structured.stderr);
       const page = JSON.parse(structured.stdout);
       assert.strictEqual(page.entries.length, 1);
       assert.strictEqual(page.entries[0].item.detail.output, toolOutput);
       assert.strictEqual(typeof page.entries[0].timestamp, "string");
+      assert.strictEqual(full.exitCode, 0, full.stderr);
+      assert.strictEqual(JSON.parse(full.stdout).entries[0].item.detail.output, toolOutput);
       const before = await logs([
         "logs",
         structuredAgent.id,
@@ -340,9 +341,6 @@ test("logs --since filters history and live output through the CLI and daemon", 
       const older = JSON.parse(before.stdout);
       assert.strictEqual(older.entries.length, 1);
       assert.ok(older.entries[0].seqEnd < page.entries[0].seqStart);
-      const full = await logs(["agent", "logs", structuredAgent.id, "--full", "--limit", "1"]);
-      assert.strictEqual(full.exitCode, 0, full.stderr);
-      assert.strictEqual(JSON.parse(full.stdout).entries[0].item.detail.output, toolOutput);
       const pluginData = { nested: [1, "two", { ok: true }] };
       await manager.appendTimelineItem(structuredAgent.id, {
         type: "plugin",
@@ -352,30 +350,17 @@ test("logs --since filters history and live output through the CLI and daemon", 
         version: 1,
         data: pluginData,
       });
-      const plugin = await logs(["logs", structuredAgent.id, "--json", "--limit", "1"]);
+      const [plugin, prompts, search] = await Promise.all([
+        logs(["logs", structuredAgent.id, "--json", "--limit", "1"]),
+        logs(["agent", "prompts", structuredAgent.id, "--json"]),
+        logs(["agent", "logs", structuredAgent.id, "--search", "OLD_USER", "--json"]),
+      ]);
       assert.strictEqual(plugin.exitCode, 0, plugin.stderr);
       assert.deepStrictEqual(JSON.parse(plugin.stdout).entries[0].item.data, pluginData);
-      const prompts = await logs(["agent", "prompts", structuredAgent.id, "--json"]);
       assert.strictEqual(prompts.exitCode, 0, prompts.stderr);
       assert.strictEqual(JSON.parse(prompts.stdout).prompts[0].preview, "OLD_USER");
-      const search = await logs([
-        "agent",
-        "logs",
-        structuredAgent.id,
-        "--search",
-        "OLD_USER",
-        "--json",
-      ]);
       assert.strictEqual(search.exitCode, 0, search.stderr);
       assert.strictEqual(JSON.parse(search.stdout).locations.length, 1);
-
-      for (const command of [["logs"], ["agent", "logs"]]) {
-        const result = await logs([...command, agent.id, "--since", "2100-01-01T00:00:00Z"]);
-        console.log(`paseo ${command.join(" ")} <id> --since 2100-01-01T00:00:00Z`);
-        console.log(`exit=${result.exitCode}\nstdout:\n${result.stdout}stderr:\n${result.stderr}`);
-        assert.strictEqual(result.exitCode, 0, result.stderr);
-        assert.strictEqual(result.stdout, "No activity to display.\n");
-      }
 
       const timeline = await ctx.client.fetchAgentTimeline(agent.id, {
         direction: "tail",
@@ -384,35 +369,49 @@ test("logs --since filters history and live output through the CLI and daemon", 
       });
       const firstTimestamp = timeline.entries[0]?.timestamp;
       assert(firstTimestamp !== undefined, "the fixture should have timestamped activity");
-      for (const since of ["2000-01-01T00:00:00Z", firstTimestamp]) {
-        const result = await logs(["logs", agent.id, "--since", since]);
-        assert.strictEqual(result.exitCode, 0, result.stderr);
-        assert.strictEqual(result.stdout, baseline.stdout);
-      }
 
-      const offset = await logs(["logs", agent.id, "--since", "2100-01-01T08:00:00+08:00"]);
+      const futureCommands = [["logs"], ["agent", "logs"]];
+      const [futureLogs, futureAgentLogs, offset] = await Promise.all([
+        logs([...futureCommands[0], agent.id, "--since", "2100-01-01T00:00:00Z"]),
+        logs([...futureCommands[1], agent.id, "--since", "2100-01-01T00:00:00Z"]),
+        logs(["logs", agent.id, "--since", "2100-01-01T08:00:00+08:00"]),
+      ]);
+      for (const [command, result] of [
+        [futureCommands[0], futureLogs],
+        [futureCommands[1], futureAgentLogs],
+      ] as const) {
+        console.log(`paseo ${command.join(" ")} <id> --since 2100-01-01T00:00:00Z`);
+        console.log(`exit=${result.exitCode}\nstdout:\n${result.stdout}stderr:\n${result.stderr}`);
+        assert.strictEqual(result.exitCode, 0, result.stderr);
+        assert.strictEqual(result.stdout, "No activity to display.\n");
+      }
       assert.strictEqual(offset.exitCode, 0, offset.stderr);
       assert.strictEqual(offset.stdout, "No activity to display.\n");
 
-      const tail = await logs([
-        "logs",
-        agent.id,
-        "--since",
-        "2000-01-01T00:00:00Z",
-        "--filter",
-        "text",
-        "--tail",
-        "1",
+      const [since2000, sinceFirst, tail] = await Promise.all([
+        logs(["logs", agent.id, "--since", "2000-01-01T00:00:00Z"]),
+        logs(["logs", agent.id, "--since", firstTimestamp]),
+        logs([
+          "logs",
+          agent.id,
+          "--since",
+          "2000-01-01T00:00:00Z",
+          "--filter",
+          "text",
+          "--tail",
+          "1",
+        ]),
       ]);
+      for (const result of [since2000, sinceFirst]) {
+        assert.strictEqual(result.exitCode, 0, result.stderr);
+        assert.strictEqual(result.stdout, baseline.stdout);
+      }
       assert.strictEqual(tail.exitCode, 0, tail.stderr);
       assert.strictEqual(tail.stdout, "OLD_REPLY\n");
 
-      const empty = await logs(["logs", agent.id, "--since", firstTimestamp, "--tail", "0"]);
-      assert.strictEqual(empty.exitCode, 0, empty.stderr);
-      assert.strictEqual(empty.stdout, "");
-
-      for (const followArgs of [[], ["--follow"]]) {
-        const invalid = await runLocalPaseo([
+      const [empty, invalidLogs, invalidFollow] = await Promise.all([
+        logs(["logs", agent.id, "--since", firstTimestamp, "--tail", "0"]),
+        runLocalPaseo([
           "--host",
           `127.0.0.1:${port}`,
           "logs",
@@ -420,8 +419,21 @@ test("logs --since filters history and live output through the CLI and daemon", 
           "--since",
           "not-a-date",
           "--json",
-          ...followArgs,
-        ]);
+        ]),
+        runLocalPaseo([
+          "--host",
+          `127.0.0.1:${port}`,
+          "logs",
+          "missing-agent",
+          "--since",
+          "not-a-date",
+          "--json",
+          "--follow",
+        ]),
+      ]);
+      assert.strictEqual(empty.exitCode, 0, empty.stderr);
+      assert.strictEqual(empty.stdout, "");
+      for (const invalid of [invalidLogs, invalidFollow]) {
         assert.strictEqual(invalid.exitCode, 1, invalid.stderr);
         assert.strictEqual(invalid.stdout, "");
         assert.deepStrictEqual(JSON.parse(invalid.stderr), {
