@@ -17,6 +17,7 @@ import type {
   AgentUsage,
   ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
+import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
 import {
   addCursorUsage,
@@ -251,12 +252,17 @@ async function readJournalItems(
   journal: CursorTurnJournal,
   record: CursorHistoryTurn,
   run?: LocalAgentRunDocument,
-): Promise<{ events: AgentTimelineItem[]; incomplete: boolean }> {
-  const events = (await journal.readItems(record.id)).flatMap((item) =>
-    item.type === "tool_call" ? replayCursorTool(item) : [item],
-  );
+): Promise<JournalItems> {
+  // Replay can expand or drop a journaled row, but steers count journaled rows.
+  const starts: number[] = [];
+  const events: AgentTimelineItem[] = [];
+  for (const item of await journal.readItems(record.id)) {
+    starts.push(events.length);
+    events.push(...(item.type === "tool_call" ? replayCursorTool(item) : [item]));
+  }
+  const steerAt = (after: number) => starts[after] ?? events.length;
   if (!run || (!record.recovered && (events.length > 0 || record.terminal))) {
-    return { events, incomplete: false };
+    return { events, steerAt, incomplete: false };
   }
   const native: AgentTimelineItem[] = [];
   for (const runId of record.executionRunIds ?? [run.runId]) {
@@ -277,9 +283,16 @@ async function readJournalItems(
   ) {
     native.push(last);
   }
-  if (events.length === 0) return { events: native, incomplete: isPartialAnswer(record, native) };
+  if (events.length === 0) {
+    return {
+      events: native,
+      steerAt: (after) => after,
+      incomplete: isPartialAnswer(record, native),
+    };
+  }
   return {
     events,
+    steerAt,
     incomplete:
       isPartialAnswer(record, events) ||
       (native.length > 0 &&
@@ -287,25 +300,37 @@ async function readJournalItems(
   };
 }
 
-// Older journals stored tool inputs and results as an unknown detail. Type
-// projection and repeated partial updates should not imply a transcript gap.
-function recoveryComparable(events: AgentTimelineItem[]): AgentTimelineItem[] {
-  const tools = new Map<string, ToolCallTimelineItem>();
-  return events.flatMap<AgentTimelineItem>((item) => {
+interface JournalItems {
+  events: AgentTimelineItem[];
+  /** Where a steer recorded after `after` journaled rows belongs among the events. */
+  steerAt: (after: number) => number;
+  incomplete: boolean;
+}
+
+interface ComparableTool {
+  type: "tool_call";
+  callId: string;
+  name: string;
+  status: ToolCallTimelineItem["status"];
+}
+
+// A gap shows as a missing row or status. Tool content is not compared: the
+// journal truncates large rows, older journals stored another projection, and
+// repeated partial updates should not imply a transcript gap.
+function recoveryComparable(events: AgentTimelineItem[]): unknown[] {
+  const tools = new Map<string, ComparableTool>();
+  return events.flatMap<unknown>((item) => {
     // Live MCP images have no native counterpart; generated images exist on both sides.
     if (item.type === "assistant_message" && !isAnswerText(item)) return [];
-    if (item.type !== "tool_call") return [item];
-    const { metadata, ...withoutMetadata } = item;
-    const raw = metadata?.cursorSdk;
-    const normalized: ToolCallTimelineItem =
-      raw && typeof raw === "object" && "input" in raw && "output" in raw
-        ? { ...withoutMetadata, detail: { type: "unknown", input: raw.input, output: raw.output } }
-        : withoutMetadata;
-    const previous = tools.get(item.callId);
-    if (previous && previous.status !== "running" && normalized.status === "running") return [];
-    if (isDeepStrictEqual(previous, normalized)) return [];
-    tools.set(item.callId, normalized);
-    return [normalized];
+    // The journal holds the limited copy of each item.
+    if (item.type !== "tool_call") return [limitAgentTimelineItemContent(item)];
+    const { callId, name, status } = item;
+    const previous = tools.get(callId);
+    if (previous && previous.status !== "running" && status === "running") return [];
+    if (previous?.status === status && previous.name === name) return [];
+    const comparable: ComparableTool = { type: "tool_call", callId, name, status };
+    tools.set(callId, comparable);
+    return [comparable];
   });
 }
 
@@ -327,11 +352,11 @@ async function readJournalTurn(
   record: CursorHistoryTurn,
   run?: LocalAgentRunDocument,
 ): Promise<TurnProjection> {
-  const { events, incomplete } = await readJournalItems(sdk, store, journal, record, run);
+  const { events, steerAt, incomplete } = await readJournalItems(sdk, store, journal, record, run);
   const items: AgentTimelineItem[] = [record.user];
   let steerIndex = 0;
   for (const [index, event] of events.entries()) {
-    while (record.steers[steerIndex]?.after <= index) {
+    while (steerIndex < record.steers.length && steerAt(record.steers[steerIndex].after) <= index) {
       items.push(record.steers[steerIndex++].user);
     }
     items.push(event);
