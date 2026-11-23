@@ -1,13 +1,15 @@
 import { createWatcherLivenessCanary } from "../watcher-liveness-canary.js";
 import { createHash } from "node:crypto";
 import { watch, type FSWatcher } from "node:fs";
-import { readFile, readdir, readlink, realpath, stat } from "node:fs/promises";
+import { lstat, readFile, readdir, readlink, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
-import { isPathInsideRoot } from "../../utils/path.js";
+import { basename, dirname, join, resolve } from "node:path";
 import {
   isAllowedSkillPath,
+  isExcludedCursorPath,
+  resolveCursorDiscoveryPath,
   resolveCursorSkillRoot,
+  walkCursorSkillDirectories,
   type CursorSkillRoot,
 } from "./cursor-skill-catalog.js";
 
@@ -227,53 +229,49 @@ export function watchSkillChanges(
       await walk(target);
     };
     const scoped = async (source: CursorSkillRoot) => {
-      // Observe each lexical link from an approved parent so retargeting a root also
-      // invalidates the catalog. Scoped watchers need no write canaries.
+      // Watch lexical names for replacement and physical skill directories for edits.
       const traced = new Set<string>();
-      const traceParents = async (target: string): Promise<void> => {
-        if (target === source.boundary || traced.has(target) || !isAllowedSkillPath(source, target))
+      const trace = async (path: string): Promise<void> => {
+        if (traced.has(path) || isExcludedCursorPath(source, path)) return;
+        traced.add(path);
+        const lexicalParent = dirname(path);
+        if (lexicalParent === path) return;
+        const parent = await resolveCursorDiscoveryPath(source, lexicalParent);
+        if (!parent) {
+          await trace(lexicalParent);
           return;
-        traced.add(target);
-        let parent = source.boundary;
-        for (const child of relative(source.boundary, target).split(sep)) {
-          const physical = await realpath(parent).catch(() => null);
-          if (!physical || !isAllowedSkillPath(source, physical)) return;
-          await add(physical, false, child, false);
-          parent = join(parent, child);
-          const link = await readlink(parent).catch(() => null);
-          if (link) await traceParents(resolve(physical, link));
         }
+        const name = basename(path);
+        const physical = join(parent, name);
+        if (isExcludedCursorPath(source, physical)) return;
+        await add(parent, false, name, false);
+        const link = await readlink(physical).catch(() => null);
+        if (link) await trace(resolve(parent, link));
       };
-      await traceParents(source.path);
-
+      if (!isAllowedSkillPath(source, source.path)) return;
+      for (let path = source.path; path !== source.boundary; path = dirname(path)) {
+        await trace(path);
+      }
       const root = await resolveCursorSkillRoot(source);
       if (!root) return;
-      await traceParents(root);
-      await add(root, false, undefined, false);
-      const listings = await readdir(root, { withFileTypes: true });
-      for (const entry of listings) {
-        if (entry.name.startsWith(".") || (!entry.isDirectory() && !entry.isSymbolicLink()))
-          continue;
-        const directory = await realpath(join(root, entry.name)).catch(() => null);
-        if (
-          !directory ||
-          !isPathInsideRoot(root, directory) ||
-          !isAllowedSkillPath(source, directory)
-        )
-          continue;
-        await traceParents(directory);
-        await add(directory, false, "SKILL.md", false);
-        const file = await realpath(join(directory, "SKILL.md")).catch(() => null);
-        if (!file || !isPathInsideRoot(root, file) || !isAllowedSkillPath(source, file)) continue;
-        if (dirname(file) !== directory || basename(file) !== "SKILL.md") {
-          await traceParents(dirname(file));
-          await add(dirname(file), false, basename(file), false);
+      for await (const {
+        path,
+        canonical,
+        hasSkill,
+        links: skillLinks,
+      } of walkCursorSkillDirectories(source, root)) {
+        if (canonical !== path) {
+          await trace(path);
+          await trace(canonical);
         }
-        const stamp = await stat(file, { bigint: true }).catch(() => null);
-        if (stamp?.isFile())
-          entries.push(
-            `f ${entry.name} ${file} ${stamp.dev} ${stamp.ino} ${stamp.mtimeNs} ${stamp.ctimeNs}`,
-          );
+        await add(canonical, false, undefined, false);
+        for (const link of skillLinks) await trace(link);
+        if (!hasSkill) continue;
+        const file = join(canonical, "SKILL.md");
+        const stamp = await lstat(file, { bigint: true }).catch(() => null);
+        if (stamp?.isFile()) {
+          entries.push([path, file, stamp.dev, stamp.ino, stamp.mtimeNs, stamp.ctimeNs].join(" "));
+        }
       }
     };
     if (typeof roots === "function") {
