@@ -1501,8 +1501,8 @@ export class AgentManager {
       throw new Error("Cursor SDK is disabled on this host.");
     }
     const skills = await scanCursorSkills(await this.resolveCursorSkillRoots(target));
-    return skills.map(({ reference, description }) => ({
-      name: reference.name,
+    return skills.map(({ name, reference, description }) => ({
+      name,
       description,
       argumentHint: "",
       kind: "skill",

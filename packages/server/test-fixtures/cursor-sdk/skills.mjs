@@ -19,7 +19,7 @@ export async function installSkillFixtures(workspace, home) {
   const workspaceRoot = join(workspace, "cursor-selected-skills");
   const workspaceAlias = join(workspace, ".cursor", "skills");
   const userRoot = join(home, ".agents", "skills");
-  const disallowedRoot = join(home, ".codex", "skills");
+  const disallowedRoot = join(home, ".claude", "skills");
   const file = join(workspaceRoot, skillName, "SKILL.md");
   const write = (root, name, description, body) =>
     writeFile(
@@ -99,7 +99,10 @@ export async function checkDraftSkills({ cli, workspace, paseoHome, backend, req
   assert.deepEqual(await nativeStore(), beforeStore, "Catalog created an SDK agent store entry");
   assert.deepEqual(
     withoutModel.map(({ name, skill }) => [name, skill.scope]),
-    [[skillName, "workspace"]],
+    [
+      [skillName, "workspace"],
+      [skillName, "user"],
+    ],
   );
   console.log("PASS Cursor draft catalogs agree with and without a model, without an SDK turn");
   const draftConfig = { provider: "cursor-sdk", cwd: workspace, skillScope: "user" };
