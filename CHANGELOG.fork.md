@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.37.0](https://github.com/iExalt/paseo/compare/paseo-v0.36.0...paseo-v0.37.0) (2026-11-23)
+
+
+### Features
+
+* **cursor-sdk:** report per-step context window usage and model limits ([#590](https://github.com/iExalt/paseo/issues/590)) ([8d47ad3](https://github.com/iExalt/paseo/commit/8d47ad3c8bb31fe3e180253e1f83cd110d6507ae))
+* **cursor-sdk:** track chat and subagent cost via Cursor dashboard usage events ([#593](https://github.com/iExalt/paseo/issues/593)) ([ebc7373](https://github.com/iExalt/paseo/commit/ebc737333c8304d1e5152f30f825d4a030ff3b31))
+* **cursor:** show computer use and screen recording as cards ([#589](https://github.com/iExalt/paseo/issues/589)) ([80e8313](https://github.com/iExalt/paseo/commit/80e83138933835a80da265ad3fd1f98c6d18075b))
+* **cursor:** show generated and MCP images inline ([#587](https://github.com/iExalt/paseo/issues/587)) ([a9ca313](https://github.com/iExalt/paseo/commit/a9ca3136389b4142c24d4e071d6df2a4bfba0733))
+* **cursor:** show modifier keys and key strokes in computer use actions ([#592](https://github.com/iExalt/paseo/issues/592)) ([be7d1d5](https://github.com/iExalt/paseo/commit/be7d1d5f6ce7afecbbe2358fb5d76bda282433cd))
+* **cursor:** show typed cards for the remaining Cursor SDK tools ([#586](https://github.com/iExalt/paseo/issues/586)) ([469cc28](https://github.com/iExalt/paseo/commit/469cc2830195b0602dad84de67ea0512fe0f3f73))
+
+
+### Bug Fixes
+
+* **app:** stop appending raw Cursor SDK payloads to tool details ([#582](https://github.com/iExalt/paseo/issues/582)) ([41a1711](https://github.com/iExalt/paseo/commit/41a1711c9f8a8bc8dfae4ef38249ebf37460bd62))
+* **cursor:** harden Cursor SDK history replay and recovery ([#591](https://github.com/iExalt/paseo/issues/591)) ([2c2935e](https://github.com/iExalt/paseo/commit/2c2935eecfbd09de93439dd405375120b4aa62de))
+* **cursor:** show failed, sub-agent and MCP tool calls without raw JSON ([#585](https://github.com/iExalt/paseo/issues/585)) ([97c52bb](https://github.com/iExalt/paseo/commit/97c52bb53accaeb9566bba3e974a00e0d2c8c613))
+* **cursor:** show shell commands with a nonzero exit as failed ([#588](https://github.com/iExalt/paseo/issues/588)) ([6ab15c4](https://github.com/iExalt/paseo/commit/6ab15c4606d803f301d5b8017175140705f061ce))
+* **server:** accept JPEG, GIF and WebP in question-image prompt ([#584](https://github.com/iExalt/paseo/issues/584)) ([e997a1f](https://github.com/iExalt/paseo/commit/e997a1faf73d4bcd004711aed857d24141c6d027))
+
 ## [0.36.0](https://github.com/iExalt/paseo/compare/paseo-v0.35.0...paseo-v0.36.0) (2026-11-23)
 
 
