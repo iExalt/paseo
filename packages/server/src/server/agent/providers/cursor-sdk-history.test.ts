@@ -822,3 +822,108 @@ test("shows a generated image after its row, once, live and on replay", () => {
   };
   expect(replayCursorTool(legacy)).toEqual([live, image]);
 });
+
+test("shows computer use and screen recording as cards, with the screenshot inline", () => {
+  const tool = (name: string, args: unknown, result: unknown): ToolCallTimelineItem =>
+    mapCursorTool({
+      type: "tool_call",
+      agent_id: agentId,
+      run_id: "run",
+      call_id: name,
+      name,
+      status: "completed",
+      args,
+      result,
+    });
+  const actions = [
+    { type: "click", coordinate: { x: 10, y: 20 }, button: "left", count: 2 },
+    { type: "type", text: "hello" },
+    { type: "key", key: "Enter", stroke: "tap" },
+    { type: "click", coordinate: { x: 5, y: 6 }, button: "left", count: 1, modifierKeys: "cmd" },
+    { type: "key", key: "Shift", stroke: "down", holdDurationMs: 300 },
+    { type: "mouseDown", button: "right" },
+    { type: "key", key: "Shift", stroke: "up" },
+    { type: "scroll", direction: "down", amount: 3, modifierKeys: "shift" },
+    {
+      type: "drag",
+      path: [
+        { x: 1, y: 1 },
+        { x: 9, y: 9 },
+      ],
+      button: "middle",
+      modifierKeys: "alt",
+    },
+    { type: "screenshot" },
+  ];
+  const clickedArgs = { actions, description: "Submit the form" };
+  const clickedResult = {
+    status: "success",
+    value: { actionCount: 10, durationMs: 900, screenshotPath: "/tmp/after.png", log: "ok" },
+  };
+  const clicked = tool("computerUse", clickedArgs, clickedResult);
+  const screenshot = {
+    type: "assistant_message",
+    text: "\n\n![Screenshot](file:///tmp/after.png)\n\n",
+  };
+  expect(cursorTimelineItems(clicked)).toEqual([clicked, screenshot]);
+  expect(clicked.detail).toEqual({
+    type: "plain_text",
+    icon: "wrench",
+    label: "Submit the form",
+    text: [
+      "click x2 (10, 20)",
+      'type "hello"',
+      "key Enter",
+      "cmd+click (5, 6)",
+      "key down Shift held 300 ms",
+      "mouseDown right",
+      "key up Shift",
+      "shift+scroll down 3",
+      "alt+drag middle (1, 1) -> (9, 9)",
+      "screenshot",
+      "",
+      "ok",
+    ].join("\n"),
+  });
+  const missed = tool(
+    "computerUse",
+    { actions: [{ type: "click", coordinate: { x: 1, y: 2 }, button: "right", count: 1 }] },
+    {
+      status: "error",
+      error: {
+        message: "Window closed",
+        actionCount: 0,
+        durationMs: 5,
+        screenshotPath: "/tmp/x.png",
+      },
+    },
+  );
+  expect(missed).toMatchObject({ status: "failed", error: "Window closed" });
+  expect(missed.detail).toMatchObject({ label: "click right (1, 2)" });
+  expect(cursorTimelineItems(missed)).toHaveLength(2);
+  const saved = tool(
+    "recordScreen",
+    { mode: "SAVE_RECORDING" },
+    { status: "success", value: { path: "/tmp/demo.mp4", recordingDurationMs: 4200 } },
+  );
+  expect(saved.detail).toEqual({
+    type: "plain_text",
+    icon: "eye",
+    label: "Save recording",
+    text: "/tmp/demo.mp4\n4.2 s",
+  });
+  expect([clicked, saved].map((item) => buildToolCallDisplayModel(item).displayName)).toEqual([
+    "Computer use",
+    "Record screen",
+  ]);
+  // A row journaled before these cards existed gains the card and the screenshot.
+  const legacy: ToolCallTimelineItem = {
+    type: "tool_call",
+    callId: clicked.callId,
+    name: "computerUse",
+    status: "completed",
+    error: null,
+    detail: { type: "unknown", input: clickedArgs, output: clickedResult },
+  };
+  expect(replayCursorTool(legacy)).toEqual([clicked, screenshot]);
+});

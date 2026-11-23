@@ -237,3 +237,118 @@ export function todosDetail(value: Fields | undefined): ToolCallDetail {
   const text = todos.map((todo) => `${mark[todo.status ?? "pending"]} ${todo.text}`).join("\n");
   return { type: "plain_text", label: "Update todos", icon: "wrench", ...(text ? { text } : {}) };
 }
+
+function point(value: unknown): string | undefined {
+  const fields = record(value);
+  const x = number(fields?.x);
+  const y = number(fields?.y);
+  return x === undefined || y === undefined ? undefined : `(${x}, ${y})`;
+}
+
+function meaningful(value: string | undefined): string | undefined {
+  return value && value !== "unspecified" ? value : undefined;
+}
+
+// Name the button only when it isn't the default left one.
+function button(action: Fields): string | undefined {
+  const name = meaningful(string(action.button));
+  return name === "left" ? undefined : name;
+}
+
+// Prefix held modifier keys to the verb, as in "cmd+click".
+function withModifiers(verb: string, action: Fields): string {
+  const modifiers = string(action.modifierKeys)?.trim();
+  return modifiers ? `${modifiers}+${verb}` : verb;
+}
+
+function computerActionParts(
+  type: string,
+  action: Fields,
+  at: string | undefined,
+): Array<string | number | undefined> {
+  switch (type) {
+    case "click": {
+      const count = number(action.count);
+      const verb = count && count > 1 ? `click x${count}` : "click";
+      return [withModifiers(verb, action), button(action), at];
+    }
+    case "mouseDown":
+    case "mouseUp":
+      return [type, button(action), at];
+    case "type":
+      return ["type", JSON.stringify(string(action.text) ?? "")];
+    case "key": {
+      const stroke = meaningful(string(action.stroke));
+      const hold = number(action.holdDurationMs);
+      return [
+        stroke === "down" || stroke === "up" ? `key ${stroke}` : "key",
+        string(action.key),
+        hold ? `held ${hold} ms` : undefined,
+      ];
+    }
+    case "scroll":
+      return [
+        withModifiers("scroll", action),
+        meaningful(string(action.direction)),
+        number(action.amount),
+        at,
+      ];
+    case "wait":
+      return ["wait", `${number(action.durationMs) ?? 0} ms`];
+    case "drag":
+      return [
+        withModifiers("drag", action),
+        button(action),
+        list(action.path).map(point).filter(Boolean).join(" -> "),
+      ];
+    default:
+      return [type, at];
+  }
+}
+
+function computerActionLine(action: Fields): string {
+  const type = string(action.type) ?? "action";
+  return computerActionParts(type, action, point(action.coordinate))
+    .filter((part) => part !== undefined && part !== "")
+    .join(" ");
+}
+
+export function computerUseDetail(args: Fields, value: Fields | undefined): ToolCallDetail {
+  const actions = list(args.actions).flatMap((action) => {
+    const fields = record(action);
+    return fields ? [computerActionLine(fields)] : [];
+  });
+  const label = string(args.description)?.trim() || actions[0];
+  const log = string(value?.log)?.trim();
+  const text = [...actions, ...(log ? ["", log] : [])].join("\n");
+  return {
+    type: "plain_text",
+    icon: "wrench",
+    ...(label ? { label } : {}),
+    ...(text ? { text } : {}),
+  };
+}
+
+const RECORDING_MODES: Record<string, string> = {
+  START_RECORDING: "Start recording",
+  SAVE_RECORDING: "Save recording",
+  DISCARD_RECORDING: "Discard recording",
+};
+
+// A saved recording is a video, which the chat cannot show inline, so the card
+// names the file.
+export function recordScreenDetail(args: Fields, value: Fields | undefined): ToolCallDetail {
+  const label = RECORDING_MODES[string(args.mode) ?? ""];
+  const durationMs = number(value?.recordingDurationMs);
+  const lines = [
+    string(value?.path)?.trim(),
+    durationMs ? `${(durationMs / 1000).toFixed(1)} s` : undefined,
+    value?.wasPriorRecordingCancelled === true ? "Discarded the previous recording." : undefined,
+  ].filter(Boolean);
+  return {
+    type: "plain_text",
+    icon: "eye",
+    ...(label ? { label } : {}),
+    ...(lines.length > 0 ? { text: lines.join("\n") } : {}),
+  };
+}
