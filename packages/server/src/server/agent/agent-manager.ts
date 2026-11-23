@@ -3541,12 +3541,12 @@ export class AgentManager {
         }
         runOptions = { ...options, resolveCursorSkills: resolveSelectedSkills };
       }
-      if (this.adapterOf(agent.provider) === "cursor-sdk" && agent.workspaceId) {
+      if (this.adapterOf(agent.provider) === "cursor-sdk") {
         runOptions = {
           ...runOptions,
           resolveCursorWorkspaceInstructions: async () => {
             const target = { cwd: agent.config.cwd, workspaceId: agent.workspaceId };
-            const roots = await this.resolveCursorSkillRoots(target);
+            const roots = target.workspaceId ? await this.resolveCursorSkillRoots(target) : [];
             return readCursorWorkspaceInstructions(target.cwd, roots);
           },
         };
