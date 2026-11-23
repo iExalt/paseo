@@ -18,7 +18,12 @@ import type {
   ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
-import { addCursorUsage, mapCursorTool, mapCursorUsage } from "./cursor-sdk-telemetry.js";
+import {
+  addCursorUsage,
+  mapCursorTool,
+  mapCursorUsage,
+  projectCursorTool,
+} from "./cursor-sdk-telemetry.js";
 import type {
   CursorHistoryTurn,
   CursorHistoryUser,
@@ -240,7 +245,9 @@ async function readJournalItems(
   record: CursorHistoryTurn,
   run?: LocalAgentRunDocument,
 ): Promise<{ events: AgentTimelineItem[]; incomplete: boolean }> {
-  const events = await journal.readItems(record.id);
+  const events = (await journal.readItems(record.id)).map((item) =>
+    item.type === "tool_call" ? projectCursorTool(item) : item,
+  );
   if (!run || (!record.recovered && (events.length > 0 || record.terminal))) {
     return { events, incomplete: false };
   }
@@ -284,7 +291,7 @@ function recoveryComparable(events: AgentTimelineItem[]): AgentTimelineItem[] {
     const normalized: ToolCallTimelineItem =
       raw && typeof raw === "object" && "input" in raw && "output" in raw
         ? { ...withoutMetadata, detail: { type: "unknown", input: raw.input, output: raw.output } }
-        : item;
+        : withoutMetadata;
     const previous = tools.get(item.callId);
     if (previous && previous.status !== "running" && normalized.status === "running") return [];
     if (isDeepStrictEqual(previous, normalized)) return [];

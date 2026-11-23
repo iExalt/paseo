@@ -128,6 +128,16 @@ function buildCanonicalDetailDisplay(input: ToolCallDisplayInput): DetailDisplay
 }
 
 function buildUnknownDetailOverride(input: ToolCallDisplayInput): DetailDisplay {
+  const cursorSdk = input.metadata?.cursorSdk;
+  if (isRecord(cursorSdk) && cursorSdk.name === "mcp") {
+    const toolName = readString(cursorSdk.toolName);
+    if (toolName) {
+      const isQuestion =
+        input.name === "custom-user-tools.ask_question" ||
+        input.name === "custom-user-tools.ask_user_question";
+      return { displayName: isQuestion ? "Ask question" : humanizeToolName(toolName) };
+    }
+  }
   const lowerName = input.name.trim().toLowerCase();
   if (input.detail.type === "unknown" && lowerName === "task") {
     return {

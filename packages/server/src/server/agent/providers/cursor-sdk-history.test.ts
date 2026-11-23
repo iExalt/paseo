@@ -2,6 +2,7 @@ import { mkdtemp, readFile, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import * as sdk from "@cursor/sdk";
+import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display";
 import { expect, test } from "vitest";
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
 import { readCursorHistory, readCursorLastUsage } from "./cursor-sdk-history.js";
@@ -363,6 +364,86 @@ test("keeps a recovered legacy shell journal when only the typed projection chan
       "tool_call",
       "tool_call",
       "tool_call",
+    ]);
+  });
+});
+
+test("projects a recovered Cursor journal with legacy MCP and search rows", async () => {
+  await withStore(async (_root, store, journal) => {
+    const runId = "legacy-tools";
+    const turn: CursorHistoryTurn = {
+      id: "paseo-legacy-tools",
+      nativeRunId: runId,
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "inspect", messageId: "user" },
+      steers: [],
+      joined: true,
+      recovered: true,
+      terminal: { status: "finished" },
+    };
+    await journal.admit(turn, turn.user.text);
+    await store.runs.create({ run: localRun(runId, "finished") });
+    const cases = [
+      {
+        name: "mcp",
+        args: { providerIdentifier: "custom-user-tools", toolName: "ask_user_question" },
+        result: { status: "success", value: { isError: true, content: [] } },
+        status: "completed",
+      },
+      {
+        name: "mcp",
+        args: { providerIdentifier: "docs", toolName: "lookup_reference" },
+        result: { status: "error", value: { message: "transport disconnected" } },
+        status: "error",
+      },
+      {
+        name: "glob",
+        args: { globPattern: "**/AGENTS.md" },
+        result: { status: "success", value: { files: [] } },
+        status: "completed",
+      },
+    ] as const;
+    for (const [index, { name, args, result, status }] of cases.entries()) {
+      const callId = String(index);
+      await store.runEvents.append({
+        runId,
+        eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
+        payload: sdk.createSdkMessageRunStreamEvent({
+          type: "tool_call",
+          run_id: runId,
+          agent_id: agentId,
+          call_id: callId,
+          name,
+          status,
+          args,
+          result,
+        }),
+      });
+      await journal.append(turn.id, {
+        type: "tool_call",
+        callId: `${runId}:${callId}`,
+        name,
+        status: status === "error" ? "failed" : "completed",
+        detail: { type: "unknown", input: args, output: result },
+        error: status === "error" ? result : null,
+      });
+    }
+    const rows = messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
+    expect(rows.every(({ turnId }) => turnId === turn.id)).toBe(true);
+    expect(rows.map(({ item }) => item.type)).toEqual([
+      "user_message",
+      "tool_call",
+      "tool_call",
+      "tool_call",
+    ]);
+    const projected = rows.flatMap(({ item }) => (item.type === "tool_call" ? [item] : []));
+    expect(projected.map(buildToolCallDisplayModel)).toEqual([
+      { displayName: "Ask question", errorText: "MCP tool returned an error." },
+      {
+        displayName: "Lookup reference",
+        errorText: JSON.stringify(cases[1].result, null, 2),
+      },
+      { displayName: "Search", summary: "**/AGENTS.md" },
     ]);
   });
 });
