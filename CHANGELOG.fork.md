@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.33.0](https://github.com/iExalt/paseo/compare/paseo-v0.32.1...paseo-v0.33.0) (2026-11-23)
+
+
+### Features
+
+* **cursor-sdk:** discover and explicitly invoke scoped skills ([#562](https://github.com/iExalt/paseo/issues/562)) ([d433756](https://github.com/iExalt/paseo/commit/d433756b123ef3313f2e3d78adc32b5659515469))
+* **cursor-sdk:** mediate questions and load trusted workspace instructions ([#566](https://github.com/iExalt/paseo/issues/566)) ([60a871a](https://github.com/iExalt/paseo/commit/60a871a1eba681bdbb9ec77d7a7cad19f3f4b468))
+* **cursor-sdk:** report tool activity and usage and support voice ([#568](https://github.com/iExalt/paseo/issues/568)) ([b86b101](https://github.com/iExalt/paseo/commit/b86b101d74b8e98b7897d3c35db55ad8b044e60d))
+* **cursor-sdk:** support session maintenance and local import ([#567](https://github.com/iExalt/paseo/issues/567)) ([5c85fee](https://github.com/iExalt/paseo/commit/5c85feee0c6e9a30e1b847b6f331d49b1b0e7391))
+
+
+### Bug Fixes
+
+* **cursor-sdk:** apply caller identity and launch settings to shells ([#564](https://github.com/iExalt/paseo/issues/564)) ([d755d1d](https://github.com/iExalt/paseo/commit/d755d1dade64ad5cc354cb4e2133bded9c3c3f5d))
+* **cursor-sdk:** keep effective model settings consistent ([#563](https://github.com/iExalt/paseo/issues/563)) ([194c228](https://github.com/iExalt/paseo/commit/194c228d5ef9f5a0c08e959810244b08e47b3720))
+* **cursor-sdk:** recover host sign-in and refresh turn credentials ([#561](https://github.com/iExalt/paseo/issues/561)) ([ffb40bc](https://github.com/iExalt/paseo/commit/ffb40bc9014c35014a2d8b3cb1db8ae4a7866810))
+* **cursor-sdk:** recover interrupted runs in the same chat ([#565](https://github.com/iExalt/paseo/issues/565)) ([d25195a](https://github.com/iExalt/paseo/commit/d25195a8708c50d1a030058f84ee104406dd3fe0))
+* **server:** preserve Cursor SDK history and run ownership ([#558](https://github.com/iExalt/paseo/issues/558)) ([f73f183](https://github.com/iExalt/paseo/commit/f73f183348aed8b4dd95aa0980fe554efc6266b3))
+* **usage:** preserve provider readings and report unpriced runs ([#569](https://github.com/iExalt/paseo/issues/569)) ([10d90c2](https://github.com/iExalt/paseo/commit/10d90c2f39ff9f51b1f3c9e8ccb7355e12f7c335))
+
 ## [0.32.1](https://github.com/iExalt/paseo/compare/paseo-v0.32.0...paseo-v0.32.1) (2026-11-22)
 
 
