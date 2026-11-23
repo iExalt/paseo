@@ -3,11 +3,32 @@ import { mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { createCli } from "./cli";
 import { createCliParseArgv } from "./run";
 
 const runModuleUrl = new URL("./run.ts", import.meta.url).href;
+const compileCacheDir = mkdtempSync(path.join(tmpdir(), "paseo-cli-run-compile-cache-"));
+const MAX_CHILD_CONCURRENCY = 3;
+let activeChildren = 0;
+const childQueue: Array<() => void> = [];
+
+async function withChildSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeChildren >= MAX_CHILD_CONCURRENCY) {
+    await new Promise<void>((resolve) => childQueue.push(resolve));
+  }
+  activeChildren += 1;
+  try {
+    return await fn();
+  } finally {
+    activeChildren -= 1;
+    childQueue.shift()?.();
+  }
+}
+
+afterAll(() => {
+  rmSync(compileCacheDir, { recursive: true, force: true });
+});
 
 // Runs the CLI in a child process whose stdout pipe has no reader, as when the
 // program that launched it has already closed its end.
@@ -37,36 +58,47 @@ async function runCliWithClosedStdout(
 async function runCliInChild(
   argv: string[],
 ): Promise<{ code: number | null; stdout: string; stderr: string }> {
-  const script = `const { runCli } = await import(${JSON.stringify(runModuleUrl)}); process.exitCode = await runCli(${JSON.stringify(argv)});`;
-  const home = mkdtempSync(path.join(tmpdir(), "paseo-cli-errors-"));
-  const child = spawn(process.execPath, ["--import", "tsx", "--input-type=module", "-e", script], {
-    cwd: path.dirname(fileURLToPath(import.meta.url)),
-    env: { ...process.env, PASEO_HOME: home, NO_COLOR: "1" },
-    stdio: ["ignore", "pipe", "pipe"],
-    timeout: 15_000,
+  return withChildSlot(async () => {
+    const script = `const { runCli } = await import(${JSON.stringify(runModuleUrl)}); process.exitCode = await runCli(${JSON.stringify(argv)});`;
+    const home = mkdtempSync(path.join(tmpdir(), "paseo-cli-errors-"));
+    try {
+      const child = spawn(
+        process.execPath,
+        ["--import", "tsx", "--input-type=module", "-e", script],
+        {
+          cwd: path.dirname(fileURLToPath(import.meta.url)),
+          env: {
+            ...process.env,
+            PASEO_HOME: home,
+            NO_COLOR: "1",
+            NODE_COMPILE_CACHE: compileCacheDir,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
+          timeout: 15_000,
+        },
+      );
+      let stdout = "";
+      let stderr = "";
+      child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
+        stdout += chunk;
+      });
+      child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
+        stderr += chunk;
+      });
+      const code = await new Promise<number | null>((resolve, reject) => {
+        child.on("error", reject);
+        child.on("close", resolve);
+      });
+      expect(readdirSync(home)).toEqual([]);
+      return { code, stdout, stderr };
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
   });
-  let stdout = "";
-  let stderr = "";
-  child.stdout.setEncoding("utf8").on("data", (chunk: string) => {
-    stdout += chunk;
-  });
-  child.stderr.setEncoding("utf8").on("data", (chunk: string) => {
-    stderr += chunk;
-  });
-  const code = await new Promise<number | null>((resolve, reject) => {
-    child.on("error", reject);
-    child.on("close", resolve);
-  });
-  try {
-    expect(readdirSync(home)).toEqual([]);
-    return { code, stdout, stderr };
-  } finally {
-    rmSync(home, { recursive: true, force: true });
-  }
 }
 
 describe("runCli", () => {
-  it.each([
+  it.concurrent.each([
     { argv: ["ls", "--json", "--invalid-option"], error: "commander.unknownOption" },
     { argv: ["agent", "inspect", "--json"], error: "commander.missingArgument" },
     {
@@ -95,36 +127,48 @@ describe("runCli", () => {
       argv: ["--home", "/a", "agent", "stop", "--home", "/b", "--json"],
       error: "TARGET_AMBIGUOUS",
     },
-  ])("renders structured errors without mutation for $argv", async ({ argv, error }) => {
-    const result = await runCliInChild(argv);
-    expect(result.code).toBe(1);
-    expect(result.stdout).toBe("");
-    expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: error } });
-  });
+  ])(
+    "renders structured errors without mutation for $argv",
+    async ({ argv, error }) => {
+      const result = await runCliInChild(argv);
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(JSON.parse(result.stderr)).toMatchObject({ error: { code: error } });
+    },
+    20_000,
+  );
 
-  it.each([
+  it.concurrent.each([
     ["ls", "--invalid-option", "--", "--json"],
     ["ls", "--invalid-option", "--home", "--json"],
     ["stop", "--home", "--json", "--home", "/b"],
     ["ls", "--invalid-option", "--home", "--format", "json"],
-  ])("does not treat operands as output flags: %j", async (...argv) => {
-    const result = await runCliInChild(argv);
-    expect(result.code).toBe(1);
-    expect(result.stdout).toBe("");
-    expect(result.stderr).toMatch(/^Error: /);
-  });
+  ])(
+    "does not treat operands as output flags: %j",
+    async (...argv) => {
+      const result = await runCliInChild(argv);
+      expect(result.code).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(result.stderr).toMatch(/^Error: /);
+    },
+    20_000,
+  );
 
-  it.each([
+  it.concurrent.each([
     ["--json", "--help"],
     ["agent", "inspect", "--json", "--help"],
     ["--format", "json", "--version"],
     ["agent", "--format", "json", "--version"],
-  ])("preserves successful text help and version output: %j", async (...argv) => {
-    const result = await runCliInChild(argv);
-    expect(result.code).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(result.stdout).toMatch(/^(Usage:|[0-9]+\.)/);
-  });
+  ])(
+    "preserves successful text help and version output: %j",
+    async (...argv) => {
+      const result = await runCliInChild(argv);
+      expect(result.code).toBe(0);
+      expect(result.stderr).toBe("");
+      expect(result.stdout).toMatch(/^(Usage:|[0-9]+\.)/);
+    },
+    20_000,
+  );
 
   it("lets plugin update own --version while preserving global output options", async () => {
     const cli = createCli()

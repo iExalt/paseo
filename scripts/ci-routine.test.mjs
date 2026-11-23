@@ -140,9 +140,25 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
     integration.args.includes("src/server/push/lifecycle.e2e.test.ts"),
     "The hosted integration lane must run the notification lifecycle journey",
   );
+  assert.ok(
+    integration.args.includes("src/server/session.create-agent-worktree-autoarchive.e2e.test.ts"),
+    "The hosted integration lane must include the worktree autoarchive e2e suite",
+  );
+  assert.ok(integration.args.includes("--fileParallelism"));
+  assert.ok(integration.args.includes("--maxWorkers=2"));
+  assert.equal(
+    commands.some((step) => step.name === "worktree autoarchive"),
+    false,
+  );
   assert.equal(
     pattern.test(
       "actual daemon RPCs keep question and attention episodes independent across two clients",
+    ),
+    true,
+  );
+  assert.equal(
+    pattern.test(
+      "create_agent_request creates a worktree and auto-archives both after the first turn and removes unpublished work",
     ),
     true,
   );
