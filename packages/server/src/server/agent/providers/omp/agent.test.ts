@@ -437,10 +437,6 @@ describe("OMP agent client and session", () => {
     await waitForImmediate();
     expect(omp.usageUpdates()).toEqual([
       {
-        inputTokens: 0,
-        cachedInputTokens: 0,
-        outputTokens: 0,
-        totalCostUsd: 0,
         contextWindowMaxTokens: 200_000,
         contextWindowUsedTokens: 130,
       },

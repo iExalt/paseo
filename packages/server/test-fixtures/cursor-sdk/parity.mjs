@@ -267,12 +267,17 @@ async function checkCompleted(run) {
   }
   assert.equal(await readFile(join(workspace, "cursor-canary.txt"), "utf8"), canary);
   const { snapshot } = await cli("agent", "status", run.agentId);
-  assert.deepEqual(
-    snapshot.lastUsage,
-    mode === "baseline"
-      ? { inputTokens: 12, cachedInputTokens: 2, outputTokens: 3 }
-      : finishedUsage,
-  );
+  if (mode === "baseline") {
+    assert.deepEqual(snapshot.lastUsage, {
+      inputTokens: 12,
+      cachedInputTokens: 2,
+      outputTokens: 3,
+    });
+  } else {
+    const { tokenReadingTurnId, ...tokens } = snapshot.lastUsage;
+    assert.ok(tokenReadingTurnId);
+    assert.deepEqual(tokens, finishedUsage);
+  }
   assert.equal(backend.runs, 1);
   assert.equal(backend.shellReplies, 1);
   console.log("PASS Cursor SDK shell canary, client tool result, assistant text, and usage");

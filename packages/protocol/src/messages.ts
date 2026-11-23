@@ -373,6 +373,8 @@ const AgentCapabilityFlagsSchema: z.ZodType<AgentCapabilityFlags> = z
   .catchall(z.boolean());
 
 export const AgentUsageSchema: z.ZodType<AgentUsage> = z.object({
+  tokenReadingTurnId: z.string().optional(),
+  contextReadingTurnId: z.string().optional(),
   inputTokens: z.number().optional(),
   cachedInputTokens: z.number().optional(),
   cacheWriteTokens: z.number().optional(),
@@ -7683,21 +7685,27 @@ export const UsageListReportsResponseMessageSchema = z.object({
   payload: z.object({ requestId: z.string(), error: z.string().nullable() }),
 });
 
-/** What agents spent through this daemon, by provider, as reported by each provider. */
+const SpendTotalsSchema = z.object({
+  todayUsd: z.number(),
+  last7DaysUsd: z.number(),
+  thisMonthUsd: z.number(),
+  allTimeUsd: z.number(),
+  carriedUsd: z.number(),
+  unknownCostRuns: z
+    .object({
+      today: z.number(),
+      last7Days: z.number(),
+      thisMonth: z.number(),
+      allTime: z.number(),
+    })
+    .optional(),
+});
+
+/** Known dollars and unpriced runs by provider and across this host. */
 export const SpendSummarySchema = z.object({
-  /** When the daemon started recording spend. Null while it has no ledger. */
   trackingSince: z.string().nullable(),
-  providers: z.array(
-    z.object({
-      provider: z.string(),
-      todayUsd: z.number(),
-      last7DaysUsd: z.number(),
-      thisMonthUsd: z.number(),
-      allTimeUsd: z.number(),
-      /** Part of `allTimeUsd` spent before tracking began, counted when first reported. */
-      carriedUsd: z.number(),
-    }),
-  ),
+  totals: SpendTotalsSchema.optional(),
+  providers: z.array(SpendTotalsSchema.extend({ provider: z.string() })),
 });
 
 export const UsageSpendSummaryResponseMessageSchema = z.object({

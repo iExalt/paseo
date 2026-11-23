@@ -106,6 +106,8 @@ import { createSpeechService } from "./speech/speech-runtime.js";
 import { createSpeechSettingsOwner } from "./speech/speech-settings.js";
 import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
+import { readCursorUsageHistory } from "./agent/providers/cursor-sdk-history.js";
+import { CursorTurnJournal } from "./agent/providers/cursor-sdk-turn-journal.js";
 import { SpendLedger } from "./agent/spend-ledger.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import {
@@ -996,9 +998,42 @@ export async function createPaseoDaemon(
   const spendLedger = new SpendLedger({
     paseoHome: config.paseoHome,
     logger,
+    historicalRuns: async function* () {
+      const records = (await agentStorage.listAll()).filter(
+        (record) => record.provider === "cursor-sdk" && record.persistence,
+      );
+      if (!records.length) return;
+      const { JsonlLocalAgentStore } = await import("@cursor/sdk");
+      const directory = path.join(config.paseoHome, "cursor-sdk");
+      const store = new JsonlLocalAgentStore(directory);
+      let incomplete = false;
+      for (const record of records) {
+        const id = record.persistence!.nativeHandle ?? record.persistence!.sessionId;
+        if (typeof id !== "string" || !id.startsWith("agent-")) continue;
+        let readings;
+        try {
+          readings = await readCursorUsageHistory(store, new CursorTurnJournal(directory, id), id);
+        } catch (err) {
+          logger.warn({ err, agentId: record.id }, "Could not read historical Cursor usage");
+          incomplete = true;
+          continue;
+        }
+        for (const { turnId, createdAt, usage } of readings) {
+          if (usage && Number.isFinite(createdAt))
+            yield {
+              agentId: record.id,
+              provider: record.provider,
+              turnId,
+              at: new Date(createdAt).toISOString(),
+              usage,
+            };
+        }
+      }
+      if (incomplete) throw new Error("Historical Cursor usage import is incomplete");
+    },
     seed: async () =>
       (await agentStorage.listAll()).flatMap((record) =>
-        record.totalCostUsd
+        record.totalCostUsd !== undefined
           ? [
               {
                 agentId: record.id,

@@ -198,12 +198,19 @@ test.describe("api spend", () => {
     });
     try {
       // Other specs share the daemon and spend too, so read the total the section should show.
-      const allTimeUsd = async () =>
+      const mockSpend = async () =>
         (await agent.client.getSpendSummary()).summary.providers.find(
           (provider) => provider.provider === "mock",
-        )?.allTimeUsd ?? 0;
+        );
+      const allTimeUsd = async () => (await mockSpend())?.allTimeUsd ?? 0;
       await expect.poll(allTimeUsd, { timeout: 30_000 }).toBeGreaterThanOrEqual(1.25);
-
+      await agent.client.sendAgentMessage(
+        agent.agentId,
+        "emit 32000 byte file agent stream payload",
+      );
+      await expect
+        .poll(async () => (await mockSpend())?.unknownCostRuns?.allTime ?? 0)
+        .toBeGreaterThan(0);
       await gotoAppShell(page);
       await openSettings(page);
       await openSettingsHostSection(page, serverId, "usage");
@@ -215,7 +222,7 @@ test.describe("api spend", () => {
           style: "currency",
           currency: "USD",
         }).format(await allTimeUsd());
-        await expect(row.getByLabel(`All time ${expected}`)).toBeVisible({
+        await expect(row.getByLabel(`All time ${expected} known ·`)).toBeVisible({
           timeout: 1_000,
         });
       }).toPass({ timeout: 20_000 });

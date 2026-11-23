@@ -39,14 +39,18 @@ async function connect({ listener, require }) {
 
 async function assertUsage({ client, args, id, usage, status }) {
   const snapshot = (await client.fetchAgent(id)).agent;
-  assert.deepEqual(snapshot.lastUsage, usage);
   const { snapshot: cliSnapshot } = await args.cli("agent", "status", id);
-  assert.deepEqual(cliSnapshot.lastUsage, usage);
   const { JsonlLocalAgentStore } = args.require("@cursor/sdk");
   const store = new JsonlLocalAgentStore(join(args.paseoHome, "cursor-sdk"));
   const page = await store.runs.list({ filter: { agentIds: [snapshot.persistence.nativeHandle] } });
   const run = page.items.findLast((entry) => entry.status === status);
   assert.ok(run, `Missing native ${status} run`);
+  const cards = toolCards(await client.fetchAgentTimeline(id, { limit: 100 }));
+  const readingTurn = cards.find(({ item }) => item.callId.startsWith(run.runId + ":"))?.turnId;
+  assert.ok(readingTurn, "Missing Paseo turn for the native run");
+  const expected = { ...usage, tokenReadingTurnId: readingTurn };
+  assert.deepEqual(snapshot.lastUsage, expected);
+  assert.deepEqual(cliSnapshot.lastUsage, expected);
   assert.deepEqual(run.usage, {
     inputTokens: usage.inputTokens,
     cacheReadTokens: usage.cachedInputTokens,
@@ -100,6 +104,7 @@ export async function checkCompletedTelemetry(args, id) {
       InputTokens: 12,
       CachedTokens: 2,
       CacheWriteTokens: 1,
+      TokenReadingTurnId: cards[0].turnId,
       OutputTokens: 3,
       ReasoningTokens: 1,
       TotalTokens: 15,

@@ -111,10 +111,6 @@ describe("OMP usage poller", () => {
     const inFlightStats = deferred<OmpSessionStats>();
     const finalStats = { contextUsage: { contextWindow: 200_000, tokens: 150 } };
     const finalUsage = {
-      inputTokens: 0,
-      cachedInputTokens: 0,
-      outputTokens: 0,
-      totalCostUsd: 0,
       contextWindowMaxTokens: 200_000,
       contextWindowUsedTokens: 150,
     };

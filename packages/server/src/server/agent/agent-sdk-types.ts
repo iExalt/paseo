@@ -448,7 +448,13 @@ export type AgentStreamEvent =
       /** Shown on the completed turn's footer. */
       metrics?: AgentMetric[];
     }
-  | { type: "usage_updated"; provider: AgentProvider; usage: AgentUsage; turnId?: string }
+  | {
+      type: "usage_updated";
+      provider: AgentProvider;
+      usage: AgentUsage;
+      turnId?: string;
+      sessionOnly?: boolean;
+    }
   /** Full replacement of the metrics shown for the session. An empty list clears them. */
   | { type: "session_metrics_updated"; provider: AgentProvider; metrics: AgentMetric[] }
   | {
