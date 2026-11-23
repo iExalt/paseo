@@ -962,12 +962,26 @@ test("shows computer use and screen recording as cards, with the screenshot inli
     { type: "click", coordinate: { x: 10, y: 20 }, button: "left", count: 2 },
     { type: "type", text: "hello" },
     { type: "key", key: "Enter", stroke: "tap" },
+    { type: "click", coordinate: { x: 5, y: 6 }, button: "left", count: 1, modifierKeys: "cmd" },
+    { type: "key", key: "Shift", stroke: "down", holdDurationMs: 300 },
+    { type: "mouseDown", button: "right" },
+    { type: "key", key: "Shift", stroke: "up" },
+    { type: "scroll", direction: "down", amount: 3, modifierKeys: "shift" },
+    {
+      type: "drag",
+      path: [
+        { x: 1, y: 1 },
+        { x: 9, y: 9 },
+      ],
+      button: "middle",
+      modifierKeys: "alt",
+    },
     { type: "screenshot" },
   ];
   const clickedArgs = { actions, description: "Submit the form" };
   const clickedResult = {
     status: "success",
-    value: { actionCount: 4, durationMs: 900, screenshotPath: "/tmp/after.png", log: "ok" },
+    value: { actionCount: 10, durationMs: 900, screenshotPath: "/tmp/after.png", log: "ok" },
   };
   const clicked = tool("computerUse", clickedArgs, clickedResult);
   const screenshot = {
@@ -979,7 +993,20 @@ test("shows computer use and screen recording as cards, with the screenshot inli
     type: "plain_text",
     icon: "wrench",
     label: "Submit the form",
-    text: 'click x2 (10, 20)\ntype "hello"\nkey Enter\nscreenshot\n\nok',
+    text: [
+      "click x2 (10, 20)",
+      'type "hello"',
+      "key Enter",
+      "cmd+click (5, 6)",
+      "key down Shift held 300 ms",
+      "mouseDown right",
+      "key up Shift",
+      "shift+scroll down 3",
+      "alt+drag middle (1, 1) -> (9, 9)",
+      "screenshot",
+      "",
+      "ok",
+    ].join("\n"),
   });
   const missed = tool(
     "computerUse",

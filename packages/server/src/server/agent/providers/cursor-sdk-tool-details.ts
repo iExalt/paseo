@@ -249,6 +249,18 @@ function meaningful(value: string | undefined): string | undefined {
   return value && value !== "unspecified" ? value : undefined;
 }
 
+// Name the button only when it isn't the default left one.
+function button(action: Fields): string | undefined {
+  const name = meaningful(string(action.button));
+  return name === "left" ? undefined : name;
+}
+
+// Prefix held modifier keys to the verb, as in "cmd+click".
+function withModifiers(verb: string, action: Fields): string {
+  const modifiers = string(action.modifierKeys)?.trim();
+  return modifiers ? `${modifiers}+${verb}` : verb;
+}
+
 function computerActionParts(
   type: string,
   action: Fields,
@@ -257,23 +269,38 @@ function computerActionParts(
   switch (type) {
     case "click": {
       const count = number(action.count);
-      const button = meaningful(string(action.button));
-      return [
-        count && count > 1 ? `click x${count}` : "click",
-        button === "left" ? undefined : button,
-        at,
-      ];
+      const verb = count && count > 1 ? `click x${count}` : "click";
+      return [withModifiers(verb, action), button(action), at];
     }
+    case "mouseDown":
+    case "mouseUp":
+      return [type, button(action), at];
     case "type":
       return ["type", JSON.stringify(string(action.text) ?? "")];
-    case "key":
-      return ["key", string(action.key)];
+    case "key": {
+      const stroke = meaningful(string(action.stroke));
+      const hold = number(action.holdDurationMs);
+      return [
+        stroke === "down" || stroke === "up" ? `key ${stroke}` : "key",
+        string(action.key),
+        hold ? `held ${hold} ms` : undefined,
+      ];
+    }
     case "scroll":
-      return ["scroll", meaningful(string(action.direction)), number(action.amount), at];
+      return [
+        withModifiers("scroll", action),
+        meaningful(string(action.direction)),
+        number(action.amount),
+        at,
+      ];
     case "wait":
       return ["wait", `${number(action.durationMs) ?? 0} ms`];
     case "drag":
-      return ["drag", list(action.path).map(point).filter(Boolean).join(" -> ")];
+      return [
+        withModifiers("drag", action),
+        button(action),
+        list(action.path).map(point).filter(Boolean).join(" -> "),
+      ];
     default:
       return [type, at];
   }
