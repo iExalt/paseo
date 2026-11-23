@@ -128,6 +128,7 @@ export async function readBoundedCursorFile(
   root: string,
   source: Pick<CursorSkillRoot, "boundary" | "excludedRoots">,
   maxBytes: number,
+  truncate = false,
 ): Promise<{ bytes: Buffer; path: string } | null> {
   const candidate = await realpath(path);
   if (!isPathInsideRoot(root, candidate) || !isAllowedSkillPath(source, candidate)) return null;
@@ -143,27 +144,27 @@ export async function readBoundedCursorFile(
   const file = await open(candidate, flags);
   try {
     const before = await file.stat({ bigint: true });
-    if (!before.isFile() || before.size > maxBytes) return null;
+    if (!before.isFile() || (!truncate && before.size > maxBytes)) return null;
+    const readSize = before.size > maxBytes ? maxBytes : Number(before.size);
     const openedPath = process.platform === "linux" ? `/proc/self/fd/${file.fd}` : candidate;
     if ((await realpath(openedPath)) !== candidate) return null;
-    const verified = await stat(candidate, { bigint: true });
-    if (
-      verified.dev !== before.dev ||
-      verified.ino !== before.ino ||
-      (ancestry !== null && (await canonicalDirectoryStamp(source.boundary, parent)) !== ancestry)
-    )
-      return null;
-    const bytes = Buffer.alloc(Number(before.size) + 1);
+    const matchesPath = async () => {
+      const current = await stat(candidate, { bigint: true });
+      return (
+        before.dev === current.dev &&
+        before.ino === current.ino &&
+        (ancestry === null || (await canonicalDirectoryStamp(source.boundary, parent)) === ancestry)
+      );
+    };
+    if (!(await matchesPath())) return null;
+    const bytes = Buffer.alloc(readSize);
     const result = await file.read(bytes, 0, bytes.length, 0);
     const after = await file.stat({ bigint: true });
-    const current = await stat(candidate, { bigint: true });
     if (
-      before.size !== BigInt(result.bytesRead) ||
+      readSize !== result.bytesRead ||
       before.ctimeNs !== after.ctimeNs ||
-      before.dev !== current.dev ||
-      before.ino !== current.ino ||
       (await realpath(path)) !== candidate ||
-      (ancestry !== null && (await canonicalDirectoryStamp(source.boundary, parent)) !== ancestry)
+      !(await matchesPath())
     ) {
       return null;
     }
