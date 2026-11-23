@@ -173,17 +173,30 @@ export async function checkStoppedTelemetry(args, { checkContextWindow = false }
         "turn_started",
       );
       assert.equal((await client.waitForFinish(contextId, 12_000)).status, "idle");
+      // Wait for CursorSessionCost confirmation re-poll to publish $1.47 (subagent-rolled-up event).
+      const costDeadline = Date.now() + 8_000;
+      let contextSnapshot = (await client.fetchAgent(contextId)).agent;
+      while (contextSnapshot.lastUsage?.totalCostUsd !== 1.47 && Date.now() < costDeadline) {
+        await delay(100);
+        contextSnapshot = (await client.fetchAgent(contextId)).agent;
+      }
+      assert.equal(contextSnapshot.lastUsage?.totalCostUsd, 1.47);
       await assertUsage({
         client,
         args,
         id: contextId,
-        usage: contextExpected,
+        usage: { ...contextExpected, totalCostUsd: 1.47 },
         status: "finished",
       });
       const contextInspect = await args.cli("agent", "inspect", contextId);
       assert.equal(contextInspect.LastUsage.ContextWindowUsedTokens, 4_500);
       assert.equal(contextInspect.LastUsage.ContextWindowMaxTokens, 300_000);
       assert.equal(contextInspect.LastUsage.ContextWindowPercent, 2);
+      assert.equal(contextInspect.LastUsage.CostUsd, 1.47);
+      const spend = await args.cli("usage", "spend", "--json");
+      const cursorSpend = spend.providers.find((entry) => entry.provider === "cursor-sdk");
+      assert.ok(cursorSpend, "Missing cursor-sdk row in usage spend");
+      assert.equal(Number(cursorSpend.allTimeUsd.toFixed(2)), 1.47);
       await client.setAgentOptions(contextId, { cursor_model_context: "1m" });
       const updated = (await client.fetchAgent(contextId)).agent;
       assert.equal(updated.lastUsage?.contextWindowMaxTokens, 1_000_000);
@@ -212,7 +225,7 @@ export async function checkStoppedTelemetry(args, { checkContextWindow = false }
         client,
         args,
         id: contextId,
-        usage: { ...contextExpected, contextWindowMaxTokens: 1_000_000 },
+        usage: { ...contextExpected, contextWindowMaxTokens: 1_000_000, totalCostUsd: 1.47 },
         status: "finished",
       });
       console.log(

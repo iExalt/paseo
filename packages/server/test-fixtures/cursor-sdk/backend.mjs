@@ -148,6 +148,7 @@ export async function startBackend(
   const nextSteer = [];
   const steers = [];
   const wire = [];
+  const usageEvents = [];
 
   function sendSteerAck(key, injection, send) {
     const payload = fields(injection);
@@ -191,6 +192,21 @@ export async function startBackend(
       return stoppedShell;
     }
     if (request?.includes("PASEO_P8_CONTEXT")) {
+      const convMatch = /agent-[0-9a-f-]{36}/i.exec(request.toString("latin1"));
+      if (convMatch) {
+        usageEvents.push({
+          usageEventId: "fixture-cost-event-" + usageEvents.length,
+          timestamp: String(Date.now()),
+          conversationId: convMatch[0],
+          chargedCents: 147,
+          tokenUsage: {
+            inputTokens: 10_000,
+            outputTokens: 2_000,
+            cacheReadTokens: 80_000,
+            totalCents: 150,
+          },
+        });
+      }
       response.write(contextStep1);
       return shell;
     }
@@ -334,6 +350,23 @@ export async function startBackend(
           );
         case "POST /aiserver.v1.DashboardService/GetUserPrivacyMode":
           return send(proto, number(1, 1));
+        case "POST /aiserver.v1.DashboardService/GetFilteredUsageEvents": {
+          auth(token);
+          const req = JSON.parse(body.toString("utf8") || "{}");
+          const start = Number(req.startDate ?? 0);
+          const end = Number(req.endDate ?? Number.MAX_SAFE_INTEGER);
+          const filtered = usageEvents.filter((event) => {
+            const ts = Number(event.timestamp);
+            return ts >= start && ts <= end;
+          });
+          return send(
+            "application/json",
+            JSON.stringify({
+              usageEventsDisplay: filtered,
+              totalUsageEventsCount: filtered.length,
+            }),
+          );
+        }
         case "POST /aiserver.v1.AnalyticsService/BootstrapStatsig":
           return send("application/json", "{}");
         case "POST /agent.v1.AgentService/RunSSE": {
