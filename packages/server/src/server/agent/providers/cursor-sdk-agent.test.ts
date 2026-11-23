@@ -637,7 +637,7 @@ describe("Cursor SDK provider", () => {
       const call = { ...eventIds, type: "tool_call" as const, name, call_id };
       return [
         { ...call, status: "running", args },
-        { ...call, status: "completed", result, ...(name === "glob" ? { args: {} } : {}) },
+        { ...call, status: "completed", result, ...(name === "grep" ? {} : { args: {} }) },
       ];
     });
     send.mockResolvedValue(makeRun(events, { id: runId, status: "finished" }));
@@ -668,8 +668,8 @@ describe("Cursor SDK provider", () => {
     ]);
     expect(liveCalls[1]).toMatchObject({
       name: "custom-user-tools.ask_question",
-      detail: { type: "unknown", input: ask.args, output: ask.result },
-      metadata: { cursorSdk: { name: "mcp" } },
+      detail: { type: "unknown", input: {}, output: "The human dismissed the question." },
+      metadata: { cursorSdk: { name: "mcp", input: ask.args, output: ask.result } },
     });
     for (const [index, call] of [grep, glob].entries()) {
       expect(liveCalls[index * 2 + 3].metadata?.cursorSdk).toMatchObject({
@@ -781,7 +781,7 @@ describe("Cursor SDK provider", () => {
       status: "running",
       error: null,
       detail: { type: "read", filePath: "test.txt" },
-      metadata: { cursorSdk: { input: tool.args, output: null } },
+      metadata: { cursorSdk: { projection: 2, input: tool.args, output: null } },
     };
     const canceledTool = { ...running, status: "canceled" };
     expect(
