@@ -268,12 +268,24 @@ function projectMcp(item: ToolCallTimelineItem, raw: CursorRawTool): ToolCallTim
   return failed ? { ...projected, status: "failed", error: failed } : projected;
 }
 
+// Cursor reports a nonzero exit as a successful call carrying the exit code.
+// Claude and Codex mark such commands failed, even where the exit is expected,
+// as with grep finding nothing. This reads only the typed
+// detail, so it also fixes stamped rows without rebuilding them from a
+// possibly truncated payload.
+function shellExitFailure(item: ToolCallTimelineItem): ToolCallTimelineItem {
+  if (item.status !== "completed" || item.detail.type !== "shell") return item;
+  const { exitCode } = item.detail;
+  if (typeof exitCode !== "number" || exitCode === 0) return item;
+  return { ...item, status: "failed", error: `Command exited with code ${exitCode}.` };
+}
+
 // Replay a journaled row. Current rows were projected and expanded when they
 // were written; rows from older daemons get the current projection and the
 // items it adds, such as a task list or a generated image.
 export function replayCursorTool(item: ToolCallTimelineItem): AgentTimelineItem[] {
   return record(item.metadata?.cursorSdk)?.projection === PROJECTION
-    ? [item]
+    ? [shellExitFailure(item)]
     : cursorTimelineItems(project(item));
 }
 
@@ -301,7 +313,7 @@ function project(item: ToolCallTimelineItem): ToolCallTimelineItem {
   };
   if (Object.keys(metadata).length > 0) projected.metadata = metadata;
   else delete projected.metadata;
-  return failed ? { ...projected, status: "failed", error: failed } : projected;
+  return failed ? { ...projected, status: "failed", error: failed } : shellExitFailure(projected);
 }
 
 // Show a generated image inline after its row, as Codex does. The result
