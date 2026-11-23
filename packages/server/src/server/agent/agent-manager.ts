@@ -7036,7 +7036,7 @@ export class AgentManager {
             "CLI discovery does not grant authorization; daemon permissions still apply.",
             "It is scoped to this agent and daemon; preserve PASEO_AGENT_ID, PASEO_AGENT_CWD, and PASEO_HOME when invoking it.",
             "When a question's choices are visual, show images instead of describing them or drawing ASCII mockups: question dialogs show Markdown images in the question text, option descriptions, and option previews that contain only an image.",
-            "Put each image on its own line with alt text, as a PNG inside the workspace (relative to your cwd) or an absolute path.",
+            "Put each image on its own line with alt text, as a PNG, JPEG, GIF or WebP file inside the workspace (relative to your cwd) or an absolute path.",
           ].join(" ")
         : "",
     ]
