@@ -101,6 +101,10 @@ export class CursorRunController {
     ) => Promise<void>,
   ) {}
 
+  get busy(): boolean {
+    return this.active !== undefined;
+  }
+
   async start(
     prompt: AgentPromptInput,
     input: SDKUserMessage,

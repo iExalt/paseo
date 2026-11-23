@@ -73,6 +73,7 @@ import {
   interruptedCursorRunMessage,
 } from "./cursor-sdk-history.js";
 import { assertCursorRunReleased, reconcileReleasedTurn } from "./cursor-sdk-recovery.js";
+import { CursorRewindError, forkCursorConversation } from "./cursor-sdk-rewind.js";
 import {
   listCursorLocalSessions,
   readCursorLocalSessionForImport,
@@ -115,6 +116,7 @@ const CAPABILITIES = {
   supportsPaseoCli: canRequestCursorShellEnvironment(),
   supportsReasoningStream: true,
   supportsToolInvocations: true,
+  supportsRewindConversation: true,
 };
 
 type CursorSdk = HistorySdk & Pick<typeof import("@cursor/sdk"), "Agent" | "JsonlLocalAgentStore">;
@@ -442,7 +444,6 @@ export class CursorSdkAgentClient implements AgentClient {
         ? sdk.Agent.resume(nativeId, { ...nativeOptions, apiKey })
         : sdk.Agent.create({ ...nativeOptions, apiKey }),
     );
-    const agentId = agent.agentId;
     return new CursorSdkAgent(
       { agent, apiKey },
       cwd,
@@ -454,16 +455,16 @@ export class CursorSdkAgentClient implements AgentClient {
       composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
       sdk,
       binding,
-      new CursorTurnJournal(this.storePath, agentId),
+      new CursorTurnJournal(this.storePath, agent.agentId),
       shellEnvironment,
       dirname(this.storePath),
       options,
       launchContext?.paseoTools,
       {
         read: () => this.requireApiKey(),
-        resume: (key, selection) =>
+        resume: (key, selection, id) =>
           withCursorShellEnvironment(shellEnvironment, () =>
-            sdk.Agent.resume(agentId, { ...nativeOptions, apiKey: key, model: selection }),
+            sdk.Agent.resume(id, { ...nativeOptions, apiKey: key, model: selection }),
           ),
       },
     );
@@ -495,11 +496,12 @@ interface CredentialBoundAgent {
 
 class CursorSdkAgent implements AgentSession {
   readonly provider = PROVIDER;
-  readonly id: string;
   readonly capabilities: typeof CAPABILITIES & { supportsVoicePlayback?: boolean };
 
   private native: CredentialBoundAgent | undefined;
-  private readonly runs: CursorRunController;
+  // Rewind moves the session to a forked local agent.
+  private chatId: string;
+  private runs: CursorRunController;
   private closing: Promise<void> | undefined;
   private closed = false;
   private readonly listeners = new Set<(event: AgentStreamEvent) => void>();
@@ -519,29 +521,72 @@ class CursorSdkAgent implements AgentSession {
     private readonly instructions: string | undefined,
     private readonly sdk: CursorSdk,
     private readonly binding: ReturnType<typeof createCursorRunBinding>,
-    private readonly journal: CursorTurnJournal,
+    private journal: CursorTurnJournal,
     private readonly shellEnvironment: Awaited<ReturnType<typeof prepareCursorShellEnvironment>>,
     private readonly paseoHome: string,
     private readonly ownedOptions: CursorOwnerStart["options"],
     private readonly voiceTools: AgentLaunchContext["paseoTools"],
     private readonly credentials: {
       read: () => Promise<string>;
-      resume: (apiKey: string, model: ModelSelection) => Promise<SDKAgent>;
+      resume: (apiKey: string, model: ModelSelection, agentId: string) => Promise<SDKAgent>;
     },
   ) {
     this.native = native;
-    this.id = native.agent.agentId;
+    this.chatId = native.agent.agentId;
     this.capabilities = voiceTools?.getTool("speak")
       ? { ...CAPABILITIES, supportsVoicePlayback: true }
       : CAPABILITIES;
-    this.runs = new CursorRunController(
-      this.id,
+    this.runs = this.createRuns();
+  }
+
+  get id(): string {
+    return this.chatId;
+  }
+
+  private createRuns(): CursorRunController {
+    const id = this.chatId;
+    const journal = this.journal;
+    return new CursorRunController(
+      id,
       journal,
       (event) => this.emit(event),
       mapCursorUsage,
-      (turn, proof) =>
-        reconcileReleasedTurn(this.binding.store, this.journal, this.id, turn, proof),
+      (turn, proof) => reconcileReleasedTurn(this.binding.store, journal, id, turn, proof),
     );
+  }
+
+  async revertConversation({ messageId }: { messageId: string }): Promise<void> {
+    if (this.closed || this.closing) throw new Error("Cursor SDK session is closing or closed.");
+    if (this.runs.busy)
+      throw new CursorRewindError("Stop the running Cursor SDK turn before rewinding.");
+    const { store } = this.binding;
+    await assertCursorRunReleased(store, this.journal, this.chatId, this.cwd);
+    const fork = await forkCursorConversation({
+      sdk: this.sdk,
+      store,
+      journal: this.journal,
+      agentId: this.chatId,
+      messageId,
+    });
+    let native: CredentialBoundAgent;
+    try {
+      // Open the fork before switching so a fork the SDK can't load leaves the chat as it was.
+      const apiKey = await this.credentials.read();
+      const model = selectCursorModel(this.model.sdkId, this.options);
+      native = { agent: await this.credentials.resume(apiKey, model, fork.agentId), apiKey };
+    } catch (error) {
+      await fork.discard().catch(() => {});
+      throw error;
+    }
+    const previous = this.native;
+    this.native = native;
+    this.chatId = fork.agentId;
+    this.journal = fork.journal;
+    this.runs = this.createRuns();
+    if (previous) {
+      previous.apiKey = null;
+      await previous.agent[Symbol.asyncDispose]().catch(() => {});
+    }
   }
 
   get controls(): AgentOptionSelectControl[] {
@@ -773,7 +818,7 @@ class CursorSdkAgent implements AgentSession {
     await assertCursorRunReleased(store, this.journal, this.id, this.cwd);
     await clearUnusedCursorReservation(this.sdk.Agent, store, this.id, this.cwd);
     await this.disposeIdleNative();
-    const agent = await this.credentials.resume(apiKey, model);
+    const agent = await this.credentials.resume(apiKey, model, this.chatId);
     return (this.native = { agent, apiKey });
   }
 
