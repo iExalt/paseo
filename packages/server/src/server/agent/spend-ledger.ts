@@ -2,7 +2,7 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 import type { Logger } from "pino";
 import { z } from "zod";
-import type { SpendSummary } from "@getpaseo/protocol/messages";
+import { AgentUsageSchema, type SpendSummary } from "@getpaseo/protocol/messages";
 
 const HEADER_SCHEMA = z.object({ startedAt: z.string() });
 const ENTRY_SCHEMA = z.object({
@@ -11,7 +11,9 @@ const ENTRY_SCHEMA = z.object({
   agentId: z.string(),
   usd: z.number(),
   /** The session's lifetime cost after this entry, which the next reading is measured from. */
-  totalUsd: z.number(),
+  totalUsd: z.number().nonnegative().optional(),
+  turnId: z.string().optional(),
+  usage: AgentUsageSchema.optional(),
   /** Spent before tracking began, counted when the session first reported it. */
   carried: z.boolean().optional(),
 });
@@ -30,7 +32,9 @@ export interface SpendReading {
   agentId: string;
   provider: string;
   createdAt: Date;
-  totalUsd: number;
+  totalUsd?: number;
+  turnId?: string;
+  usage?: SpendEntry["usage"];
 }
 
 /**
@@ -51,16 +55,6 @@ function parseLine(line: string): unknown {
   } catch {
     return null;
   }
-}
-
-function dateKey(date: Date, timeZone: string): string {
-  // en-CA formats as YYYY-MM-DD.
-  return new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  }).format(date);
 }
 
 function resolveTimeZone(timeZone: string | undefined): string {
@@ -84,11 +78,20 @@ export function summarizeSpend(input: {
   now: Date;
   timeZone?: string;
 }): SpendSummary {
-  const timeZone = resolveTimeZone(input.timeZone);
-  const today = dateKey(input.now, timeZone);
+  const calendar = new Intl.DateTimeFormat("en-CA", {
+    timeZone: resolveTimeZone(input.timeZone),
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  });
+  const today = calendar.format(input.now);
   const weekStart = daysBefore(today, 6);
-  const month = today.slice(0, 7);
   const byProvider = new Map<string, SpendSummary["providers"][number]>();
+  // A turn can first report tokens and supply a price later.
+  const priced = new Set(
+    input.entries.filter((entry) => entry.turnId && entry.totalUsd !== undefined).map(runKey),
+  );
+  const counted = new Set<string>();
   for (const entry of input.entries) {
     const totals = byProvider.get(entry.provider) ?? {
       provider: entry.provider,
@@ -98,18 +101,60 @@ export function summarizeSpend(input: {
       allTimeUsd: 0,
       carriedUsd: 0,
     };
-    const key = dateKey(new Date(entry.at), timeZone);
-    if (key === today) totals.todayUsd += entry.usd;
-    if (key >= weekStart && key <= today) totals.last7DaysUsd += entry.usd;
-    if (key.slice(0, 7) === month) totals.thisMonthUsd += entry.usd;
+    const day = calendar.format(new Date(entry.at));
+    const inWeek = day >= weekStart && day <= today;
+    const inMonth = day.slice(0, 7) === today.slice(0, 7);
+    if (day === today) totals.todayUsd += entry.usd;
+    if (inWeek) totals.last7DaysUsd += entry.usd;
+    if (inMonth) totals.thisMonthUsd += entry.usd;
     totals.allTimeUsd += entry.usd;
     if (entry.carried) totals.carriedUsd += entry.usd;
+    const key = runKey(entry);
+    if (entry.turnId && !priced.has(key) && !counted.has(key)) {
+      counted.add(key);
+      const counts = (totals.unknownCostRuns ??= {
+        today: 0,
+        last7Days: 0,
+        thisMonth: 0,
+        allTime: 0,
+      });
+      if (day === today) counts.today++;
+      if (inWeek) counts.last7Days++;
+      if (inMonth) counts.thisMonth++;
+      counts.allTime++;
+    }
     byProvider.set(entry.provider, totals);
   }
-  return {
-    trackingSince: input.trackingSince,
-    providers: [...byProvider.values()].sort((a, b) => b.allTimeUsd - a.allTimeUsd),
+  const providers = [...byProvider.values()].sort((a, b) => b.allTimeUsd - a.allTimeUsd);
+  return { trackingSince: input.trackingSince, providers, totals: hostTotals(providers) };
+}
+
+function runKey(entry: Pick<SpendEntry, "agentId" | "turnId">): string {
+  return JSON.stringify([entry.agentId, entry.turnId]);
+}
+
+function hostTotals(providers: SpendSummary["providers"]) {
+  const totals = {
+    todayUsd: 0,
+    last7DaysUsd: 0,
+    thisMonthUsd: 0,
+    allTimeUsd: 0,
+    carriedUsd: 0,
+    unknownCostRuns: { today: 0, last7Days: 0, thisMonth: 0, allTime: 0 },
   };
+  for (const provider of providers) {
+    for (const period of [
+      "todayUsd",
+      "last7DaysUsd",
+      "thisMonthUsd",
+      "allTimeUsd",
+      "carriedUsd",
+    ] as const)
+      totals[period] += provider[period];
+    for (const period of ["today", "last7Days", "thisMonth", "allTime"] as const)
+      totals.unknownCostRuns[period] += provider.unknownCostRuns?.[period] ?? 0;
+  }
+  return totals;
 }
 
 /**
@@ -119,6 +164,7 @@ export function summarizeSpend(input: {
 export class SpendLedger {
   private readonly filePath: string;
   private entries: SpendEntry[] = [];
+  private readonly latestByRun = new Map<string, SpendEntry>();
   private readonly lastTotalByAgent = new Map<string, number>();
   private startedAt: string | null = null;
   /** A crash mid-append leaves a last line with no newline; the next entry must not join it. */
@@ -132,6 +178,10 @@ export class SpendLedger {
       logger: Logger;
       /** Stored session costs; a new ledger counts them as carried in. */
       seed?: () => Promise<SpendSeed[]>;
+      /** Pre-upgrade turns with an authoritative identity, timestamp and token report. */
+      historicalRuns?: () => AsyncIterable<
+        Pick<SpendEntry, "agentId" | "provider" | "turnId" | "usage" | "at">
+      >;
       now?: () => Date;
     },
   ) {
@@ -156,28 +206,65 @@ export class SpendLedger {
   }
 
   private async readOrCreate(): Promise<void> {
+    this.entries = [];
+    this.lastTotalByAgent.clear();
+    this.latestByRun.clear();
+    this.startedAt = null;
     let text: string;
     try {
       text = await fs.readFile(this.filePath, "utf8");
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
       await this.create();
+      await this.tryImportHistoricalRuns();
       return;
     }
     this.endsMidLine = text.length > 0 && !text.endsWith("\n");
+    let imported = false;
     for (const line of text.split("\n")) {
       const value = parseLine(line);
+      if (
+        value &&
+        typeof value === "object" &&
+        "cursorUsageImported" in value &&
+        value.cursorUsageImported === true
+      )
+        imported = true;
       const entry = ENTRY_SCHEMA.safeParse(value);
       if (entry.success) this.add(entry.data);
       this.startedAt ??= HEADER_SCHEMA.safeParse(value).data?.startedAt ?? null;
     }
+    if (!imported) await this.tryImportHistoricalRuns();
+  }
+
+  private async tryImportHistoricalRuns(): Promise<void> {
+    try {
+      await this.importHistoricalRuns();
+    } catch (err) {
+      // Keep accepting live runs. Without the marker, the next startup retries
+      // any missing history and skips the identities already imported.
+      this.options.logger.warn({ err }, "Could not finish importing historical Cursor usage");
+    }
+  }
+
+  private async importHistoricalRuns(): Promise<void> {
+    if (!this.options.historicalRuns) return;
+    for await (const run of this.options.historicalRuns()) {
+      if (!run.turnId || this.latestByRun.has(runKey(run))) continue;
+      await this.writeEntry({ ...run, usd: 0 });
+    }
+    await fs.appendFile(
+      this.filePath,
+      (this.endsMidLine ? "\n" : "") + '{"cursorUsageImported":true}\n',
+    );
+    this.endsMidLine = false;
   }
 
   private async create(): Promise<void> {
     const startedAt = this.now().toISOString();
     const seeds = (await this.options.seed?.()) ?? [];
     const entries = seeds
-      .filter((seed) => seed.usd > 0)
+      .filter((seed) => seed.usd >= 0)
       .map((seed): SpendEntry => ({
         at: seed.at,
         provider: seed.provider,
@@ -198,7 +285,16 @@ export class SpendLedger {
 
   private add(entry: SpendEntry): void {
     this.entries.push(entry);
-    this.lastTotalByAgent.set(entry.agentId, entry.totalUsd);
+    if (entry.totalUsd !== undefined) this.lastTotalByAgent.set(entry.agentId, entry.totalUsd);
+    if (entry.turnId) {
+      const key = runKey(entry);
+      const previous = this.latestByRun.get(key);
+      this.latestByRun.set(key, {
+        ...entry,
+        at: previous?.at ?? entry.at,
+        totalUsd: entry.totalUsd ?? previous?.totalUsd,
+      });
+    }
   }
 
   /**
@@ -218,22 +314,35 @@ export class SpendLedger {
   private async append(reading: SpendReading, at: string): Promise<void> {
     await this.initialize();
     const previousUsd = this.lastTotalByAgent.get(reading.agentId);
-    const usd = spendDelta(previousUsd, reading.totalUsd);
-    if (usd <= 0) return;
-    // A session from before tracking began reports everything it ever spent in its first
-    // reading; flag that so totals can say part of it is older.
-    const carried =
-      previousUsd === undefined &&
-      this.startedAt !== null &&
-      reading.createdAt.getTime() < Date.parse(this.startedAt);
+    const previous = this.latestByRun.get(runKey(reading));
+    const totalUsd = reading.totalUsd;
+    if (totalUsd !== undefined && (!Number.isFinite(totalUsd) || totalUsd < 0)) return;
+    const usage = reading.usage ?? previous?.usage;
+    // A token correction for an already priced turn must not reapply its old
+    // lifetime total after a later turn has advanced the session baseline.
+    const newCost = totalUsd !== undefined && previous?.totalUsd !== totalUsd;
+    const usd = newCost ? spendDelta(previousUsd, totalUsd) : 0;
+    if (!reading.turnId && (totalUsd === undefined || previousUsd === totalUsd)) return;
+    if (previous && !newCost && JSON.stringify(previous.usage) === JSON.stringify(usage)) return;
+    const carried = previousUsd === undefined && this.predatesLedger(reading.createdAt);
     const entry: SpendEntry = {
-      at,
+      at: previous?.at ?? at,
       provider: reading.provider,
       agentId: reading.agentId,
       usd,
-      totalUsd: reading.totalUsd,
+      totalUsd: newCost ? totalUsd : undefined,
+      turnId: reading.turnId,
+      usage,
       ...(carried ? { carried } : {}),
     };
+    await this.writeEntry(entry);
+  }
+
+  private predatesLedger(createdAt: Date): boolean {
+    return this.startedAt !== null && createdAt.getTime() < Date.parse(this.startedAt);
+  }
+
+  private async writeEntry(entry: SpendEntry): Promise<void> {
     const line = `${this.endsMidLine ? "\n" : ""}${JSON.stringify(entry)}\n`;
     await fs.appendFile(this.filePath, line);
     this.endsMidLine = false;

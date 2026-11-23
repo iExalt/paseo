@@ -545,7 +545,7 @@ export class OpenCodeV2Session implements AgentSession {
       return;
     }
     this.permissions.observe(event);
-    this.usage.observe(event);
+    this.usage.observe(event, this.turns.id ?? undefined);
     this.turns.observe(event);
     this.scheduleReconcile();
   }

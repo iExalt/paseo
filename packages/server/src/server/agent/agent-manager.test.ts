@@ -7998,6 +7998,8 @@ test("applies live autonomous events and preserves usage omitted from completion
     inputTokens: 10,
     contextWindowMaxTokens: 200_000,
     contextWindowUsedTokens: 175,
+    tokenReadingTurnId: autonomousTurnId,
+    contextReadingTurnId: autonomousTurnId,
   });
   expect(manager.getTimeline(snapshot.id)).toContainEqual({
     type: "assistant_message",
@@ -8060,7 +8062,7 @@ test("keeps the session cost through cost-less usage readings and a resume, and 
       { cwd: workdir },
       snapshot.id,
     );
-    expect(resumed.lastUsage).toEqual({ totalCostUsd: 1.5 });
+    expect(resumed.lastUsage).toEqual({ totalCostUsd: 1.5, contextWindowUsedTokens: 175 });
     await manager.closeAgent(resumed.id);
   } finally {
     rmSync(workdir, { recursive: true, force: true });
@@ -8104,7 +8106,10 @@ test("ignores stale autonomous terminals without lowering the active turn lifecy
   await vi.waitFor(() => {
     const priorFailure = manager.getAgent(snapshot.id);
     expect(priorFailure?.lastError).toBe("turn-b marker");
-    expect(priorFailure?.lastUsage).toEqual({ inputTokens: 7 });
+    expect(priorFailure?.lastUsage).toEqual({
+      inputTokens: 7,
+      tokenReadingTurnId: "prior-untracked-turn",
+    });
   });
 
   capturedSession!.pushEvent({ type: "turn_started", provider: "codex", turnId: "turn-b" });
@@ -8156,7 +8161,10 @@ test("ignores stale autonomous terminals without lowering the active turn lifecy
     expect(stillRunning?.lifecycle).toBe("running");
     expect(stillRunning ? toAgentPayload(stillRunning).activeTurn?.turnId : null).toBe("turn-b");
     expect(stillRunning?.lastError).toBeUndefined();
-    expect(stillRunning?.lastUsage).toEqual({ inputTokens: 7 });
+    expect(stillRunning?.lastUsage).toEqual({
+      inputTokens: 7,
+      tokenReadingTurnId: "prior-untracked-turn",
+    });
     expect(stillRunning?.pendingPermissions.has("turn-b-permission")).toBe(true);
     expect(manager.getTimeline(snapshot.id)).toEqual(timelineBeforeStaleTerminals);
   }

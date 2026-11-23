@@ -213,6 +213,10 @@ export interface AgentRunOptions {
 }
 
 export interface AgentUsage {
+  /** Turn on which the provider reported the token counters, which can be session totals. */
+  tokenReadingTurnId?: string;
+  /** Turn on which the provider last reported context occupancy. */
+  contextReadingTurnId?: string;
   inputTokens?: number;
   cachedInputTokens?: number;
   cacheWriteTokens?: number;

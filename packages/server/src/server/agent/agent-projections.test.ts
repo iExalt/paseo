@@ -491,7 +491,7 @@ describe("toAgentPayload", () => {
     ).not.toHaveProperty("lastError");
   });
 
-  it("carries a stored session cost, without other usage, onto the payload", () => {
+  it("restores the last reading and accepts legacy cost-only records", () => {
     const record = toStoredAgentRecord(
       createManagedAgent({
         provider: "codex",
@@ -501,7 +501,12 @@ describe("toAgentPayload", () => {
     );
 
     expect(record.totalCostUsd).toBe(2.5);
+    expect(
+      buildStoredAgentPayload({ ...record, lastUsage: undefined }, ["codex"], ownOptionsOnly)
+        .lastUsage,
+    ).toEqual({ totalCostUsd: 2.5 });
     expect(buildStoredAgentPayload(record, ["codex"], ownOptionsOnly).lastUsage).toEqual({
+      contextWindowUsedTokens: 42,
       totalCostUsd: 2.5,
     });
   });

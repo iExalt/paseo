@@ -146,6 +146,115 @@ describe("SpendLedger", () => {
     ]);
   });
 
+  test("retains zero, tokens and unknown run counts through reads, retries and restart", async () => {
+    const first = ledger();
+    const base = { agentId: "a", provider: "claude", createdAt: now };
+    const cursor = {
+      ...base,
+      agentId: "c",
+      provider: "cursor-sdk",
+      turnId: "one",
+      usage: { inputTokens: 100, cachedInputTokens: 30, cacheWriteTokens: 12, outputTokens: 5 },
+    };
+    await first.record({ ...base, totalUsd: 1.25, turnId: "priced" });
+    await first.record({ ...base, provider: "pi", agentId: "b", totalUsd: 0, turnId: "free" });
+    await first.record(cursor);
+    const before = await first.summarize("UTC");
+    expect(before.totals).toMatchObject({
+      todayUsd: 1.25,
+      allTimeUsd: 1.25,
+      unknownCostRuns: { today: 1, allTime: 1 },
+    });
+    expect(before.providers).toContainEqual(
+      expect.objectContaining({ provider: "pi", allTimeUsd: 0 }),
+    );
+    const file = join(home, "spend", "ledger.jsonl");
+    const original = readFileSync(file, "utf8");
+    expect(original).toContain(JSON.stringify(cursor.usage));
+    const second = ledger();
+    await second.record(cursor);
+    expect(await second.summarize("UTC")).toEqual(before);
+    expect(await second.summarize("UTC")).toEqual(before);
+    expect(readFileSync(file, "utf8")).toBe(original);
+    now = new Date("2026-10-19T01:00:00.000Z");
+    await second.record({ ...cursor, turnId: "two" });
+    expect((await second.summarize()).totals?.unknownCostRuns).toEqual({
+      today: 1,
+      last7Days: 2,
+      thisMonth: 2,
+      allTime: 2,
+    });
+    await second.record({ ...cursor, totalUsd: 0.5 });
+    expect((await second.summarize()).totals).toMatchObject({
+      todayUsd: 0,
+      allTimeUsd: 1.75,
+      unknownCostRuns: { today: 1, allTime: 1 },
+    });
+  });
+
+  test("imports dated historical runs once into an existing cost-only ledger", async () => {
+    await ledger().record({ agentId: "a", provider: "claude", createdAt: now, totalUsd: 2 });
+    let imports = 0;
+    const open = () =>
+      new SpendLedger({
+        paseoHome: home,
+        logger,
+        now: () => now,
+        historicalRuns: async function* () {
+          imports++;
+          yield {
+            provider: "cursor-sdk",
+            agentId: "b",
+            turnId: "cursor-run",
+            at: "2026-10-14T12:00:00Z",
+            usage: { cacheWriteTokens: 20 },
+          };
+        },
+      });
+    const before = await open().summarize();
+    expect(before.totals).toMatchObject({
+      todayUsd: 2,
+      unknownCostRuns: { today: 0, last7Days: 1, allTime: 1 },
+    });
+    expect(await open().summarize()).toEqual(before);
+    expect(imports).toBe(1);
+  });
+
+  test("a broken history import leaves live accounting available and retries next startup", async () => {
+    const run = {
+      agentId: "old",
+      provider: "cursor-sdk",
+      at: now.toISOString(),
+      turnId: "old-run",
+      usage: { outputTokens: 2 },
+    };
+    let attempts = 0;
+    const open = () =>
+      new SpendLedger({
+        paseoHome: home,
+        logger,
+        now: () => now,
+        historicalRuns: async function* () {
+          yield run;
+          if (++attempts === 1) throw new Error("corrupt turn");
+        },
+      });
+    const live = open();
+    await live.record({
+      agentId: "new",
+      provider: "claude",
+      turnId: "priced",
+      createdAt: now,
+      totalUsd: 1.5,
+    });
+    const expected = await live.summarize();
+    expect(expected.totals).toMatchObject({ todayUsd: 1.5, unknownCostRuns: { allTime: 1 } });
+    expect(attempts).toBe(1);
+    expect(await open().summarize()).toEqual(expected);
+    expect(await open().summarize()).toEqual(expected);
+    expect(attempts).toBe(2);
+  });
+
   test("skips a line cut short by a crash", async () => {
     await ledger().initialize();
     const file = join(home, "spend", "ledger.jsonl");

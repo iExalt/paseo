@@ -32,6 +32,8 @@ interface AgentInspect {
     InputTokens: number | null;
     OutputTokens: number | null;
     CachedTokens: number | null;
+    TokenReadingTurnId?: string;
+    ContextReadingTurnId?: string;
     CacheWriteTokens?: number;
     ReasoningTokens?: number;
     TotalTokens?: number;
@@ -123,6 +125,8 @@ function buildLastUsage(snapshot: AgentSnapshotPayload): AgentInspect["LastUsage
     OutputTokens: snapshot.lastUsage.outputTokens ?? null,
     CachedTokens: snapshot.lastUsage.cachedInputTokens ?? null,
     CacheWriteTokens: snapshot.lastUsage.cacheWriteTokens,
+    TokenReadingTurnId: snapshot.lastUsage.tokenReadingTurnId,
+    ContextReadingTurnId: snapshot.lastUsage.contextReadingTurnId,
     ReasoningTokens: snapshot.lastUsage.reasoningTokens,
     TotalTokens: snapshot.lastUsage.totalTokens,
     CostUsd: snapshot.lastUsage.totalCostUsd ?? null,

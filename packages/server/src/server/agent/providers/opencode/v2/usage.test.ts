@@ -89,6 +89,8 @@ describe("OpenCode v2 context usage", () => {
         inputTokens: 900,
         outputTokens: 90,
         cachedInputTokens: 40,
+        cacheWriteTokens: 0,
+        reasoningTokens: 0,
         totalCostUsd: 0.5,
         contextWindowUsedTokens: 1_335,
         contextWindowMaxTokens: 200_000,

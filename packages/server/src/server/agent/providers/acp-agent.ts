@@ -806,6 +806,9 @@ export function mapACPUsage(usage: Usage | null | undefined): AgentUsage | undef
     inputTokens: usage.inputTokens ?? undefined,
     outputTokens: usage.outputTokens ?? undefined,
     cachedInputTokens: usage.cachedReadTokens ?? undefined,
+    cacheWriteTokens: usage.cachedWriteTokens ?? undefined,
+    reasoningTokens: usage.thoughtTokens ?? undefined,
+    totalTokens: usage.totalTokens ?? undefined,
   };
 }
 
@@ -2168,6 +2171,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     this.deliverTranslatedEvents(this.flushPendingUserMessage());
     const turnId = randomUUID();
     const messageId = options?.clientMessageId ?? randomUUID();
+    this.currentTurnUsage = undefined;
     this.activeForegroundTurnId = turnId;
     this.fallbackAssistantMessageId = null;
     this.submittedUserMessageTurnId = null;
@@ -3646,16 +3650,22 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       Number.isFinite(update.size) && update.size > 0 ? update.size : undefined;
     const contextWindowUsedTokens =
       Number.isFinite(update.used) && update.used >= 0 ? update.used : undefined;
-    if (contextWindowMaxTokens === undefined || contextWindowUsedTokens === undefined) {
-      return;
-    }
+    const cost = update.cost;
+    const totalCostUsd =
+      cost?.currency === "USD" && Number.isFinite(cost.amount) && cost.amount >= 0
+        ? cost.amount
+        : undefined;
+    const context =
+      contextWindowMaxTokens !== undefined && contextWindowUsedTokens !== undefined
+        ? { contextWindowMaxTokens, contextWindowUsedTokens }
+        : undefined;
+    if (!context && totalCostUsd === undefined) return;
     this.pushEvent({
       type: "usage_updated",
       provider: this.provider,
       usage: {
-        ...this.currentTurnUsage,
-        contextWindowMaxTokens,
-        contextWindowUsedTokens,
+        ...context,
+        ...(totalCostUsd === undefined ? {} : { totalCostUsd }),
       },
       turnId: this.activeForegroundTurnId ?? undefined,
     });
@@ -3666,6 +3676,13 @@ export class ACPAgentSession implements AgentSession, ACPClient {
 
     switch (response.stopReason) {
       case "cancelled":
+        if (this.currentTurnUsage)
+          this.pushEvent({
+            type: "usage_updated",
+            provider: this.provider,
+            usage: this.currentTurnUsage,
+            turnId,
+          });
         this.synthesizeCanceledToolCalls();
         this.finishTurn({
           type: "turn_canceled",
