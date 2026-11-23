@@ -24,6 +24,46 @@ import {
   type ProviderImageOutput,
 } from "./provider-image-output.js";
 
+export interface CursorContextWindowReading {
+  usedTokens?: number;
+  maxTokens?: number;
+}
+
+/**
+ * In Cursor SDK (`model-call-completed` and `turn-ended`), `inputTokens`
+ * already includes `cacheReadTokens` and `cacheWriteTokens`, so a single LLM
+ * call's context occupancy is `inputTokens + outputTokens`.
+ */
+export function cursorContextWindowUsedTokens(
+  usage: Pick<TokenUsage, "inputTokens" | "outputTokens"> | undefined,
+): number | undefined {
+  if (!usage) return undefined;
+  const { inputTokens, outputTokens } = usage;
+  if (
+    !Number.isFinite(inputTokens) ||
+    !Number.isFinite(outputTokens) ||
+    inputTokens < 0 ||
+    outputTokens < 0
+  ) {
+    return undefined;
+  }
+  const used = inputTokens + outputTokens;
+  return used > 0 ? used : undefined;
+}
+
+export function withCursorContextUsage(
+  usage: AgentUsage | undefined,
+  context: CursorContextWindowReading,
+): AgentUsage | undefined {
+  const { usedTokens, maxTokens } = context;
+  if (!usage && usedTokens === undefined) return undefined;
+  return {
+    ...usage,
+    ...(usedTokens !== undefined ? { contextWindowUsedTokens: usedTokens } : {}),
+    ...(maxTokens !== undefined ? { contextWindowMaxTokens: maxTokens } : {}),
+  };
+}
+
 export function addCursorUsage(first: TokenUsage | undefined, next: TokenUsage): TokenUsage {
   if (!first) return next;
   const reasoningReported =

@@ -95,6 +95,15 @@ async function main() {
         describe(
           await native.send(input, {
             model,
+            onDelta: async ({ update }) => {
+              if (update.type !== "model-call-completed" || !channel.connected) return;
+              await channel
+                .request("model_call_completed", {
+                  modelCallId: update.modelCallId,
+                  usage: update.usage,
+                })
+                .catch(() => {});
+            },
             local: {
               customTools: {
                 [cursorQuestionToolName]: {

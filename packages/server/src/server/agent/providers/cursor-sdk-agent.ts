@@ -95,6 +95,7 @@ import {
   cursorSdkModelId,
   defaultCursorModel,
   optionsForCursorControls,
+  resolveCursorContextWindowMaxTokens,
   resolveCursorModel,
   resolveCursorOptions,
   selectCursorModel,
@@ -294,6 +295,7 @@ export class CursorSdkAgentClient implements AgentClient {
         description: model.description,
         isDefault: model.id === defaultModel?.id,
         isSelectable: cursorSdkModelId(models, model) ? undefined : false,
+        contextWindowMaxTokens: resolveCursorContextWindowMaxTokens(model),
         metadata: { parameters: model.parameters, variants: model.variants },
       })),
       modes: MODES,
@@ -386,6 +388,7 @@ export class CursorSdkAgentClient implements AgentClient {
         handle,
         id,
         model: modelId(overrides?.model),
+        providerOptions: overrides?.providerOptions,
         mode: MODE,
         modes: MODES,
         capabilities: CAPABILITIES,
@@ -673,6 +676,7 @@ class CursorSdkAgent implements AgentSession {
       );
     }
     const model = selectCursorModel(selected.sdkId, options);
+    execution.setContextWindowMaxTokens(resolveCursorContextWindowMaxTokens(selected, options));
     throwIfStopped();
     const checkDispatch = async () => {
       if ((await this.credentials.read()) !== apiKey) {
@@ -701,8 +705,11 @@ class CursorSdkAgent implements AgentSession {
     const speak = this.voiceTools?.getTool("speak")
       ? cursorSpeakTool(this.id, this.voiceTools, execution.interactionSignal)
       : undefined;
-    owned?.attachQuestionHandler(question.execute, execution.abortInteractions);
-    if (speak) owned?.attachSpeakHandler(speak.execute);
+    if (owned) {
+      owned.attachQuestionHandler(question.execute, execution.abortInteractions);
+      if (speak) owned.attachSpeakHandler(speak.execute);
+      owned.attachModelCallHandler(execution.onModelCallCompleted);
+    }
     const run = owned
       ? await this.sendOwned(owned, apiKey, model, prepareInput)
       : await this.sendDirect(
@@ -715,6 +722,7 @@ class CursorSdkAgent implements AgentSession {
             ...(speak ? { [cursorSpeakToolName]: speak } : {}),
           },
           compact,
+          execution.onModelCallCompleted,
         );
     if (this.model === requested.model && this.options === requested.options) {
       this.model = selected;
@@ -794,6 +802,7 @@ class CursorSdkAgent implements AgentSession {
     bind: (runId: string) => Promise<void>,
     customTools: NonNullable<AgentOptions["local"]>["customTools"],
     compact: boolean,
+    onModelCallCompleted: CursorTurnExecution["onModelCallCompleted"],
   ): Promise<Run> {
     // summarize() uses the handle's model, unlike send({ model }).
     const native =
@@ -806,6 +815,9 @@ class CursorSdkAgent implements AgentSession {
       return withCursorShellEnvironment(this.shellEnvironment, () =>
         native.agent.send(input, {
           model,
+          onDelta: ({ update }) => {
+            if (update.type === "model-call-completed") onModelCallCompleted(update.usage);
+          },
           local: { customTools },
         }),
       );
@@ -859,8 +871,15 @@ class CursorSdkAgent implements AgentSession {
     return readCursorHistory(this.sdk, this.binding.store, this.journal, this.id);
   }
 
-  readLastUsage() {
-    return readCursorLastUsage(this.binding.store, this.journal, this.id);
+  async readLastUsage() {
+    const usage = await readCursorLastUsage(this.binding.store, this.journal, this.id);
+    if (!usage) return undefined;
+    const { contextWindowMaxTokens: _storedMax, ...rest } = usage;
+    const contextWindowMaxTokens = resolveCursorContextWindowMaxTokens(this.model, this.options);
+    return {
+      ...rest,
+      ...(contextWindowMaxTokens !== undefined ? { contextWindowMaxTokens } : {}),
+    };
   }
 
   listCommands(): Promise<AgentSlashCommand[]> {
@@ -891,7 +910,20 @@ class CursorSdkAgent implements AgentSession {
     assertMode(mode);
   }
 
+  private emitContextWindowMaxIfChanged(previousMax: number | undefined): void {
+    const nextMax = resolveCursorContextWindowMaxTokens(this.model, this.options);
+    if (nextMax === previousMax) return;
+    this.emit({
+      type: "usage_updated",
+      provider: PROVIDER,
+      sessionOnly: true,
+      usage: nextMax !== undefined ? { contextWindowMaxTokens: nextMax } : {},
+      ...(nextMax === undefined ? { clearContextWindowMax: true } : {}),
+    });
+  }
+
   async setModel(id: string | null): Promise<{ model: string; optionsPatch: ProviderOptions }> {
+    const previousMax = resolveCursorContextWindowMaxTokens(this.model, this.options);
     const model = await this.resolveModel(id);
     const sameModel = model.id === this.model.id;
     const controls = cursorParameterControls(model);
@@ -901,6 +933,7 @@ class CursorSdkAgent implements AgentSession {
     this.model = model;
     this.modelControls = controls;
     this.options = options;
+    this.emitContextWindowMaxIfChanged(previousMax);
     return { model: model.id, optionsPatch };
   }
 
@@ -912,6 +945,7 @@ class CursorSdkAgent implements AgentSession {
     patch: ProviderOptions,
     thinkingOptionId?: string | null,
   ): Promise<ProviderOptions> {
+    const previousMax = resolveCursorContextWindowMaxTokens(this.model, this.options);
     const model = await this.resolveExactModel(this.model.id);
     const controls = cursorParameterControls(model);
     const requested = Object.fromEntries(
@@ -927,6 +961,7 @@ class CursorSdkAgent implements AgentSession {
     this.model = model;
     this.modelControls = controls;
     this.options = options;
+    this.emitContextWindowMaxIfChanged(previousMax);
     return applied;
   }
 
