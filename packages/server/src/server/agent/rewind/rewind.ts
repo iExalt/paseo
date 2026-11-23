@@ -9,15 +9,16 @@ export class RewindCapabilityError extends Error {
   }
 }
 
-const CAPABILITY_FLAGS = {
-  conversation: "supportsRewindConversation",
-  files: "supportsRewindFiles",
-  both: "supportsRewindBoth",
+const CAPABILITIES = {
+  conversation: { flag: "supportsRewindConversation", method: "revertConversation" },
+  files: { flag: "supportsRewindFiles", method: "revertFiles" },
+  both: { flag: "supportsRewindBoth", method: "revertBoth" },
 } as const;
 
 /** Throws before any side effect when the session cannot rewind in this mode. */
 export function assertRewindCapability(session: AgentSession, mode: RewindMode): void {
-  if (!session.capabilities[CAPABILITY_FLAGS[mode]]) throw new RewindCapabilityError(mode);
+  const { flag, method } = CAPABILITIES[mode];
+  if (!session.capabilities[flag] || !session[method]) throw new RewindCapabilityError(mode);
 }
 
 export async function invokeRewindCapability(

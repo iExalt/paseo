@@ -370,10 +370,15 @@ export async function checkMaintenance({
           item.type === "user_message" && item.messageId === branchedPrompt.item.messageId,
       ),
     );
+    const rewoundHandle = rewound.persistence.nativeHandle;
+    const keptRuns = (await nativeRuns(rewoundHandle)).items.length;
+    await send(fork.agentId, maintenancePrefix + " continue after rewind.");
+    assert.equal((await snapshot(fork.agentId)).persistence.nativeHandle, rewoundHandle);
+    assert.equal((await nativeRuns(rewoundHandle)).items.length, keptRuns + 1);
     assert.deepEqual(await native(), beforeFork);
     assert.deepEqual(await nativeRuns(), beforeForkRuns);
     console.log(
-      "PASS conversation rewind moved the fork to a new Cursor agent and left the source intact",
+      "PASS conversation rewind moved the fork to a new Cursor agent, the next prompt ran there, and the source stayed intact",
     );
 
     await client.archiveAgent(agentId);
