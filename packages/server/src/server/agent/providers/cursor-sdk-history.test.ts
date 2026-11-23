@@ -411,6 +411,15 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
         status: "completed",
       },
       {
+        name: "shell",
+        args: { command: "npm test" },
+        result: {
+          status: "success",
+          value: { exitCode: 1, signal: "", stdout: "1 failed", stderr: "", executionTime: 9 },
+        },
+        status: "completed",
+      },
+      {
         name: "task",
         args: {
           description: "Review the plan",
@@ -480,6 +489,7 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
       "tool_call",
       "tool_call",
       "tool_call",
+      "tool_call",
       "todo",
     ]);
     expect(rows.at(-1)?.item).toEqual({
@@ -498,6 +508,7 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
       },
       { displayName: "Search", summary: "**/AGENTS.md" },
       { displayName: "Read", summary: "/repo/missing.md", errorText: "Read failed." },
+      { displayName: "Shell", summary: "npm test", errorText: "Command exited with code 1." },
       { displayName: "Task", summary: "Review the plan" },
     ]);
     expect(projected.map(({ status }) => status)).toEqual([
@@ -505,9 +516,10 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
       "failed",
       "completed",
       "failed",
+      "failed",
       "completed",
     ]);
-    expect(projected[4].detail).toEqual({
+    expect(projected[5].detail).toEqual({
       type: "sub_agent",
       description: "Review the plan",
       log: "The plan holds.",
@@ -617,6 +629,27 @@ test("replays a manual compaction from the native stream if the daemon journal m
     await journal.append(turn.id, { type: "assistant_message", text: "stored summary" });
     expect(await read()).toEqual(rows);
   });
+});
+
+test("replay fails a stamped shell row that completed with a nonzero exit", () => {
+  const live = mapCursorTool({
+    type: "tool_call",
+    agent_id: agentId,
+    run_id: "run",
+    call_id: "shell",
+    name: "shell",
+    status: "completed",
+    args: { command: "false" },
+    result: {
+      status: "success",
+      value: { exitCode: 2, signal: "", stdout: "", stderr: "", executionTime: 1 },
+    },
+  });
+  expect(live).toMatchObject({ status: "failed", error: "Command exited with code 2." });
+  // Rows journaled before this rule carry the current stamp but stayed completed.
+  const stored: ToolCallTimelineItem = { ...live, status: "completed", error: null };
+  expect(replayCursorTool(stored)).toEqual([live]);
+  expect(replayCursorTool(live)).toEqual([live]);
 });
 
 test("replay keeps a current typed row whose journaled payload was truncated", () => {
