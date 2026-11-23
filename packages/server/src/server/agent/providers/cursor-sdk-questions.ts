@@ -8,36 +8,29 @@ import type {
 } from "../agent-sdk-types.js";
 
 const provider = "cursor-sdk";
-const name = "ask_user_question";
+const name = "ask_question";
 
-const questionSchema = z.object({
-  header: z.string().trim().min(1).max(12),
-  question: z.string().trim().min(1).max(2000),
+// Antigravity CLI 1.5.14 model-facing ask_question declaration.
+const questionSchema = z.strictObject({
+  question: z
+    .string()
+    .min(1)
+    .describe("The question, without 'select all that apply' or similar; the UI adds that."),
   options: z
-    .array(
-      z.object({
-        label: z.string().trim().min(1).max(100),
-        description: z.string().trim().max(500).optional(),
-      }),
-    )
-    .max(6),
+    .array(z.string())
+    .min(2)
+    .describe(
+      "Answers to choose from, unnumbered and without an 'Other' option; the UI adds both. Put a recommended answer first, prefixed with '(Recommended)'.",
+    ),
+  is_multi_select: z.boolean().optional().describe("Whether the user can select several options."),
 });
-const inputSchema = z
-  .object({ questions: z.array(questionSchema).min(1).max(3) })
-  .refine(
-    ({ questions }) =>
-      questions.every(({ header }) => header !== "__proto__") &&
-      new Set(questions.map(({ header }) => header)).size === questions.length &&
-      questions.every(
-        ({ options }) => new Set(options.map(({ label }) => label)).size === options.length,
-      ),
-  );
+const inputSchema = z.strictObject({ questions: z.array(questionSchema).min(1) });
 const answersSchema = z.record(z.string(), z.string().trim().min(1).max(8000));
 
 type QuestionInput = z.infer<typeof inputSchema>;
 interface PendingQuestion {
   request: AgentPermissionRequest;
-  questions: QuestionInput["questions"];
+  headers: string[];
   finish: (result: SDKCustomToolResult) => void;
 }
 
@@ -48,7 +41,7 @@ function errorResult(text: string): SDKCustomToolResult {
 export const cursorQuestionToolName = name;
 export const cursorQuestionToolDescriptor = {
   description:
-    "Ask the human up to three questions and wait for their answers. Include options for a choice or use an empty options array for free text.",
+    "Ask the user one or more multiple-choice questions, e.g. to clarify requirements, and wait for the answers. Don't use it for trivial yes/no questions; ask those in plain text.",
   inputSchema: z.toJSONSchema(inputSchema, { io: "input" }) as NonNullable<
     SDKCustomTool["inputSchema"]
   >,
@@ -74,8 +67,7 @@ export class CursorQuestions {
         if (typeof context?.toolCallId !== "string" || !context.toolCallId)
           return errorResult("Cursor did not identify the question call.");
         const parsed = inputSchema.safeParse(args);
-        if (!parsed.success)
-          return errorResult("Invalid questions. Use unique headers and option labels.");
+        if (!parsed.success) return errorResult(z.prettifyError(parsed.error));
         const key = JSON.stringify([context.sessionId, context.toolCallId]);
         const input = JSON.stringify(parsed.data);
         const existing = calls.get(key);
@@ -93,12 +85,19 @@ export class CursorQuestions {
 
   private ask(input: QuestionInput, signal: AbortSignal): Promise<SDKCustomToolResult> {
     const id = randomUUID();
+    const questions = input.questions.map((item, index) => ({
+      header: `Question ${index + 1}`,
+      question: item.question,
+      options: item.options.map((label) => ({ label })),
+      multiSelect: item.is_multi_select ?? false,
+      allowOther: true,
+    }));
     const request: AgentPermissionRequest = {
       id,
       provider,
       name,
       kind: "question",
-      input,
+      input: { questions },
     };
     return new Promise((resolve) => {
       const cancel = () => {
@@ -112,7 +111,7 @@ export class CursorQuestions {
         signal.removeEventListener("abort", cancel);
         resolve(result);
       };
-      this.pending.set(id, { request, questions: input.questions, finish });
+      this.pending.set(id, { request, headers: questions.map(({ header }) => header), finish });
       signal.addEventListener("abort", cancel, { once: true });
       this.emit({ type: "permission_requested", provider, request });
     });
@@ -131,11 +130,8 @@ export class CursorQuestions {
     const parsed = answersSchema.safeParse(response.updatedInput?.answers);
     if (
       !parsed.success ||
-      Object.keys(parsed.data).length !== pending.questions.length ||
-      pending.questions.some(({ header, options }) => {
-        const value = Object.hasOwn(parsed.data, header) ? parsed.data[header] : undefined;
-        return !value || (options.length > 0 && !options.some(({ label }) => label === value));
-      })
+      Object.keys(parsed.data).length !== pending.headers.length ||
+      pending.headers.some((header) => !Object.hasOwn(parsed.data, header))
     ) {
       throw new Error("Provide a valid answer for every Cursor SDK question.");
     }
