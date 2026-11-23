@@ -68,6 +68,9 @@ $PASEO_HOME/
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
+├── cursor-sdk/                          # Local Cursor SDK store (JSONL tables shared by all chats)
+│   ├── paseo-turns/{sha256(agent)}/     # Paseo's journal of each chat's submitted turns
+│   └── paseo-forks/{sha256(agent)}.json # Parent of an agent created by rewind
 ├── spend/
 │   └── ledger.jsonl                     # Dated spend and per-turn provider usage reports
 ├── plugins/
@@ -75,6 +78,8 @@ $PASEO_HOME/
 │   └── {pluginId}/{uuid}/                # Git checkout or npm package/lockfile/dependency tree
 └── push-tokens.json                     # Expo push notification tokens
 ```
+
+Rewinding a Cursor SDK chat creates a new local SDK agent and leaves the original agent unchanged. The new agent stores only the checkpoint blobs it writes and reads the rest from its ancestors through `paseo-forks` (`packages/server/src/server/agent/providers/cursor-sdk-fork-store.ts`); the JSONL store rewrites a whole table on every write, so copying a chat's blobs made rewind scale with the store. Never delete an SDK agent that a fork names as its parent: the fork's conversation stops loading. Only Paseo's wrapped store resolves these links, so a plain `JsonlLocalAgentStore` opened on this directory sees a rewound agent's own blobs only.
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
 

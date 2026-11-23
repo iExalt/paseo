@@ -253,7 +253,8 @@ export class CursorRunController {
       turn.record.steers.push({ user, after: locallyReported ? turn.emitted : after });
       await this.journal.save(turn.record);
       if (locallyReported || !options.clientMessageId) this.emitItem(turn, user);
-      return { status: "accepted" };
+      // History replays the steer under this ID, so rewind can name it.
+      return { status: "accepted", providerMessageId: id };
     })();
     turn.steer = operation;
     void operation
