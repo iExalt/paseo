@@ -26,7 +26,8 @@ export function selectMaintenanceTurn(
     assert.equal(summaryCount, 2, "Continuation did not receive the compacted checkpoint");
   if (forked) {
     assert.match(text, /P6_MAINTENANCE external original/);
-    assert.match(text, /PASEO_FIXTURE_SUMMARY/);
+    // The timeline shows only the compaction card, so the summary stays out of fork context.
+    assert.doesNotMatch(text, /PASEO_FIXTURE_SUMMARY/);
     assert.equal(summaryCount, 0, "Transcript fork reused the source's native checkpoint");
   }
 
