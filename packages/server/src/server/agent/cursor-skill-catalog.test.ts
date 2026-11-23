@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -257,4 +257,146 @@ it("excludes project ancestors and linked directories from untrusted workspaces"
   } as const;
   const roots = await cursorSkillRoots({ cwd, workspaceId: "trusted" }, registry, home);
   expect((await scanCursorSkills(roots)).map(({ name }) => name)).toEqual(["user"]);
+});
+
+async function installPlugin(
+  id: string,
+  version: string,
+  directory: string,
+  manifest: Record<string, unknown>,
+) {
+  const root = join(home, ".codex", "plugins", "cache", "test-market", id, version);
+  const manifestDirectory = join(root, directory);
+  await mkdir(manifestDirectory, { recursive: true });
+  await writeFile(join(manifestDirectory, "plugin.json"), JSON.stringify(manifest));
+  return root;
+}
+
+it("lists enabled cached Codex plugins by manifest namespace and skips disabled or missing ones", async () => {
+  const config = join(home, ".codex", "config.toml");
+  const enabled = await installPlugin("demo", "1.0.0", ".codex-plugin", {
+    name: "Demo",
+    skills: ["./first", "./second"],
+  });
+  const disabled = await installPlugin("disabled", "1.0.0", ".codex-plugin", {});
+  await writeSkill(join(enabled, "first"), "duplicate", "first");
+  await writeSkill(join(enabled, "second"), "duplicate", "second");
+  await writeSkill(join(disabled, "skills"), "disabled", "disabled");
+  await writeFile(
+    config,
+    [
+      '[plugins."demo@test-market"]',
+      '[plugins."disabled@test-market"]',
+      "enabled = false",
+      '[plugins."missing@test-market"]',
+      "enabled = true",
+    ].join("\n"),
+  );
+  const warn = vi.fn();
+  const roots = await cursorSkillRoots({ cwd: workspace }, undefined, home, { warn });
+  const entries = await scanCursorSkills(roots);
+  expect(entries.map(({ name, reference }) => [name, reference.name, reference.scope])).toEqual([
+    ["Demo:duplicate", "duplicate", "user"],
+    ["Demo:duplicate", "duplicate", "user"],
+  ]);
+  expect(entries[0].reference.id).not.toBe(entries[1].reference.id);
+  expect(warn).toHaveBeenCalledExactlyOnceWith(
+    { plugin: "missing@test-market" },
+    expect.any(String),
+  );
+});
+
+it("uses semantic version ordering, local overrides, and Codex/Claude/Cursor manifest order", async () => {
+  const config = join(home, ".codex", "config.toml");
+  const old = await installPlugin("demo", "1.9.0", ".codex-plugin", { name: "Old" });
+  const latest = await installPlugin("demo", "1.10.0", ".cursor-plugin", { name: "Cursor" });
+  await writeSkill(join(old, "skills"), "old", "ignored");
+  await writeSkill(join(latest, "skills"), "current", "v1.10");
+  await writeFile(config, '[plugins."demo@test-market"]\n');
+  const names = async () =>
+    (await scanCursorSkills(await cursorSkillRoots({ cwd: workspace }, undefined, home))).map(
+      ({ name }) => name,
+    );
+  expect(await names()).toEqual(["Cursor:current"]);
+  await installPlugin("demo", "1.10.0", ".claude-plugin", { name: "Claude" });
+  expect(await names()).toEqual(["Claude:current"]);
+  await installPlugin("demo", "1.10.0", ".codex-plugin", { skills: { malformed: true } });
+  expect(await names()).toEqual(["demo:current"]);
+  const local = await installPlugin("demo", "local", ".codex-plugin", { name: "Local" });
+  await writeSkill(join(local, "skills"), "local", "preferred");
+  expect(await names()).toEqual(["Local:local"]);
+});
+
+it("rejects symlinked manifests and skill paths that leave the plugin version directory", async () => {
+  const config = join(home, ".codex", "config.toml");
+  const plugin = await installPlugin("guard", "1.0.0", ".codex-plugin", {
+    name: "Guard",
+    skills: ["./skills", "./../sibling dir"],
+  });
+  const outside = join(scratch, "outside");
+  await writeSkill(outside, "escape", "outside");
+  await writeSkill(join(dirname(plugin), "sibling dir"), "sibling", "outside");
+  await writeSkill(join(plugin, "skills"), "safe", "inside");
+  await symlink(outside, join(plugin, "skills", "outside"), "junction");
+  await writeFile(config, '[plugins."guard@test-market"]\n');
+  const names = async () =>
+    (await scanCursorSkills(await cursorSkillRoots({ cwd: workspace }, undefined, home))).map(
+      ({ name }) => name,
+    );
+  expect(await names()).toEqual(["Guard:safe"]);
+  const fallback = await installPlugin("guard", "1.0.0", ".claude-plugin", { name: "Fallback" });
+  const manifest = join(plugin, ".codex-plugin", "plugin.json");
+  await rm(manifest);
+  await symlink(join(fallback, ".claude-plugin", "plugin.json"), manifest, "file");
+  expect(await names()).toEqual([]);
+});
+
+it("reapplies ordered path and name overrides when an attachment is selected or submitted", async () => {
+  const config = join(home, ".codex", "config.toml");
+  const plugin = await installPlugin("configured", "1.0.0", ".codex-plugin", { name: "Example" });
+  const skills = join(plugin, "skills");
+  const selected = join(skills, "selected", "SKILL.md");
+  await writeSkill(skills, "selected", "selected");
+  await writeSkill(join(home, ".codex", "skills"), "unqualified", "ignored");
+  const settings = [
+    '[plugins."configured@test-market"]',
+    "[[skills.config]]",
+    'name = "unqualified"',
+    "enabled = false",
+    "[[skills.config]]",
+    'name = "Example:selected"',
+    "enabled = false",
+    "[[skills.config]]",
+    "path = " + JSON.stringify(selected),
+    "enabled = true",
+  ].join("\n");
+  await writeFile(config, settings);
+  const roots = (skillScope?: "user") =>
+    cursorSkillRoots({ cwd: workspace, skillScope }, undefined, home);
+  const [skill] = await scanCursorSkills(await roots("user"));
+  expect(skill.name).toBe("Example:selected");
+  expect((await scanCursorSkills(await roots())).map(({ name }) => name)).toEqual([
+    "Example:selected",
+  ]);
+  await expect(resolveCursorSkills(await roots(), [skill.reference])).resolves.toEqual([skill]);
+  await writeFile(
+    config,
+    settings + '\n[[skills.config]]\nname = "Example:selected"\nenabled = false\n',
+  );
+  await expect(resolveCursorSkills(await roots(), [skill.reference])).rejects.toThrow(
+    "select it again",
+  );
+});
+
+it("finds installations under a symlinked plugin cache", async () => {
+  const root = await installPlugin("demo", "1.0.0", ".codex-plugin", { name: "Demo" });
+  await writeSkill(join(root, "skills"), "linked", "linked cache");
+  const profile = join(home, ".codex");
+  const cache = join(profile, "plugins", "cache");
+  const target = join(scratch, "nix-like-cache");
+  await rename(cache, target);
+  await symlink(target, cache, "junction");
+  await writeFile(join(profile, "config.toml"), '[plugins."demo@test-market"]\n');
+  const roots = await cursorSkillRoots({ cwd: workspace }, undefined, home);
+  expect((await scanCursorSkills(roots)).map(({ name }) => name)).toEqual(["Demo:linked"]);
 });
