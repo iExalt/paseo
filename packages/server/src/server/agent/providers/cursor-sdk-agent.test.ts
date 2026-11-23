@@ -904,22 +904,41 @@ it("coalesces SDK question callback replay and fences a stopped turn", async () 
   const controller = new AbortController();
   const tool = questions.tool(controller.signal);
   const input = {
-    questions: [{ header: "Pick", question: "Pick one", options: [{ label: "Yes" }] }],
+    questions: [{ question: "Pick one", options: ["Yes", "Maybe"], is_multi_select: true }],
   };
   const context = { sessionId: "task-session", toolCallId: "same-call" };
 
+  const malformed = { questions: [{ question: "Pick one", options: [true, false] }] };
+  const invalid = await tool.execute(malformed, context);
+  expect(invalid).toMatchObject({ isError: true });
+  expect(JSON.stringify(invalid)).toContain("questions[0].options[0]");
   const answer = tool.execute(input, context);
   const changed = { questions: [{ ...input.questions[0], question: "A different question" }] };
   expect(tool.execute(input, context)).toBe(answer);
   expect(await tool.execute(changed, context)).toMatchObject({ isError: true });
   const [request] = questions.requests();
+  expect(request.input?.questions).toEqual([
+    {
+      header: "Question 1",
+      question: "Pick one",
+      options: [{ label: "Yes" }, { label: "Maybe" }],
+      multiSelect: true,
+      allowOther: true,
+    },
+  ]);
   expect(emit).toHaveBeenCalledTimes(1);
   expect(() =>
-    questions.respond(request.id, { behavior: "allow", updatedInput: { answers: { Pick: "No" } } }),
+    questions.respond(request.id, {
+      behavior: "allow",
+      updatedInput: { answers: { Wrong: "No" } },
+    }),
   ).toThrow("valid answer");
   expect(questions.requests()).toEqual([request]);
-  questions.respond(request.id, { behavior: "allow", updatedInput: { answers: { Pick: "Yes" } } });
-  expect(await answer).toEqual({ answers: { Pick: "Yes" } });
+  questions.respond(request.id, {
+    behavior: "allow",
+    updatedInput: { answers: { "Question 1": "Yes, My write-in" } },
+  });
+  expect(await answer).toEqual({ answers: { "Question 1": "Yes, My write-in" } });
   expect(tool.execute(input, context)).toBe(answer);
   expect(await tool.execute(changed, context)).toMatchObject({ isError: true });
 
