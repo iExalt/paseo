@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { appendFile, mkdir, open, readFile, readdir } from "node:fs/promises";
+import { appendFile, copyFile, mkdir, open, readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
   AgentTimelineItemPayloadSchema,
@@ -76,8 +76,35 @@ export class CursorTurnJournal {
   private readonly directory: string;
   private readonly writes = new Map<string, Promise<void>>();
 
-  constructor(path: string, agentId: string) {
-    this.directory = join(path, "paseo-turns", fileKey(agentId));
+  constructor(
+    private readonly root: string,
+    agentId: string,
+  ) {
+    this.directory = join(root, "paseo-turns", fileKey(agentId));
+  }
+
+  /** The journal of another chat in the same store. */
+  forAgent(agentId: string): CursorTurnJournal {
+    return new CursorTurnJournal(this.root, agentId);
+  }
+
+  get path(): string {
+    return this.directory;
+  }
+
+  /** Copies a turn's input and item files from another chat's journal, then saves `turn`. */
+  async copyTurnFrom(
+    source: CursorTurnJournal,
+    original: CursorHistoryTurn,
+    turn: CursorHistoryTurn,
+  ): Promise<void> {
+    await mkdir(this.directory, { recursive: true, mode: 0o700 });
+    const prefix = fileKey(original.id);
+    for (const name of await readdir(source.directory)) {
+      if (!name.startsWith(prefix) || name.endsWith(".turn.json")) continue;
+      await copyFile(join(source.directory, name), join(this.directory, name));
+    }
+    await this.save(turn);
   }
 
   async admit(turn: CursorHistoryTurn, input: AgentPromptInput): Promise<void> {
