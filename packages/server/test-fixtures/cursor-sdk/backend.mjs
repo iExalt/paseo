@@ -52,6 +52,18 @@ const finishedUsage = interaction(
   14,
   join(number(1, 12), number(2, 3), number(3, 2), number(4, 1), number(5, 1)),
 );
+const contextStep1 = interaction(
+  31,
+  join(bytes(1, "p8-ctx-1"), number(2, 1_000), number(3, 100), number(4, 200)),
+);
+const contextStep2 = interaction(
+  31,
+  join(bytes(1, "p8-ctx-2"), number(2, 4_200), number(3, 300), number(4, 900)),
+);
+const contextFinishedUsage = interaction(
+  14,
+  join(number(1, 5_200), number(2, 400), number(3, 1_100), number(4, 0)),
+);
 
 function telemetryReadUpdate(status, text, workspace) {
   const args = bytes(1, bytes(1, join(Buffer.from(workspace), Buffer.from("/cursor-canary.sh"))));
@@ -178,6 +190,10 @@ export async function startBackend(
       response.write(stoppedUsage);
       return stoppedShell;
     }
+    if (request?.includes("PASEO_P8_CONTEXT")) {
+      response.write(contextStep1);
+      return shell;
+    }
     return request && selectSkillTurn?.(request) ? skillShell : shell;
   }
 
@@ -217,6 +233,7 @@ export async function startBackend(
       p5Turn.start(stream.response);
       return;
     }
+    stream.isContextTurn = Boolean(request?.includes("PASEO_P8_CONTEXT"));
     stream.shell = prepareShellResponse(stream.response, request);
     stream.response.write(stream.shell.started);
     stream.response.write(stream.shell.execute);
@@ -274,6 +291,13 @@ export async function startBackend(
     shellReplies++;
     send(proto);
     stream.write(active.shell.finished(result));
+    if (active.isContextTurn) {
+      stream.write(contextStep2);
+      stream.write(interaction(1, bytes(1, assistantText)));
+      stream.write(contextFinishedUsage);
+      stream.end(frame(Buffer.from("{}"), 2));
+      return;
+    }
     finish(stream);
   }
 

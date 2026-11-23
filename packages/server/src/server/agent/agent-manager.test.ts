@@ -17741,3 +17741,127 @@ test("lifecycle admission: rejected lookup and work release reservations; detach
   await Promise.all([active, detached]);
   expect(order).toEqual(["active", "detached"]);
 });
+
+test("clears context window used/max via usage_updated flags and does not resurrect stale context on resume", async () => {
+  const workdir = mkdtempSync(join(tmpdir(), "agent-manager-context-clear-"));
+  const registry = new AgentStorage(workdir, createTestLogger());
+  const session = new SteeringTestSession({ provider: "cursor-sdk", cwd: workdir });
+  let readLastUsageResult: AgentUsage | undefined;
+  Object.assign(session, {
+    readLastUsage: async () => readLastUsageResult,
+  });
+  const client = new (class extends TestAgentClient {
+    override readonly provider = "cursor-sdk";
+    override async createSession(): Promise<AgentSession> {
+      return session;
+    }
+    override async resumeSession(): Promise<AgentSession> {
+      return session;
+    }
+  })();
+  const manager = new AgentManager({
+    clients: { "cursor-sdk": client },
+    registry,
+    logger: createTestLogger(),
+  });
+  let createdId: string | undefined;
+  try {
+    const created = await manager.createAgent(
+      {
+        provider: "cursor-sdk",
+        cwd: workdir,
+      },
+      undefined,
+      { workspaceId: undefined },
+    );
+    createdId = created.id;
+
+    session.pushEvent({
+      type: "usage_updated",
+      provider: "cursor-sdk",
+      turnId: "turn-1",
+      usage: {
+        inputTokens: 10_000,
+        outputTokens: 500,
+        totalTokens: 10_500,
+        totalCostUsd: 0.42,
+        contextWindowUsedTokens: 10_500,
+        contextWindowMaxTokens: 300_000,
+      },
+    });
+    await manager.drainSessionEvents(created.id);
+    expect(manager.getAgent(created.id)?.lastUsage).toMatchObject({
+      totalCostUsd: 0.42,
+      contextWindowUsedTokens: 10_500,
+      contextWindowMaxTokens: 300_000,
+      contextReadingTurnId: "turn-1",
+    });
+
+    // Clearing used tokens (e.g. after /compact) preserves cost and max window.
+    session.pushEvent({
+      type: "usage_updated",
+      provider: "cursor-sdk",
+      turnId: "turn-2",
+      usage: { contextWindowMaxTokens: 300_000 },
+      clearContextWindowUsed: true,
+    });
+    await manager.drainSessionEvents(created.id);
+    const afterClearUsed = manager.getAgent(created.id)?.lastUsage;
+    expect(afterClearUsed?.contextWindowUsedTokens).toBeUndefined();
+    expect(afterClearUsed?.contextReadingTurnId).toBeUndefined();
+    expect(afterClearUsed?.contextWindowMaxTokens).toBe(300_000);
+    expect(afterClearUsed?.totalCostUsd).toBe(0.42);
+
+    // Clearing max tokens (e.g. switching to Auto) preserves cost.
+    session.pushEvent({
+      type: "usage_updated",
+      provider: "cursor-sdk",
+      sessionOnly: true,
+      usage: {},
+      clearContextWindowMax: true,
+    });
+    await manager.drainSessionEvents(created.id);
+    const afterClearMax = manager.getAgent(created.id)?.lastUsage;
+    expect(afterClearMax?.contextWindowMaxTokens).toBeUndefined();
+    expect(afterClearMax?.totalCostUsd).toBe(0.42);
+
+    // Simulate crash-before-snapshot after /compact + switch to Auto: stored record still has
+    // stale pre-compaction context, while native readLastUsage omits both context fields.
+    const stored = await registry.get(created.id);
+    expect(stored).not.toBeNull();
+    await registry.upsert({
+      ...stored!,
+      totalCostUsd: 0.42,
+      lastUsage: {
+        inputTokens: 10_000,
+        outputTokens: 500,
+        totalTokens: 10_500,
+        totalCostUsd: 0.42,
+        contextWindowUsedTokens: 10_500,
+        contextWindowMaxTokens: 300_000,
+        tokenReadingTurnId: "turn-1",
+        contextReadingTurnId: "turn-1",
+      },
+    });
+    await manager.closeAgent(created.id);
+
+    readLastUsageResult = {
+      inputTokens: 10_000,
+      outputTokens: 500,
+      totalTokens: 10_500,
+      tokenReadingTurnId: "turn-2",
+    };
+    const resumed = await manager.resumeAgentFromPersistence(
+      { ...stored!.persistence!, provider: "cursor-sdk" },
+      { cwd: workdir },
+      created.id,
+    );
+    expect(resumed.lastUsage?.totalCostUsd).toBe(0.42);
+    expect(resumed.lastUsage?.contextWindowUsedTokens).toBeUndefined();
+    expect(resumed.lastUsage?.contextReadingTurnId).toBeUndefined();
+    expect(resumed.lastUsage?.contextWindowMaxTokens).toBeUndefined();
+  } finally {
+    if (createdId) await manager.closeAgent(createdId).catch(() => {});
+    rmSync(workdir, { recursive: true, force: true });
+  }
+});

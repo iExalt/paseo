@@ -22,7 +22,12 @@ import { cursorUnresolvedSteerMessage, streamItems, terminalTools } from "./curs
 import type { OwnerTerminalProof } from "./cursor-sdk-recovery.js";
 import { isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { CursorToolProcesses } from "./cursor-sdk-tool-processes.js";
-import { addCursorUsage, cursorMcpImages } from "./cursor-sdk-telemetry.js";
+import {
+  addCursorUsage,
+  cursorContextWindowUsedTokens,
+  cursorMcpImages,
+  withCursorContextUsage,
+} from "./cursor-sdk-telemetry.js";
 import {
   isProviderImageMessage,
   materializeProviderImage,
@@ -41,6 +46,8 @@ export interface CursorTurnExecution {
   enroll: (owner: ExecutionOwner) => Promise<void>;
   bindRun: (nativeRunId: string) => Promise<void>;
   attachFinish: (finish: (waitForTools: boolean, cancelTools: boolean) => Promise<void>) => void;
+  setContextWindowMaxTokens: (maxTokens: number | undefined) => void;
+  onModelCallCompleted: (usage: Pick<TokenUsage, "inputTokens" | "outputTokens">) => void;
 }
 
 type NativeSend = (
@@ -69,6 +76,10 @@ interface CursorTurn {
   current?: Run;
   emitted: number;
   stopRequested: boolean;
+  contextWindowMaxTokens?: number;
+  latestModelCallUsedTokens?: number;
+  sawModelCallCompleted: boolean;
+  contextClearedBySummary: boolean;
 }
 
 function withDeadline<T>(operation: Promise<T>, message: string): Promise<T> {
@@ -168,6 +179,28 @@ export class CursorRunController {
       attachFinish: (finish) => {
         turn.finishExecution = finish;
       },
+      setContextWindowMaxTokens: (maxTokens) => {
+        turn.contextWindowMaxTokens = maxTokens;
+      },
+      onModelCallCompleted: (usage) => {
+        if (turn.record.compact) return;
+        turn.sawModelCallCompleted = true;
+        turn.contextClearedBySummary = false;
+        const usedTokens = cursorContextWindowUsedTokens(usage);
+        if (usedTokens === undefined) return;
+        turn.latestModelCallUsedTokens = usedTokens;
+        this.emit({
+          type: "usage_updated",
+          provider: PROVIDER,
+          turnId: id,
+          usage: {
+            contextWindowUsedTokens: usedTokens,
+            ...(turn.contextWindowMaxTokens !== undefined
+              ? { contextWindowMaxTokens: turn.contextWindowMaxTokens }
+              : {}),
+          },
+        });
+      },
     };
     const native = Promise.resolve().then(async () => {
       await this.journal.admit(record, prompt);
@@ -196,6 +229,8 @@ export class CursorRunController {
       emitted: 0,
       cancellations: new Map(),
       stopRequested: false,
+      sawModelCallCompleted: false,
+      contextClearedBySummary: false,
     };
     this.active = turn;
     void turn.completion.catch(() => {});
@@ -372,6 +407,7 @@ export class CursorRunController {
   }
 
   private async observeRun(
+    turn: CursorTurn,
     run: Run,
     tools: Map<string, ToolCallTimelineItem>,
     onItem: (item: AgentTimelineItem) => Promise<void>,
@@ -383,6 +419,20 @@ export class CursorRunController {
     try {
       for await (const message of run.stream()) {
         if (message.type === "usage") streamUsage = addCursorUsage(streamUsage, message.usage);
+        if (message.type === "summary" && message.status === "completed") {
+          turn.latestModelCallUsedTokens = undefined;
+          turn.contextClearedBySummary = true;
+          this.emit({
+            type: "usage_updated",
+            provider: PROVIDER,
+            turnId: turn.record.id,
+            usage:
+              turn.contextWindowMaxTokens !== undefined
+                ? { contextWindowMaxTokens: turn.contextWindowMaxTokens }
+                : {},
+            clearContextWindowUsed: true,
+          });
+        }
         for (const item of streamItems(message, tools, trigger)) await onItem(item);
       }
     } catch (error) {
@@ -415,6 +465,7 @@ export class CursorRunController {
         void this.requestCancellation(turn, run).catch(() => undefined);
       }
       const observed = await this.observeRun(
+        turn,
         run,
         tools,
         onItem,
@@ -522,10 +573,29 @@ export class CursorRunController {
     let admitted = false;
     let persistenceError: unknown;
     const usageByRun = new Map<string, TokenUsage>();
-    const collectUsage = () =>
-      this.mapUsage(
-        Array.from(usageByRun.values()).reduce<TokenUsage | undefined>(addCursorUsage, undefined),
+    const collectUsage = () => {
+      const summed = Array.from(usageByRun.values()).reduce<TokenUsage | undefined>(
+        addCursorUsage,
+        undefined,
       );
+      const base = this.mapUsage(summed);
+      let usedTokens: number | undefined;
+      if (!turn.record.compact) {
+        if (turn.latestModelCallUsedTokens !== undefined) {
+          usedTokens = turn.latestModelCallUsedTokens;
+        } else if (
+          !turn.sawModelCallCompleted &&
+          !turn.contextClearedBySummary &&
+          tools.size === 0
+        ) {
+          usedTokens = cursorContextWindowUsedTokens(summed);
+        }
+      }
+      return withCursorContextUsage(base, {
+        usedTokens,
+        maxTokens: turn.contextWindowMaxTokens,
+      });
+    };
     const emitItem = async (item: AgentTimelineItem): Promise<void> => {
       // Read images before the content limit truncates their data.
       const images = cursorMcpImages(item);
@@ -631,8 +701,17 @@ export class CursorRunController {
       }
       // startTurn rejection is projected by AgentManager before a turn has started.
       if (admitted) {
-        if (usage)
-          this.emit({ type: "usage_updated", provider: PROVIDER, turnId: turn.record.id, usage });
+        if (usage) {
+          this.emit({
+            type: "usage_updated",
+            provider: PROVIDER,
+            turnId: turn.record.id,
+            usage,
+            ...(usage.contextWindowUsedTokens === undefined
+              ? { clearContextWindowUsed: true }
+              : {}),
+          });
+        }
         this.emit({
           type: "turn_failed",
           provider: PROVIDER,
@@ -676,8 +755,15 @@ export class CursorRunController {
         .catch(() => undefined);
     }
     if (result.status === "cancelled") {
-      if (usage)
-        this.emit({ type: "usage_updated", provider: PROVIDER, turnId: turn.record.id, usage });
+      if (usage) {
+        this.emit({
+          type: "usage_updated",
+          provider: PROVIDER,
+          turnId: turn.record.id,
+          usage,
+          ...(usage.contextWindowUsedTokens === undefined ? { clearContextWindowUsed: true } : {}),
+        });
+      }
       this.emit({
         type: "turn_canceled",
         provider: PROVIDER,
@@ -691,6 +777,22 @@ export class CursorRunController {
         usage,
         canceled: true,
       };
+    }
+    if (
+      turn.record.compact ||
+      turn.contextClearedBySummary ||
+      (usage !== undefined && usage.contextWindowUsedTokens === undefined)
+    ) {
+      this.emit({
+        type: "usage_updated",
+        provider: PROVIDER,
+        turnId: turn.record.id,
+        usage:
+          turn.contextWindowMaxTokens !== undefined
+            ? { contextWindowMaxTokens: turn.contextWindowMaxTokens }
+            : {},
+        clearContextWindowUsed: true,
+      });
     }
     this.emit({ type: "turn_completed", provider: PROVIDER, turnId: turn.record.id, usage });
     return {

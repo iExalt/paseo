@@ -7,6 +7,7 @@ import type {
 } from "@cursor/sdk";
 import { isDeepStrictEqual } from "node:util";
 import { z } from "zod";
+import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import type {
   AgentCapabilityFlags,
   AgentMode,
@@ -18,6 +19,7 @@ import type {
   ToolCallTimelineItem,
 } from "../agent-sdk-types.js";
 import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
+import { resolveCursorContextWindowMaxTokens } from "./cursor-sdk-model.js";
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
 import {
   addCursorUsage,
@@ -495,11 +497,13 @@ export function openCursorHistorySession(params: {
   handle: AgentPersistenceHandle;
   id: string;
   model: string;
+  providerOptions?: ProviderOptions;
   mode: string;
   modes: AgentMode[];
   capabilities: AgentCapabilityFlags;
 }): AgentSession {
-  const { sdk, store, journal, handle, id, model, mode, modes, capabilities } = params;
+  const { sdk, store, journal, handle, id, model, providerOptions, mode, modes, capabilities } =
+    params;
   const requiresInteractive = async (): Promise<never> => {
     throw new Error(
       "Open this Cursor SDK session interactively before starting or changing a turn.",
@@ -511,7 +515,19 @@ export function openCursorHistorySession(params: {
     capabilities,
     subscribe: () => () => {},
     streamHistory: () => readCursorHistory(sdk, store, journal, id),
-    readLastUsage: () => readCursorLastUsage(store, journal, id),
+    readLastUsage: async () => {
+      const usage = await readCursorLastUsage(store, journal, id);
+      if (!usage) return undefined;
+      const { contextWindowMaxTokens: _storedMax, ...rest } = usage;
+      const contextWindowMaxTokens = resolveCursorContextWindowMaxTokens(
+        { id: model },
+        providerOptions,
+      );
+      return {
+        ...rest,
+        ...(contextWindowMaxTokens !== undefined ? { contextWindowMaxTokens } : {}),
+      };
+    },
     getRuntimeInfo: async () => ({ provider: PROVIDER, sessionId: id, model, modeId: mode }),
     getAvailableModes: async () => modes,
     getCurrentMode: async () => mode,
@@ -555,6 +571,7 @@ export async function readCursorUsageHistory(
     createdAt: number;
     order: number;
     usage: AgentUsage | undefined;
+    compacted?: boolean;
   }> = records.map((turn) => {
     const ids = new Set([
       turn.nativeRunId,
@@ -576,6 +593,7 @@ export async function readCursorUsageHistory(
       createdAt: Date.parse(turn.createdAt),
       order,
       usage: turn.lastUsage ?? mapCursorUsage(usage),
+      compacted: turn.compact === true && turn.terminal?.status === "finished",
     };
   });
   for (const run of runs) {
@@ -597,8 +615,23 @@ export async function readCursorLastUsage(
   journal: CursorTurnJournal,
   id: string,
 ) {
-  const latest = (await readCursorUsageHistory(store, journal, id)).find(
-    ({ usage }) => usage !== undefined,
-  );
-  return latest && { ...latest.usage, tokenReadingTurnId: latest.turnId };
+  const readings = await readCursorUsageHistory(store, journal, id);
+  const latestIndex = readings.findIndex(({ usage }) => usage !== undefined);
+  if (latestIndex === -1) return undefined;
+  const latest = readings[latestIndex]!;
+  const compactedAfter = readings.slice(0, latestIndex).some((entry) => entry.compacted === true);
+  const usage = compactedAfter
+    ? {
+        ...latest.usage,
+        contextWindowUsedTokens: undefined,
+        contextReadingTurnId: undefined,
+      }
+    : latest.usage!;
+  return {
+    ...usage,
+    tokenReadingTurnId: latest.turnId,
+    ...(usage.contextWindowUsedTokens !== undefined
+      ? { contextReadingTurnId: usage.contextReadingTurnId ?? latest.turnId }
+      : {}),
+  };
 }

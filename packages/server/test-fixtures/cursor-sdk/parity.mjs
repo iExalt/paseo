@@ -358,7 +358,7 @@ try {
       workspaceId,
     };
     await checkCompletedTelemetry(telemetry, completed.agentId);
-    await checkStoppedTelemetry(telemetry);
+    await checkStoppedTelemetry(telemetry, { checkContextWindow: mode === "green" });
     assert.deepEqual(
       (await readFile(join(workspace, "cursor-cli-disabled.txt"), "utf8")).trimEnd().split("\n"),
       [paseoHome, "absent"],
