@@ -206,20 +206,23 @@ test("refreshes a scoped catalog through authorized root links and their replace
   await mutation(observer, () => writeFile(file, "edited after reapproval"));
 });
 
-test("refreshes a scoped catalog when a linked skill directory is atomically replaced", async () => {
+test("refreshes a scoped catalog when a nested link target outside the root changes or is replaced", async () => {
   const boundary = await realpath(await fixture());
   const root = join(boundary, "skills");
-  const hidden = join(root, ".shared");
+  const parent = join(root, "nested");
+  const hidden = await realpath(await fixture());
   const target = join(hidden, "target");
   const replacement = join(hidden, "replacement");
   await mkdir(target, { recursive: true });
   await mkdir(replacement);
   await writeFile(join(target, "SKILL.md"), "original");
   await writeFile(join(replacement, "SKILL.md"), "replacement");
-  await symlink(target, join(root, "visible"), "junction");
+  await mkdir(parent, { recursive: true });
+  await symlink(target, join(parent, "visible"), "junction");
   const observer = observe(async () => [{ path: root, boundary, scope: "workspace" }]);
   await observer.watch.ready;
 
+  await mutation(observer, () => writeFile(join(target, "SKILL.md"), "edited"));
   await mutation(observer, async () => {
     await rename(target, join(hidden, "displaced"));
     await rename(replacement, target);
