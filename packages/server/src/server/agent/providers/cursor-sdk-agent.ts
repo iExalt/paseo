@@ -68,10 +68,16 @@ import {
 import {
   type HistorySdk,
   readCursorLastUsage,
+  readCursorRuns,
   openCursorHistorySession,
   readCursorHistory,
   interruptedCursorRunMessage,
 } from "./cursor-sdk-history.js";
+import {
+  CursorDashboardUsageClient,
+  CursorSessionCost,
+  type CursorDashboardUsageFetcher,
+} from "./cursor-sdk-cost.js";
 import { assertCursorRunReleased, reconcileReleasedTurn } from "./cursor-sdk-recovery.js";
 import { CursorRewindError, forkCursorConversation } from "./cursor-sdk-rewind.js";
 import {
@@ -228,6 +234,7 @@ export class CursorSdkAgentClient implements AgentClient {
     private readonly listModels = listCursorSdkModels,
     private readonly readStoredKey = readCursorSdkStoredKey,
     private readonly storePath = join(resolvePaseoHome(), "cursor-sdk"),
+    private readonly costFetcher: CursorDashboardUsageFetcher = new CursorDashboardUsageClient(),
   ) {}
 
   private getBinding(sdk: CursorSdk): CursorBinding {
@@ -475,6 +482,8 @@ export class CursorSdkAgentClient implements AgentClient {
             sdk.Agent.resume(id, { ...nativeOptions, apiKey: key, model: selection }),
           ),
       },
+      this.costFetcher,
+      nativeId !== undefined,
     );
   }
 }
@@ -510,6 +519,8 @@ class CursorSdkAgent implements AgentSession {
   // Rewind moves the session to a forked local agent.
   private chatId: string;
   private runs: CursorRunController;
+  private readonly cost: CursorSessionCost;
+  private initialCostRefreshStarted = false;
   private closing: Promise<void> | undefined;
   private closed = false;
   private readonly listeners = new Set<(event: AgentStreamEvent) => void>();
@@ -538,17 +549,46 @@ class CursorSdkAgent implements AgentSession {
       read: () => Promise<string>;
       resume: (apiKey: string, model: ModelSelection, agentId: string) => Promise<SDKAgent>;
     },
+    costFetcher: CursorDashboardUsageFetcher,
+    private readonly resumed: boolean,
   ) {
     this.native = native;
     this.chatId = native.agent.agentId;
     this.capabilities = voiceTools?.getTool("speak")
       ? { ...CAPABILITIES, supportsVoicePlayback: true }
       : CAPABILITIES;
+    this.cost = new CursorSessionCost({
+      resumed,
+      readLineage: () => this.binding.links.lineage(this.chatId),
+      readRuns: (id) => readCursorRuns(this.binding.store, id),
+      readApiKey: () => this.credentials.read(),
+      fetcher: costFetcher,
+      publish: (totalCostUsd, turnId) => {
+        this.emit({
+          type: "usage_updated",
+          provider: PROVIDER,
+          usage: { totalCostUsd },
+          turnId,
+          sessionOnly: turnId === undefined,
+        });
+      },
+    });
     this.runs = this.createRuns();
   }
 
   get id(): string {
     return this.chatId;
+  }
+
+  private handleRunEvent(event: AgentStreamEvent): void {
+    this.emit(event);
+    if (
+      event.type === "turn_completed" ||
+      event.type === "turn_canceled" ||
+      event.type === "turn_failed"
+    ) {
+      this.cost.refresh(event.turnId);
+    }
   }
 
   private createRuns(): CursorRunController {
@@ -557,7 +597,7 @@ class CursorSdkAgent implements AgentSession {
     return new CursorRunController(
       id,
       journal,
-      (event) => this.emit(event),
+      (event) => this.handleRunEvent(event),
       mapCursorUsage,
       (turn, proof) => reconcileReleasedTurn(this.binding.store, journal, id, turn, proof),
     );
@@ -592,6 +632,7 @@ class CursorSdkAgent implements AgentSession {
     this.chatId = fork.agentId;
     this.journal = fork.journal;
     this.runs = this.createRuns();
+    this.cost.onRewind();
     if (previous) {
       previous.apiKey = null;
       await previous.agent[Symbol.asyncDispose]().catch(() => {});
@@ -604,6 +645,10 @@ class CursorSdkAgent implements AgentSession {
 
   subscribe(listener: (event: AgentStreamEvent) => void): () => void {
     this.listeners.add(listener);
+    if (this.resumed && !this.initialCostRefreshStarted) {
+      this.initialCostRefreshStarted = true;
+      this.cost.refresh();
+    }
     return () => this.listeners.delete(listener);
   }
 
@@ -999,6 +1044,7 @@ class CursorSdkAgent implements AgentSession {
   }
 
   private async dispose(): Promise<void> {
+    this.cost.dispose();
     await this.interrupt();
     this.closed = true;
     try {

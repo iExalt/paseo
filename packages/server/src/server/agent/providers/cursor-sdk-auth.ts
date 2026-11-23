@@ -21,7 +21,7 @@ export function getCursorSdkEnvKey(settings?: ProviderRuntimeSettings): string |
   return key?.trim() || undefined;
 }
 
-function cursorSdkBackendUrl(): string {
+export function cursorSdkBackendUrl(): string {
   // Cursor SDK 1.4.2 pairs a stored key with its auth backend, including this default.
   return (process.env.CURSOR_BACKEND_URL ?? "https://api2.cursor.sh").replace(/\/+$/, "");
 }
