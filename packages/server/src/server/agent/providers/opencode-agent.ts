@@ -753,11 +753,19 @@ function readPositiveFiniteNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
 }
 
+function readUsageNumber(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
 function maxFiniteNumber(left: number | undefined, right: number): number {
   return left === undefined ? right : Math.max(left, right);
 }
 
-function assignUsageNumber(usage: AgentUsage, key: keyof AgentUsage, value: number | undefined) {
+function assignUsageNumber(
+  usage: AgentUsage,
+  key: Exclude<keyof AgentUsage, "tokenReadingTurnId" | "contextReadingTurnId">,
+  value: number | undefined,
+) {
   if (value !== undefined) {
     usage[key] = value;
   }
@@ -937,22 +945,25 @@ function mergeOpenCodeStepFinishUsage(
   },
   options: { totalCostUsd?: number } = {},
 ): void {
-  const inputTokens = readPositiveFiniteNumber(part.tokens?.input);
-  const outputTokens = readPositiveFiniteNumber(part.tokens?.output);
-  const reasoningTokens = readPositiveFiniteNumber(part.tokens?.reasoning);
-  const cacheReadTokens = readPositiveFiniteNumber(part.tokens?.cache?.read);
-  const cacheWriteTokens = readPositiveFiniteNumber(part.tokens?.cache?.write);
+  const inputTokens = readUsageNumber(part.tokens?.input);
+  const outputTokens = readUsageNumber(part.tokens?.output);
+  const reasoningTokens = readUsageNumber(part.tokens?.reasoning);
+  const cacheReadTokens = readUsageNumber(part.tokens?.cache?.read);
+  const cacheWriteTokens = readUsageNumber(part.tokens?.cache?.write);
   const totalTokens =
     (inputTokens ?? 0) +
     (outputTokens ?? 0) +
     (reasoningTokens ?? 0) +
     (cacheReadTokens ?? 0) +
     (cacheWriteTokens ?? 0);
-  const cost = readPositiveFiniteNumber(part.cost);
+  const cost = readUsageNumber(part.cost);
 
   assignUsageNumber(usage, "inputTokens", inputTokens);
   assignUsageNumber(usage, "cachedInputTokens", cacheReadTokens);
   assignUsageNumber(usage, "outputTokens", outputTokens);
+  assignUsageNumber(usage, "cacheWriteTokens", cacheWriteTokens);
+  assignUsageNumber(usage, "reasoningTokens", reasoningTokens);
+  assignUsageNumber(usage, "totalTokens", readUsageNumber(part.tokens?.total));
   if (totalTokens > 0) {
     usage.contextWindowUsedTokens = totalTokens;
   }
@@ -1977,6 +1988,7 @@ export interface OpenCodeEventTranslationState {
   emittedUserMessageIds?: Set<string>;
   accumulatedUsage: AgentUsage;
   sessionTotalCostUsd?: number;
+  stepCosts?: Map<string, number>;
   materializedParts: Map<string, { messageId: string; emittedText: string; closed: boolean }>;
   emittedStructuredMessageIds: Set<string>;
   compactionSummaryMessageIds: Set<string>;
@@ -2661,7 +2673,7 @@ function appendOpenCodeSessionCreatedOrUpdated(
 ): void {
   const info = readOpenCodeRecord(event.properties.info);
   if (event.properties.info.id === state.sessionId) {
-    const sessionCost = readPositiveFiniteNumber(info?.cost);
+    const sessionCost = readUsageNumber(info?.cost);
     if (sessionCost !== undefined) {
       state.sessionTotalCostUsd = maxFiniteNumber(state.sessionTotalCostUsd, sessionCost);
       state.accumulatedUsage.totalCostUsd = state.sessionTotalCostUsd;
@@ -2843,21 +2855,33 @@ function appendOpenCodeMessagePartUpdated(
     });
     return;
   }
-  if (part.type === "step-finish") {
-    const stepCost = readPositiveFiniteNumber(part.cost);
-    if (stepCost !== undefined) {
-      state.sessionTotalCostUsd = (state.sessionTotalCostUsd ?? 0) + stepCost;
-    }
-    mergeOpenCodeStepFinishUsage(state.accumulatedUsage, part, {
-      totalCostUsd: state.sessionTotalCostUsd,
+  if (part.type === "step-finish") recordOpenCodeStep(state, events, part);
+}
+
+function recordOpenCodeStep(
+  state: OpenCodeEventTranslationState,
+  events: AgentStreamEvent[],
+  part: Extract<
+    Extract<OpenCodeEvent, { type: "message.part.updated" }>["properties"]["part"],
+    { type: "step-finish" }
+  >,
+) {
+  const stepCost = readUsageNumber(part.cost);
+  if (stepCost !== undefined) {
+    const costs = (state.stepCosts ??= new Map());
+    const previous = costs.get(part.id) ?? 0;
+    state.sessionTotalCostUsd = (state.sessionTotalCostUsd ?? 0) + Math.max(0, stepCost - previous);
+    costs.set(part.id, Math.max(stepCost, previous));
+  }
+  mergeOpenCodeStepFinishUsage(state.accumulatedUsage, part, {
+    totalCostUsd: state.sessionTotalCostUsd,
+  });
+  if (hasNormalizedOpenCodeUsage(state.accumulatedUsage)) {
+    events.push({
+      type: "usage_updated",
+      provider: "opencode",
+      usage: { ...state.accumulatedUsage },
     });
-    if (hasNormalizedOpenCodeUsage(state.accumulatedUsage)) {
-      events.push({
-        type: "usage_updated",
-        provider: "opencode",
-        usage: { ...state.accumulatedUsage },
-      });
-    }
   }
 }
 
@@ -3397,6 +3421,7 @@ class OpenCodeAgentSession implements AgentSession {
   private abortController: AbortController | null = null;
   private accumulatedUsage: AgentUsage = {};
   private sessionTotalCostUsd: number | undefined;
+  private readonly stepCosts = new Map<string, number>();
   private mcpSetup: Promise<void> | null = null;
   private messageRoles = new Map<string, OpenCodeMessageRole>();
   private pendingUserMessageText: string | null = null;
@@ -5278,6 +5303,7 @@ class OpenCodeAgentSession implements AgentSession {
       emittedUserMessageIds: this.emittedUserMessageIds,
       accumulatedUsage: this.accumulatedUsage,
       sessionTotalCostUsd: this.sessionTotalCostUsd,
+      stepCosts: this.stepCosts,
       materializedParts: this.materializedParts,
       emittedStructuredMessageIds: this.emittedStructuredMessageIds,
       compactionSummaryMessageIds: this.compactionSummaryMessageIds,

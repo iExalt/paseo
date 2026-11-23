@@ -22,38 +22,25 @@ function createScheduler(): OmpUsagePollScheduler {
 }
 
 function toAgentUsage(stats: OmpSessionStats): AgentUsage | undefined {
-  const inputTokens = stats.tokens?.input ?? 0;
-  const cachedInputTokens = stats.tokens?.cacheRead ?? 0;
-  const outputTokens = stats.tokens?.output ?? 0;
-  const totalCostUsd = stats.cost ?? 0;
-  const contextWindowMaxTokens = stats.contextUsage?.contextWindow ?? undefined;
-  const contextWindowUsedTokens = stats.contextUsage?.tokens ?? undefined;
-
-  if (
-    inputTokens === 0 &&
-    cachedInputTokens === 0 &&
-    outputTokens === 0 &&
-    totalCostUsd === 0 &&
-    contextWindowMaxTokens === undefined &&
-    contextWindowUsedTokens === undefined
-  ) {
-    return undefined;
-  }
-
-  return {
-    inputTokens,
-    cachedInputTokens,
-    outputTokens,
-    totalCostUsd,
-    ...(typeof contextWindowMaxTokens === "number" ? { contextWindowMaxTokens } : {}),
-    ...(typeof contextWindowUsedTokens === "number" ? { contextWindowUsedTokens } : {}),
+  const usage = {
+    inputTokens: stats.tokens?.input,
+    cachedInputTokens: stats.tokens?.cacheRead,
+    cacheWriteTokens: stats.tokens?.cacheWrite,
+    outputTokens: stats.tokens?.output,
+    totalTokens: stats.tokens?.total,
+    totalCostUsd: stats.cost,
+    contextWindowMaxTokens: stats.contextUsage?.contextWindow ?? undefined,
+    contextWindowUsedTokens: stats.contextUsage?.tokens ?? undefined,
   };
+  return Object.values(usage).some((value) => value !== undefined) ? usage : undefined;
 }
 
 function isSameUsage(left: AgentUsage, right: AgentUsage): boolean {
   return (
     left.inputTokens === right.inputTokens &&
     left.cachedInputTokens === right.cachedInputTokens &&
+    left.cacheWriteTokens === right.cacheWriteTokens &&
+    left.totalTokens === right.totalTokens &&
     left.outputTokens === right.outputTokens &&
     left.totalCostUsd === right.totalCostUsd &&
     left.contextWindowMaxTokens === right.contextWindowMaxTokens &&
@@ -77,6 +64,7 @@ export class OmpUsagePoller {
     if (this.closed || this.active) {
       return;
     }
+    this.lastUsage = null;
     this.active = true;
     this.generation += 1;
     this.schedule(this.generation);

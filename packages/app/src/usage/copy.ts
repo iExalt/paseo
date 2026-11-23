@@ -29,6 +29,8 @@ export const usageCopy = {
   spendLast7Days: "7 days",
   spendThisMonth: "This month",
   spendAllTime: "All time",
+  spendUnknown: (amount: string, count: number) =>
+    `${amount} known · ${count} unpriced ${count === 1 ? "run" : "runs"}`,
   spendEmpty: "No spend recorded yet",
   spendLoading: "Loading spend...",
   spendErrorTitle: "Unable to load spend",

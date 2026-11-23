@@ -273,12 +273,39 @@ interface TimeoutOptions {
   onLateError?: (error: unknown) => void;
 }
 
-/** Mid-turn context readings carry no cost; keep the session's last known cost through them. */
-function withKnownCost(next: AgentUsage, previous: AgentUsage | undefined): AgentUsage {
-  const totalCostUsd = previous?.totalCostUsd;
-  return next.totalCostUsd === undefined && totalCostUsd !== undefined
-    ? { ...next, totalCostUsd }
-    : next;
+/** Token counters are one provider snapshot. Cost and context can arrive independently. */
+function mergeUsage(next: AgentUsage, previous?: AgentUsage, turnId?: string): AgentUsage {
+  const tokens = reportedTokens(next);
+  const hasTokens = Object.keys(tokens).length > 0;
+  const result = {
+    ...(hasTokens ? tokens : previous && reportedTokens(previous)),
+    tokenReadingTurnId: hasTokens
+      ? (turnId ?? next.tokenReadingTurnId)
+      : previous?.tokenReadingTurnId,
+    totalCostUsd: next.totalCostUsd ?? previous?.totalCostUsd,
+    contextWindowMaxTokens: next.contextWindowMaxTokens ?? previous?.contextWindowMaxTokens,
+    contextWindowUsedTokens: next.contextWindowUsedTokens ?? previous?.contextWindowUsedTokens,
+    contextReadingTurnId:
+      next.contextWindowUsedTokens !== undefined
+        ? (turnId ?? next.contextReadingTurnId)
+        : previous?.contextReadingTurnId,
+  };
+  return result;
+}
+
+function reportedTokens(usage: AgentUsage): AgentUsage {
+  const tokens: AgentUsage = {};
+  for (const key of [
+    "inputTokens",
+    "cachedInputTokens",
+    "cacheWriteTokens",
+    "outputTokens",
+    "reasoningTokens",
+    "totalTokens",
+  ] as const) {
+    if (usage[key] !== undefined) tokens[key] = usage[key];
+  }
+  return tokens;
 }
 
 function formatProviderList(providers: readonly string[]): string {
@@ -642,7 +669,11 @@ function attachManagedTurnIdentity(
   fromHistory: boolean,
 ): { event: AgentStreamEvent; turnId: string | undefined } {
   const existingTurnId = getAgentStreamEventTurnId(event);
-  if (fromHistory || existingTurnId !== undefined) {
+  if (
+    fromHistory ||
+    existingTurnId !== undefined ||
+    (event.type === "usage_updated" && event.sessionOnly)
+  ) {
     return { event, turnId: existingTurnId };
   }
   switch (event.type) {
@@ -657,6 +688,7 @@ function attachManagedTurnIdentity(
       const turnId = agent.activeForegroundTurnId ?? agent.activeTurnId ?? undefined;
       return turnId ? { event: { ...event, turnId }, turnId } : { event, turnId };
     }
+    case "usage_updated":
     case "timeline": {
       // Live provider items belong to the foreground turn that owns their dispatch.
       // Provider history deliberately keeps absent IDs because it has no daemon turn identity.
@@ -1566,13 +1598,24 @@ export class AgentManager {
   }
 
   /** Live cost readings only: replayed history repeats readings the ledger already has. */
-  private recordSpend(agent: ManagedAgent, usage: AgentUsage): void {
-    if (usage.totalCostUsd === undefined || !this.spendLedger) return;
+  private recordSpend(
+    agent: ManagedAgent,
+    usage: AgentUsage,
+    turnId?: string,
+    completed = false,
+  ): void {
+    if (!this.spendLedger) return;
+    const { totalCostUsd } = usage;
+    const tokens = reportedTokens(usage);
+    const hasTokens = Object.keys(tokens).length > 0;
+    if (totalCostUsd === undefined && (!turnId || (!completed && !hasTokens))) return;
     void this.spendLedger.record({
       agentId: agent.id,
       provider: agent.provider,
       createdAt: agent.createdAt,
-      totalUsd: usage.totalCostUsd,
+      totalUsd: totalCostUsd,
+      turnId,
+      usage: hasTokens ? tokens : undefined,
     });
   }
 
@@ -1986,7 +2029,7 @@ export class AgentManager {
       persistence: handle,
       restoring: true,
       ...restored,
-      lastUsage: nativeUsage ? withKnownCost(nativeUsage, restored.lastUsage) : restored.lastUsage,
+      lastUsage: nativeUsage ? mergeUsage(nativeUsage, restored.lastUsage) : restored.lastUsage,
     });
   }
 
@@ -5918,9 +5961,11 @@ export class AgentManager {
     agent: ActiveManagedAgent,
     usage: AgentUsage,
     fromHistory: boolean,
+    turnId?: string,
   ): void {
-    if (!fromHistory) this.recordSpend(agent, usage);
-    agent.lastUsage = withKnownCost(usage, agent.lastUsage);
+    if (fromHistory) return;
+    this.recordSpend(agent, usage, turnId);
+    agent.lastUsage = mergeUsage(usage, agent.lastUsage, turnId);
     this.emitState(agent);
   }
 
@@ -5953,7 +5998,7 @@ export class AgentManager {
         this.onStreamThreadStarted(agent);
         return undefined;
       case "usage_updated":
-        this.applyStreamUsage(agent, event.usage, fromHistory);
+        this.applyStreamUsage(agent, event.usage, fromHistory, eventTurnId);
         return undefined;
       case "mode_changed":
         this.applyObservedMode(agent, event.currentModeId);
@@ -6125,12 +6170,9 @@ export class AgentManager {
       "agent.manager.turn.completed",
     );
     if (terminalDisposition === "stale") return;
+    if (!fromHistory) this.recordSpend(agent, event.usage ?? {}, eventTurnId, true);
     if (event.usage) {
-      if (!fromHistory) this.recordSpend(agent, event.usage);
-      agent.lastUsage =
-        this.adapterOf(agent.provider) === "cursor-sdk"
-          ? withKnownCost(event.usage, agent.lastUsage)
-          : { ...agent.lastUsage, ...event.usage };
+      agent.lastUsage = mergeUsage(event.usage, agent.lastUsage, eventTurnId);
     }
     // If no usage on turn_completed, keep lastUsage as-is so context window
     // data accumulated during streaming isn't lost when the provider omits

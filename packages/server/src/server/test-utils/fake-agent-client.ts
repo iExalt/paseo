@@ -82,6 +82,7 @@ interface FakeAgentSessionOptions {
   closeSession?: () => Promise<void>;
   onStartTurn?: (prompt: AgentPromptInput, config: AgentSessionConfig) => void;
   beforeTurnComplete?: (prompt: AgentPromptInput) => Promise<void>;
+  reportedUsage?: { stream?: AgentUsage; result: AgentUsage };
   steerActiveTurn?: AgentSession["steerActiveTurn"];
   onInterrupt?: () => void;
   beforeSetMode?: (modeId: string) => Promise<void>;
@@ -95,6 +96,7 @@ export interface TestAgentClientOptions {
   closeSession?: () => Promise<void>;
   onStartTurn?: (prompt: AgentPromptInput, config: AgentSessionConfig) => void;
   beforeTurnComplete?: (prompt: AgentPromptInput) => Promise<void>;
+  reportedUsage?: { stream?: AgentUsage; result: AgentUsage };
   steerActiveTurn?: AgentSession["steerActiveTurn"];
   onInterrupt?: () => void;
   beforeSetMode?: (modeId: string) => Promise<void>;
@@ -375,6 +377,7 @@ class FakeAgentSession implements AgentSession {
   private readonly beforeSetMode: ((modeId: string) => Promise<void>) | undefined;
   private readonly closeSession: (() => Promise<void>) | undefined;
   private readonly onStartTurn: TestAgentClientOptions["onStartTurn"];
+  private readonly reportedUsage: TestAgentClientOptions["reportedUsage"];
   private readonly beforeTurnComplete: ((prompt: AgentPromptInput) => Promise<void>) | undefined;
   private readonly historyEvents: readonly AgentStreamEvent[] | undefined;
 
@@ -392,6 +395,7 @@ class FakeAgentSession implements AgentSession {
     this.beforeSetMode = options.beforeSetMode;
     this.closeSession = options.closeSession;
     this.onStartTurn = options.onStartTurn;
+    this.reportedUsage = options.reportedUsage;
     this.beforeTurnComplete = options.beforeTurnComplete;
     this.historyEvents = options.historyEvents;
     this.historyPath = path.join(
@@ -889,11 +893,17 @@ class FakeAgentSession implements AgentSession {
         this.notifySubscribers(assistantChunkB);
       }
 
+      if (this.reportedUsage?.stream)
+        this.notifySubscribers({
+          type: "usage_updated",
+          provider: this.providerName,
+          usage: this.reportedUsage.stream,
+        });
       await this.beforeTurnComplete?.(prompt);
       const completed: AgentStreamEvent = {
         type: "turn_completed",
         provider: this.providerName,
-        usage: { inputTokens: 1, outputTokens: 1 },
+        usage: this.reportedUsage?.result ?? { inputTokens: 1, outputTokens: 1 },
       };
       await this.appendHistoryEvent(completed);
       this.notifySubscribers(completed);
@@ -1316,6 +1326,7 @@ class FakeAgentClient implements AgentClient {
       closeSession: this.options.closeSession,
       onStartTurn: this.options.onStartTurn,
       beforeTurnComplete: this.options.beforeTurnComplete,
+      reportedUsage: this.options.reportedUsage,
       steerActiveTurn: this.options.steerActiveTurn,
       onInterrupt: this.options.onInterrupt,
       beforeSetMode: this.options.beforeSetMode,
@@ -1347,6 +1358,7 @@ class FakeAgentClient implements AgentClient {
       closeSession: this.options.closeSession,
       onStartTurn: this.options.onStartTurn,
       beforeTurnComplete: this.options.beforeTurnComplete,
+      reportedUsage: this.options.reportedUsage,
       steerActiveTurn: this.options.steerActiveTurn,
       onInterrupt: this.options.onInterrupt,
       beforeSetMode: this.options.beforeSetMode,

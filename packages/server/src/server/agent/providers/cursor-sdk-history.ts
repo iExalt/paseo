@@ -503,7 +503,7 @@ async function readCursorRuns(
   return runs;
 }
 
-export async function readCursorLastUsage(
+export async function readCursorUsageHistory(
   store: LocalAgentStore,
   journal: CursorTurnJournal,
   id: string,
@@ -511,32 +511,38 @@ export async function readCursorLastUsage(
   const [runs, records] = await Promise.all([readCursorRuns(store, id), journal.read()]);
   const byId = new Map(runs.map((run) => [run.runId, run]));
   const owned = new Set<string>();
-  const readings: Array<{ createdAt: number; order: number; usage: AgentUsage | undefined }> =
-    records.map((turn) => {
-      const ids = new Set([
-        turn.nativeRunId,
-        ...(turn.executionRunIds ?? []),
-        ...(turn.followUpIds ?? []),
-      ]);
-      let usage: TokenUsage | undefined;
-      let order = 0;
-      for (const runId of ids) {
-        if (!runId) continue;
-        owned.add(runId);
-        const run = byId.get(runId);
-        if (!run) continue;
-        order = Math.max(order, run.turnNumber);
-        if (run.usage) usage = addCursorUsage(usage, run.usage);
-      }
-      return {
-        createdAt: Date.parse(turn.createdAt),
-        order,
-        usage: turn.lastUsage ?? mapCursorUsage(usage),
-      };
-    });
+  const readings: Array<{
+    turnId: string;
+    createdAt: number;
+    order: number;
+    usage: AgentUsage | undefined;
+  }> = records.map((turn) => {
+    const ids = new Set([
+      turn.nativeRunId,
+      ...(turn.executionRunIds ?? []),
+      ...(turn.followUpIds ?? []),
+    ]);
+    let usage: TokenUsage | undefined;
+    let order = 0;
+    for (const runId of ids) {
+      if (!runId) continue;
+      owned.add(runId);
+      const run = byId.get(runId);
+      if (!run) continue;
+      order = Math.max(order, run.turnNumber);
+      if (run.usage) usage = addCursorUsage(usage, run.usage);
+    }
+    return {
+      turnId: turn.id,
+      createdAt: Date.parse(turn.createdAt),
+      order,
+      usage: turn.lastUsage ?? mapCursorUsage(usage),
+    };
+  });
   for (const run of runs) {
     if (!owned.has(run.runId) && run.usage) {
       readings.push({
+        turnId: run.runId,
         createdAt: run.createdAt,
         order: run.turnNumber,
         usage: mapCursorUsage(run.usage),
@@ -544,5 +550,16 @@ export async function readCursorLastUsage(
     }
   }
   readings.sort((a, b) => b.createdAt - a.createdAt || b.order - a.order);
-  return readings.find(({ usage }) => usage !== undefined)?.usage;
+  return readings;
+}
+
+export async function readCursorLastUsage(
+  store: LocalAgentStore,
+  journal: CursorTurnJournal,
+  id: string,
+) {
+  const latest = (await readCursorUsageHistory(store, journal, id)).find(
+    ({ usage }) => usage !== undefined,
+  );
+  return latest && { ...latest.usage, tokenReadingTurnId: latest.turnId };
 }

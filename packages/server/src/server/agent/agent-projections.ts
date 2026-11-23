@@ -106,7 +106,7 @@ export function toStoredAgentRecord(
     persistence,
     lastError: agent.lastError ?? undefined,
     totalCostUsd: readTotalCostUsd(agent.lastUsage),
-    lastUsage: agent.provider === "cursor-sdk" ? sanitizeUsage(agent.lastUsage) : undefined,
+    lastUsage: sanitizeUsage(agent.lastUsage),
     requiresAttention: agent.attention.requiresAttention,
     attentionReason: agent.attention.requiresAttention ? agent.attention.attentionReason : null,
     attentionTimestamp: agent.attention.requiresAttention
@@ -588,7 +588,7 @@ function sanitizeMetadataArray(value: unknown): AgentMetadata[] | undefined {
   return sanitized.length > 0 ? sanitized : undefined;
 }
 
-type UsageNumericField = Exclude<keyof AgentUsage, never>;
+type UsageNumericField = Exclude<keyof AgentUsage, "tokenReadingTurnId" | "contextReadingTurnId">;
 
 function assignFiniteNumber(
   source: { [key: string]: JsonValue },
@@ -642,6 +642,10 @@ function sanitizeUsage(value: unknown): AgentUsage | undefined {
       return undefined;
     }
   }
+  if (typeof sanitized.tokenReadingTurnId === "string")
+    result.tokenReadingTurnId = sanitized.tokenReadingTurnId;
+  if (typeof sanitized.contextReadingTurnId === "string")
+    result.contextReadingTurnId = sanitized.contextReadingTurnId;
   return Object.keys(result).length ? result : undefined;
 }
 

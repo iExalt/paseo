@@ -108,6 +108,52 @@ describe("CodexThreadCost", () => {
     expect(reads.filter((threadId) => threadId === "child")).toHaveLength(1 + 1 + 1 + 7);
   });
 
+  test("reads again for a completed turn when its earlier refresh is still in flight", async () => {
+    const first = Promise.withResolvers<unknown>();
+    const reported: Array<[number, string | undefined]> = [];
+    let reads = 0;
+    const tracker = new CodexThreadCost({
+      logger: createTestLogger(),
+      publish: (usd, turn) => reported.push([usd, turn]),
+      readUsage: async () => (++reads === 1 ? first.promise : usage(1000, 10)),
+    });
+    tracker.reset("root", { resumed: false });
+    tracker.refresh("all");
+    tracker.refresh("all", "completed");
+    first.resolve(usage(1000, 10));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(reads).toBe(2);
+    expect(reported).toEqual([
+      [0.001, undefined],
+      [0.001, "completed"],
+    ]);
+  });
+
+  test.each(["root", "child"])(
+    "does not price a later turn with the old %s reading",
+    async (missing) => {
+      let priceMissing = false;
+      const reported: Array<[number, string | undefined]> = [];
+      const tracker = new CodexThreadCost({
+        logger: createTestLogger(),
+        publish: (usd, turn) => reported.push([usd, turn]),
+        readUsage: async (id) =>
+          priceMissing && id === missing
+            ? { threadUsage: { estimatedUsageUsdMicros: null } }
+            : usage(1000, 50),
+      });
+      tracker.reset("root", { resumed: false });
+      tracker.addSpawnedThreads("root", ["child"]);
+      tracker.refresh("all", "first");
+      await vi.advanceTimersByTimeAsync(0);
+      priceMissing = true;
+      tracker.reportTokens(missing, 100);
+      tracker.refresh("all", "second");
+      await vi.advanceTimersByTimeAsync(0);
+      expect(reported).toEqual([[0.002, "first"]]);
+    },
+  );
+
   test("reads at most four threads at a time", async () => {
     let inFlight = 0;
     let peak = 0;

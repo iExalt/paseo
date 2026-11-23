@@ -1004,17 +1004,23 @@ describe("mapACPUsage", () => {
         outputTokens: 7,
         totalTokens: 18,
         cachedReadTokens: 5,
+        cachedWriteTokens: 2,
+        thoughtTokens: 3,
       }),
     ).toEqual({
       inputTokens: 11,
       outputTokens: 7,
       cachedInputTokens: 5,
+      cacheWriteTokens: 2,
+      reasoningTokens: 3,
+      totalTokens: 18,
     });
   });
 });
 
 describe("ACP context-window usage", () => {
   async function emitUsageUpdate(update: {
+    cost?: { amount: number; currency: string };
     used: number;
     size: number;
   }): Promise<{ events: unknown[] }> {
@@ -1026,7 +1032,7 @@ describe("ACP context-window usage", () => {
     });
     await session.sessionUpdate({
       sessionId: "session-1",
-      update: { sessionUpdate: "usage_update", used: update.used, size: update.size },
+      update: { sessionUpdate: "usage_update", ...update },
     });
     return { events };
   }
@@ -1041,6 +1047,14 @@ describe("ACP context-window usage", () => {
         usage: { contextWindowMaxTokens: 1_000_000, contextWindowUsedTokens: 13_759 },
       },
     ]);
+  });
+
+  test("accepts explicit USD zero without a context reading and leaves other currencies unpriced", async () => {
+    const update = { used: 0, size: 0, cost: { amount: 0, currency: "USD" } };
+    expect((await emitUsageUpdate(update)).events).toMatchObject([{ usage: { totalCostUsd: 0 } }]);
+    expect(
+      (await emitUsageUpdate({ ...update, cost: { amount: 1, currency: "EUR" } })).events,
+    ).toEqual([]);
   });
 
   test("emits nothing when size and used cannot both drive a meter", async () => {

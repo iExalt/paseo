@@ -400,6 +400,7 @@ test("deduplicates linked native usage and prefers a newer durable fallback over
       cachedInputTokens: 4,
       cacheWriteTokens: 2,
       totalTokens: 26,
+      tokenReadingTurnId: record.id,
       reasoningTokens: 0,
     });
 
@@ -419,7 +420,10 @@ test("deduplicates linked native usage and prefers a newer durable fallback over
       },
       "new",
     );
-    expect(await readCursorLastUsage(store, journal, agentId)).toEqual(fallback);
+    expect(await readCursorLastUsage(store, journal, agentId)).toEqual({
+      ...fallback,
+      tokenReadingTurnId: "paseo-new",
+    });
   });
 });
 
