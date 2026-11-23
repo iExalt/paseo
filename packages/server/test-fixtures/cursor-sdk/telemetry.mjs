@@ -37,14 +37,27 @@ async function connect({ listener, require }) {
   return client;
 }
 
+// The SDK marks a cancelled run terminal before it writes the run's usage, so
+// Paseo's snapshot can be current while the native row still lacks usage.
+async function waitForNativeRunUsage(store, agentId, status) {
+  const deadline = Date.now() + 5_000;
+  for (;;) {
+    const page = await store.runs.list({ filter: { agentIds: [agentId] } });
+    const run = page.items.findLast((entry) => entry.status === status);
+    if (run?.usage || Date.now() > deadline) {
+      assert.ok(run, `Missing native ${status} run`);
+      return run;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 50));
+  }
+}
+
 async function assertUsage({ client, args, id, usage, status }) {
   const snapshot = (await client.fetchAgent(id)).agent;
   const { snapshot: cliSnapshot } = await args.cli("agent", "status", id);
   const { JsonlLocalAgentStore } = args.require("@cursor/sdk");
   const store = new JsonlLocalAgentStore(join(args.paseoHome, "cursor-sdk"));
-  const page = await store.runs.list({ filter: { agentIds: [snapshot.persistence.nativeHandle] } });
-  const run = page.items.findLast((entry) => entry.status === status);
-  assert.ok(run, `Missing native ${status} run`);
+  const run = await waitForNativeRunUsage(store, snapshot.persistence.nativeHandle, status);
   const cards = toolCards(await client.fetchAgentTimeline(id, { limit: 100 }));
   const readingTurn = cards.find(({ item }) => item.callId.startsWith(run.runId + ":"))?.turnId;
   assert.ok(readingTurn, "Missing Paseo turn for the native run");

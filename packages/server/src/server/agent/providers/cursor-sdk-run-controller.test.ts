@@ -200,7 +200,11 @@ test.each(["complete_delivered", "revert_to_followup"] as const)(
       clientMessageId: "steer-message",
     });
     const accepted = outcome !== "revert_to_followup";
-    expect(delivered).toEqual({ status: accepted ? "accepted" : "unavailable" });
+    expect(delivered).toEqual(
+      accepted
+        ? { status: "accepted", providerMessageId: "steer-message" }
+        : { status: "unavailable" },
+    );
     expect(first.run.steer).toHaveBeenCalledExactlyOnceWith("steer once");
     expect((await journal.read())[0].steers).toHaveLength(Number(accepted));
     first.finish();
@@ -215,9 +219,9 @@ test("observes an SDK-queued follow-up without submitting it again and Stop join
   queued.run.cancel = vi.fn(async () => queued.finish("cancelled"));
   vi.mocked(first.run.steer!).mockResolvedValue({ outcome: "queued", run: queued.run });
   const turn = await start(first.run);
-  await expect(controller.steer("steer", { expectedTurnId: turn.turnId })).resolves.toEqual({
-    status: "accepted",
-  });
+  await expect(
+    controller.steer("steer", { expectedTurnId: turn.turnId, clientMessageId: "steer-id" }),
+  ).resolves.toEqual({ status: "accepted", providerMessageId: "steer-id" });
   first.finish();
   await controller.interrupt();
   await expect(turn.completion).resolves.toMatchObject({ canceled: true });
@@ -291,6 +295,7 @@ test("an unnamed SDK-owned follow-up prevents subsequent delivery and Stop from 
   const turn = await start(first.run);
   await expect(controller.steer("native-owned", { expectedTurnId: turn.turnId })).resolves.toEqual({
     status: "accepted",
+    providerMessageId: expect.stringContaining(":steer:"),
   });
   first.finish();
   await expect(start(nativeRun("no-second-send").run)).rejects.toThrow("still running");
