@@ -1,6 +1,6 @@
 {
   "name": "@getpaseo/cli",
-  "version": "0.35.0",
+  "version": "0.36.0",
   "description": "Paseo CLI - control your AI coding agents from the command line",
   "license": "Apache-2.0",
   "bin": {
@@ -30,9 +30,9 @@
   "dependencies": {
     "@clack/core": "1.5.1",
     "@clack/prompts": "^1.8.1",
-    "@getpaseo/client": "0.35.0",
-    "@getpaseo/protocol": "0.35.0",
-    "@getpaseo/server": "0.35.0",
+    "@getpaseo/client": "0.36.0",
+    "@getpaseo/protocol": "0.36.0",
+    "@getpaseo/server": "0.36.0",
     "chalk": "^6.0.1",
     "commander": "^15.0.0",
     "mime-types": "^3.0.2",

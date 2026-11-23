@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.36.0](https://github.com/iExalt/paseo/compare/paseo-v0.35.0...paseo-v0.36.0) (2026-11-23)
+
+
+### Features
+
+* **cursor:** rewind local Cursor SDK chats to an earlier prompt ([#579](https://github.com/iExalt/paseo/issues/579)) ([8ef4765](https://github.com/iExalt/paseo/commit/8ef476519c6de32beafeaab7f036ce23b77134e1))
+
+
+### Bug Fixes
+
+* **cursor:** keep a cancelled run's usage when a stale cancellation writes last ([#581](https://github.com/iExalt/paseo/issues/581)) ([f9b604b](https://github.com/iExalt/paseo/commit/f9b604bc60950d27b1964dee8a4a43344ece182a))
+
 ## [0.35.0](https://github.com/iExalt/paseo/compare/paseo-v0.34.0...paseo-v0.35.0) (2026-11-23)
 
 
