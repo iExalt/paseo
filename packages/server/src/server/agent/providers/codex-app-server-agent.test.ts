@@ -3687,6 +3687,7 @@ describe("Codex app-server provider", () => {
       outputTokens: 15000,
       contextWindowMaxTokens: 200000,
       contextWindowUsedTokens: 50000,
+      totalTokens: 50000,
     });
   });
 
@@ -3707,6 +3708,7 @@ describe("Codex app-server provider", () => {
       outputTokens: 15000,
       contextWindowMaxTokens: 200000,
       contextWindowUsedTokens: 50000,
+      totalTokens: 50000,
     });
   });
 
@@ -8171,6 +8173,7 @@ describe("Codex app-server provider", () => {
         outputTokens: 15000,
         contextWindowMaxTokens: 200000,
         contextWindowUsedTokens: 50000,
+        totalTokens: 50000,
       },
     });
     expect(events.at(-1)).toEqual({
@@ -8183,11 +8186,12 @@ describe("Codex app-server provider", () => {
         outputTokens: 15000,
         contextWindowMaxTokens: 200000,
         contextWindowUsedTokens: 50000,
+        totalTokens: 50000,
       },
     });
   });
 
-  test("reads the thread cost after a turn and keeps it through later token readings", async () => {
+  test("attributes delayed cost to the completed turn and keeps token reports independent", async () => {
     const session = createSession();
     const request = vi.fn(async (method: string, params: unknown) => {
       expect(method).toBe("account/usage/read");
@@ -8202,22 +8206,24 @@ describe("Codex app-server provider", () => {
       last: { total_tokens: 50000, inputTokens: 30000, cachedInputTokens: 5000, outputTokens: 50 },
     };
 
-    asInternals(session).handleNotification("thread/tokenUsage/updated", { tokenUsage });
+    await asInternals(session).handleNotification("thread/tokenUsage/updated", { tokenUsage });
     asInternals(session).handleNotification("turn/completed", {
       turn: { status: "completed", error: null },
     });
     await vi.waitFor(() => {
       expect(events.at(-1)).toMatchObject({
         type: "usage_updated",
-        usage: { contextWindowUsedTokens: 50000, totalCostUsd: 2.84575 },
+        turnId: "test-turn",
+        usage: { totalCostUsd: 2.84575 },
       });
     });
-    asInternals(session).handleNotification("thread/tokenUsage/updated", { tokenUsage });
+    await asInternals(session).handleNotification("thread/tokenUsage/updated", { tokenUsage });
 
     expect(events.at(-1)).toMatchObject({
       type: "usage_updated",
-      usage: { contextWindowUsedTokens: 50000, totalCostUsd: 2.84575 },
+      usage: { contextWindowUsedTokens: 50000 },
     });
+    expect(events.at(-1)).not.toHaveProperty("usage.totalCostUsd");
     expect(request).toHaveBeenCalledTimes(1);
   });
 

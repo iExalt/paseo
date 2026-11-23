@@ -25,13 +25,14 @@ type ThreadCostState =
   | { status: "unknown" }
   /** Codex has no USD price for this thread's billing route. */
   | { status: "unpriced" }
+  | { status: "unpriced"; usdMicros: number }
   /** A reading that covers fewer tokens than the thread has reported using. */
   | { status: "lagging"; usdMicros: number }
   | { status: "settled"; usdMicros: number };
 
 export interface CodexThreadCostOptions {
   readUsage: (threadId: string) => Promise<unknown>;
-  publish: (totalCostUsd: number) => void;
+  publish: (totalCostUsd: number, turnId?: string) => void;
   logger: Logger;
 }
 
@@ -56,8 +57,10 @@ export class CodexThreadCost {
    */
   private readonly reportedTokens = new Map<string, number>();
   private readonly dirty = new Set<string>();
+  private readonly requestedAgain = new Set<string>();
   private publishedUsdMicros: number | null = null;
   private generation = 0;
+  private completedTurnId?: string;
   private attempt = 0;
   private running = false;
   private rerun = false;
@@ -77,8 +80,10 @@ export class CodexThreadCost {
     this.threads.clear();
     this.reportedTokens.clear();
     this.dirty.clear();
+    this.requestedAgain.clear();
     this.warnedThreadIds.clear();
     this.publishedUsdMicros = null;
+    this.completedTurnId = undefined;
     if (rootThreadId) this.threads.set(rootThreadId, { status: "unknown" });
   }
 
@@ -127,12 +132,18 @@ export class CodexThreadCost {
    * Reads the given threads, every thread not yet settled, and with `all`, every known thread; then
    * retries the ones whose accounting has not caught up. Calls coalesce into one read loop.
    */
-  refresh(threadIds: readonly string[] | "all"): void {
+  beginTurn(): void {
+    this.completedTurnId = undefined;
+  }
+
+  refresh(threadIds: readonly string[] | "all", completedTurnId?: string): void {
+    if (completedTurnId) this.completedTurnId = completedTurnId;
     if (!this.rootThreadId) return;
     for (const [threadId, state] of this.threads) {
       const unsettled = state.status === "unknown" || state.status === "lagging";
       if (threadIds === "all" || threadIds.includes(threadId) || unsettled) {
         this.dirty.add(threadId);
+        if (this.running && completedTurnId) this.requestedAgain.add(threadId);
       }
     }
     this.attempt = 0;
@@ -160,10 +171,13 @@ export class CodexThreadCost {
     try {
       while (generation === this.generation && this.dirty.size > 0) {
         this.rerun = false;
+        this.requestedAgain.clear();
         const threadIds = [...this.dirty];
+        const turnId = this.completedTurnId;
         await this.readAll(threadIds, generation);
         if (generation !== this.generation) return;
-        this.publish();
+        for (const id of this.requestedAgain) this.dirty.add(id);
+        this.publish(turnId === this.completedTurnId ? turnId : undefined);
         if (this.dirty.size === 0) return;
         if (!this.rerun) {
           const delay = RETRY_DELAYS_MS[this.attempt];
@@ -221,7 +235,12 @@ export class CodexThreadCost {
     if (generation !== this.generation || !state) return;
     const usdMicros = usage?.estimatedUsageUsdMicros;
     if (usdMicros == null) {
-      if (!("usdMicros" in state)) this.threads.set(threadId, { status: "unpriced" });
+      this.threads.set(
+        threadId,
+        "usdMicros" in state
+          ? { status: "unpriced", usdMicros: state.usdMicros }
+          : { status: "unpriced" },
+      );
       this.dirty.delete(threadId);
       return;
     }
@@ -240,13 +259,11 @@ export class CodexThreadCost {
     this.dirty.delete(threadId);
   }
 
-  /** Retries ran out: a thread that never showed any accounting has spent nothing. */
+  /** Preserve the known subtotal when a thread never reports a price. */
   private giveUp(): void {
     for (const threadId of this.dirty) {
       const state = this.threads.get(threadId);
-      if (state?.status === "unknown" && !this.reportedTokens.has(threadId)) {
-        this.threads.set(threadId, { status: "settled", usdMicros: 0 });
-      } else if (!this.warnedThreadIds.has(threadId)) {
+      if (!this.warnedThreadIds.has(threadId)) {
         this.warnedThreadIds.add(threadId);
         this.options.logger.warn(
           { threadId, rootThreadId: this.rootThreadId, state },
@@ -264,12 +281,14 @@ export class CodexThreadCost {
     }
   }
 
-  private publish(): void {
+  private publish(turnId?: string): void {
     const root = this.rootThreadId ? this.threads.get(this.rootThreadId) : undefined;
     if (!root || !("usdMicros" in root)) return;
     let totalUsdMicros = 0;
     let complete = this.discoveryComplete;
+    let settled = this.discoveryComplete;
     for (const [threadId, state] of this.threads) {
+      if (state.status !== "settled") settled = false;
       if ("usdMicros" in state) {
         totalUsdMicros += state.usdMicros;
       } else {
@@ -284,8 +303,10 @@ export class CodexThreadCost {
       }
     }
     if (this.resumed && this.publishedUsdMicros === null && !complete) return;
-    if (totalUsdMicros <= (this.publishedUsdMicros ?? -1)) return;
+    const accountedTurn = turnId && settled && this.dirty.size === 0 ? turnId : undefined;
+    if (!accountedTurn && totalUsdMicros <= (this.publishedUsdMicros ?? -1)) return;
+    if (accountedTurn) this.completedTurnId = undefined;
     this.publishedUsdMicros = totalUsdMicros;
-    this.options.publish(totalUsdMicros / 1_000_000);
+    this.options.publish(totalUsdMicros / 1_000_000, accountedTurn);
   }
 }

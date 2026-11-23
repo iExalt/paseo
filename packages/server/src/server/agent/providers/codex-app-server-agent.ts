@@ -1151,12 +1151,17 @@ export function toAgentUsage(tokenUsage: unknown): AgentUsage | undefined {
     usage.model_context_window,
     usage.modelContextWindow,
   );
-  const contextWindowUsedTokens = firstPositiveFiniteNumber(last?.total_tokens, last?.totalTokens);
+  const tokenCount = (...values: unknown[]): number | undefined =>
+    values.find(
+      (value): value is number => typeof value === "number" && Number.isFinite(value) && value >= 0,
+    );
+  const contextWindowUsedTokens = tokenCount(last?.total_tokens, last?.totalTokens);
   return {
-    inputTokens: typeof last?.inputTokens === "number" ? last.inputTokens : undefined,
-    cachedInputTokens:
-      typeof last?.cachedInputTokens === "number" ? last.cachedInputTokens : undefined,
-    outputTokens: typeof last?.outputTokens === "number" ? last.outputTokens : undefined,
+    inputTokens: tokenCount(last?.inputTokens, last?.input_tokens),
+    totalTokens: contextWindowUsedTokens,
+    reasoningTokens: tokenCount(last?.reasoningOutputTokens, last?.reasoning_output_tokens),
+    cachedInputTokens: tokenCount(last?.cachedInputTokens, last?.cached_input_tokens),
+    outputTokens: tokenCount(last?.outputTokens, last?.output_tokens),
     ...(contextWindowMaxTokens !== undefined ? { contextWindowMaxTokens } : {}),
     ...(contextWindowUsedTokens !== undefined ? { contextWindowUsedTokens } : {}),
   };
@@ -3961,12 +3966,13 @@ export class CodexAppServerAgentSession implements AgentSession {
         if (!this.client) throw new Error("Codex app-server is not connected");
         return this.client.request("account/usage/read", { threadId });
       },
-      publish: (totalCostUsd) => {
-        this.latestUsage = { ...this.latestUsage, totalCostUsd };
+      publish: (totalCostUsd, turnId) => {
         this.notifySubscribers({
           type: "usage_updated",
           provider: CODEX_PROVIDER,
-          usage: this.latestUsage,
+          usage: { totalCostUsd },
+          turnId,
+          sessionOnly: turnId === undefined,
         });
       },
     });
@@ -6212,7 +6218,7 @@ export class CodexAppServerAgentSession implements AgentSession {
 
   private notifySubscribers(event: AgentStreamEvent): void {
     const turnId =
-      event.type === "commands_changed"
+      event.type === "commands_changed" || (event.type === "usage_updated" && event.sessionOnly)
         ? null
         : (getAgentStreamEventTurnId(event) ?? this.activeForegroundTurnId);
     const tagged = turnId ? { ...event, turnId } : event;
@@ -7034,6 +7040,8 @@ export class CodexAppServerAgentSession implements AgentSession {
       return;
     }
     this.markCurrentThreadSaved(parsed.threadId);
+    this.threadCost.beginTurn();
+    this.latestUsage = undefined;
     this.currentTurnId = parsed.turnId;
     const pendingIdentification = this.pendingForegroundTurnIdentification;
     if (
@@ -7099,6 +7107,7 @@ export class CodexAppServerAgentSession implements AgentSession {
         usage: this.latestUsage,
       });
     }
+    const completedTurnId = this.activeForegroundTurnId ?? this.currentTurnId ?? undefined;
     this.activeForegroundTurnId = null;
     this.activeClientMessageId = null;
     this.currentTurnId = null;
@@ -7106,7 +7115,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     this.pendingForegroundTurnIdentification = null;
     this.pendingSubAgentNotificationsByThreadId.clear();
     this.resetTurnTrackingState();
-    this.refreshThreadCost("all");
+    this.syncThreadCostRoot().refresh("all", completedTurnId);
   }
 
   /**
@@ -7232,9 +7241,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     parsed: Extract<ParsedCodexNotification, { kind: "token_usage_updated" }>,
   ): void {
     const usage = toAgentUsage(parsed.tokenUsage);
-    // Token readings carry no cost; keep the thread's last estimate alongside them.
-    const totalCostUsd = this.latestUsage?.totalCostUsd;
-    this.latestUsage = usage && totalCostUsd !== undefined ? { ...usage, totalCostUsd } : usage;
+    this.latestUsage = usage;
     if (this.latestUsage) {
       this.notifySubscribers({
         type: "usage_updated",

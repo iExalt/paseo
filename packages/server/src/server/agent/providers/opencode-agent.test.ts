@@ -1377,6 +1377,9 @@ describe("OpenCode adapter normalization", () => {
     expect(usage).toEqual({
       contextWindowMaxTokens: 400_000,
       contextWindowUsedTokens: 55_000,
+      reasoningTokens: 10_000,
+      totalTokens: 999_999,
+      cacheWriteTokens: 1_000,
       cachedInputTokens: 2_000,
       inputTokens: 30_000,
       outputTokens: 12_000,

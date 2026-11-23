@@ -2491,7 +2491,7 @@ describe("PiRpcAgentSession", () => {
     expect(scheduler.activePollCount()).toBe(0);
   });
 
-  test("dedupes unchanged usage across turns and emits when it changes", async () => {
+  test("attributes each final usage reading to its turn, even when the counters match", async () => {
     const scheduler = new ManualUsagePollScheduler();
     const { pi, session, events } = await createSession(new FakePi(), scheduler);
     const fakeSession = pi.latestSession();
@@ -2506,18 +2506,22 @@ describe("PiRpcAgentSession", () => {
       usage: { contextWindowUsedTokens: 130 },
     });
 
-    await session.startTurn("second");
+    const second = await session.startTurn("second");
     fakeSession.finishTurn();
     await flushTurnScheduling();
-    expect(events.usageUpdatedEvents()).toHaveLength(1);
+    expect(events.usageUpdatedEvents()).toHaveLength(2);
+    expect(events.usageUpdatedEvents()[1]).toMatchObject({
+      turnId: second.turnId,
+      usage: { contextWindowUsedTokens: 130 },
+    });
     expect(events.turnCompletedEvents()).toHaveLength(2);
 
     fakeSession.stats = { contextUsage: { contextWindow: 200_000, tokens: 160 } };
     const third = await session.startTurn("third");
     fakeSession.finishTurn();
     await flushTurnScheduling();
-    expect(events.usageUpdatedEvents()).toHaveLength(2);
-    expect(events.usageUpdatedEvents()[1]).toMatchObject({
+    expect(events.usageUpdatedEvents()).toHaveLength(3);
+    expect(events.usageUpdatedEvents()[2]).toMatchObject({
       turnId: third.turnId,
       usage: { contextWindowUsedTokens: 160 },
     });
