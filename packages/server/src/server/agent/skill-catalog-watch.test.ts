@@ -1,3 +1,4 @@
+import { cursorSkillRoots } from "./cursor-skill-catalog.js";
 import { mkdtemp, mkdir, writeFile, rm, symlink, rename, realpath } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join } from "node:path";
@@ -227,4 +228,57 @@ test("refreshes a scoped catalog when a nested link target outside the root chan
     await rename(target, join(hidden, "displaced"));
     await rename(replacement, target);
   });
+});
+
+test("refreshes a scoped catalog when Codex config or the active plugin installation changes", async () => {
+  const home = await realpath(await fixture());
+  const codex = join(home, ".codex");
+  const config = join(codex, "config.toml");
+  await mkdir(codex);
+  vi.stubEnv("CODEX_HOME", codex);
+  const observer = observe(() => cursorSkillRoots({ cwd: home }, undefined, home));
+  try {
+    await observer.watch.ready;
+    await mutation(observer, () => writeFile(config, '[plugins."demo@fixture"]\n'));
+    const root = join(codex, "plugins", "cache", "fixture", "demo", "1.0.0");
+    const manifest = join(root, ".codex-plugin", "plugin.json");
+    await mutation(observer, async () => {
+      await mkdir(dirname(manifest), { recursive: true });
+      await writeFile(manifest, '{"name":"Demo"}');
+    });
+    await mutation(observer, async () => {
+      await rename(dirname(manifest), join(root, "replaced-manifest"));
+      await mkdir(dirname(manifest));
+      await writeFile(manifest, '{"name":"Replacement"}');
+    });
+    await mutation(observer, () => writeFile(manifest, '{"name":"Renamed"}'));
+    const cache = join(codex, "plugins", "cache");
+    const firstCache = join(home, "first-cache");
+    const secondCache = join(home, "second-cache");
+    const secondManifest = join(
+      secondCache,
+      "fixture",
+      "demo",
+      "1.0.0",
+      ".codex-plugin",
+      "plugin.json",
+    );
+    await mkdir(dirname(secondManifest), { recursive: true });
+    await writeFile(secondManifest, '{"name":"Second cache"}');
+    await mutation(observer, async () => {
+      await rename(cache, firstCache);
+      await symlink(firstCache, cache, "junction");
+    });
+    await mutation(observer, async () => {
+      await rm(cache);
+      await symlink(secondCache, cache, "junction");
+    });
+    await mutation(observer, () => writeFile(secondManifest, '{"name":"Renamed in second cache"}'));
+    await mutation(observer, () =>
+      writeFile(config, '[plugins."demo@fixture"]\nenabled = false\n'),
+    );
+    expect(observer.errors).toEqual([]);
+  } finally {
+    vi.unstubAllEnvs();
+  }
 });

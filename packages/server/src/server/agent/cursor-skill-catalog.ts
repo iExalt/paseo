@@ -4,10 +4,12 @@ import { constants, type Dirent } from "node:fs";
 import { lstat, open, opendir, readlink, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { basename, dirname, join, parse as parsePath, relative, resolve } from "node:path";
+import type { Logger } from "pino";
 import { parse } from "yaml";
 import { areEquivalentPaths, isPathInsideRoot } from "../../utils/path.js";
 import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
 import { cursorProjectDirectories } from "./cursor-project-directories.js";
+import { readCodexSkillProfile, type CodexSkillRule } from "./cursor-codex-plugins.js";
 
 const maxSkillBytes = 64 * 1024;
 const maxSelectedBytes = 128 * 1024;
@@ -23,6 +25,9 @@ export interface CursorSkillRoot {
   scope: "workspace" | "user";
   excludedRoots?: readonly string[];
   excludedDirectoryIds?: ReadonlySet<string>;
+  pluginName?: string;
+  configRules?: readonly CodexSkillRule[];
+  catalogInputs?: readonly string[];
 }
 
 export interface ResolvedCursorSkill {
@@ -47,6 +52,7 @@ export interface CursorSkillTarget {
   cwd: string;
   workspaceId?: string;
   skillScope?: "user";
+  projectOnly?: boolean;
 }
 
 export function isExcludedCursorPath(
@@ -91,6 +97,7 @@ export async function cursorSkillRoots(
     listActive(): Promise<readonly CursorWorkspace[]>;
   },
   userHome = homedir(),
+  logger?: Pick<Logger, "warn">,
 ): Promise<CursorSkillRoot[]> {
   const [home, workspaces] = await Promise.all([
     realpath(userHome).catch(() => null),
@@ -138,36 +145,82 @@ export async function cursorSkillRoots(
       }
     }
   }
-  if (home) {
-    const codex = cursorCodexHome(home);
-    const codexBoundary = isPathInsideRoot(home, codex) ? home : dirname(codex);
+  if (target.projectOnly || !home) return sources;
+
+  return withUserSkillRoots(sources, home, exclusions, logger);
+}
+
+async function withUserSkillRoots(
+  sources: CursorSkillRoot[],
+  home: string,
+  exclusions: CursorPathExclusions,
+  logger?: Pick<Logger, "warn">,
+): Promise<CursorSkillRoot[]> {
+  const codex = cursorCodexHome(home);
+  const codexBoundary = isPathInsideRoot(home, codex) ? home : dirname(codex);
+  const profileDirectory = (await resolveCursorDiscoveryPath(exclusions, codex)) ?? codex;
+  const profile = await readCodexSkillProfile(
+    profileDirectory,
+    {
+      read: (path, boundary) => readCodexSkillMetadata(path, boundary, exclusions),
+      resolveDirectory: (path) => resolveCursorDiscoveryPath(exclusions, path),
+    },
+    logger,
+  );
+  for (const root of profile.roots) {
+    sources.push({ ...root, ...exclusions, scope: "user" });
+  }
+  sources.push({
+    path: join(codex, "skills"),
+    boundary: codexBoundary,
+    scope: "user",
+    catalogInputs: [join(codex, "config.toml"), ...profile.inputs],
+    ...exclusions,
+  });
+  for (const directory of [".agents", ".cursor"]) {
     sources.push({
-      path: join(codex, "skills"),
-      boundary: codexBoundary,
+      path: join(home, directory, "skills"),
+      boundary: home,
       scope: "user",
       ...exclusions,
     });
-    for (const directory of [".agents", ".cursor"]) {
-      sources.push({
-        path: join(home, directory, "skills"),
-        boundary: home,
-        scope: "user",
-        ...exclusions,
-      });
-    }
   }
-  return sources;
+  return profile.rules.length
+    ? sources.map((source) => ({ ...source, configRules: profile.rules }))
+    : sources;
 }
+
+async function readCodexSkillMetadata(
+  path: string,
+  boundary: string | undefined,
+  exclusions: CursorPathExclusions,
+): Promise<string | null> {
+  const canonical = await resolveCursorDiscoveryPath(exclusions, path);
+  if (!canonical || (boundary && !areEquivalentPaths(canonical, path))) return null;
+  const directory = boundary ?? dirname(canonical);
+  const file = await readBoundedCursorFile(
+    path,
+    directory,
+    { boundary: directory, ...exclusions },
+    1024 * 1024,
+  ).catch(() => null);
+  return file?.bytes.toString("utf8") ?? null;
+}
+
+type CursorPathExclusions = Pick<CursorSkillRoot, "excludedRoots" | "excludedDirectoryIds">;
 
 function directoryId({ dev, ino }: { dev: bigint; ino: bigint }): string {
   return String(dev) + ":" + String(ino);
 }
 
 export async function resolveCursorDiscoveryPath(
-  source: Pick<CursorSkillRoot, "excludedRoots" | "excludedDirectoryIds">,
+  source: CursorPathExclusions & Partial<Pick<CursorSkillRoot, "boundary" | "pluginName">>,
   path: string,
 ): Promise<string | null> {
-  if (!source.excludedRoots?.length) return realpath(path).catch(() => null);
+  const boundary = source.pluginName ? source.boundary : undefined;
+  const withinPlugin = (candidate: string) => !boundary || isPathInsideRoot(boundary, candidate);
+  if (!withinPlugin(path)) return null;
+  if (!source.excludedRoots?.length && !boundary) return realpath(path).catch(() => null);
   try {
     const absolute = resolve(path);
     let directory = parsePath(absolute).root;
@@ -186,12 +239,17 @@ export async function resolveCursorDiscoveryPath(
       }
       if (++hops > 40) return null;
       const link = await readlink(candidate);
+      if (!withinPlugin(resolve(directory, link))) return null;
       const anchor = parsePath(link).root;
       if (anchor) directory = anchor;
       segments.push(...link.slice(anchor.length).split(pathSeparator).toReversed());
     }
     const canonical = await realpath(path);
-    if (!areEquivalentPaths(directory, canonical) || isExcludedCursorPath(source, canonical))
+    if (
+      !withinPlugin(canonical) ||
+      !areEquivalentPaths(directory, canonical) ||
+      isExcludedCursorPath(source, canonical)
+    )
       return null;
     return canonical;
   } catch {
@@ -405,6 +463,21 @@ function parseSkill(markdown: string, defaultName: string) {
   };
 }
 
+function skillConfigAllows(
+  source: CursorSkillRoot,
+  name: string,
+  discovered: string,
+  canonical: string,
+): boolean {
+  return (
+    source.configRules?.findLast((rule) =>
+      rule.name !== undefined
+        ? rule.name === name
+        : areEquivalentPaths(rule.path, discovered) || areEquivalentPaths(rule.path, canonical),
+    )?.enabled !== false
+  );
+}
+
 async function readSkill(
   source: CursorSkillRoot,
   root: string,
@@ -431,6 +504,9 @@ async function readSkill(
     const metadata = parseSkill(bytes.toString("utf8"), basename(directory.path));
     if (!metadata) return null;
     const { name, description, instructions } = metadata;
+    const commandName = source.pluginName ? source.pluginName + ":" + name : name;
+    if (!skillConfigAllows(source, commandName, join(directory.path, "SKILL.md"), path))
+      return null;
     const id = sha256(
       JSON.stringify([
         source.scope,
@@ -442,7 +518,7 @@ async function readSkill(
       ]),
     );
     return {
-      name,
+      name: commandName,
       reference: {
         id,
         revision: sha256(bytes),
