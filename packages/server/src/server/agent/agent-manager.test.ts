@@ -3149,6 +3149,9 @@ test("createAgent injects daemon append system prompt at runtime only", async ()
   expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toContain(
     "question dialogs show Markdown images",
   );
+  expect(client.createdConfigs[0]?.daemonAppendSystemPrompt).toContain(
+    "as a PNG, JPEG, GIF or WebP file",
+  );
   expect(snapshot.config).not.toHaveProperty("daemonAppendSystemPrompt");
   expect(record?.config?.systemPrompt).toBe("Agent instructions.");
   expect(record?.config).not.toHaveProperty("daemonAppendSystemPrompt");
