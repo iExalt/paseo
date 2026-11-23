@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.35.0](https://github.com/iExalt/paseo/compare/paseo-v0.34.0...paseo-v0.35.0) (2026-11-23)
+
+
+### Features
+
+* **skills:** release and update Paseo, and verify idle daemon upgrades ([#575](https://github.com/iExalt/paseo/issues/575)) ([8e51383](https://github.com/iExalt/paseo/commit/8e5138376051ece4bcca3a9cfe8a1f659c7bdbbf))
+
+
+### Bug Fixes
+
+* **cursor:** match Antigravity’s question tool ([#577](https://github.com/iExalt/paseo/issues/577)) ([a291c28](https://github.com/iExalt/paseo/commit/a291c285e1b948eb5c67ae999e5d320faaa30930))
+* **cursor:** show MCP tool names and search queries ([#578](https://github.com/iExalt/paseo/issues/578)) ([9fda464](https://github.com/iExalt/paseo/commit/9fda464862cd749de19bc37e104401d586f23aaa))
+
 ## [0.34.0](https://github.com/iExalt/paseo/compare/paseo-v0.33.0...paseo-v0.34.0) (2026-11-23)
 
 
