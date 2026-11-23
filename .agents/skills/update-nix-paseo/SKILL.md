@@ -1,6 +1,6 @@
 ---
 name: update-nix-paseo
-description: Update or roll back the Nix-managed Paseo desktop app on this Mac, including an app-only restart and verification that running agents stay alive. Use for "update Paseo", "upgrade the Nix Paseo app", "install the latest Paseo release", "roll back Paseo", or "/update-nix-paseo".
+description: Update or roll back the Nix-managed Paseo desktop app on this Mac, including an app-only restart, verification that running agents stay alive and, when this is the only running agent, a wakeup that checks the idle daemon upgrade. Use for "update Paseo", "upgrade the Nix Paseo app", "install the latest Paseo release", "roll back Paseo", or "/update-nix-paseo".
 user-invocable: true
 ---
 
@@ -9,7 +9,9 @@ user-invocable: true
 An update request authorizes staging, activation and an app-only restart. Complete
 those steps yourself when the preconditions below hold. A check-only request is
 read-only. Never stop or restart the daemon to finish an app update while agents
-have pending work. A daemon that stays on its old version can be the expected result.
+have pending work. A daemon that stays on its old version can be the expected result,
+unless this agent is the only one running: then hand the upgrade to the idle check
+and verify it after a wakeup (section 4).
 
 ## 1. Preflight and baseline
 
@@ -115,7 +117,58 @@ external terminal if the stop would terminate the current session. Never silentl
 insert a daemon stop into an app restart command. Without approval, leave the
 existing daemon running and report the incomplete daemon upgrade.
 
-## 4. Verify and report the two outcomes
+## 4. Let the daemon upgrade when this agent is alone
+
+When you run inside a Paseo agent, this agent's own turn keeps the daemon busy. If
+nothing else does, end the turn so the app's next idle retry can replace the daemon,
+and let a Paseo heartbeat wake you to verify it. Take this path only when all of
+these hold after section 3; otherwise report the daemon upgrade as pending (section 5):
+
+- `PASEO_AGENT_ID` is set and `"$PASEO_CLI" agent status "$PASEO_AGENT_ID" --json`
+  resolves on the daemon being upgraded.
+- The running app matches the active release, the daemon is at least 0.21.0,
+  desktop-managed and older than the active release.
+- No other agent is running: in a fresh `ls --global --all --json` taken just before
+  arming, every agent except `$PASEO_AGENT_ID` has a status other than `running` or
+  `initializing`. This list only decides whether to wait; the daemon's idle check
+  still decides whether it stops, and an idle-looking agent can still hold it.
+- This agent leaves nothing behind its turn: no background shells, monitors or
+  subagents, and no provider-native wakeup, `/loop` or session cron. The daemon counts
+  a pending Claude session cron as work and refuses the idle stop. A Paseo heartbeat
+  does not count.
+
+Before ending the turn, run section 5's desktop checks and remove the updater
+directory. Delete any `update-nix-paseo-wake` heartbeat left by an earlier run: `create
+--replace` keeps the old run history, so a replaced one-shot completes without firing.
+Then arm a one-shot heartbeat about three minutes out. The daemon skips a heartbeat
+minute that falls due while it is restarting, so list fallback minutes, and use UTC so
+a half-hour zone offset can't shift the minute:
+
+```zsh
+now=$(date -u +%s)
+minutes="$(( (now / 60 + 4) % 60 )),$(( (now / 60 + 5) % 60 )),$(( (now / 60 + 6) % 60 ))"
+"$PASEO_CLI" heartbeat create --json --name update-nix-paseo-wake \
+  --cron "$minutes * * * *" --timezone UTC --max-runs 1 --expires-in 8m \
+  "update-nix-paseo wake: check that the daemon reloaded to <active version> (baseline pid <pid>, startedAt <startedAt>). Follow update-nix-paseo section 4."
+```
+
+Require `status: active` and a `nextRunAt` three to four minutes away in its output.
+Then end the turn with a short message that names the target version and the wake time.
+
+When the wake arrives, delete any `update-nix-paseo-wake` heartbeat left in
+`"$PASEO_CLI" heartbeat ls --json`, then read `daemon status --json`:
+
+- **Reloaded:** a new `pid` and `startedAt` and `daemonVersion` equal to the active
+  release. Finish section 5's daemon and agent checks.
+- **Not reloaded:** report the baseline and current daemon status, the agents that
+  were busy, and any `daemon busy; upgrade waits for its agents` lines from
+  `~/.paseo/daemon.log`, then stop. Do not re-arm the wakeup, retry or force the
+  upgrade.
+
+A daemon that stops but never comes back can't deliver the wakeup. The user then sees
+the agent end on the wake-time message with no follow-up.
+
+## 5. Verify and report the two outcomes
 
 - **Desktop updated:** verify the installed marker and new app process/startup
   version match the active release, and `staged` is null. A changed marker alone is
@@ -123,8 +176,9 @@ existing daemon running and report the incomplete daemon upgrade.
 - **Daemon retained or upgraded:** compare baseline PIDs/start time and agent IDs
   and states. For a busy daemon, expect the old process and version to survive; a
   `daemon busy; upgrade waits for its agents` log is evidence of the idle guard.
-  Observe one automatic retry (60 seconds, with a bounded deadline) when testing
-  this behavior. Do not repeatedly call updater status while that retry starts.
+  Outside section 4, observe one automatic retry (60 seconds, with a bounded
+  deadline) when testing this behavior. Do not repeatedly call updater status while
+  that retry starts.
 - **Limits:** distinguish an agent mid-turn at restart from agents becoming busy
   afterward. Report absent evidence rather than claiming interruption-free turns
   from unchanged session IDs alone. If idle upgrade was not observed, say it remains
