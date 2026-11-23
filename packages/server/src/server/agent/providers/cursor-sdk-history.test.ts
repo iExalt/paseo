@@ -6,7 +6,7 @@ import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display"
 import { expect, test } from "vitest";
 import type { AgentStreamEvent, ToolCallTimelineItem } from "../agent-sdk-types.js";
 import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
-import { mapCursorTool, projectCursorTool } from "./cursor-sdk-telemetry.js";
+import { cursorTimelineItems, mapCursorTool, projectCursorTool } from "./cursor-sdk-telemetry.js";
 import { readCursorHistory, readCursorLastUsage } from "./cursor-sdk-history.js";
 import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 
@@ -429,6 +429,22 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
         },
         status: "completed",
       },
+      {
+        name: "updateTodos",
+        args: { todos: [] },
+        result: {
+          status: "success",
+          value: {
+            todos: [
+              { content: "Map tools", status: "completed" },
+              { content: "Ship it", status: "inProgress" },
+              { content: "Dropped", status: "cancelled" },
+            ],
+            totalCount: 3,
+          },
+        },
+        status: "completed",
+      },
     ] as const;
     for (const [index, { name, args, result, status }] of cases.entries()) {
       const callId = String(index);
@@ -464,7 +480,15 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
       "tool_call",
       "tool_call",
       "tool_call",
+      "todo",
     ]);
+    expect(rows.at(-1)?.item).toEqual({
+      type: "todo",
+      items: [
+        { text: "Map tools", completed: true, status: "completed" },
+        { text: "Ship it", completed: false, status: "in_progress" },
+      ],
+    });
     const projected = rows.flatMap(({ item }) => (item.type === "tool_call" ? [item] : []));
     expect(projected.map(buildToolCallDisplayModel)).toEqual([
       { displayName: "Ask question", errorText: "MCP tool returned an error." },
@@ -622,4 +646,107 @@ test("replay keeps a current typed row whose journaled payload was truncated", (
   expect(JSON.stringify(stored).length).toBeLessThan(JSON.stringify(live).length);
   expect(stored.detail).toEqual({ type: "sub_agent", description: "Review", log: "Done." });
   expect(projectCursorTool(stored)).toEqual(stored);
+});
+
+test("maps the remaining Cursor tools to typed cards", () => {
+  const call = (name: string, args: unknown, value?: unknown) =>
+    mapCursorTool({
+      type: "tool_call",
+      agent_id: agentId,
+      run_id: "run",
+      call_id: name,
+      name,
+      status: value === undefined ? "running" : "completed",
+      args,
+      ...(value === undefined ? {} : { result: { status: "success", value } }),
+    });
+  const grep = call(
+    "grep",
+    { pattern: "TODO" },
+    {
+      workspaceResults: {
+        "/repo": {
+          type: "content",
+          output: { matches: [{ file: "a.ts", lineNumber: 3, line: "// TODO" }], totalMatches: 1 },
+        },
+      },
+    },
+  );
+  const glob = call(
+    "glob",
+    { globPattern: "*.md" },
+    { files: ["README.md"], totalFiles: 1, clientTruncated: false, ripgrepTruncated: true },
+  );
+  const ls = call(
+    "ls",
+    { path: "/repo" },
+    {
+      directoryTreeRoot: {
+        absPath: "/repo",
+        childrenDirs: [
+          { absPath: "/repo/src", childrenDirs: [], childrenFiles: [{ name: "a.ts" }] },
+        ],
+        childrenFiles: [{ name: "README.md" }],
+      },
+    },
+  );
+  const lints = call(
+    "readLints",
+    { paths: ["a.ts"] },
+    {
+      fileDiagnostics: [
+        {
+          path: "a.ts",
+          diagnostics: [
+            {
+              severity: "error",
+              range: { start: { line: 2, character: 4 } },
+              message: "Unused",
+              source: "ts",
+              code: "6133",
+            },
+          ],
+        },
+      ],
+    },
+  );
+  const edit = call("edit", { path: "a.ts", oldText: "a", newText: "b" });
+  expect([grep, glob, ls, lints, edit].map(({ detail }) => detail)).toEqual([
+    {
+      type: "search",
+      query: "TODO",
+      toolName: "grep",
+      content: "a.ts:3:// TODO",
+      numFiles: 1,
+      numMatches: 1,
+      mode: "content",
+    },
+    {
+      type: "search",
+      query: "*.md",
+      toolName: "glob",
+      filePaths: ["README.md"],
+      numFiles: 1,
+      truncated: true,
+    },
+    { type: "plain_text", label: "/repo", icon: "search", text: "src/\n  a.ts\nREADME.md" },
+    { type: "plain_text", label: "a.ts", icon: "eye", text: "a.ts:3:5 error: Unused (ts 6133)" },
+    { type: "edit", filePath: "a.ts", oldString: "a", newString: "b" },
+  ]);
+  expect(
+    [
+      call("semSearch", { query: "where is auth" }, { results: "src/auth.ts" }),
+      call("createPlan", { plan: "1. Map tools" }, {}),
+      call("delete", { path: "old.ts" }, { fileSize: 3 }),
+      ls,
+      lints,
+    ].map(buildToolCallDisplayModel),
+  ).toEqual([
+    { displayName: "Search", summary: "where is auth" },
+    { displayName: "Plan" },
+    { displayName: "Delete", summary: "old.ts" },
+    { displayName: "List directory", summary: "/repo" },
+    { displayName: "Read lints", summary: "a.ts" },
+  ]);
+  expect(cursorTimelineItems(call("updateTodos", { todos: [] }))).toEqual([]);
 });
