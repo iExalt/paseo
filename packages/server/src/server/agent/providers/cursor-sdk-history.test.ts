@@ -502,10 +502,7 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
     const projected = rows.flatMap(({ item }) => (item.type === "tool_call" ? [item] : []));
     expect(projected.map(buildToolCallDisplayModel)).toEqual([
       { displayName: "Ask question", errorText: "MCP tool returned an error." },
-      {
-        displayName: "Lookup reference",
-        errorText: JSON.stringify(cases[1].result, null, 2),
-      },
+      { displayName: "Lookup reference", errorText: "transport disconnected" },
       { displayName: "Search", summary: "**/AGENTS.md" },
       { displayName: "Read", summary: "/repo/missing.md", errorText: "Read failed." },
       { displayName: "Shell", summary: "npm test", errorText: "Command exited with code 1." },
@@ -821,6 +818,132 @@ test("shows a generated image after its row, once, live and on replay", () => {
     detail: { type: "unknown", input: args, output: result },
   };
   expect(replayCursorTool(legacy)).toEqual([live, image]);
+  // A row that stays untyped is stamped too, so replay does not add its image again.
+  const untyped = mapCursorTool({
+    type: "tool_call",
+    agent_id: agentId,
+    run_id: "run",
+    call_id: "untyped",
+    name: "generateImage",
+    status: "completed",
+    args: "draw",
+    result,
+  });
+  expect(untyped.detail.type).toBe("unknown");
+  expect(cursorTimelineItems(untyped)).toHaveLength(2);
+  expect(replayCursorTool(untyped)).toEqual([untyped]);
+});
+
+test("a failed Cursor call shows its error text, live and on replay", () => {
+  const live = mapCursorTool({
+    type: "tool_call",
+    agent_id: agentId,
+    run_id: "run",
+    call_id: "read",
+    name: "read",
+    status: "error",
+    args: { path: "/repo/a.md" },
+    result: { status: "error", error: { message: "permission denied" } },
+  });
+  expect(live).toMatchObject({ status: "failed", error: "permission denied" });
+  // Rows journaled before this rule kept the raw result as their error.
+  const stored = { ...live, error: { status: "error", error: { message: "permission denied" } } };
+  expect(replayCursorTool(stored)).toEqual([live]);
+  const bare = mapCursorTool({
+    type: "tool_call",
+    agent_id: agentId,
+    run_id: "run",
+    call_id: "bare",
+    name: "read",
+    status: "error",
+    args: { path: "/repo/a.md" },
+    result: { message: "EACCES" },
+  });
+  expect(bare.error).toBe("EACCES");
+});
+
+test("a recovered turn whose journal truncated a large tool row still matches", async () => {
+  await withStore(async (_root, store, journal) => {
+    const runId = "large-shell";
+    const turn: CursorHistoryTurn = {
+      id: "paseo-large-shell",
+      nativeRunId: runId,
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "run shell", messageId: "user" },
+      steers: [],
+      joined: true,
+      recovered: true,
+      terminal: { status: "finished" },
+    };
+    await journal.admit(turn, turn.user.text);
+    await store.runs.create({ run: localRun(runId, "finished") });
+    const stdout = "x".repeat(200_000);
+    let previous: ToolCallTimelineItem | undefined;
+    for (const status of ["running", "completed"] as const) {
+      const message = {
+        type: "tool_call" as const,
+        run_id: runId,
+        agent_id: agentId,
+        call_id: "shell",
+        name: "shell",
+        status,
+        args: { command: "cat big.log" },
+        ...(status === "completed"
+          ? { result: { status: "success", value: { exitCode: 0, stdout, stderr: "" } } }
+          : {}),
+      };
+      await store.runEvents.append({
+        runId,
+        eventType: sdk.LOCAL_RUN_STREAM_EVENT_TYPE,
+        payload: sdk.createSdkMessageRunStreamEvent(message),
+      });
+      previous = mapCursorTool(message, previous);
+      await journal.append(turn.id, limitAgentTimelineItemContent(previous));
+    }
+    const rows = messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
+    expect(rows.map(({ item }) => item.type)).toEqual(["user_message", "tool_call", "tool_call"]);
+  });
+});
+
+test("a steer keeps its place when replay expands or drops journaled rows", async () => {
+  await withStore(async (_root, store, journal) => {
+    const runId = "steered-todos";
+    const steer = { type: "user_message" as const, text: "also this", messageId: "steer" };
+    const turn: CursorHistoryTurn = {
+      id: "paseo-steered-todos",
+      nativeRunId: runId,
+      createdAt: new Date(time).toISOString(),
+      user: { type: "user_message", text: "plan", messageId: "user" },
+      steers: [{ user: steer, after: 2 }],
+      joined: true,
+      terminal: { status: "finished" },
+    };
+    await journal.admit(turn, turn.user.text);
+    await store.runs.create({ run: localRun(runId, "finished") });
+    const todos = { status: "success", value: { todos: [{ content: "Plan", status: "pending" }] } };
+    // Legacy rows: the running one replays as nothing, the completed one as a task list.
+    for (const [status, output] of [
+      ["running", null],
+      ["completed", todos],
+    ] as const) {
+      await journal.append(turn.id, {
+        type: "tool_call",
+        callId: `${runId}:todos`,
+        name: "updateTodos",
+        status,
+        error: null,
+        detail: { type: "unknown", input: { todos: [] }, output },
+      });
+    }
+    await journal.append(turn.id, { type: "assistant_message", text: "after the steer" });
+    const rows = messages(await Array.fromAsync(readCursorHistory(sdk, store, journal, agentId)));
+    expect(rows.map(({ item }) => item)).toEqual([
+      turn.user,
+      { type: "todo", items: [{ text: "Plan", completed: false, status: "pending" }] },
+      steer,
+      { type: "assistant_message", text: "after the steer" },
+    ]);
+  });
 });
 
 test("shows computer use and screen recording as cards, with the screenshot inline", () => {
