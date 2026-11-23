@@ -17,17 +17,11 @@ cc -Wall -Wextra -Werror "$fixture/no-socket-proxy.c" -o "$scratch/no-socket-pro
 trace() {
   local receipt="$1"
   shift
-  # Stop the traced processes only for the socket syscalls checked by the receipt.
-  sudo -n unshare --net --pid --fork --kill-child --mount-proc /bin/bash -ec '
-    ip link set lo up
-    uid="$1"
-    gid="$2"
-    scratch="$3"
-    shift 3
-    setpriv --reuid "$uid" --regid "$gid" --clear-groups --no-new-privs --bounding-set=-all \
-      env -i PATH=/usr/bin:/bin TMPDIR="$scratch" "$@"
-  ' sh "$(id -u)" "$(id -g)" "$scratch" \
-    /usr/bin/timeout --kill-after=3s 100s strace --seccomp-bpf -f -qq -s 64 \
+  # The shim applies Landlock and seccomp before exec, so every descendant can
+  # connect only to ephemeral TCP ports. Tracing stops the processes only for
+  # the socket syscalls checked by the receipt, and kills any survivors.
+  env -i PATH=/usr/bin:/bin TMPDIR="$scratch" \
+    /usr/bin/timeout --kill-after=3s 100s strace --seccomp-bpf --kill-on-exit -f -qq -s 64 \
     -e trace=connect,sendto,sendmsg,sendmmsg -o "$receipt" "$scratch/no-socket-proxy" "$@" </dev/null
 }
 
