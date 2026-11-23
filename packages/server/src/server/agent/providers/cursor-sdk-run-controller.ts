@@ -22,7 +22,12 @@ import { cursorUnresolvedSteerMessage, streamItems, terminalTools } from "./curs
 import type { OwnerTerminalProof } from "./cursor-sdk-recovery.js";
 import { isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { CursorToolProcesses } from "./cursor-sdk-tool-processes.js";
-import { addCursorUsage } from "./cursor-sdk-telemetry.js";
+import { addCursorUsage, cursorMcpImages } from "./cursor-sdk-telemetry.js";
+import {
+  isProviderImageMessage,
+  materializeProviderImage,
+  renderProviderImageOutputAsAssistantMarkdown,
+} from "./provider-image-output.js";
 import type { CursorHistoryTurn, CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
 
 const OPERATION_DEADLINE_MS = 1_500;
@@ -521,7 +526,9 @@ export class CursorRunController {
       this.mapUsage(
         Array.from(usageByRun.values()).reduce<TokenUsage | undefined>(addCursorUsage, undefined),
       );
-    const emitItem = async (item: AgentTimelineItem) => {
+    const emitItem = async (item: AgentTimelineItem): Promise<void> => {
+      // Read images before the content limit truncates their data.
+      const images = cursorMcpImages(item);
       if (item.type === "tool_call" && item.name === "shell" && item.status === "running") {
         turn.toolProcesses.observeShellCall(item.callId);
       }
@@ -534,9 +541,17 @@ export class CursorRunController {
         }
       }
       timeline.push(item);
-      if (item.type === "assistant_message") streamedText += item.text;
+      if (item.type === "assistant_message" && !isProviderImageMessage(item.text)) {
+        streamedText += item.text;
+      }
       turn.emitted++;
       this.emitItem(turn, item);
+      for (const image of images) {
+        const message = await renderProviderImageOutputAsAssistantMarkdown(image, {
+          materialize: materializeProviderImage,
+        });
+        if (message) await emitItem(message);
+      }
     };
 
     try {
