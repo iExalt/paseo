@@ -2207,9 +2207,10 @@ class ClaudeContextUsageState {
   private streamRequestInputUsage: StreamRequestInputUsage | undefined;
   private streamRequestOutputTokens: number | undefined;
   private compactedContextWindowUsedTokens: number | undefined;
-  private completedResultTurns = 0;
+  private allowLegacyContext: boolean;
 
-  constructor(initialContextWindowMaxTokens?: number) {
+  constructor(initialContextWindowMaxTokens: number | undefined, resumed: boolean) {
+    this.allowLegacyContext = !resumed;
     this.contextWindowMaxTokens = initialContextWindowMaxTokens;
   }
 
@@ -2278,6 +2279,7 @@ class ClaudeContextUsageState {
       const usage: AgentUsage = {
         inputTokens: message.usage.input_tokens,
         cachedInputTokens: message.usage.cache_read_input_tokens,
+        cacheWriteTokens: message.usage.cache_creation_input_tokens,
         outputTokens: message.usage.output_tokens,
         totalCostUsd: message.total_cost_usd,
       };
@@ -2291,7 +2293,7 @@ class ClaudeContextUsageState {
 
       const activeResultUsageTokens =
         readActiveUsageTokens(message.usage) ??
-        (this.completedResultTurns === 0 ? readLegacyResultUsageTokens(message.usage) : undefined);
+        (this.allowLegacyContext ? readLegacyResultUsageTokens(message.usage) : undefined);
       const usedTokens =
         this.streamUsedTokens() ?? activeResultUsageTokens ?? this.compactedContextWindowUsedTokens;
       if (usedTokens !== undefined) {
@@ -2300,7 +2302,7 @@ class ClaudeContextUsageState {
       return usage;
     } finally {
       this.compactedContextWindowUsedTokens = undefined;
-      this.completedResultTurns += 1;
+      this.allowLegacyContext = false;
     }
   }
 
@@ -2498,6 +2500,7 @@ class ClaudeAgentSession implements AgentSession {
     this.rewindSdk = options.rewindSdk ?? realClaudeRewindSdk;
     this.contextUsage = new ClaudeContextUsageState(
       getClaudeContextWindowMaxTokens(this.config.model),
+      Boolean(options.handle),
     );
     const handle = options.handle;
 

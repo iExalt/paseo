@@ -20,22 +20,25 @@ export class SessionUsage {
   private readonly limits = new Map<string, Promise<number | undefined>>();
   private reports: Promise<void> = Promise.resolve();
   constructor(private readonly options: UsageOptions) {}
-  observe(event: OpenCodeEvent) {
+  observe(event: OpenCodeEvent, turnId?: string) {
     if (event.type !== "session.step.ended") return;
     const { tokens } = event.data;
+    const info = this.options.info();
     // Reports stay in step order while a model's context limit is still being looked up.
     this.reports = this.reports
-      .then(() => this.report(tokens))
+      .then(() => this.report(tokens, info, turnId))
       .catch((error: unknown) => this.options.reportError(error));
   }
-  private async report(tokens: TokenUsageInfo) {
-    const model = this.options.info().model;
+  private async report(tokens: TokenUsageInfo, info: SessionInfo, turnId?: string) {
+    const model = info.model;
     const contextWindowMaxTokens = model ? await this.contextLimit(model) : undefined;
     this.options.emit({
       type: "usage_updated",
       provider: "opencode",
+      turnId,
+      sessionOnly: !turnId,
       usage: {
-        ...usageFromV2(this.options.info()),
+        ...usageFromV2(info),
         contextWindowUsedTokens: contextWindowUsedTokens(tokens),
         ...(contextWindowMaxTokens === undefined ? {} : { contextWindowMaxTokens }),
       },

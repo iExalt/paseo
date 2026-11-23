@@ -21,9 +21,18 @@ export const spendSchema: OutputSchema<SpendSummary> = {
       summary.trackingSince === null
         ? "No spend recorded"
         : `Tracking since ${summary.trackingSince}`;
-    const rows = summary.providers.map(
+    const period = (usd: number, unknown = 0) => {
+      const amount = `$${usd.toFixed(2)}`;
+      return unknown
+        ? `${amount} known + ${unknown} ${unknown === 1 ? "run" : "runs"} with unknown cost`
+        : amount;
+    };
+    const rows = [
+      ...(summary.totals ? [{ provider: "Host", ...summary.totals }] : []),
+      ...summary.providers,
+    ].map(
       (provider) =>
-        `${provider.provider}: today $${provider.todayUsd.toFixed(2)} | 7 days $${provider.last7DaysUsd.toFixed(2)} | month $${provider.thisMonthUsd.toFixed(2)} | all time $${provider.allTimeUsd.toFixed(2)} (includes $${provider.carriedUsd.toFixed(2)} carried)`,
+        `${provider.provider}: today ${period(provider.todayUsd, provider.unknownCostRuns?.today)} | 7 days ${period(provider.last7DaysUsd, provider.unknownCostRuns?.last7Days)} | month ${period(provider.thisMonthUsd, provider.unknownCostRuns?.thisMonth)} | all time ${period(provider.allTimeUsd, provider.unknownCostRuns?.allTime)} (includes $${provider.carriedUsd.toFixed(2)} carried)`,
     );
     return ["API spend recorded by this host (USD)", since, ...rows].join("\n");
   },

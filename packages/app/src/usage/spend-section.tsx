@@ -117,7 +117,10 @@ function ProviderSpendRow({
   const { entries } = useProvidersSnapshot(serverId);
   const getProviderIcon = useProviderIcons(serverId);
   const label = resolveProviderLabel(spend.provider, entries);
-  const usd = (value: number) => formatAmount(value, "usd", locale);
+  const usd = (value: number, unknown = 0) => {
+    const amount = formatAmount(value, "usd", locale);
+    return unknown ? usageCopy.spendUnknown(amount, unknown) : amount;
+  };
   return (
     <View
       style={bordered ? [styles.row, settingsStyles.rowBorder] : styles.row}
@@ -137,16 +140,27 @@ function ProviderSpendRow({
         <View
           style={styles.total}
           accessible
-          accessibilityLabel={`${usageCopy.spendAllTime} ${usd(spend.allTimeUsd)}`}
+          accessibilityLabel={`${usageCopy.spendAllTime} ${usd(spend.allTimeUsd, spend.unknownCostRuns?.allTime)}`}
         >
           <Text style={styles.periodLabel}>{usageCopy.spendAllTime}</Text>
-          <Text style={styles.totalValue}>{usd(spend.allTimeUsd)}</Text>
+          <Text style={styles.totalValue}>
+            {usd(spend.allTimeUsd, spend.unknownCostRuns?.allTime)}
+          </Text>
         </View>
       </View>
       <View style={styles.periods}>
-        <SpendPeriod label={usageCopy.spendToday} value={usd(spend.todayUsd)} />
-        <SpendPeriod label={usageCopy.spendLast7Days} value={usd(spend.last7DaysUsd)} />
-        <SpendPeriod label={usageCopy.spendThisMonth} value={usd(spend.thisMonthUsd)} />
+        <SpendPeriod
+          label={usageCopy.spendToday}
+          value={usd(spend.todayUsd, spend.unknownCostRuns?.today)}
+        />
+        <SpendPeriod
+          label={usageCopy.spendLast7Days}
+          value={usd(spend.last7DaysUsd, spend.unknownCostRuns?.last7Days)}
+        />
+        <SpendPeriod
+          label={usageCopy.spendThisMonth}
+          value={usd(spend.thisMonthUsd, spend.unknownCostRuns?.thisMonth)}
+        />
       </View>
     </View>
   );

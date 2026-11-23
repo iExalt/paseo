@@ -1,6 +1,9 @@
-import { spawn } from "node:child_process";
+import { promisify } from "node:util";
+import { tmpdir } from "node:os";
+import { createTestAgentClient } from "../test-utils/fake-agent-client.js";
+import { execFile, spawn } from "node:child_process";
 import { once } from "node:events";
-import { mkdir, mkdtemp } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
@@ -362,3 +365,105 @@ test.skipIf(process.platform === "win32")(
   },
   30_000,
 );
+
+test("CLI spend and Claude readings survive a cold daemon and repeated connections", async () => {
+  const root = await mkdtemp(join(tmpdir(), "paseo-spend-"));
+  const claude = {
+    inputTokens: 23,
+    cachedInputTokens: 100,
+    cacheWriteTokens: 12,
+    outputTokens: 5,
+    totalCostUsd: 1.25,
+  };
+  const context = { contextWindowUsedTokens: 147, contextWindowMaxTokens: 200000 };
+  const cursor = { inputTokens: 100, cachedInputTokens: 30, cacheWriteTokens: 12, outputTokens: 5 };
+  const options = {
+    paseoHomeRoot: root,
+    staticDir: root,
+    cleanup: false,
+    providerOverrides: { "cursor-sdk": { enabled: true } },
+    agentClients: {
+      claude: createTestAgentClient("claude", {
+        reportedUsage: { stream: context, result: claude },
+      }),
+      "cursor-sdk": createTestAgentClient("cursor-sdk", { reportedUsage: { result: cursor } }),
+      codex: createTestAgentClient("codex", { reportedUsage: { result: { totalCostUsd: 0 } } }),
+    },
+  };
+  let daemon = await createTestPaseoDaemon(options);
+  const cli = async (...args: string[]) =>
+    (
+      await promisify(execFile)(
+        process.execPath,
+        [
+          "--conditions=source",
+          "--import",
+          "tsx",
+          fileURLToPath(new URL("../../../../cli/src/index.ts", import.meta.url)),
+          "--host",
+          "127.0.0.1:" + daemon.port,
+          ...args,
+        ],
+        { env: { ...process.env, PASEO_HOME: daemon.paseoHome }, timeout: 20000 },
+      )
+    ).stdout;
+  const client = new DaemonClient({ url: "ws://127.0.0.1:" + daemon.port + "/ws" });
+  try {
+    await client.connect();
+    const ids = new Map<string, string>();
+    for (const provider of Object.keys(options.agentClients)) {
+      const agent = await client.createAgent({ provider, cwd: root });
+      ids.set(provider, agent.id);
+      await client.sendMessage(agent.id, "say hello");
+      await client.waitForFinish(agent.id, 10000);
+    }
+    const read = () =>
+      Promise.all([
+        cli("usage", "spend", "--time-zone", "UTC"),
+        cli("usage", "spend", "--time-zone", "UTC", "--json"),
+        cli("agent", "inspect", ids.get("claude")!, "--json"),
+        cli("agent", "inspect", ids.get("cursor-sdk")!, "--json"),
+      ]).then(([human, json, claudeInfo, cursorInfo]) => ({
+        human,
+        json: JSON.parse(json),
+        claude: JSON.parse(claudeInfo).LastUsage,
+        cursor: JSON.parse(cursorInfo).LastUsage,
+      }));
+    const live = await read();
+    expect(live.human).toContain("Host: today $1.25 known + 1 run with unknown cost");
+    expect(live.json.totals).toMatchObject({
+      todayUsd: 1.25,
+      unknownCostRuns: { today: 1, allTime: 1 },
+    });
+    expect(live.json.providers).toContainEqual(
+      expect.objectContaining({ provider: "codex", todayUsd: 0 }),
+    );
+    expect(live.claude).toMatchObject({
+      InputTokens: 23,
+      CachedTokens: 100,
+      CacheWriteTokens: 12,
+      OutputTokens: 5,
+      CostUsd: 1.25,
+      ContextWindowUsedTokens: 147,
+      ContextWindowMaxTokens: 200000,
+      TokenReadingTurnId: "fake-turn-0",
+      ContextReadingTurnId: "fake-turn-0",
+    });
+    expect(live.cursor).toMatchObject({
+      InputTokens: 100,
+      CachedTokens: 30,
+      CacheWriteTokens: 12,
+      OutputTokens: 5,
+      CostUsd: null,
+    });
+    await client.close();
+    await daemon.close();
+    daemon = await createTestPaseoDaemon(options);
+    expect(await read()).toEqual(live);
+    expect(await read()).toEqual(live);
+  } finally {
+    await client.close();
+    await daemon.close();
+    await rm(root, { recursive: true, force: true });
+  }
+}, 60000);
