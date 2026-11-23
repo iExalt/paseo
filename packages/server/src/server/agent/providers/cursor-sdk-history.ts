@@ -544,7 +544,7 @@ export function openCursorHistorySession(params: {
   };
 }
 
-async function readCursorRuns(
+export async function readCursorRuns(
   store: LocalAgentStore,
   id: string,
 ): Promise<LocalAgentRunDocument[]> {

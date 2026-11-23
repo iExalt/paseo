@@ -32,6 +32,7 @@ vi.mock("../execution-owner/cursor-owned-execution.js", () => ({
 const assertMockLaunchAvailable = () => {};
 
 const provider = "cursor-sdk";
+const emptyCostFetcher = { fetchWindow: async () => ({ events: [], complete: true }) };
 const agentId = "agent-test";
 const runId = "run-test";
 const eventIds = { agent_id: agentId, run_id: runId };
@@ -108,6 +109,7 @@ function fixture(initialReservation?: string) {
     modelList,
     undefined,
     storePath,
+    emptyCostFetcher,
   );
   const config: AgentSessionConfig = { provider, cwd: process.cwd(), model: "model" };
   return { client, config, sdk, load, send, modelList, storePath, agent };
@@ -362,6 +364,7 @@ describe("Cursor SDK provider", () => {
         modelList,
         async () => key,
         storePath,
+        emptyCostFetcher,
       );
       const session = await client.createSession(config);
       try {
@@ -975,7 +978,14 @@ it("keeps the canonical model and parameters when a new account changes its alia
   };
   let key: keyof typeof catalogs = "original";
   const catalog = vi.fn(async (apiKey: string) => catalogs[apiKey as keyof typeof catalogs]);
-  const client = new CursorSdkAgentClient(undefined, load, catalog, async () => key, storePath);
+  const client = new CursorSdkAgentClient(
+    undefined,
+    load,
+    catalog,
+    async () => key,
+    storePath,
+    emptyCostFetcher,
+  );
   const session = await client.createSession({ ...config, model: "default" });
   try {
     const result = makeRun([], { id: runId, status: "finished" });
@@ -1157,6 +1167,7 @@ test("rewind moves the session to a fork and sends the next prompt there", async
     vi.fn(async () => [model]),
     undefined,
     storePath,
+    emptyCostFetcher,
   );
   const session = await client.resumeSession(
     { provider, sessionId: agentId, nativeHandle: agentId, metadata: { cwd } },
@@ -1281,6 +1292,7 @@ test("reports model context limits in catalog, forwards model-call-completed del
     vi.fn(async () => [neonModel, autoModel]),
     undefined,
     storePath,
+    emptyCostFetcher,
   );
 
   const catalog = await client.fetchCatalog({});
@@ -1387,6 +1399,7 @@ test("history-mode resume honors updated cursor_model_context and auto model wit
     vi.fn(async () => []),
     undefined,
     storePath,
+    emptyCostFetcher,
   );
   const handle = {
     provider,
@@ -1415,4 +1428,118 @@ test("history-mode resume honors updated cursor_model_context and auto model wit
   const autoUsage = await sessionAuto.readLastUsage!();
   expect(autoUsage?.contextWindowUsedTokens).toBe(5_500);
   expect(autoUsage?.contextWindowMaxTokens).toBeUndefined();
+});
+
+test("tracks session cost across turns and preserves ancestor cost after rewind without storing totalCostUsd in turn journals", async () => {
+  const realSdk = await import("@cursor/sdk");
+  const storePath = await mkdtemp(join(tmpdir(), "paseo-cursor-cost-agent-"));
+  stores.push(storePath);
+  const cwd = await mkdtemp(join(tmpdir(), "paseo-cursor-cost-agent-cwd-"));
+  stores.push(cwd);
+
+  const costAgentId = "agent-cost-root";
+  const store = new realSdk.JsonlLocalAgentStore(storePath);
+  const now = Date.now();
+  await store.agents.create({
+    agent: {
+      agentId: costAgentId,
+      cwd,
+      status: "idle",
+      activeRunId: null,
+      createdAt: now,
+      updatedAt: now,
+    },
+  });
+  await store.runs.create({
+    run: {
+      agentId: costAgentId,
+      runId: "run-cost-1",
+      requestId: "req-cost-1",
+      turnNumber: 1,
+      status: "finished",
+      createdAt: now,
+      updatedAt: now + 1_000,
+      startedAt: now,
+      endedAt: now + 1_000,
+      usage: {
+        inputTokens: 1_000,
+        outputTokens: 200,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        totalTokens: 1_200,
+      },
+      startCheckpointRef: null,
+      latestCheckpointRef: null,
+    },
+  });
+
+  const costFetcher = {
+    fetchWindow: vi.fn(async ({ conversationIds }: { conversationIds: ReadonlySet<string> }) => ({
+      complete: true,
+      events: conversationIds.has(costAgentId)
+        ? [
+            {
+              eventId: "ev-cost-1",
+              conversationId: costAgentId,
+              cents: 147,
+              accountedTokens: 5_000,
+            },
+          ]
+        : [],
+    })),
+  };
+
+  const sdk = {
+    ...realSdk,
+    JsonlLocalAgentStore: function JsonlLocalAgentStore() {
+      return store;
+    },
+    Agent: {
+      create: vi.fn(),
+      resume: vi.fn(async (id: string) => ({
+        agentId: id,
+        send: vi.fn(async () => makeRun([], { id: "run-cost-1", status: "finished" })),
+        [Symbol.asyncDispose]: vi.fn(async () => {}),
+      })),
+      cancelRun: vi.fn(),
+      messages: { list: vi.fn(async () => []) },
+    },
+  };
+
+  const client = new CursorSdkAgentClient(
+    { env: { CURSOR_API_KEY: "test-key" } },
+    vi.fn(async () => sdk) as unknown as NonNullable<
+      ConstructorParameters<typeof CursorSdkAgentClient>[1]
+    >,
+    vi.fn(async () => [{ id: "model", displayName: "Model" }]),
+    undefined,
+    storePath,
+    costFetcher,
+  );
+  const session = await client.resumeSession(
+    { provider, sessionId: costAgentId, nativeHandle: costAgentId, metadata: { cwd } },
+    { model: "model" },
+  );
+  const costEvents: AgentStreamEvent[] = [];
+  session.subscribe((event) => {
+    if (event.type === "usage_updated" && event.usage.totalCostUsd !== undefined) {
+      costEvents.push(event);
+    }
+  });
+  try {
+    await vi.waitFor(() => {
+      expect(costEvents).toContainEqual({
+        type: "usage_updated",
+        provider,
+        usage: { totalCostUsd: 1.47 },
+        turnId: undefined,
+        sessionOnly: true,
+      });
+    });
+    // Per-turn journal must not store totalCostUsd (F3).
+    const read = await session.readLastUsage!();
+    expect(read?.totalCostUsd).toBeUndefined();
+  } finally {
+    await session.close();
+  }
 });
