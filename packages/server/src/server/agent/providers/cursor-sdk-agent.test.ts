@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { BroadcastChannel } from "node:worker_threads";
 import type { RunResult, SDKMessage, SDKModel, SDKUserMessage, SendOptions } from "@cursor/sdk";
 import { AgentTimelineItemPayloadSchema } from "@getpaseo/protocol/messages";
+import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import pino from "pino";
 import { createDaemonTestContext } from "../../test-utils/daemon-test-context.js";
@@ -601,6 +602,86 @@ describe("Cursor SDK provider", () => {
       ...live,
       { type: "assistant_message", text: `[System Error] ${error.message}\n\ncode: ${error.code}` },
     ]);
+    await session.close();
+  });
+
+  it("shows Cursor questions and searches live and on replay with sparse completions", async () => {
+    const { client, config, send } = fixture();
+    const ask = {
+      name: "mcp",
+      call_id: "ask",
+      args: { providerIdentifier: "custom-user-tools", toolName: "ask_question", args: {} },
+      result: {
+        status: "success",
+        value: {
+          isError: true,
+          content: [{ text: { text: "The human dismissed the question." } }],
+        },
+      },
+    };
+    const grep = {
+      name: "grep",
+      call_id: "grep",
+      args: { pattern: "setup-ci-tools", path: ".github/workflows" },
+      result: { status: "success", value: { workspaceResults: {} } },
+    };
+    const glob = {
+      name: "glob",
+      call_id: "glob",
+      args: { globPattern: ".github/**/*", targetDirectory: "/repo" },
+      result: { status: "success", value: { files: [], totalFiles: 0 } },
+    };
+    const tools = [ask, grep, glob];
+    const events: SDKMessage[] = tools.flatMap(({ name, call_id, args, result }) => {
+      const call = { ...eventIds, type: "tool_call" as const, name, call_id };
+      return [
+        { ...call, status: "running", args },
+        { ...call, status: "completed", result, ...(name === "glob" ? { args: {} } : {}) },
+      ];
+    });
+    send.mockResolvedValue(makeRun(events, { id: runId, status: "finished" }));
+    const session = await client.createSession(config);
+    const live: AgentStreamEvent[] = [];
+    session.subscribe((event) => live.push(event));
+    await session.run("Inspect the workflow, then ask a question.");
+    const calls = (timeline: AgentStreamEvent[]) =>
+      timeline.flatMap((event) =>
+        event.type === "timeline" && event.item.type === "tool_call" ? [event.item] : [],
+      );
+    const liveCalls = calls(live);
+    expect(liveCalls.map((item) => item.status)).toEqual([
+      "running",
+      "failed",
+      "running",
+      "completed",
+      "running",
+      "completed",
+    ]);
+    expect(liveCalls.map(buildToolCallDisplayModel)).toEqual([
+      { displayName: "Ask question" },
+      { displayName: "Ask question", errorText: "The human dismissed the question." },
+      { displayName: "Search", summary: grep.args.pattern },
+      { displayName: "Search", summary: grep.args.pattern },
+      { displayName: "Search", summary: glob.args.globPattern },
+      { displayName: "Search", summary: glob.args.globPattern },
+    ]);
+    expect(liveCalls[1]).toMatchObject({
+      name: "custom-user-tools.ask_question",
+      detail: { type: "unknown", input: ask.args, output: ask.result },
+      metadata: { cursorSdk: { name: "mcp" } },
+    });
+    for (const [index, call] of [grep, glob].entries()) {
+      expect(liveCalls[index * 2 + 3].metadata?.cursorSdk).toMatchObject({
+        input: call.args,
+        output: call.result,
+      });
+    }
+    const replay = calls(await Array.fromAsync(session.streamHistory()));
+    expect(replay).toEqual(
+      liveCalls.map((item) =>
+        AgentTimelineItemPayloadSchema.parse(JSON.parse(JSON.stringify(item))),
+      ),
+    );
     await session.close();
   });
 
