@@ -92,8 +92,7 @@ export async function checkDraftSkills({ cli, workspace, paseoHome, backend, req
       return [];
     });
   const beforeStore = await nativeStore();
-  const withModel = await draft("--model", model);
-  const withoutModel = await draft();
+  const [withModel, withoutModel] = await Promise.all([draft("--model", model), draft()]);
   assert.deepEqual(withModel, withoutModel);
   assert.equal(backend.runs, attempts);
   assert.deepEqual(await nativeStore(), beforeStore, "Catalog created an SDK agent store entry");
