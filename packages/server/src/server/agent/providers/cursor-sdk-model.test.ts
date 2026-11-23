@@ -7,6 +7,8 @@ import {
   cursorSdkModelId,
   defaultCursorModel,
   optionsForCursorControls,
+  parseCursorContextWindowParam,
+  resolveCursorContextWindowMaxTokens,
   resolveCursorModel,
   resolveCursorOptions,
 } from "./cursor-sdk-model.js";
@@ -83,5 +85,63 @@ describe("Cursor SDK catalog selection", () => {
       optionsForCursorControls({ [fast]: true, [reasoning]: "unsupported" }, controls),
     ).toEqual({});
     expect(optionsForCursorControls(options, controls)).toEqual(options);
+  });
+});
+
+describe("Cursor SDK context window resolution", () => {
+  it("parses shorthand context window parameter values", () => {
+    expect(parseCursorContextWindowParam("200k")).toBe(200_000);
+    expect(parseCursorContextWindowParam("256k")).toBe(256_000);
+    expect(parseCursorContextWindowParam("272k")).toBe(272_000);
+    expect(parseCursorContextWindowParam("300K")).toBe(300_000);
+    expect(parseCursorContextWindowParam("1m")).toBe(1_000_000);
+    expect(parseCursorContextWindowParam("1.5M")).toBe(1_500_000);
+    expect(parseCursorContextWindowParam("0k")).toBeUndefined();
+    expect(parseCursorContextWindowParam("auto")).toBeUndefined();
+    expect(parseCursorContextWindowParam(undefined)).toBeUndefined();
+  });
+
+  it("prefers explicit context option, then default variant, then verified fallback, leaving auto unset", () => {
+    const parameterized: SDKModel = {
+      id: "gemini-4-neon",
+      displayName: "Gemini 4 Neon",
+      parameters: [{ id: "context", values: [{ value: "300k" }, { value: "1m" }] }],
+      variants: [
+        { displayName: "300K", params: [{ id: "context", value: "300k" }] },
+        { displayName: "1M", isDefault: true, params: [{ id: "context", value: "1m" }] },
+      ],
+    };
+    expect(resolveCursorContextWindowMaxTokens(parameterized, {})).toBe(1_000_000);
+    expect(
+      resolveCursorContextWindowMaxTokens(parameterized, { cursor_model_context: "300k" }),
+    ).toBe(300_000);
+    expect(
+      resolveCursorContextWindowMaxTokens({
+        id: "claude-sonnet-4-5",
+        displayName: "Claude Sonnet 4.5",
+        parameters: [{ id: "context", values: [{ value: "200k" }] }],
+      }),
+    ).toBe(200_000);
+    expect(
+      resolveCursorContextWindowMaxTokens({
+        id: "claude-haiku-4-5",
+        displayName: "Claude Haiku 4.5",
+      }),
+    ).toBe(200_000);
+    expect(
+      resolveCursorContextWindowMaxTokens({
+        id: "gpt-5.3-codex",
+        displayName: "Codex 5.3",
+      }),
+    ).toBe(272_000);
+    expect(
+      resolveCursorContextWindowMaxTokens({ id: "auto-smart", displayName: "Auto" }),
+    ).toBeUndefined();
+    expect(
+      resolveCursorContextWindowMaxTokens({ id: "default", displayName: "Auto" }),
+    ).toBeUndefined();
+    expect(
+      resolveCursorContextWindowMaxTokens({ id: "unknown-model", displayName: "Unknown" }),
+    ).toBeUndefined();
   });
 });

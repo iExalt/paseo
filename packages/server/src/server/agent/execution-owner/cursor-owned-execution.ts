@@ -5,6 +5,7 @@ import type {
   SDKCustomTool,
   SDKMessage,
   SDKUserMessage,
+  TokenUsage,
 } from "@cursor/sdk";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -85,7 +86,13 @@ export async function openOwnedCursorExecution(
   const entry = fileURLToPath(new URL(`./cursor-owner-worker.${suffix}`, import.meta.url));
   let answerQuestion: SDKCustomTool["execute"] | undefined;
   let speak: SDKCustomTool["execute"] | undefined;
+  let onModelCall: ((usage: Pick<TokenUsage, "inputTokens" | "outputTokens">) => void) | undefined;
   const owned = await openOwnedProcess(entry, home, generation, enroll, async (method, input) => {
+    if (method === "model_call_completed") {
+      const payload = input as { usage?: Pick<TokenUsage, "inputTokens" | "outputTokens"> };
+      if (payload?.usage) onModelCall?.(payload.usage);
+      return;
+    }
     if (method === "question" || method === "speak") {
       const handler = method === "question" ? answerQuestion : speak;
       if (!handler || !process?.channel.connected)
@@ -119,6 +126,11 @@ export async function openOwnedCursorExecution(
     prepare: (input: CursorOwnerStart) => owned.channel.request<void>("prepare", input),
     attachSpeakHandler(execute: SDKCustomTool["execute"]) {
       speak = execute;
+    },
+    attachModelCallHandler(
+      handler: (usage: Pick<TokenUsage, "inputTokens" | "outputTokens">) => void,
+    ) {
+      onModelCall = handler;
     },
     async send(input: SDKUserMessage | null): Promise<Run> {
       const info = await owned.channel.request<CursorOwnerRunInfo>("dispatch", {

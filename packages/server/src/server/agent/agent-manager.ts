@@ -277,24 +277,56 @@ interface TimeoutOptions {
   onLateError?: (error: unknown) => void;
 }
 
+interface MergeUsageOptions {
+  clearContextWindowUsed?: boolean;
+  clearContextWindowMax?: boolean;
+}
+
 /** Token counters are one provider snapshot. Cost and context can arrive independently. */
-function mergeUsage(next: AgentUsage, previous?: AgentUsage, turnId?: string): AgentUsage {
+function mergeUsage(
+  next: AgentUsage,
+  previous?: AgentUsage,
+  turnId?: string,
+  options?: MergeUsageOptions,
+): AgentUsage {
   const tokens = reportedTokens(next);
   const hasTokens = Object.keys(tokens).length > 0;
+  const clearUsed = options?.clearContextWindowUsed === true;
+  const clearMax = options?.clearContextWindowMax === true;
+  const contextWindowMaxTokens =
+    next.contextWindowMaxTokens ?? (clearMax ? undefined : previous?.contextWindowMaxTokens);
+  const contextWindowUsedTokens =
+    next.contextWindowUsedTokens ?? (clearUsed ? undefined : previous?.contextWindowUsedTokens);
+  let contextReadingTurnId = previous?.contextReadingTurnId;
+  if (next.contextWindowUsedTokens !== undefined) {
+    contextReadingTurnId = turnId ?? next.contextReadingTurnId;
+  } else if (clearUsed) {
+    contextReadingTurnId = undefined;
+  }
   const result = {
     ...(hasTokens ? tokens : previous && reportedTokens(previous)),
     tokenReadingTurnId: hasTokens
       ? (turnId ?? next.tokenReadingTurnId)
       : previous?.tokenReadingTurnId,
     totalCostUsd: next.totalCostUsd ?? previous?.totalCostUsd,
-    contextWindowMaxTokens: next.contextWindowMaxTokens ?? previous?.contextWindowMaxTokens,
-    contextWindowUsedTokens: next.contextWindowUsedTokens ?? previous?.contextWindowUsedTokens,
-    contextReadingTurnId:
-      next.contextWindowUsedTokens !== undefined
-        ? (turnId ?? next.contextReadingTurnId)
-        : previous?.contextReadingTurnId,
+    contextWindowMaxTokens,
+    contextWindowUsedTokens,
+    contextReadingTurnId,
   };
   return result;
+}
+
+function mergeResumedUsage(
+  nativeUsage: AgentUsage | undefined,
+  restoredLastUsage: AgentUsage | undefined,
+  purpose: AgentResumePurpose,
+): AgentUsage | undefined {
+  if (!nativeUsage) return restoredLastUsage;
+  return mergeUsage(nativeUsage, restoredLastUsage, undefined, {
+    clearContextWindowUsed: nativeUsage.contextWindowUsedTokens === undefined,
+    clearContextWindowMax:
+      purpose !== "history" && nativeUsage.contextWindowMaxTokens === undefined,
+  });
 }
 
 function reportedTokens(usage: AgentUsage): AgentUsage {
@@ -2050,7 +2082,7 @@ export class AgentManager {
       persistence: handle,
       restoring: true,
       ...restored,
-      lastUsage: nativeUsage ? mergeUsage(nativeUsage, restored.lastUsage) : restored.lastUsage,
+      lastUsage: mergeResumedUsage(nativeUsage, restored.lastUsage, purpose),
     });
   }
 
@@ -5997,10 +6029,11 @@ export class AgentManager {
     usage: AgentUsage,
     fromHistory: boolean,
     turnId?: string,
+    options?: MergeUsageOptions,
   ): void {
     if (fromHistory) return;
     this.recordSpend(agent, usage, turnId);
-    agent.lastUsage = mergeUsage(usage, agent.lastUsage, turnId);
+    agent.lastUsage = mergeUsage(usage, agent.lastUsage, turnId, options);
     this.emitState(agent);
   }
 
@@ -6033,7 +6066,10 @@ export class AgentManager {
         this.onStreamThreadStarted(agent);
         return undefined;
       case "usage_updated":
-        this.applyStreamUsage(agent, event.usage, fromHistory, eventTurnId);
+        this.applyStreamUsage(agent, event.usage, fromHistory, eventTurnId, {
+          clearContextWindowUsed: event.clearContextWindowUsed,
+          clearContextWindowMax: event.clearContextWindowMax,
+        });
         return undefined;
       case "mode_changed":
         this.applyObservedMode(agent, event.currentModeId);

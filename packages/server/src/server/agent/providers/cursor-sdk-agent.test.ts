@@ -189,7 +189,14 @@ describe("Cursor SDK provider", () => {
           abandoned();
           throw error;
         }
-        return { attachQuestionHandler, finish: async () => {}, prepare, send: ownedSend };
+        return {
+          attachQuestionHandler,
+          attachSpeakHandler: vi.fn(),
+          attachModelCallHandler: vi.fn(),
+          finish: async () => {},
+          prepare,
+          send: ownedSend,
+        };
       },
     );
     const session = await client.createSession(config);
@@ -1177,4 +1184,235 @@ test("rewind moves the session to a fork and sends the next prompt there", async
   } finally {
     await session.close();
   }
+});
+
+test("reports model context limits in catalog, forwards model-call-completed deltas, and emits max updates on model/option changes", async () => {
+  const realSdk = await import("@cursor/sdk");
+  const storePath = await mkdtemp(join(tmpdir(), "paseo-cursor-context-"));
+  stores.push(storePath);
+  const cwd = await mkdtemp(join(tmpdir(), "paseo-cursor-context-cwd-"));
+  stores.push(cwd);
+
+  const neonModel: SDKModel = {
+    id: "gemini-4-neon",
+    displayName: "Gemini 4 Neon",
+    parameters: [{ id: "context", values: [{ value: "300k" }, { value: "1m" }] }],
+    variants: [
+      { displayName: "300K", isDefault: true, params: [{ id: "context", value: "300k" }] },
+      { displayName: "1M", params: [{ id: "context", value: "1m" }] },
+    ],
+  };
+  const autoModel: SDKModel = { id: "default", displayName: "Auto", aliases: ["auto"] };
+
+  const store = new realSdk.JsonlLocalAgentStore(storePath);
+  const contextAgentId = "agent-context-test";
+  await store.agents.create({
+    agent: {
+      agentId: contextAgentId,
+      cwd,
+      status: "idle",
+      activeRunId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+  });
+
+  const nativeSend = vi.fn(
+    async (_input: unknown, options?: { onDelta?: (arg: { update: unknown }) => void }) => {
+      options?.onDelta?.({
+        update: {
+          type: "model-call-completed",
+          modelCallId: "mc-1",
+          usage: {
+            inputTokens: 8_000,
+            outputTokens: 500,
+            cacheReadTokens: 4_000,
+            cacheWriteTokens: 0,
+          },
+        },
+      });
+      options?.onDelta?.({
+        update: {
+          type: "model-call-completed",
+          modelCallId: "mc-2",
+          usage: {
+            inputTokens: 11_000,
+            outputTokens: 600,
+            cacheReadTokens: 8_000,
+            cacheWriteTokens: 0,
+          },
+        },
+      });
+      return makeRun([], {
+        id: "run-ctx-1",
+        status: "finished",
+        usage: {
+          inputTokens: 19_000,
+          cacheReadTokens: 12_000,
+          cacheWriteTokens: 0,
+          outputTokens: 1_100,
+          totalTokens: 20_100,
+        },
+      });
+    },
+  );
+
+  const sdk = {
+    ...realSdk,
+    JsonlLocalAgentStore: function JsonlLocalAgentStore() {
+      return store;
+    },
+    Agent: {
+      create: vi.fn(async () => ({
+        agentId: contextAgentId,
+        send: nativeSend,
+        [Symbol.asyncDispose]: vi.fn(async () => {}),
+      })),
+      resume: vi.fn(),
+      cancelRun: vi.fn(),
+      messages: { list: vi.fn(async () => []) },
+    },
+  };
+  const client = new CursorSdkAgentClient(
+    { env: { CURSOR_API_KEY: "test-key" } },
+    vi.fn(async () => sdk) as unknown as NonNullable<
+      ConstructorParameters<typeof CursorSdkAgentClient>[1]
+    >,
+    vi.fn(async () => [neonModel, autoModel]),
+    undefined,
+    storePath,
+  );
+
+  const catalog = await client.fetchCatalog({});
+  expect(catalog.models.find((m) => m.id === "gemini-4-neon")?.contextWindowMaxTokens).toBe(
+    300_000,
+  );
+  expect(catalog.models.find((m) => m.id === "default")?.contextWindowMaxTokens).toBeUndefined();
+
+  const session = await client.createSession({ provider, cwd, model: "gemini-4-neon" });
+  const events: AgentStreamEvent[] = [];
+  session.subscribe((event) => events.push(event));
+  try {
+    const result = await session.run("inspect context");
+    expect(result.usage).toMatchObject({
+      contextWindowUsedTokens: 11_600,
+      contextWindowMaxTokens: 300_000,
+    });
+
+    events.length = 0;
+    await session.applyOptions!({ cursor_model_context: "1m" });
+    expect(events).toContainEqual({
+      type: "usage_updated",
+      provider,
+      sessionOnly: true,
+      usage: { contextWindowMaxTokens: 1_000_000 },
+    });
+    expect(await session.readLastUsage!()).toMatchObject({
+      contextWindowUsedTokens: 11_600,
+      contextWindowMaxTokens: 1_000_000,
+    });
+
+    events.length = 0;
+    await session.setModel("auto");
+    expect(events).toContainEqual({
+      type: "usage_updated",
+      provider,
+      sessionOnly: true,
+      usage: {},
+      clearContextWindowMax: true,
+    });
+    expect((await session.readLastUsage!())?.contextWindowMaxTokens).toBeUndefined();
+  } finally {
+    await session.close();
+  }
+});
+
+test("history-mode resume honors updated cursor_model_context and auto model without reverting to turn max", async () => {
+  const realSdk = await import("@cursor/sdk");
+  const storePath = await mkdtemp(join(tmpdir(), "paseo-cursor-history-ctx-"));
+  stores.push(storePath);
+  const cwd = await mkdtemp(join(tmpdir(), "paseo-cursor-history-ctx-cwd-"));
+  stores.push(cwd);
+
+  const histAgentId = "agent-history-ctx";
+  const store = new realSdk.JsonlLocalAgentStore(storePath);
+  await store.agents.create({
+    agent: {
+      agentId: histAgentId,
+      cwd,
+      status: "idle",
+      activeRunId: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    },
+  });
+  const journal = new CursorTurnJournal(storePath, histAgentId);
+  await journal.admit(
+    {
+      id: "turn-1",
+      nativeRunId: "run-1",
+      createdAt: new Date().toISOString(),
+      user: { type: "user_message", text: "hi", messageId: "m1" },
+      steers: [],
+      joined: true,
+      terminal: { status: "finished" },
+      lastUsage: {
+        inputTokens: 5_000,
+        outputTokens: 500,
+        totalTokens: 5_500,
+        contextWindowUsedTokens: 5_500,
+        contextWindowMaxTokens: 300_000,
+      },
+    },
+    "hi",
+  );
+
+  const sdk = {
+    ...realSdk,
+    JsonlLocalAgentStore: function JsonlLocalAgentStore() {
+      return store;
+    },
+    Agent: {
+      create: vi.fn(),
+      resume: vi.fn(),
+      cancelRun: vi.fn(),
+      messages: { list: vi.fn(async () => []) },
+    },
+  };
+  const client = new CursorSdkAgentClient(
+    { env: { CURSOR_API_KEY: "test-key" } },
+    vi.fn(async () => sdk) as unknown as NonNullable<
+      ConstructorParameters<typeof CursorSdkAgentClient>[1]
+    >,
+    vi.fn(async () => []),
+    undefined,
+    storePath,
+  );
+  const handle = {
+    provider,
+    sessionId: histAgentId,
+    nativeHandle: histAgentId,
+    metadata: { cwd },
+  };
+
+  const session1m = await client.resumeSession(
+    handle,
+    { model: "gemini-4-neon", providerOptions: { cursor_model_context: "1m" } },
+    undefined,
+    { purpose: "history" },
+  );
+  expect(await session1m.readLastUsage!()).toMatchObject({
+    contextWindowUsedTokens: 5_500,
+    contextWindowMaxTokens: 1_000_000,
+  });
+
+  const sessionAuto = await client.resumeSession(
+    handle,
+    { model: "auto", providerOptions: {} },
+    undefined,
+    { purpose: "history" },
+  );
+  const autoUsage = await sessionAuto.readLastUsage!();
+  expect(autoUsage?.contextWindowUsedTokens).toBe(5_500);
+  expect(autoUsage?.contextWindowMaxTokens).toBeUndefined();
 });

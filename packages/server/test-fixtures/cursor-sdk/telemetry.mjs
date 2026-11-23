@@ -22,6 +22,7 @@ const stoppedUsage = {
   outputTokens: 2,
   reasoningTokens: 1,
   totalTokens: 9,
+  contextWindowUsedTokens: 9,
 };
 
 async function connect({ listener, require }) {
@@ -48,7 +49,11 @@ async function assertUsage({ client, args, id, usage, status }) {
   const cards = toolCards(await client.fetchAgentTimeline(id, { limit: 100 }));
   const readingTurn = cards.find(({ item }) => item.callId.startsWith(run.runId + ":"))?.turnId;
   assert.ok(readingTurn, "Missing Paseo turn for the native run");
-  const expected = { ...usage, tokenReadingTurnId: readingTurn };
+  const expected = {
+    ...usage,
+    tokenReadingTurnId: readingTurn,
+    ...(usage.contextWindowUsedTokens !== undefined ? { contextReadingTurnId: readingTurn } : {}),
+  };
   assert.deepEqual(snapshot.lastUsage, expected);
   assert.deepEqual(cliSnapshot.lastUsage, expected);
   assert.deepEqual(run.usage, {
@@ -56,7 +61,7 @@ async function assertUsage({ client, args, id, usage, status }) {
     cacheReadTokens: usage.cachedInputTokens,
     cacheWriteTokens: usage.cacheWriteTokens,
     outputTokens: usage.outputTokens,
-    reasoningTokens: usage.reasoningTokens,
+    ...(usage.reasoningTokens !== undefined ? { reasoningTokens: usage.reasoningTokens } : {}),
     totalTokens: usage.totalTokens,
   });
   return run.runId;
@@ -121,7 +126,7 @@ export async function checkCompletedTelemetry(args, id) {
   }
 }
 
-export async function checkStoppedTelemetry(args) {
+export async function checkStoppedTelemetry(args, { checkContextWindow = false } = {}) {
   let client = await connect(args);
   const held = join(args.workspace, "p8-held.sh");
   const ready = join(args.workspace, "p8-held.pid");
@@ -144,6 +149,46 @@ export async function checkStoppedTelemetry(args) {
     assert.equal(cards[0].item.callId, callId);
     assert.ok(callId.startsWith(runId + ":"));
     assert.equal(cards[0].item.status, "canceled");
+    let contextId;
+    const contextExpected = {
+      inputTokens: 5_200,
+      cachedInputTokens: 1_100,
+      cacheWriteTokens: 0,
+      outputTokens: 400,
+      totalTokens: 5_600,
+      contextWindowUsedTokens: 4_500,
+      contextWindowMaxTokens: 300_000,
+    };
+    if (checkContextWindow) {
+      ({ id: contextId } = await client.createAgent({
+        provider: "cursor-sdk",
+        workspaceId: args.workspaceId,
+        cwd: args.workspace,
+        model: "fixture-context",
+        modeId: "unrestricted",
+      }));
+      assert.equal(
+        (await client.sendAgentMessage(contextId, "PASEO_P8_CONTEXT", { messageId: randomUUID() }))
+          .disposition,
+        "turn_started",
+      );
+      assert.equal((await client.waitForFinish(contextId, 12_000)).status, "idle");
+      await assertUsage({
+        client,
+        args,
+        id: contextId,
+        usage: contextExpected,
+        status: "finished",
+      });
+      const contextInspect = await args.cli("agent", "inspect", contextId);
+      assert.equal(contextInspect.LastUsage.ContextWindowUsedTokens, 4_500);
+      assert.equal(contextInspect.LastUsage.ContextWindowMaxTokens, 300_000);
+      assert.equal(contextInspect.LastUsage.ContextWindowPercent, 2);
+      await client.setAgentOptions(contextId, { cursor_model_context: "1m" });
+      const updated = (await client.fetchAgent(contextId)).agent;
+      assert.equal(updated.lastUsage?.contextWindowMaxTokens, 1_000_000);
+      assert.equal(updated.lastUsage?.contextWindowUsedTokens, 4_500);
+    }
     const address = args.listener();
     await client.close();
     await args.stopDaemon("SIGTERM");
@@ -160,6 +205,20 @@ export async function checkStoppedTelemetry(args) {
     await writeFile(path, JSON.stringify(stored));
     await args.startDaemon({ listen: address });
     client = await connect(args);
+    if (contextId) {
+      // Open history-mode session first so readLastUsage() runs before asserting the snapshot.
+      await client.fetchAgentTimeline(contextId, { limit: 100 });
+      await assertUsage({
+        client,
+        args,
+        id: contextId,
+        usage: { ...contextExpected, contextWindowMaxTokens: 1_000_000 },
+        status: "finished",
+      });
+      console.log(
+        "PASS multi-step model-call-completed context window, option switch, and restart persistence",
+      );
+    }
     assert.deepEqual(toolCards(await client.fetchAgentTimeline(id, { limit: 100 })), cards);
     await assertUsage({ client, args, id, usage: stoppedUsage, status: "cancelled" });
     assert.deepEqual(toolCards(await client.fetchAgentTimeline(id, { limit: 100 })), cards);
