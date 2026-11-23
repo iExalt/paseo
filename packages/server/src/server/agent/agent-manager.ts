@@ -4553,6 +4553,7 @@ export class AgentManager {
           agentId,
           epoch: this.timelineStore.getEpoch(agentId),
         });
+        await this.restoreUsageAfterRewind(agent);
       }
       // Rewind stages provider events under the run lock; publish its final state directly.
       this.refreshSessionPersistence(agent);
@@ -4575,6 +4576,20 @@ export class AgentManager {
       throw error;
     } finally {
       this.runs.settleForegroundRun(agentId, lock.token);
+    }
+  }
+
+  /** A token reading from a rewound turn no longer describes the conversation. */
+  private async restoreUsageAfterRewind(agent: ActiveManagedAgent): Promise<void> {
+    if (!agent.session.readLastUsage) return;
+    try {
+      const usage = await agent.session.readLastUsage();
+      // Lifetime cost still counts the rewound turns.
+      const totalCostUsd = usage?.totalCostUsd ?? agent.lastUsage?.totalCostUsd;
+      if (usage) agent.lastUsage = { ...usage, totalCostUsd };
+      else agent.lastUsage = totalCostUsd === undefined ? undefined : { totalCostUsd };
+    } catch (error) {
+      this.logger.warn({ err: error, agentId: agent.id }, "Could not refresh usage after rewind");
     }
   }
 

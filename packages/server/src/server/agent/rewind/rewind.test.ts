@@ -2,7 +2,12 @@ import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { AgentManager } from "../agent-manager.js";
-import type { AgentClient, AgentSession, AgentSessionConfig } from "../agent-sdk-types.js";
+import type {
+  AgentClient,
+  AgentSession,
+  AgentSessionConfig,
+  AgentUsage,
+} from "../agent-sdk-types.js";
 import { FakeRewindSession, REWIND_TEST_CAPABILITIES } from "./test-rewind-session.js";
 
 class FakeRewindClient implements AgentClient {
@@ -91,6 +96,25 @@ describe("AgentManager rewind", () => {
     await manager.rewind(agentId, "msg-1", "conversation");
 
     expect(session.recordedRewinds).toEqual([{ mode: "conversation", messageId: "msg-1" }]);
+  });
+
+  test("replaces a token reading from a rewound turn with the provider's", async () => {
+    const { manager, session, agentId } = await createRewindHarness();
+    let reading: AgentUsage | undefined = { inputTokens: 900, tokenReadingTurnId: "dropped" };
+    Object.assign(session, { readLastUsage: async () => reading });
+    await manager.rewind(agentId, "message-1", "conversation");
+    expect(manager.getAgent(agentId)?.lastUsage).toMatchObject({ tokenReadingTurnId: "dropped" });
+
+    reading = { inputTokens: 100, tokenReadingTurnId: "kept" };
+    await manager.rewind(agentId, "message-1", "conversation");
+    expect(manager.getAgent(agentId)?.lastUsage).toMatchObject({
+      inputTokens: 100,
+      tokenReadingTurnId: "kept",
+    });
+
+    reading = undefined;
+    await manager.rewind(agentId, "message-1", "conversation");
+    expect(manager.getAgent(agentId)?.lastUsage).toBeUndefined();
   });
 
   test("replaces the canonical epoch without replaying reconstructed parent rows", async () => {
