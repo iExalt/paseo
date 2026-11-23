@@ -2,7 +2,12 @@ import { describe, expect, test } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";
 import { AgentManager } from "../agent-manager.js";
-import type { AgentClient, AgentSession, AgentSessionConfig } from "../agent-sdk-types.js";
+import type {
+  AgentClient,
+  AgentSession,
+  AgentSessionConfig,
+  AgentUsage,
+} from "../agent-sdk-types.js";
 import { FakeRewindSession, REWIND_TEST_CAPABILITIES } from "./test-rewind-session.js";
 
 class FakeRewindClient implements AgentClient {
@@ -80,6 +85,38 @@ describe("AgentManager rewind", () => {
     ]);
   });
 
+  test("rewinds a reloaded prompt whose history keeps the client message ID", async () => {
+    const { manager, session, agentId } = await createRewindHarness();
+    // Cursor SDK history reports a submitted prompt under its client message ID.
+    session.history = [
+      { type: "user_message", text: "before", messageId: "msg-1", clientMessageId: "msg-1" },
+    ];
+    await manager.hydrateTimelineFromProvider(agentId, { force: true });
+
+    await manager.rewind(agentId, "msg-1", "conversation");
+
+    expect(session.recordedRewinds).toEqual([{ mode: "conversation", messageId: "msg-1" }]);
+  });
+
+  test("replaces a token reading from a rewound turn with the provider's", async () => {
+    const { manager, session, agentId } = await createRewindHarness();
+    let reading: AgentUsage | undefined = { inputTokens: 900, tokenReadingTurnId: "dropped" };
+    Object.assign(session, { readLastUsage: async () => reading });
+    await manager.rewind(agentId, "message-1", "conversation");
+    expect(manager.getAgent(agentId)?.lastUsage).toMatchObject({ tokenReadingTurnId: "dropped" });
+
+    reading = { inputTokens: 100, tokenReadingTurnId: "kept" };
+    await manager.rewind(agentId, "message-1", "conversation");
+    expect(manager.getAgent(agentId)?.lastUsage).toMatchObject({
+      inputTokens: 100,
+      tokenReadingTurnId: "kept",
+    });
+
+    reading = undefined;
+    await manager.rewind(agentId, "message-1", "conversation");
+    expect(manager.getAgent(agentId)?.lastUsage).toBeUndefined();
+  });
+
   test("replaces the canonical epoch without replaying reconstructed parent rows", async () => {
     const { manager, session, agentId } = await createRewindHarness();
     const history = Array.from({ length: 250 }, (_, index) => ({
@@ -131,6 +168,22 @@ describe("AgentManager rewind", () => {
 
     expect(session.aborted).toBe(true);
     expect(session.recordedRewinds).toEqual([{ mode: "files", messageId: "message-1" }]);
+  });
+
+  test("keeps an in-flight turn running when the mode is unsupported", async () => {
+    const { manager, session, agentId } = await createRewindHarness();
+    Object.assign(session, {
+      capabilities: { ...REWIND_TEST_CAPABILITIES, supportsRewindFiles: false },
+    });
+    const run = manager.streamAgent(agentId, "keep working");
+    await run.next();
+
+    await expect(manager.rewind(agentId, "message-1", "files")).rejects.toThrow(
+      "Provider does not support rewinding files",
+    );
+
+    expect(session.aborted).toBe(false);
+    expect(session.recordedRewinds).toEqual([]);
   });
 
   test("does not rewind when the in-flight turn rejects cancellation", async () => {

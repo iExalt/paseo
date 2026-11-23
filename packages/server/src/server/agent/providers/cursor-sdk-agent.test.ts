@@ -17,6 +17,7 @@ import { startAgentRun } from "../agent-prompt.js";
 import { AgentManager } from "../agent-manager.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
 import { CursorQuestions } from "./cursor-sdk-questions.js";
+import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 import { clearUnusedCursorReservation, CursorSdkAgentClient } from "./cursor-sdk-agent.js";
 import { listCursorSdkModels as listCursorModels } from "./cursor-sdk-availability.js";
 
@@ -1030,4 +1031,112 @@ it("coalesces SDK question callback replay and fences a stopped turn", async () 
   expect(questions.requests()).toEqual([]);
   expect(() => questions.respond(pending.id, { behavior: "allow" })).toThrow("no longer pending");
   expect(await tool.execute(input, context)).toMatchObject({ isError: true });
+});
+
+test("rewind moves the session to a fork and sends the next prompt there", async () => {
+  const storePath = await mkdtemp(join(tmpdir(), "paseo-cursor-rewind-"));
+  stores.push(storePath);
+  const cwd = await realpath(process.cwd());
+  const realSdk = await import("@cursor/sdk");
+  const store = new realSdk.JsonlLocalAgentStore(storePath);
+  const time = Date.UTC(2026, 10, 21);
+  const ref = (rootBlobId: string) => ({ schemaVersion: 1 as const, rootBlobId });
+  await store.agents.create({
+    agent: {
+      agentId,
+      cwd,
+      status: "idle",
+      createdAt: time,
+      updatedAt: time,
+      latestCheckpoint: ref("b2"),
+    },
+  });
+  const journal = new CursorTurnJournal(storePath, agentId);
+  for (const [turn, start, latest] of [
+    [1, null, "b1"],
+    [2, "b1", "b2"],
+  ] as const) {
+    await store.checkpoints.create({ agentId, blobId: latest, data: new Uint8Array([turn]) });
+    await store.runs.create({
+      run: {
+        agentId,
+        runId: `run-${turn}`,
+        turnNumber: turn,
+        status: "finished",
+        createdAt: time + turn,
+        updatedAt: time + turn,
+        startedAt: time + turn,
+        endedAt: time + turn,
+        startCheckpointRef: start && ref(start),
+        latestCheckpointRef: ref(latest),
+      },
+    });
+    const record: CursorHistoryTurn = {
+      id: `turn-${turn}`,
+      nativeRunId: `run-${turn}`,
+      createdAt: new Date(time + turn).toISOString(),
+      user: { type: "user_message", text: `prompt ${turn}`, messageId: `message-${turn}` },
+      steers: [],
+      joined: true,
+      terminal: { status: "finished" },
+    };
+    await journal.admit(record, record.user.text);
+  }
+  const agents = new Map<string, { agentId: string; send: ReturnType<typeof vi.fn> }>();
+  const open = (id: string) => {
+    const agent = {
+      agentId: id,
+      send: vi.fn(async () => makeRun([], { id: `run-next-${id}`, status: "finished" })),
+      [Symbol.asyncDispose]: vi.fn(async () => {}),
+    };
+    agents.set(id, agent);
+    return agent;
+  };
+  const sdk = {
+    ...realSdk,
+    JsonlLocalAgentStore: function JsonlLocalAgentStore() {
+      return store;
+    },
+    Agent: {
+      create: vi.fn(),
+      resume: vi.fn(async (id: string) => open(id)),
+      cancelRun: vi.fn(),
+      messages: { list: vi.fn(async () => []) },
+    },
+  };
+  const client = new CursorSdkAgentClient(
+    { env: { CURSOR_API_KEY: "test-key" } },
+    vi.fn(async () => sdk) as unknown as NonNullable<
+      ConstructorParameters<typeof CursorSdkAgentClient>[1]
+    >,
+    vi.fn(async () => [model]),
+    undefined,
+    storePath,
+  );
+  const session = await client.resumeSession(
+    { provider, sessionId: agentId, nativeHandle: agentId, metadata: { cwd } },
+    { model: "model" },
+  );
+  try {
+    await session.revertConversation!({ messageId: "message-2" });
+    const forkId = session.id!;
+    expect(forkId).not.toBe(agentId);
+    expect(session.describePersistence()).toMatchObject({
+      sessionId: forkId,
+      nativeHandle: forkId,
+    });
+    expect((await store.agents.get({ agentId: forkId }))?.latestCheckpoint).toEqual(ref("b1"));
+    expect(agents.get(agentId)?.[Symbol.asyncDispose]).toHaveBeenCalled();
+    const history = (await Array.fromAsync(session.streamHistory())).flatMap((event) =>
+      event.type === "timeline" && event.item.type === "user_message" ? [event.item.text] : [],
+    );
+    expect(history).toEqual(["prompt 1"]);
+
+    await session.run("next");
+    expect(agents.get(forkId)?.send).toHaveBeenCalledOnce();
+    expect(agents.get(agentId)?.send).not.toHaveBeenCalled();
+    expect((await store.agents.get({ agentId }))?.latestCheckpoint).toEqual(ref("b2"));
+  } finally {
+    await session.close();
+  }
 });

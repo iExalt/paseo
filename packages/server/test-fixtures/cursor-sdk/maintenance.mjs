@@ -331,7 +331,7 @@ export async function checkMaintenance({
 
     const beforeFork = await native();
     const beforeForkRuns = await nativeRuns();
-    for (const mode of ["conversation", "files", "both"]) {
+    for (const mode of ["files", "both"]) {
       await assert.rejects(
         client.rewindAgent(agentId, user.item.messageId, mode),
         /does not support rewinding/,
@@ -355,7 +355,30 @@ export async function checkMaintenance({
     assert.deepEqual(await native(), beforeFork);
     assert.deepEqual(await nativeRuns(), beforeForkRuns);
     console.log(
-      "PASS Paseo transcript fork opened a new Cursor conversation and all rewind modes left the source intact",
+      "PASS Paseo transcript fork opened a new Cursor conversation and unsupported rewind modes left the source intact",
+    );
+
+    const branchedPrompt = (await timeline(fork.agentId)).entries.findLast(
+      ({ item }) => item.type === "user_message",
+    );
+    await client.rewindAgent(fork.agentId, branchedPrompt.item.messageId, "conversation");
+    const rewound = await snapshot(fork.agentId);
+    assert.notEqual(rewound.persistence.nativeHandle, branched.persistence.nativeHandle);
+    assert.ok(
+      !(await timeline(fork.agentId)).entries.some(
+        ({ item }) =>
+          item.type === "user_message" && item.messageId === branchedPrompt.item.messageId,
+      ),
+    );
+    const rewoundHandle = rewound.persistence.nativeHandle;
+    const keptRuns = (await nativeRuns(rewoundHandle)).items.length;
+    await send(fork.agentId, maintenancePrefix + " continue after rewind.");
+    assert.equal((await snapshot(fork.agentId)).persistence.nativeHandle, rewoundHandle);
+    assert.equal((await nativeRuns(rewoundHandle)).items.length, keptRuns + 1);
+    assert.deepEqual(await native(), beforeFork);
+    assert.deepEqual(await nativeRuns(), beforeForkRuns);
+    console.log(
+      "PASS conversation rewind moved the fork to a new Cursor agent, the next prompt ran there, and the source stayed intact",
     );
 
     await client.archiveAgent(agentId);
