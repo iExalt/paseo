@@ -461,6 +461,15 @@ function buildPaseoUnknownSections(
   return sections.map((section) => <PaseoDetailSection key={section.title} section={section} />);
 }
 
+// Providers without a navigable child session carry the sub-agent's answer in `log`.
+function buildSubAgentSections(
+  detail: Extract<ToolCallDetail, { type: "sub_agent" }>,
+  ds: DetailStyles,
+): ReactNode[] {
+  if (detail.childSessionId || !detail.log?.trim()) return [];
+  return [<ScrollableMarkdownSection key="sub-agent" text={detail.log} ds={ds} />];
+}
+
 function buildDetailSections(
   toolName: string | undefined,
   detail: ToolCallDetail | undefined,
@@ -474,7 +483,8 @@ function buildDetailSections(
       <ShellDetailSection key="shell" command={detail.command} output={detail.output} ds={ds} />,
     ];
   }
-  if (detail.type === "worktree_setup" || detail.type === "sub_agent") return [];
+  if (detail.type === "worktree_setup") return [];
+  if (detail.type === "sub_agent") return buildSubAgentSections(detail, ds);
   if (detail.type === "edit") {
     return [<EditDetailSection key="edit" diffLines={diffLines} ds={ds} />];
   }

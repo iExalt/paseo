@@ -4,7 +4,9 @@ import { join } from "node:path";
 import * as sdk from "@cursor/sdk";
 import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display";
 import { expect, test } from "vitest";
-import type { AgentStreamEvent } from "../agent-sdk-types.js";
+import type { AgentStreamEvent, ToolCallTimelineItem } from "../agent-sdk-types.js";
+import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
+import { mapCursorTool, projectCursorTool } from "./cursor-sdk-telemetry.js";
 import { readCursorHistory, readCursorLastUsage } from "./cursor-sdk-history.js";
 import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 
@@ -402,6 +404,31 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
         result: { status: "success", value: { files: [] } },
         status: "completed",
       },
+      {
+        name: "read",
+        args: { path: "/repo/missing.md" },
+        result: { status: "error", error: { message: "error" } },
+        status: "completed",
+      },
+      {
+        name: "task",
+        args: {
+          description: "Review the plan",
+          prompt: "Review it",
+          subagentType: { kind: "unspecified" },
+        },
+        result: {
+          status: "success",
+          value: {
+            agentId: "cursor-child",
+            conversationSteps: [
+              { thinkingMessage: { text: "Reading" } },
+              { assistantMessage: { text: "The plan holds." } },
+            ],
+          },
+        },
+        status: "completed",
+      },
     ] as const;
     for (const [index, { name, args, result, status }] of cases.entries()) {
       const callId = String(index);
@@ -435,6 +462,8 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
       "tool_call",
       "tool_call",
       "tool_call",
+      "tool_call",
+      "tool_call",
     ]);
     const projected = rows.flatMap(({ item }) => (item.type === "tool_call" ? [item] : []));
     expect(projected.map(buildToolCallDisplayModel)).toEqual([
@@ -444,7 +473,21 @@ test("projects a recovered Cursor journal with legacy MCP and search rows", asyn
         errorText: JSON.stringify(cases[1].result, null, 2),
       },
       { displayName: "Search", summary: "**/AGENTS.md" },
+      { displayName: "Read", summary: "/repo/missing.md", errorText: "Read failed." },
+      { displayName: "Task", summary: "Review the plan" },
     ]);
+    expect(projected.map(({ status }) => status)).toEqual([
+      "failed",
+      "failed",
+      "completed",
+      "failed",
+      "completed",
+    ]);
+    expect(projected[4].detail).toEqual({
+      type: "sub_agent",
+      description: "Review the plan",
+      log: "The plan holds.",
+    });
   });
 });
 
@@ -550,4 +593,33 @@ test("replays a manual compaction from the native stream if the daemon journal m
     await journal.append(turn.id, { type: "assistant_message", text: "stored summary" });
     expect(await read()).toEqual(rows);
   });
+});
+
+test("replay keeps a current typed row whose journaled payload was truncated", () => {
+  const read = (index: number) => ({
+    toolCall: {
+      readToolCall: {
+        args: { path: `/repo/${index}` },
+        result: { success: { content: "x".repeat(4000) } },
+      },
+    },
+  });
+  const steps = Array.from({ length: 40 }, (_, index) => read(index));
+  const live = mapCursorTool({
+    type: "tool_call",
+    agent_id: agentId,
+    run_id: "run",
+    call_id: "task",
+    name: "task",
+    status: "completed",
+    args: { description: "Review" },
+    result: {
+      status: "success",
+      value: { conversationSteps: [...steps, { assistantMessage: { text: "Done." } }] },
+    },
+  });
+  const stored = limitAgentTimelineItemContent(live) as ToolCallTimelineItem;
+  expect(JSON.stringify(stored).length).toBeLessThan(JSON.stringify(live).length);
+  expect(stored.detail).toEqual({ type: "sub_agent", description: "Review", log: "Done." });
+  expect(projectCursorTool(stored)).toEqual(stored);
 });

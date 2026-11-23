@@ -67,6 +67,16 @@ describe("tool-call detail state", () => {
     assert.strictEqual(hasMeaningfulToolCallDetail(detail), true);
   });
 
+  it("expands a sub-agent card only when it carries an answer and no child session", () => {
+    const launch: ToolCallDetail = { type: "sub_agent", description: "Review", log: "" };
+    const answered: ToolCallDetail = { ...launch, log: "The plan holds." };
+    const navigable: ToolCallDetail = { ...answered, childSessionId: "child" };
+
+    assert.strictEqual(hasMeaningfulToolCallDetail(launch), false);
+    assert.strictEqual(hasMeaningfulToolCallDetail(answered), true);
+    assert.strictEqual(hasMeaningfulToolCallDetail(navigable), false);
+  });
+
   it("treats fetch detail as meaningful", () => {
     const detail: ToolCallDetail = {
       type: "fetch",
