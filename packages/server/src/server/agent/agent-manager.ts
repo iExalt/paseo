@@ -3545,7 +3545,11 @@ export class AgentManager {
         runOptions = {
           ...runOptions,
           resolveCursorWorkspaceInstructions: async () => {
-            const target = { cwd: agent.config.cwd, workspaceId: agent.workspaceId };
+            const target = {
+              cwd: agent.config.cwd,
+              workspaceId: agent.workspaceId,
+              projectOnly: true,
+            };
             const roots = target.workspaceId ? await this.resolveCursorSkillRoots(target) : [];
             return readCursorWorkspaceInstructions(target.cwd, roots);
           },

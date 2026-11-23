@@ -235,6 +235,9 @@ describe("Cursor SDK provider", () => {
       });
       try {
         const cwd = await realpath(ctx.daemon.paseoHome);
+        vi.stubEnv("HOME", cwd);
+        vi.stubEnv("USERPROFILE", cwd);
+        vi.stubEnv("CODEX_HOME", join(cwd, ".codex"));
         const draft = { provider, cwd, model: model.id };
         const commands = await ctx.client.listCommands({
           agentId: "__new_agent__",

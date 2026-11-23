@@ -248,9 +248,28 @@ export function watchSkillChanges(
         const link = await readlink(physical).catch(() => null);
         if (link) await trace(resolve(parent, link));
       };
+      const traceParents = async (path: string) => {
+        for (
+          let current = path;
+          current !== source.boundary && dirname(current) !== current;
+          current = dirname(current)
+        ) {
+          await trace(current);
+        }
+      };
       if (!isAllowedSkillPath(source, source.path)) return;
-      for (let path = source.path; path !== source.boundary; path = dirname(path)) {
-        await trace(path);
+      await traceParents(source.path);
+      for (const input of new Set(source.catalogInputs)) {
+        await traceParents(input);
+        const canonical = await resolveCursorDiscoveryPath(source, input);
+        if (!canonical) continue;
+        if (canonical !== input) await traceParents(canonical);
+        const stamp = await lstat(canonical, { bigint: true }).catch(() => null);
+        if (!stamp) continue;
+        if (stamp.isDirectory()) await add(canonical, false, undefined, false);
+        entries.push(
+          ["input", input, canonical, stamp.dev, stamp.ino, stamp.mtimeNs, stamp.ctimeNs].join(" "),
+        );
       }
       const root = await resolveCursorSkillRoot(source);
       if (!root) return;

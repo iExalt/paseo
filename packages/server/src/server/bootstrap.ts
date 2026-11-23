@@ -1054,7 +1054,8 @@ export async function createPaseoDaemon(
       ),
   });
   const agentManager = new AgentManager({
-    resolveCursorSkillRoots: (target) => cursorSkillRoots(target, workspaceRegistry ?? undefined),
+    resolveCursorSkillRoots: (target) =>
+      cursorSkillRoots(target, workspaceRegistry ?? undefined, undefined, logger),
     pluginLifecycle: pluginRuntime,
     pluginAgentTools: pluginRuntime,
     clients: initialAgentManagerState.clients,
