@@ -7,6 +7,7 @@ import type {
   LocalAgentStore,
 } from "@cursor/sdk";
 import { readCursorHistory, type HistorySdk } from "./cursor-sdk-history.js";
+import type { CursorForkLinks } from "./cursor-sdk-fork-store.js";
 import type { CursorTurnJournal, CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 
 const TERMINAL_RUN = new Set(["finished", "error", "cancelled", "expired"]);
@@ -108,16 +109,19 @@ interface CursorForkPlan {
   checkpoint: LocalAgentCheckpointRef | null;
   kept: LocalAgentRunDocument[];
   keptRecords: CursorHistoryTurn[];
+  nativeHistory: Set<string>;
 }
 
 function keepRecord(
   record: CursorHistoryTurn,
   target: CursorRewindTarget,
-  kept: Set<string>,
+  runs: { all: Set<string>; kept: Set<string> },
   cutoff: string,
 ): boolean {
   if (record === target.record) return false;
-  const ids = runIdsOf(record);
+  const kept = runs.kept;
+  // History shows a turn whose runs never reached the store by its journal time.
+  const ids = runIdsOf(record).filter((id) => runs.all.has(id));
   if (!ids.length) return record.createdAt < cutoff;
   const before = ids.filter((id) => kept.has(id)).length;
   if (before === 0) return false;
@@ -164,22 +168,37 @@ async function planCursorFork(params: ForkCursorConversationParams): Promise<Cur
       `Cursor SDK run ${active.runId} has not finished, so the chat was left unchanged.`,
     );
   }
-  const keptIds = new Set(kept.map((run) => run.runId));
+  const ids = {
+    all: new Set(runs.map((run) => run.runId)),
+    kept: new Set(kept.map((run) => run.runId)),
+  };
   const cutoff = target.record?.createdAt ?? new Date(target.run.createdAt).toISOString();
-  const keptRecords = records.filter((record) => keepRecord(record, target, keptIds, cutoff));
-  return { source, checkpoint, kept, keptRecords };
+  const keptRecords = records.filter((record) => keepRecord(record, target, ids, cutoff));
+  return {
+    source,
+    checkpoint,
+    kept,
+    keptRecords,
+    nativeHistory: await nativeHistoryRuns(params.journal, kept, keptRecords),
+  };
 }
 
-async function copyCheckpoints(store: LocalAgentStore, from: string, to: string): Promise<void> {
-  let cursor: string | undefined;
-  do {
-    const page = await store.checkpoints.list({ filter: { agentIds: [from], cursor } });
-    for (const blobId of page.items) {
-      const data = await store.checkpoints.get({ agentId: from, blobId });
-      if (data) await store.checkpoints.create({ agentId: to, blobId, data });
-    }
-    cursor = page.nextCursor;
-  } while (cursor);
+/**
+ * Runs whose saved events the chat's history still reads. A finished journal
+ * turn with its own items replays from the journal, so its events stay behind.
+ */
+async function nativeHistoryRuns(
+  journal: CursorTurnJournal,
+  kept: LocalAgentRunDocument[],
+  records: CursorHistoryTurn[],
+): Promise<Set<string>> {
+  const journaled = new Set<string>();
+  for (const record of records) {
+    if (record.recovered) continue;
+    if (!record.terminal && (await journal.readItems(record.id)).length === 0) continue;
+    for (const id of runIdsOf(record)) journaled.add(id);
+  }
+  return new Set(kept.flatMap((run) => (journaled.has(run.runId) ? [] : [run.runId])));
 }
 
 async function copyRun(
@@ -187,8 +206,10 @@ async function copyRun(
   run: LocalAgentRunDocument,
   agentId: string,
   runId: string,
+  withEvents: boolean,
 ): Promise<void> {
   await store.runs.create({ run: { ...run, agentId, runId } });
+  if (!withEvents) return;
   const events = await store.runEvents.list({ runId: run.runId, limit: Number.MAX_SAFE_INTEGER });
   for (const event of events.items) {
     await store.runEvents.append({
@@ -203,7 +224,9 @@ async function copyRun(
 
 interface ForkCursorConversationParams {
   sdk: HistorySdk;
+  /** The store as the SDK sees it, reading forks through their links. */
   store: LocalAgentStore;
+  links: CursorForkLinks;
   journal: CursorTurnJournal;
   agentId: string;
   messageId: string;
@@ -217,19 +240,27 @@ interface ForkCursorConversationParams {
 export async function forkCursorConversation(
   params: ForkCursorConversationParams,
 ): Promise<CursorFork> {
-  const { store, journal, agentId } = params;
-  const { source, checkpoint, kept, keptRecords } = await planCursorFork(params);
+  const { store, journal, agentId, links } = params;
+  const { source, checkpoint, kept, keptRecords, nativeHistory } = await planCursorFork(params);
   const runIds = new Map(kept.map((run) => [run.runId, `run-${randomUUID()}`]));
   const remap = (id: string) => runIds.get(id) ?? id;
   const forkId = params.newAgentId ?? `agent-${randomUUID()}`;
   const forkJournal = journal.forAgent(forkId);
   const discard = async () => {
-    await store.agents.delete({ filter: { agentIds: [forkId] } });
+    // The SDK rejects a delete that matches no agent row.
+    if (await store.agents.get({ agentId: forkId })) {
+      await store.agents.delete({ filter: { agentIds: [forkId] } });
+    }
     await discardCursorFork(store, forkJournal, forkId, [...runIds.values()]);
+    // Unlink last so a retried discard can still reach the fork's rows.
+    await links.unlink(forkId);
   };
   try {
-    await copyCheckpoints(store, agentId, forkId);
-    for (const run of kept) await copyRun(store, run, forkId, remap(run.runId));
+    // The fork reads the conversation's checkpoint blobs through this link.
+    await links.link(forkId, agentId);
+    for (const run of kept) {
+      await copyRun(store, run, forkId, remap(run.runId), nativeHistory.has(run.runId));
+    }
     for (const record of keptRecords) {
       await forkJournal.copyTurnFrom(journal, record, {
         ...record,
@@ -271,11 +302,17 @@ async function discardCursorFork(
   forkId: string,
   runIds: string[],
 ): Promise<void> {
-  // An empty run filter matches every row in the store.
-  if (runIds.length) {
-    await store.runEvents.delete({ filter: { runIds } });
-    await store.runs.delete({ filter: { runIds } });
-  }
-  await store.checkpoints.delete({ filter: { agentIds: [forkId] } });
-  await rm(journal.path, { recursive: true, force: true });
+  // Each step runs even if another fails; the SDK also rejects deletes that match nothing.
+  // An empty run filter would match every row in the store.
+  const steps = [
+    ...(runIds.length
+      ? [
+          () => store.runEvents.delete({ filter: { runIds } }),
+          () => store.runs.delete({ filter: { runIds } }),
+        ]
+      : []),
+    () => store.checkpoints.delete({ filter: { agentIds: [forkId] } }),
+    () => rm(journal.path, { recursive: true, force: true }),
+  ];
+  await Promise.allSettled(steps.map((step) => step()));
 }

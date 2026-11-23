@@ -80,6 +80,7 @@ import {
 } from "./cursor-sdk-local-sessions.js";
 import { cursorCompactCommand, isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
+import { CursorForkLinks, withCursorForkBlobs } from "./cursor-sdk-fork-store.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
 import { CursorQuestions, cursorQuestionToolName } from "./cursor-sdk-questions.js";
 import { cursorSpeakTool, cursorSpeakToolName } from "./cursor-sdk-voice.js";
@@ -120,6 +121,7 @@ const CAPABILITIES = {
 };
 
 type CursorSdk = HistorySdk & Pick<typeof import("@cursor/sdk"), "Agent" | "JsonlLocalAgentStore">;
+type CursorBinding = ReturnType<typeof createCursorRunBinding> & { links: CursorForkLinks };
 type ResolvedCursorModel = SDKModel & { sdkId: string; catalogOptionKeys: Set<string> };
 
 function modelId(id?: string | null): string {
@@ -216,7 +218,7 @@ export class CursorSdkAgentClient implements AgentClient {
   readonly provider = PROVIDER;
   readonly capabilities = CAPABILITIES;
 
-  private binding?: ReturnType<typeof createCursorRunBinding>;
+  private binding?: CursorBinding;
   private catalog: { apiKey: string; models: SDKModel[] } | undefined;
 
   constructor(
@@ -227,8 +229,11 @@ export class CursorSdkAgentClient implements AgentClient {
     private readonly storePath = join(resolvePaseoHome(), "cursor-sdk"),
   ) {}
 
-  private getBinding(sdk: CursorSdk): ReturnType<typeof createCursorRunBinding> {
-    return (this.binding ??= createCursorRunBinding(new sdk.JsonlLocalAgentStore(this.storePath)));
+  private getBinding(sdk: CursorSdk): CursorBinding {
+    if (this.binding) return this.binding;
+    const links = new CursorForkLinks(this.storePath);
+    const store = withCursorForkBlobs(new sdk.JsonlLocalAgentStore(this.storePath), links);
+    return (this.binding = { ...createCursorRunBinding(store), links });
   }
 
   private async requireApiKey(): Promise<string> {
@@ -520,7 +525,7 @@ class CursorSdkAgent implements AgentSession {
     ) => Promise<ResolvedCursorModel>,
     private readonly instructions: string | undefined,
     private readonly sdk: CursorSdk,
-    private readonly binding: ReturnType<typeof createCursorRunBinding>,
+    private readonly binding: CursorBinding,
     private journal: CursorTurnJournal,
     private readonly shellEnvironment: Awaited<ReturnType<typeof prepareCursorShellEnvironment>>,
     private readonly paseoHome: string,
@@ -564,6 +569,7 @@ class CursorSdkAgent implements AgentSession {
     const fork = await forkCursorConversation({
       sdk: this.sdk,
       store,
+      links: this.binding.links,
       journal: this.journal,
       agentId: this.chatId,
       messageId,

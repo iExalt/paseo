@@ -80,6 +80,19 @@ describe("AgentManager rewind", () => {
     ]);
   });
 
+  test("rewinds a reloaded prompt whose history keeps the client message ID", async () => {
+    const { manager, session, agentId } = await createRewindHarness();
+    // Cursor SDK history reports a submitted prompt under its client message ID.
+    session.history = [
+      { type: "user_message", text: "before", messageId: "msg-1", clientMessageId: "msg-1" },
+    ];
+    await manager.hydrateTimelineFromProvider(agentId, { force: true });
+
+    await manager.rewind(agentId, "msg-1", "conversation");
+
+    expect(session.recordedRewinds).toEqual([{ mode: "conversation", messageId: "msg-1" }]);
+  });
+
   test("replaces the canonical epoch without replaying reconstructed parent rows", async () => {
     const { manager, session, agentId } = await createRewindHarness();
     const history = Array.from({ length: 250 }, (_, index) => ({

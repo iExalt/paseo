@@ -5,6 +5,7 @@ import * as sdk from "@cursor/sdk";
 import { expect, test } from "vitest";
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
 import { readCursorHistory, type HistorySdk } from "./cursor-sdk-history.js";
+import { CursorForkLinks, withCursorForkBlobs } from "./cursor-sdk-fork-store.js";
 import { CursorRewindError, forkCursorConversation } from "./cursor-sdk-rewind.js";
 import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 
@@ -15,7 +16,9 @@ const ref = (rootBlobId: string) => ({ schemaVersion: 1 as const, rootBlobId });
 
 interface Fixture {
   root: string;
+  raw: sdk.LocalAgentStore;
   store: sdk.LocalAgentStore;
+  links: CursorForkLinks;
   journal: CursorTurnJournal;
   listed: string[];
   historySdk: (fail?: Error) => HistorySdk;
@@ -23,7 +26,9 @@ interface Fixture {
 
 async function withStore(callback: (fixture: Fixture) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), "cursor-sdk-rewind-"));
-  const store = new sdk.JsonlLocalAgentStore(root);
+  const raw = new sdk.JsonlLocalAgentStore(root);
+  const links = new CursorForkLinks(root);
+  const store = withCursorForkBlobs(raw, links);
   const listed: string[] = [];
   const historySdk = (fail?: Error): HistorySdk => ({
     ...sdk,
@@ -56,7 +61,9 @@ async function withStore(callback: (fixture: Fixture) => Promise<void>) {
     }
     await callback({
       root,
+      raw,
       store,
+      links,
       journal: new CursorTurnJournal(root, agentId),
       listed,
       historySdk,
@@ -147,6 +154,7 @@ test("forks the conversation before a prompt and leaves the source chat intact",
 
     const fork = await forkCursorConversation({
       sdk: history,
+      links: fixture.links,
       store,
       journal,
       agentId,
@@ -167,11 +175,19 @@ test("forks the conversation before a prompt and leaves the source chat intact",
     expect(forkRuns.map((r) => r.turnNumber)).toEqual([1, 2]);
     const sourceRunIds = new Set(sourceRuns.map((r) => r.runId));
     expect(forkRuns.filter((r) => sourceRunIds.has(r.runId))).toEqual([]);
+    // The fork reads the source's blobs through its link instead of copying them.
     expect((await store.checkpoints.list({ filter: { agentIds: [fork.agentId] } })).items).toEqual([
       "blob-1",
       "blob-2",
       "blob-3",
     ]);
+    expect(
+      (await fixture.raw.checkpoints.list({ filter: { agentIds: [fork.agentId] } })).items,
+    ).toEqual([]);
+    for (const forkRun of forkRuns) {
+      const events = await store.runEvents.list({ runId: forkRun.runId });
+      expect(events.items).toEqual([]);
+    }
     // The fork shows exactly the turns before the selected prompt, steers included.
     const forkHistory = await timeline(history, fixture, fork.agentId);
     expect(forkHistory).toEqual(sourceHistory.filter((row) => row.turnId !== "turn-3"));
@@ -196,6 +212,7 @@ test("rewinds the first prompt to an empty conversation after the reserved SDK r
 
     const fork = await forkCursorConversation({
       sdk: history,
+      links: fixture.links,
       store: fixture.store,
       journal: fixture.journal,
       agentId,
@@ -232,6 +249,7 @@ test("resolves a legacy native prompt from the projected history", async () => {
 
     const fork = await forkCursorConversation({
       sdk: history,
+      links: fixture.links,
       store,
       journal: fixture.journal,
       agentId,
@@ -275,6 +293,7 @@ test.each([
     await expect(
       forkCursorConversation({
         sdk: fixture.historySdk(),
+        links: fixture.links,
         store: fixture.store,
         journal: fixture.journal,
         agentId,
@@ -294,6 +313,7 @@ test("removes a fork whose conversation the SDK cannot load", async () => {
 
     const failure = forkCursorConversation({
       sdk: fixture.historySdk(new Error("cannot decrypt")),
+      links: fixture.links,
       store,
       journal: fixture.journal,
       agentId,
@@ -311,5 +331,88 @@ test("removes a fork whose conversation the SDK cannot load", async () => {
     expect(await fixture.journal.forAgent("agent-fork").read()).toEqual([]);
     expect(await store.agents.get({ agentId })).toEqual(sourceAgent);
     expect((await store.runs.list({ filter: { agentIds: [agentId] } })).items).toEqual(sourceRuns);
+  });
+});
+
+test("rewinds a rewound chat again through its chain of forks", async () => {
+  await withStore(async (fixture) => {
+    await threeTurns(fixture);
+    const { root, raw, store } = fixture;
+    const history = fixture.historySdk();
+    const first = await forkCursorConversation({
+      sdk: history,
+      links: fixture.links,
+      store,
+      journal: fixture.journal,
+      agentId,
+      messageId: "message-3",
+    });
+
+    const second = await forkCursorConversation({
+      sdk: history,
+      links: fixture.links,
+      store,
+      journal: first.journal,
+      agentId: first.agentId,
+      messageId: "message-2",
+    });
+
+    expect((await store.agents.get({ agentId: second.agentId }))?.latestCheckpoint).toEqual(
+      ref("blob-1"),
+    );
+    expect((await timeline(history, fixture, second.agentId)).map((row) => row.turnId)).toEqual([
+      "turn-1",
+      "turn-1",
+    ]);
+    // A daemon restart reads the links from disk.
+    const reopened = withCursorForkBlobs(raw, new CursorForkLinks(root));
+    const text = (data: Uint8Array | null) => data && new TextDecoder().decode(data);
+    expect(
+      text(await reopened.checkpoints.get({ agentId: second.agentId, blobId: "blob-3" })),
+    ).toBe("blob-3");
+    // The SDK saves a blob it already read through an ancestor with update().
+    const data = new TextEncoder().encode("rewritten");
+    await reopened.checkpoints.update({ agentId: second.agentId, blobId: "blob-1", data });
+    expect(text(await raw.checkpoints.get({ agentId: second.agentId, blobId: "blob-1" }))).toBe(
+      "rewritten",
+    );
+    expect(text(await raw.checkpoints.get({ agentId, blobId: "blob-1" }))).toBe("blob-1");
+  });
+});
+
+test("removes a fork that fails before its agent row is written", async () => {
+  await withStore(async (fixture) => {
+    await threeTurns(fixture);
+    const { root, raw, store } = fixture;
+    const sourceRuns = (await raw.runs.list({ filter: { agentIds: [agentId] } })).items;
+    const failing: sdk.LocalAgentStore = {
+      ...store,
+      agents: {
+        get: (input) => store.agents.get(input),
+        update: (input) => store.agents.update(input),
+        delete: (input) => store.agents.delete(input),
+        list: (input) => store.agents.list(input),
+        create: async () => {
+          throw new Error("disk full");
+        },
+      },
+    };
+
+    await expect(
+      forkCursorConversation({
+        sdk: fixture.historySdk(),
+        links: fixture.links,
+        store: failing,
+        journal: fixture.journal,
+        agentId,
+        messageId: "message-3",
+        newAgentId: "agent-fork",
+      }),
+    ).rejects.toThrow(/could not recover the conversation.*disk full/);
+
+    expect((await raw.runs.list({ filter: { agentIds: ["agent-fork"] } })).items).toEqual([]);
+    expect(await new CursorForkLinks(root).lineage("agent-fork")).toEqual(["agent-fork"]);
+    expect(await fixture.journal.forAgent("agent-fork").read()).toEqual([]);
+    expect((await raw.runs.list({ filter: { agentIds: [agentId] } })).items).toEqual(sourceRuns);
   });
 });

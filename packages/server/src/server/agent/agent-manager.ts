@@ -920,6 +920,23 @@ export interface RetiredInternalAgent {
   lastMessage: string | null;
 }
 
+// A prompt replayed from provider history is already in the provider's own
+// history, so its ID is the one the provider rewinds to.
+function historyRowOptions(event: {
+  item: AgentTimelineItem;
+  timestamp?: string;
+  turnId?: string;
+}) {
+  const { item } = event;
+  return {
+    timestamp: event.timestamp,
+    turnId: event.turnId,
+    ...(item.type === "user_message" && item.messageId
+      ? { providerMessageId: item.messageId }
+      : {}),
+  };
+}
+
 export class AgentManager {
   private readonly pluginLifecycle: PluginLifecycle | undefined;
   private readonly retiredInternalAgents = new Map<
@@ -5679,10 +5696,7 @@ export class AgentManager {
       }
     }
     for (const event of historyEvents) {
-      const row = this.recordTimeline(agent.id, event.item, {
-        timestamp: event.timestamp,
-        turnId: event.turnId,
-      });
+      const row = this.recordTimeline(agent.id, event.item, historyRowOptions(event));
       if (broadcastTimeline) {
         this.dispatchStream(agent.id, event, {
           seq: row.seq,
@@ -5747,10 +5761,7 @@ export class AgentManager {
       }
     }
     for (const event of historyEvents) {
-      const row = this.recordTimeline(agent.id, event.item, {
-        timestamp: event.timestamp,
-        turnId: event.turnId,
-      });
+      const row = this.recordTimeline(agent.id, event.item, historyRowOptions(event));
       if (deferredBroadcast) {
         timelineEvents.push({ event, row });
       } else if (broadcast) {
