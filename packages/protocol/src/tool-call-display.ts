@@ -130,6 +130,7 @@ function buildCanonicalDetailDisplay(input: ToolCallDisplayInput): DetailDisplay
 // Cursor SDK tool names are camelCase identifiers with no Paseo equivalent.
 const CURSOR_TOOL_DISPLAY_NAMES: ReadonlyMap<string, string> = new Map([
   ["delete", "Delete"],
+  ["generateImage", "Generate image"],
   ["ls", "List directory"],
   ["readLints", "Read lints"],
   ["updateTodos", "Update todos"],

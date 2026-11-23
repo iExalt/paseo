@@ -333,19 +333,43 @@ function escapeMarkdownImageSource(value: string): string {
   return markdownImageSource(value).replace(/\\/g, "\\\\").replace(/\)/g, "\\)");
 }
 
+const OMITTED_IMAGE_TEXT =
+  "Image output was omitted because it was not available as a file path or URL.";
+
+function imageMessage(source: string, altText: string | null | undefined): AgentTimelineItem {
+  const alt = escapeMarkdownImageAlt(nonEmptyString(altText) ?? "Image");
+  return {
+    type: "assistant_message",
+    // Image outputs remain standalone paragraphs when adjacent assistant chunks merge.
+    text: `\n\n![${alt}](${escapeMarkdownImageSource(source)})\n\n`,
+  };
+}
+
+// One or more whole image paragraphs as rendered above (merged adjacent
+// outputs included), or the omitted-image notice. Callers use it to tell image
+// output apart from an assistant's answer text.
+const PROVIDER_IMAGE_MESSAGE = /^(?:\n\n!\[(?:[^\]\\]|\\.)*\]\((?:[^)\\]|\\.)*\)\n\n)+$/;
+
+export function isProviderImageMessage(text: string): boolean {
+  return text === OMITTED_IMAGE_TEXT || PROVIDER_IMAGE_MESSAGE.test(text);
+}
+
+// Synchronous variant for an image that already has a file path, for callers
+// such as history replay that cannot await materialization.
+export function renderProviderImagePathAsAssistantMarkdown(image: {
+  path: string | null | undefined;
+  altText?: string | null;
+}): AgentTimelineItem | null {
+  const source = nonEmptyString(image.path);
+  return source && !isDataImageSource(source) ? imageMessage(source, image.altText) : null;
+}
+
 export async function renderProviderImageOutputAsAssistantMarkdown(
   image: ProviderImageOutput,
   options: RenderProviderImageOutputOptions = {},
 ): Promise<AgentTimelineItem | null> {
   const source = nonEmptyString(image.path) ?? nonEmptyString(image.url);
-  if (source && !isDataImageSource(source)) {
-    const altText = escapeMarkdownImageAlt(nonEmptyString(image.altText) ?? "Image");
-    return {
-      type: "assistant_message",
-      // Image outputs remain standalone paragraphs when adjacent assistant chunks merge.
-      text: `\n\n![${altText}](${escapeMarkdownImageSource(source)})\n\n`,
-    };
-  }
+  if (source && !isDataImageSource(source)) return imageMessage(source, image.altText);
 
   const data = nonEmptyString(image.data) ?? (source && isDataImageSource(source) ? source : null);
   if (!data) {
@@ -366,15 +390,7 @@ export async function renderProviderImageOutputAsAssistantMarkdown(
     materialized = null;
   }
   if (!materialized?.path || isDataImageSource(materialized.path)) {
-    return {
-      type: "assistant_message",
-      text: "Image output was omitted because it was not available as a file path or URL.",
-    };
+    return { type: "assistant_message", text: OMITTED_IMAGE_TEXT };
   }
-
-  const altText = escapeMarkdownImageAlt(nonEmptyString(image.altText) ?? "Image");
-  return {
-    type: "assistant_message",
-    text: `\n\n![${altText}](${escapeMarkdownImageSource(materialized.path)})\n\n`,
-  };
+  return imageMessage(materialized.path, image.altText);
 }

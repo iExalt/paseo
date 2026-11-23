@@ -23,8 +23,9 @@ import {
   cursorTimelineItems,
   mapCursorTool,
   mapCursorUsage,
-  projectCursorTool,
+  replayCursorTool,
 } from "./cursor-sdk-telemetry.js";
+import { isProviderImageMessage } from "./provider-image-output.js";
 import type {
   CursorHistoryTurn,
   CursorHistoryUser,
@@ -49,6 +50,11 @@ const checkpointPromptSchema = z.object({
     }),
   }),
 });
+
+// Image output is shown as assistant markdown but is not the assistant's answer.
+function isAnswerText(item: AgentTimelineItem): boolean {
+  return item.type === "assistant_message" && !isProviderImageMessage(item.text);
+}
 
 function cursorUserMessageId(runId: string): string {
   return `${runId}:user`;
@@ -247,7 +253,7 @@ async function readJournalItems(
   run?: LocalAgentRunDocument,
 ): Promise<{ events: AgentTimelineItem[]; incomplete: boolean }> {
   const events = (await journal.readItems(record.id)).flatMap((item) =>
-    item.type === "tool_call" ? cursorTimelineItems(projectCursorTool(item)) : [item],
+    item.type === "tool_call" ? replayCursorTool(item) : [item],
   );
   if (!run || (!record.recovered && (events.length > 0 || record.terminal))) {
     return { events, incomplete: false };
@@ -286,6 +292,8 @@ async function readJournalItems(
 function recoveryComparable(events: AgentTimelineItem[]): AgentTimelineItem[] {
   const tools = new Map<string, ToolCallTimelineItem>();
   return events.flatMap<AgentTimelineItem>((item) => {
+    // Live MCP images have no native counterpart; generated images exist on both sides.
+    if (item.type === "assistant_message" && !isAnswerText(item)) return [];
     if (item.type !== "tool_call") return [item];
     const { metadata, ...withoutMetadata } = item;
     const raw = metadata?.cursorSdk;
@@ -305,7 +313,9 @@ function isPartialAnswer(record: CursorHistoryTurn, events: AgentTimelineItem[])
   if (!record.recovered || record.terminal?.status !== "finished" || !record.terminal.fallback)
     return false;
   const assistant = events
-    .flatMap((event) => (event.type === "assistant_message" ? [event.text] : []))
+    .flatMap((event) =>
+      event.type === "assistant_message" && isAnswerText(event) ? [event.text] : [],
+    )
     .join("");
   return Boolean(assistant && assistant !== record.terminal.fallback);
 }
@@ -346,7 +356,7 @@ async function readJournalTurn(
   if (
     record.terminal?.status === "finished" &&
     record.terminal.fallback &&
-    !items.some((item) => item.type === "assistant_message")
+    !items.some(isAnswerText)
   ) {
     items.push({ type: "assistant_message", text: record.terminal.fallback });
   }
@@ -374,11 +384,7 @@ async function readLegacyTurn(
   for (const item of terminalTools(tools, run.status === "expired" ? "error" : run.status)) {
     writeHistoryItem(items, positions, item);
   }
-  if (
-    run.status === "finished" &&
-    run.result &&
-    !items.some((item) => item.type === "assistant_message")
-  ) {
+  if (run.status === "finished" && run.result && !items.some(isAnswerText)) {
     items.push({ type: "assistant_message", text: run.result });
   }
   if (run.status === "error") {
