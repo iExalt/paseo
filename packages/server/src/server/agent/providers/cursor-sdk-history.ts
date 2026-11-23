@@ -260,6 +260,9 @@ async function readJournalItems(
   const events: AgentTimelineItem[] = [];
   for (const item of await journal.readItems(record.id)) {
     starts.push(events.length);
+    // A /compact turn shows only its compaction card. Older journals and the
+    // native stream can both carry the summary text.
+    if (record.compact && isAnswerText(item)) continue;
     events.push(...(item.type === "tool_call" ? replayCursorTool(item) : [item]));
   }
   const steerAt = (after: number) => starts[after] ?? events.length;
@@ -271,19 +274,10 @@ async function readJournalItems(
     for (const event of await readNativeItems(sdk, store, runId, {
       includeUser: false,
       summaryTrigger: record.compact ? "manual" : "auto",
-    }))
+    })) {
+      if (record.compact && isAnswerText(event)) continue;
       native.push(event);
-  }
-  // summarize() returns its text in wait(), outside the native summary event stream.
-  const last = events.at(-1);
-  if (
-    record.compact &&
-    run.status === "finished" &&
-    last?.type === "assistant_message" &&
-    last.text === run.result &&
-    !native.some((item) => item.type === "assistant_message")
-  ) {
-    native.push(last);
+    }
   }
   if (events.length === 0) {
     return {
@@ -381,6 +375,7 @@ async function readJournalTurn(
     return { items, errorCard: renderErrorCard(record.terminal.message, record.terminal.code) };
   }
   if (
+    !record.compact &&
     record.terminal?.status === "finished" &&
     record.terminal.fallback &&
     !items.some(isAnswerText)
