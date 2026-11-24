@@ -92,7 +92,7 @@ import { openCursorSdkStore } from "./cursor-sdk-store.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
 import { CursorQuestions, cursorQuestionToolName } from "./cursor-sdk-questions.js";
 import { cursorSpeakTool, cursorSpeakToolName } from "./cursor-sdk-voice.js";
-import { CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
+import { CursorTurnJournal, cursorInstructionsHash } from "./cursor-sdk-turn-journal.js";
 import { mapCursorUsage } from "./cursor-sdk-telemetry.js";
 import {
   cursorCatalogOptionKeys,
@@ -769,10 +769,14 @@ class CursorSdkAgent implements AgentSession {
       const userAndContext = renderSelectedCursorSkills(input.text, skills);
       const workspaceInstructions = await resolveInstructions?.();
       const instructions = composeSystemPromptParts(workspaceInstructions, this.instructions);
-      const text = instructions
+      // Send instructions once per context window, as Codex does.
+      const hash = instructions ? cursorInstructionsHash(instructions) : undefined;
+      const deliver = hash !== undefined && hash !== (await execution.instructionsInWindow());
+      const text = deliver
         ? RUN_INSTRUCTIONS_START + instructions + RUN_INSTRUCTIONS_END + userAndContext
         : userAndContext;
       await checkDispatch();
+      if (deliver) await execution.recordInstructions(hash);
       return { ...input, text };
     };
     const owned = await this.tryOwnedExecution(execution, throwIfStopped);
