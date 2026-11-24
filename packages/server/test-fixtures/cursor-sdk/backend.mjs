@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import { createServer } from "node:http";
 import { once } from "node:events";
-import { selectMaintenanceTurn } from "./maintenance-wire.mjs";
 import { selectP5Turn } from "./interactions.mjs";
 
 export const sdkVersion = "1.4.2";
@@ -131,7 +130,7 @@ function shellMessages(workspace, script = "cursor-canary.sh") {
 
 export async function startBackend(
   workspace,
-  { allowCodexPrewarm, selectSkillTurn, models, p5, maintenance },
+  { allowCodexPrewarm, selectSkillTurn, models, p5, inspectRequest },
 ) {
   const shell = shellMessages(workspace);
   const stoppedShell = shellMessages(workspace, "p8-held.sh");
@@ -142,9 +141,6 @@ export async function startBackend(
   const failures = [];
   let runs = 0;
   let shellReplies = 0;
-  let maintenanceSummaries = 0;
-  let maintenanceContinuations = 0;
-  let maintenanceForks = 0;
   const nextSteer = [];
   const steers = [];
   const wire = [];
@@ -218,30 +214,12 @@ export async function startBackend(
     const request = initialRequests.get(key);
     if (
       !stream ||
-      ((selectSkillTurn || p5 || maintenance) && !request) ||
+      ((selectSkillTurn || p5 || inspectRequest) && !request) ||
       stream.shell ||
       stream.p5
     )
       return;
     initialRequests.delete(key);
-    const maintenanceTurn =
-      maintenance &&
-      request &&
-      selectMaintenanceTurn(request, {
-        bytes,
-        frame,
-        number,
-        fields,
-        interaction,
-        assistantText,
-      });
-    if (maintenanceTurn) {
-      maintenanceSummaries += Number(maintenanceTurn.summarize);
-      maintenanceContinuations += Number(maintenanceTurn.continued);
-      maintenanceForks += Number(maintenanceTurn.forked);
-      maintenanceTurn.respond(stream.response);
-      return;
-    }
     const p5Turn =
       p5 && request && selectP5Turn(request, { bytes, frame, number, fields, concat: join });
     if (p5Turn) {
@@ -260,7 +238,7 @@ export async function startBackend(
     const nested = outer[4] ?? Buffer.from(outer[1]?.toString() ?? "", "hex");
     const client = fields(nested);
     if (models && Buffer.isBuffer(client[1])) wire.push(client[1]);
-    if ((selectSkillTurn || p5 || maintenance) && client[1]) {
+    if ((selectSkillTurn || p5 || inspectRequest) && client[1]) {
       // RunSSE only carries the request ID. The initial run action and its
       // selected context, including images, arrive on the BidiAppend channel.
       const key = fields(outer[2])[1].toString();
@@ -413,15 +391,6 @@ export async function startBackend(
     },
     get runs() {
       return runs;
-    },
-    get maintenanceSummaries() {
-      return maintenanceSummaries;
-    },
-    get maintenanceContinuations() {
-      return maintenanceContinuations;
-    },
-    get maintenanceForks() {
-      return maintenanceForks;
     },
     get shellReplies() {
       return shellReplies;
