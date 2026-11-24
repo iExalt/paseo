@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.4](https://github.com/iExalt/paseo/compare/paseo-v0.37.3...paseo-v0.37.4) (2026-11-24)
+
+
+### Bug Fixes
+
+* **app:** open a markdown link once when its label is a URL ([#607](https://github.com/iExalt/paseo/issues/607)) ([b71a324](https://github.com/iExalt/paseo/commit/b71a324cb3351350ab414ff21b95b2e7eb127131))
+
 ## [0.37.3](https://github.com/iExalt/paseo/compare/paseo-v0.37.2...paseo-v0.37.3) (2026-11-24)
 
 
