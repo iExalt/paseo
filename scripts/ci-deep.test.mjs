@@ -9,7 +9,14 @@ import test from "node:test";
 import { chmod, lstat, mkdir, readFile, symlink, writeFile } from "node:fs/promises";
 import { removeOwnedTree } from "../packages/desktop/e2e/remove-owned-tree.mjs";
 import { load } from "js-yaml";
-import { deepCommands, runDeep, validateDeepSource } from "../.github/scripts/ci-deep.mjs";
+import {
+  deepCacheKeys,
+  deepCommands,
+  ensurePlaywrightChromium,
+  parsePlaywrightInstallLocations,
+  runDeep,
+  validateDeepSource,
+} from "../.github/scripts/ci-deep.mjs";
 import {
   elevatedOwnedProcesses,
   ownedProcesses,
@@ -281,4 +288,97 @@ test("deep entrypoint stops at a failed prerequisite or journey", () => {
     );
     assert.equal(calls, failure + 1);
   }
+});
+
+test("deep cache keys ignore release version bumps and cache saves are restricted to dev dispatches", async () => {
+  const env = { ImageOS: "ubuntu26", NPM_VERSION: "11.20.0" };
+  const keys = await deepCacheKeys(undefined, env);
+  assert.match(keys.playwright_key, /^deep-playwright-v1-ubuntu26-.+-pw[0-9]+\.[0-9]+\.[0-9]+/);
+  assert.ok(keys.metro_key.startsWith(keys.metro_prefix));
+  assert.ok(keys.metro_path.endsWith("metro-cache"));
+
+  const workflow = load(
+    readFileSync(new URL("../.github/workflows/ci-deep.yml", import.meta.url), "utf8"),
+  );
+  const steps = workflow.jobs.browser.steps;
+  const saveSteps = steps.filter((step) => step.uses?.startsWith("actions/cache/save@"));
+  assert.equal(saveSteps.length, 2);
+  for (const step of saveSteps) {
+    assert.match(step.if, /matrix\.lane == 'browser'/);
+    assert.match(step.if, /github\.event_name == 'workflow_dispatch'/);
+    assert.match(step.if, /github\.ref == 'refs\/heads\/dev'/);
+  }
+  const restoreMetro = steps.find((step) => step.id === "restore-metro");
+  assert.ok(restoreMetro);
+  assert.equal(
+    restoreMetro.with["restore-keys"],
+    "${{ !(github.event_name == 'workflow_dispatch' && matrix.lane == 'browser') && steps.deep-caches.outputs.metro_prefix || '' }}",
+  );
+});
+
+test("ensurePlaywrightChromium skips install when binary and shared libraries are ready and falls back otherwise", () => {
+  const dryRunOut = [
+    "Chrome Headless Shell 153.0 (playwright chromium-headless-shell v1243)",
+    "  Install location:    /cache/chromium_headless_shell-1243",
+    "FFmpeg (playwright ffmpeg v1011)",
+    "  Install location:    /cache/ffmpeg-1011",
+  ].join("\n");
+  assert.deepEqual(parsePlaywrightInstallLocations(dryRunOut), [
+    "/cache/chromium_headless_shell-1243",
+    "/cache/ffmpeg-1011",
+  ]);
+
+  // Warm hit: installed + ldd clean -> skips install
+  const warmCalls = [];
+  const warm = ensurePlaywrightChromium({
+    platform: "linux",
+    exists: () => true,
+    findBinary: () => "/cache/chromium_headless_shell-1243/chrome-headless-shell",
+    run: (cmd, args) => {
+      warmCalls.push([cmd, args]);
+      if (cmd === "npm") return { status: 0, stdout: dryRunOut, stderr: "" };
+      if (cmd === "ldd")
+        return { status: 0, stdout: "libnss3.so => /lib/libnss3.so\n", stderr: "" };
+      throw new Error(`Unexpected command ${cmd}`);
+    },
+  });
+  assert.equal(warm.skipped, true);
+  assert.equal(warmCalls.length, 2);
+
+  // Missing shared library -> falls back to playwright install --with-deps --only-shell chromium
+  const missingLibCalls = [];
+  const missingLib = ensurePlaywrightChromium({
+    platform: "linux",
+    exists: () => true,
+    findBinary: () => "/cache/chromium_headless_shell-1243/chrome-headless-shell",
+    run: (cmd, args) => {
+      missingLibCalls.push([cmd, args]);
+      if (cmd === "npm" && args.includes("--dry-run"))
+        return { status: 0, stdout: dryRunOut, stderr: "" };
+      if (cmd === "ldd") return { status: 0, stdout: "libnss3.so => not found\n", stderr: "" };
+      if (cmd === "npm" && args.includes("--with-deps")) return { status: 0 };
+      throw new Error(`Unexpected command ${cmd} ${args.join(" ")}`);
+    },
+  });
+  assert.equal(missingLib.skipped, false);
+  assert.equal(missingLibCalls.length, 3);
+  assert.ok(missingLibCalls[2][1].includes("--with-deps"));
+  assert.ok(missingLibCalls[2][1].includes("--only-shell"));
+
+  // Cache miss -> skips ldd and installs directly
+  const missCalls = [];
+  const miss = ensurePlaywrightChromium({
+    platform: "linux",
+    exists: () => false,
+    findBinary: () => null,
+    run: (cmd, args) => {
+      missCalls.push([cmd, args]);
+      if (cmd === "npm" && args.includes("--dry-run"))
+        return { status: 0, stdout: dryRunOut, stderr: "" };
+      if (cmd === "npm" && args.includes("--with-deps")) return { status: 0 };
+      throw new Error(`Unexpected command ${cmd}`);
+    },
+  });
+  assert.equal(miss.skipped, false);
+  assert.equal(missCalls.length, 2);
 });
