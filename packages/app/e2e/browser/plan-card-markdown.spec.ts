@@ -119,7 +119,9 @@ async function openSharedMarkdownFile(page: Page, name: string) {
   await page.getByTestId("assistant-message").getByRole("link", { name, exact: true }).click();
 }
 
-test("linked inline code keeps code typography and wraps long paths", async ({
+const QUERY_URL = "https://example.com/?a=1&b=2";
+
+test("linked inline code keeps code typography, wraps long paths and never nests links", async ({
   page,
 }, testInfo) => {
   const longPath =
@@ -131,7 +133,11 @@ test("linked inline code keeps code typography and wraps long paths", async ({
       mockAssistantResponse:
         "Compare `ordinary_token`, `file.ts:12`, `https://example.com`. At the end of this line open `" +
         longPath +
-        "`.",
+        "`.\n\n[" +
+        QUERY_URL +
+        "](" +
+        QUERY_URL +
+        ")",
     },
     initialPrompt: "Show inline code",
   });
@@ -156,6 +162,9 @@ test("linked inline code keeps code typography and wraps long paths", async ({
     }
     expect(long.lines).toBeGreaterThan(1);
     expect(long.right).toBeLessThanOrEqual(measurements.right + 1);
+    // MD4C autolinks this label inside its own link; one click must open one URL.
+    await expect(message.getByRole("link", { name: QUERY_URL, exact: true })).toHaveCount(1);
+    await expect(message.locator("a a")).toHaveCount(0);
   } finally {
     await session.cleanup();
   }
