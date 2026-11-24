@@ -237,7 +237,16 @@ const PROVIDER_CLIENT_FACTORIES: Record<string, ProviderClientFactory> = {
       command: getCursorACPCommand(runtimeSettings),
       env: runtimeSettings?.env,
     }),
-  "cursor-sdk": (_logger, runtimeSettings) => new CursorSdkAgentClient(runtimeSettings),
+  "cursor-sdk": (logger, runtimeSettings) =>
+    new CursorSdkAgentClient(
+      runtimeSettings,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { logger },
+    ),
   opencode: (logger, runtimeSettings, options) =>
     new OpenCodeRuntimeClient(logger, runtimeSettings, {
       managedProcesses: options?.managedProcesses,
