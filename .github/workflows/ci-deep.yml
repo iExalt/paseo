@@ -48,22 +48,40 @@ jobs:
           persist-credentials: false
       - uses: ./.github/actions/setup-ci-tools
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: env.SOURCE_SHA != github.sha
         with:
           ref: ${{ env.SOURCE_SHA }}
           persist-credentials: false
       - name: Validate exact source and isolated configuration
         run: node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA" --plan
+      - name: Configure pinned npm installation
+        run: |
+          test "$(node --version)" = v26.13.0
+          test "$(npm --version)" = 11.20.0
+          echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+      # Reuse dev's read-only installed-dependency cache (written only by ci.yml on dev pushes).
+      - name: Bind installed dependency cache key
+        id: modules
+        run: |
+          key="$(NPM_VERSION="$(npm --version)" node .github/scripts/dependency-fingerprint.mjs routine-key)"
+          echo "key=$key" >> "$GITHUB_OUTPUT"
+      - name: Restore installed dependencies from dev
+        id: restore-modules
+        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        timeout-minutes: 3
+        with:
+          key: ${{ steps.modules.outputs.key }}
+          path: |
+            node_modules
+            packages/*/node_modules
       - name: Install locked dependencies
+        if: steps.restore-modules.outputs.cache-hit != 'true'
         env:
           npm_config_fetch_timeout: "30000"
           npm_config_fetch_retries: "2"
           npm_config_fetch_retry_mintimeout: "1000"
           npm_config_fetch_retry_maxtimeout: "5000"
-        run: |
-          test "$(node --version)" = v26.13.0
-          test "$(npm --version)" = 11.20.0
-          echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
-          time npm ci --cache "$RUNNER_TEMP/npm-cache"
+        run: time npm ci --cache "$RUNNER_TEMP/npm-cache"
       - name: Exercise isolated deep contracts
         run: node .github/scripts/ci-deep.mjs "$DEEP_LANE" "$SOURCE_SHA"
       - name: Bound retained diagnostics
