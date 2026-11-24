@@ -23,9 +23,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          fetch-depth: ${{ github.event_name != 'pull_request' && 1 || 0 }}
           persist-credentials: false
-      - uses: ./.github/actions/setup-ci-tools
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "26.13.0"
+          architecture: x64
+          package-manager-cache: false
       - id: plan
         name: Plan checks
         env:
@@ -47,7 +51,7 @@ jobs:
     timeout-minutes: 7
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 10
       matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
     env:
       CI: "true"
@@ -68,6 +72,7 @@ jobs:
           test "$(node --version)" = v26.13.0
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+          echo "NODE_COMPILE_CACHE=$RUNNER_TEMP/node-compile-cache" >> "$GITHUB_ENV"
       # dependency-fingerprint.mjs owns the key; it ignores workspace version
       # bumps, so release PRs reuse dev's tree.
       - name: Bind installed dependency cache key

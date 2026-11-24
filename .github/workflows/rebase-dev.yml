@@ -84,7 +84,7 @@ jobs:
       contents: read
     strategy:
       fail-fast: false
-      max-parallel: 8
+      max-parallel: 10
       matrix: ${{ fromJSON(needs.rebase.outputs.matrix) }}
     env:
       CI: "true"
@@ -120,6 +120,7 @@ jobs:
           test "$(node --version)" = v26.13.0
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
+          echo "NODE_COMPILE_CACHE=$RUNNER_TEMP/node-compile-cache" >> "$GITHUB_ENV"
       - name: Bind installed dependency cache key
         id: modules
         run: |

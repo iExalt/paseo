@@ -78,7 +78,7 @@ test("logs --since filters history and live output through the CLI and daemon", 
           ...env,
           HOME: cliHome,
           USERPROFILE: cliHome,
-          NODE_COMPILE_CACHE: join(cliHome, "node-compile-cache"),
+          NODE_COMPILE_CACHE: process.env.NODE_COMPILE_CACHE || join(cliHome, "node-compile-cache"),
         },
         stdio: ["ignore", "pipe", "pipe"],
         timeout: 25_000,
@@ -140,10 +140,12 @@ test("logs --since filters history and live output through the CLI and daemon", 
       const logs = (args: string[]) =>
         runLocalPaseo(["--host", host, ...args], {}, ctx.daemon.paseoHome);
 
-      const missing = await logs(["logs", "missing-agent", "--json"]);
+      const [missing, baseline] = await Promise.all([
+        logs(["logs", "missing-agent", "--json"]),
+        logs(["logs", agent.id]),
+      ]);
       assert.strictEqual(missing.exitCode, 1, missing.stderr);
       assert.strictEqual(JSON.parse(missing.stderr).error.code, "AGENT_NOT_FOUND");
-      const baseline = await logs(["logs", agent.id]);
       assert.strictEqual(baseline.exitCode, 0, baseline.stderr);
       assert.strictEqual(baseline.stdout, "[User] OLD_USER\nOLD_REPLY\n");
 
@@ -161,15 +163,41 @@ test("logs --since filters history and live output through the CLI and daemon", 
         text: "OLD_REPLY",
       });
       const sourceBefore = await ctx.client.fetchAgentTimeline(structuredAgent.id, { limit: 0 });
-      const forked = await logs([
-        "agent",
-        "fork",
-        structuredAgent.id,
-        "continue",
-        "--no-wait",
-        "--json",
-        "--relationship",
-        "detached",
+      const rewindable = await ctx.client.createAgent({
+        provider: "claude",
+        cwd: ctx.daemon.paseoHome,
+      });
+      const [forked, rewindResult, unsupportedRewind] = await Promise.all([
+        logs([
+          "agent",
+          "fork",
+          structuredAgent.id,
+          "continue",
+          "--no-wait",
+          "--json",
+          "--relationship",
+          "detached",
+        ]),
+        logs([
+          "agent",
+          "rewind",
+          rewindable.id,
+          "--to",
+          "message-1",
+          "--mode",
+          "conversation",
+          "--json",
+        ]),
+        logs([
+          "agent",
+          "rewind",
+          structuredAgent.id,
+          "--to",
+          "missing",
+          "--mode",
+          "files",
+          "--json",
+        ]),
       ]);
       assert.strictEqual(forked.exitCode, 0, forked.stderr);
       const forkId = JSON.parse(forked.stdout).agentId;
@@ -181,35 +209,11 @@ test("logs --since filters history and live output through the CLI and daemon", 
       assert.deepStrictEqual(sourceAfter.entries, sourceBefore.entries);
       const forkSnapshot = await ctx.client.fetchAgent({ agentId: forkId });
       assert.strictEqual(forkSnapshot?.agent.provider, "codex");
-      const rewindable = await ctx.client.createAgent({
-        provider: "claude",
-        cwd: ctx.daemon.paseoHome,
-      });
-      const rewindResult = await logs([
-        "agent",
-        "rewind",
-        rewindable.id,
-        "--to",
-        "message-1",
-        "--mode",
-        "conversation",
-        "--json",
-      ]);
       assert.strictEqual(rewindResult.exitCode, 0, rewindResult.stderr);
       assert.deepStrictEqual(rewindSession.recordedRewinds, [
         { mode: "conversation", messageId: "message-1" },
       ]);
       assert.strictEqual(JSON.parse(rewindResult.stdout).changed, true);
-      const unsupportedRewind = await logs([
-        "agent",
-        "rewind",
-        structuredAgent.id,
-        "--to",
-        "missing",
-        "--mode",
-        "files",
-        "--json",
-      ]);
       assert.strictEqual(unsupportedRewind.exitCode, 1, unsupportedRewind.stderr);
       assert.strictEqual(JSON.parse(unsupportedRewind.stderr).error.code, "UNSUPPORTED_FEATURE");
 
