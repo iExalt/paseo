@@ -34,7 +34,11 @@ import {
   materializeProviderImage,
   renderProviderImageOutputAsAssistantMarkdown,
 } from "./provider-image-output.js";
-import type { CursorHistoryTurn, CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
+import {
+  cursorInstructionsInWindow,
+  type CursorHistoryTurn,
+  type CursorTurnJournal,
+} from "./cursor-sdk-turn-journal.js";
 
 const OPERATION_DEADLINE_MS = 1_500;
 
@@ -48,6 +52,10 @@ export interface CursorTurnExecution {
   bindRun: (nativeRunId: string) => Promise<void>;
   attachFinish: (finish: (waitForTools: boolean, cancelTools: boolean) => Promise<void>) => void;
   setContextWindowMaxTokens: (maxTokens: number | undefined) => void;
+  /** Hash of the Paseo instructions already in the native context window. */
+  instructionsInWindow: () => Promise<string | undefined>;
+  /** Records, before dispatch, that this turn's message carries the instructions. */
+  recordInstructions: (hash: string) => Promise<void>;
   onModelCallCompleted: (usage: Pick<TokenUsage, "inputTokens" | "outputTokens">) => void;
 }
 
@@ -184,6 +192,11 @@ export class CursorRunController {
       },
       setContextWindowMaxTokens: (maxTokens) => {
         turn.contextWindowMaxTokens = maxTokens;
+      },
+      instructionsInWindow: async () => cursorInstructionsInWindow(await this.journal.read(), id),
+      recordInstructions: async (hash) => {
+        record.instructionsHash = hash;
+        await this.journal.save(record);
       },
       onModelCallCompleted: (usage) => {
         if (turn.record.compact) return;
@@ -427,6 +440,11 @@ export class CursorRunController {
         if (message.type === "summary" && message.status === "completed") {
           turn.latestModelCallUsedTokens = undefined;
           turn.contextClearedBySummary = true;
+          // The summary replaced the window; the next turn sends the instructions again.
+          if (!turn.record.summarized) {
+            turn.record.summarized = true;
+            await this.journal.save(turn.record);
+          }
           this.emit({
             type: "usage_updated",
             provider: PROVIDER,
