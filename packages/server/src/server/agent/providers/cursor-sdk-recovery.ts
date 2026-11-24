@@ -7,6 +7,8 @@ import { cursorUnresolvedSteerMessage, interruptedCursorRunMessage } from "./cur
 import type { CursorHistoryTurn, CursorTurnJournal } from "./cursor-sdk-turn-journal.js";
 
 import { waitForExecutionOwner } from "../execution-owner/owned-process.js";
+import { rm } from "node:fs/promises";
+import { assessProcessLedger } from "./cursor-sdk-process-ledger.js";
 
 export type OwnerTerminalProof = "recovery" | "domain-released" | "completed-writer";
 
@@ -40,9 +42,11 @@ async function reconcileNativeRows(
   agentId: string,
   turn: CursorHistoryTurn,
   recovered: boolean,
+  runIds = new Set([
+    ...(turn.executionRunIds ?? []),
+    ...(turn.nativeRunId ? [turn.nativeRunId] : []),
+  ]),
 ): Promise<void> {
-  const runIds = new Set(turn.executionRunIds);
-  if (turn.nativeRunId) runIds.add(turn.nativeRunId);
   const agent = await store.agents.get({ agentId });
   if (!agent || (agent.activeRunId && !runIds.has(agent.activeRunId))) {
     throw ownerBlocked(turn, "no longer matches the agent's active run.");
@@ -149,6 +153,7 @@ export async function assertCursorRunReleased(
     if (turn.executionOwner) {
       await reconcileReleasedTurn(store, journal, agentId, turn);
     } else if (turn.nativeRunId) {
+      if (await recoverCrashedTurn(store, journal, agentId, turn)) continue;
       throw new Error(
         turn.unresolvedNativeFollowUp
           ? cursorUnresolvedSteerMessage()
@@ -163,6 +168,29 @@ export async function assertCursorRunReleased(
     }
   }
   await assertNativeRunReleased(store, agentId);
+}
+
+/**
+ * A turn without an execution owner ran its shells inside the daemon that
+ * crashed. Close it as interrupted once its process ledger shows that daemon
+ * and every shell it recorded are gone.
+ */
+async function recoverCrashedTurn(
+  store: LocalAgentStore,
+  journal: CursorTurnJournal,
+  agentId: string,
+  turn: CursorHistoryTurn,
+): Promise<boolean> {
+  // Paseo never learned which run the follow-up started, so it cannot close it.
+  if (turn.unresolvedNativeFollowUp || !turn.nativeRunId) return false;
+  const ledger = journal.processLedgerPath(turn.id);
+  if (!(await assessProcessLedger(ledger)).released) return false;
+  const runIds = new Set([turn.nativeRunId, ...(turn.followUpIds ?? [])]);
+  await reconcileNativeRows(store, journal, agentId, turn, true, runIds);
+  turn.joined = true;
+  await journal.save(turn);
+  await rm(ledger, { force: true });
+  return true;
 }
 
 async function assertNativeRunReleased(store: LocalAgentStore, agentId: string): Promise<void> {

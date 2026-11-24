@@ -21,7 +21,8 @@ import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
 import { cursorUnresolvedSteerMessage, streamItems, terminalTools } from "./cursor-sdk-history.js";
 import type { OwnerTerminalProof } from "./cursor-sdk-recovery.js";
 import { isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
-import { CursorToolProcesses } from "./cursor-sdk-tool-processes.js";
+import { CursorProcessLedger } from "./cursor-sdk-process-ledger.js";
+import { CursorToolProcesses, knownSpawnTracing } from "./cursor-sdk-tool-processes.js";
 import {
   addCursorUsage,
   cursorContextWindowUsedTokens,
@@ -144,7 +145,9 @@ export class CursorRunController {
       createdAt: new Date().toISOString(),
       steers: [],
     };
-    const toolProcesses = new CursorToolProcesses();
+    const toolProcesses = new CursorToolProcesses(
+      new CursorProcessLedger(this.journal.processLedgerPath(id), knownSpawnTracing),
+    );
     const interactions = new AbortController();
     const execution: CursorTurnExecution = {
       interactionSignal: interactions.signal,
@@ -204,6 +207,7 @@ export class CursorRunController {
     };
     const native = Promise.resolve().then(async () => {
       await this.journal.admit(record, prompt);
+      await toolProcesses.ledger?.open();
       return toolProcesses.scope(() =>
         send(
           input,
@@ -275,7 +279,8 @@ export class CursorRunController {
     const operation = (async (): Promise<SteerResult> => {
       await this.journal.saveInput(turn.record.id, id, prompt);
       if (turn.stopRequested || run.status !== "running") return { status: "unavailable" };
-      const outcome = await steer(text);
+      // A steer can start a follow-up run whose shells belong to this turn.
+      const outcome = await turn.toolProcesses.scope(() => steer(text));
       if (outcome === "revert_to_followup") {
         if (turn.stopRequested || (run.status as Run["status"]) === "cancelled") {
           throw new Error("Cursor SDK canceled the turn before steering could be delivered.");
@@ -701,6 +706,7 @@ export class CursorRunController {
         (turn.record.joined || (!turn.record.nativeRunId && !turn.record.executionOwner))
       ) {
         this.active = undefined;
+        turn.toolProcesses.close();
       }
       // startTurn rejection is projected by AgentManager before a turn has started.
       if (admitted) {
@@ -749,6 +755,7 @@ export class CursorRunController {
       await this.journal.save(turn.record);
     }
     if (this.active === turn) this.active = undefined;
+    turn.toolProcesses.close();
     const owner = turn.record.executionOwner;
     if (owner && turn.completedWriter) {
       // The turn has passed its last Stop gate. Retire the domain only after
