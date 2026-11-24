@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { connectToDaemon } from "../../utils/client.js";
 import { runPaseoCli, startTestDaemon } from "../../../tests/helpers/test-daemon.js";
@@ -8,8 +9,18 @@ describe("paseo logs JSON output", () => {
   let daemon: Awaited<ReturnType<typeof startTestDaemon>>;
   let agentId: string;
   let host: string;
+  let ownedCompileCacheDir: string | null = null;
+  let testEnv: NodeJS.ProcessEnv = {};
 
   beforeAll(async () => {
+    const compileCacheDir =
+      process.env.NODE_COMPILE_CACHE ||
+      (ownedCompileCacheDir = await mkdtemp(join(tmpdir(), "paseo-logs-json-cache-")));
+    testEnv = {
+      NODE_COMPILE_CACHE: compileCacheDir,
+      PASEO_DEFER_TERMINAL_WORKER_LAUNCH: "1",
+      PASEO_DISABLE_BUILTIN_PLUGINS: "1",
+    };
     await mkdir(".artifacts", { recursive: true });
     const paseoHome = await mkdtemp(resolve(".artifacts/logs-json-home-"));
     await writeFile(
@@ -30,6 +41,7 @@ describe("paseo logs JSON output", () => {
     daemon = await startTestDaemon({
       paseoHome,
       workDir: await mkdtemp(resolve(".artifacts/logs-json-work-")),
+      env: testEnv,
     });
     host = `127.0.0.1:${daemon.port}`;
     const client = await connectToDaemon({ target: { kind: "endpoint", host } });
@@ -48,16 +60,21 @@ describe("paseo logs JSON output", () => {
 
   afterAll(async () => {
     await daemon?.stop();
+    if (ownedCompileCacheDir) {
+      await rm(ownedCompileCacheDir, { recursive: true, force: true });
+    }
   });
 
-  it.each([
+  it.concurrent.each([
     { label: "top-level --json", args: ["logs", "--json"] },
     { label: "agent logs --json", args: ["agent", "logs", "--json"] },
     { label: "--format json alias", args: ["logs", "--format", "json"] },
   ])(
     "prints JSON through $label",
     async ({ args }) => {
-      const result = await runPaseoCli(daemon, [...args, agentId, "--host", host]);
+      const result = await runPaseoCli(daemon, [...args, agentId, "--host", host], {
+        env: testEnv,
+      });
       expect(result.exitCode, result.stderr).toBe(0);
       expect(JSON.parse(result.stdout)).toEqual({
         agentId,
