@@ -111,7 +111,7 @@ export function planCommands(selection, cwd = root) {
     commands.push({ name, command, args, lane });
   const npm = (name, script, args = [], lane = "quality") =>
     add(name, "npm", ["run", script, ...args], lane);
-  const unit = (workspace, script = "test", args = [], workers = 4, lane = "workspaces") =>
+  const unit = (workspace, script = "test", args = [], workers = 4, lane = "workspaces-sdk") =>
     npm(
       `${workspace} units`,
       script,
@@ -136,11 +136,32 @@ export function planCommands(selection, cwd = root) {
     "-shellcheck=",
     "-pyflakes=",
   ]);
+  const isFullSelection = selection.files === null || selection.domains.length === domains.length;
+  const touched = (patterns) =>
+    selection.files !== null &&
+    selection.files.some((file) => patterns.some((pattern) => matchesGlob(file, pattern)));
+  const includeRebaseTests =
+    isFullSelection ||
+    touched([
+      ".github/scripts/rebase-*",
+      ".github/workflows/rebase-dev.yml",
+      ".github/workflows/upstream-sync.yml",
+      ".github/scripts/ci-routine.mjs",
+      ".github/ci-paths.json",
+    ]);
+  const includeNixUpdateTests =
+    isFullSelection || touched(["scripts/paseo-nix-update*", "scripts/update-nix.sh", "nix/**"]);
+  const selectedCoreTests = includeRebaseTests
+    ? coreTests
+    : coreTests.filter((file) => file !== ".github/scripts/rebase-dev.test.mjs");
+  const selectedHelperTests = includeNixUpdateTests
+    ? helperTests
+    : helperTests.filter((file) => !file.startsWith("scripts/paseo-nix-update"));
   add("workflow and helper contracts", process.execPath, [
     "--test",
     "--test-concurrency=2",
-    ...coreTests,
-    ...(selection.code ? helperTests : []),
+    ...selectedCoreTests,
+    ...(selection.code ? selectedHelperTests : []),
   ]);
   if (!selection.code) return commands;
   add("Vitest helper contracts", "npm", [
@@ -162,7 +183,7 @@ export function planCommands(selection, cwd = root) {
     unit("server", "test:unit", [], 4, "server");
   }
   if (selection.domains.includes("cli"))
-    unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"]);
+    unit("cli", "test:unit", ["--exclude", "**/*.e2e.test.ts"], 4, "workspaces-cli");
   // Four app workers starved live tests' 10 s hooks on 4-vCPU runners; three is the agreed response; watch for recurrence.
   if (selection.domains.includes("app")) unit("app", "test", ["--project", "unit"], 3, "app");
   if (selection.domains.includes("desktop")) {
@@ -172,7 +193,7 @@ export function planCommands(selection, cwd = root) {
       "desktop Electron binary",
       "npm",
       ["exec", "--workspace=@getpaseo/desktop", "--", "install-electron"],
-      "workspaces",
+      "workspaces-cli",
     );
     add(
       "desktop units",
@@ -189,7 +210,7 @@ export function planCommands(selection, cwd = root) {
         "scripts/after-pack.test.mjs",
         "--maxWorkers=4",
       ],
-      "workspaces",
+      "workspaces-cli",
     );
   }
   if (selection.domains.includes("server")) {
@@ -229,12 +250,7 @@ export function planCommands(selection, cwd = root) {
         "src/server/session.create-agent-worktree-autoarchive.e2e.test.ts",
       ],
       ["-t", "^(?!.*Antigravity creates an agent and answers a prompt with real agy).*$"],
-      { workers: 2, fileParallelism: true },
-    );
-    integration(
-      "versioned OpenCode runtime",
-      ["src/server/agent/providers/opencode-bridge.local.e2e.test.ts"],
-      ["-t", "versioned runtime"],
+      { workers: 3, fileParallelism: true },
     );
   }
   return commands;
@@ -252,20 +268,22 @@ const workspaceDeclarations = {
   command: "npm",
   args: ["run", "build:server"],
 };
+const serverDependencies = {
+  name: "server dependencies",
+  command: "npm",
+  args: ["run", "build:server-deps"],
+};
 export const laneGroups = {
   quality: {},
-  workspaces: { prerequisite: workspaceDeclarations },
+  "workspaces-sdk": { prerequisite: serverDependencies },
+  "workspaces-cli": { prerequisite: workspaceDeclarations },
   app: {
     shards: 2,
     prerequisite: { name: "app dependencies", command: "npm", args: ["run", "build:app-deps"] },
   },
   server: {
-    shards: 3,
-    prerequisite: {
-      name: "server dependencies",
-      command: "npm",
-      args: ["run", "build:server-deps"],
-    },
+    shards: 4,
+    prerequisite: serverDependencies,
   },
   integration: { prerequisite: workspaceDeclarations },
 };

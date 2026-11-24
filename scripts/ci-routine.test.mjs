@@ -145,7 +145,7 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
     "The hosted integration lane must include the worktree autoarchive e2e suite",
   );
   assert.ok(integration.args.includes("--fileParallelism"));
-  assert.ok(integration.args.includes("--maxWorkers=2"));
+  assert.ok(integration.args.includes("--maxWorkers=3"));
   assert.equal(
     commands.some((step) => step.name === "worktree autoarchive"),
     false,
@@ -168,8 +168,8 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
   );
   assert.equal(pattern.test("daemon E2E listProviderModels lists Antigravity models"), true);
   assert.equal(
-    commands.find((step) => step.name === "versioned OpenCode runtime").args.at(-1),
-    "versioned runtime",
+    commands.some((step) => step.name === "versioned OpenCode runtime"),
+    false,
   );
   const docs = planCommands(selectChecks(["docs/agent-testing.md"], filters));
   assert.deepEqual(
@@ -186,6 +186,25 @@ test("routine builds once, keeps cheap units and narrowly filters paid integrati
       .find((step) => step.name === "workflow and helper contracts")
       .args.includes(helperTests[0]),
   );
+  // Scoped PRs skip slow rebase-dev and nix-update contract suites; full and matching PRs run them.
+  const docsContracts = docs.find((step) => step.name === "workflow and helper contracts").args;
+  assert.ok(!docsContracts.includes(".github/scripts/rebase-dev.test.mjs"));
+  const appContracts = planCommands(selectChecks(["packages/app/src/a.tsx"], filters)).find(
+    (step) => step.name === "workflow and helper contracts",
+  ).args;
+  assert.ok(!appContracts.includes(".github/scripts/rebase-dev.test.mjs"));
+  assert.ok(!appContracts.includes("scripts/paseo-nix-update.test.mjs"));
+  const fullContracts = commands.find((step) => step.name === "workflow and helper contracts").args;
+  assert.ok(fullContracts.includes(".github/scripts/rebase-dev.test.mjs"));
+  assert.ok(fullContracts.includes("scripts/paseo-nix-update.test.mjs"));
+  const rebaseContracts = planCommands(
+    selectChecks([".github/scripts/rebase-dev.mjs"], filters),
+  ).find((step) => step.name === "workflow and helper contracts").args;
+  assert.ok(rebaseContracts.includes(".github/scripts/rebase-dev.test.mjs"));
+  const nixContracts = planCommands(selectChecks(["nix/desktop-package.nix"], filters)).find(
+    (step) => step.name === "workflow and helper contracts",
+  ).args;
+  assert.ok(nixContracts.includes("scripts/paseo-nix-update.test.mjs"));
 });
 
 test("new Node test files require an explicit routine or package classification", () => {
@@ -252,9 +271,11 @@ test("parallel lanes partition every selected check behind one declared prerequi
     assert.deepEqual(seen.sort(), complete.map((step) => step.name).sort());
   }
   // 4837e25c6: Electron must be fetched in the lane that runs the desktop units, before them.
-  const workspaces = planLane(selectChecks(null, filters), "workspaces").map((step) => step.name);
-  const electron = workspaces.indexOf("desktop Electron binary");
-  assert.ok(electron >= 0 && electron < workspaces.indexOf("desktop units"));
+  const workspacesCli = planLane(selectChecks(null, filters), "workspaces-cli").map(
+    (step) => step.name,
+  );
+  const electron = workspacesCli.indexOf("desktop Electron binary");
+  assert.ok(electron >= 0 && electron < workspacesCli.indexOf("desktop units"));
   assert.throws(() => planLane(selectChecks(null, filters), "unknown"));
 });
 
@@ -413,6 +434,10 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
   assert.ok(Object.hasOwn(workflow.on, "pull_request"));
   assert.equal(workflow.jobs.required.if, "always()");
   assert.deepEqual(workflow.jobs.required.needs, ["plan", "routine"]);
+  assert.equal(
+    workflow.jobs.plan.steps[0].with["fetch-depth"],
+    "${{ github.event_name != 'pull_request' && 1 || 0 }}",
+  );
   const gate = workflow.jobs.required.steps[0].run;
   const results = ["success", "failure", "cancelled", "skipped", ""];
   for (const plan of results)

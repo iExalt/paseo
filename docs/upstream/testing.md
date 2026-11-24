@@ -240,7 +240,7 @@ mise exec -- bash packages/server/test-fixtures/cursor-sdk/loopback.sh \
 
 ## Pull-request test routing
 
-Fork PR checks use `.github/ci-paths.json` ownership and dependent-consumer rules; unknown and shared configuration changes select the full routine gate. Independent lanes run in parallel, including three server-unit shards. Dev pushes and rebased `dev` retain the complete routine gate.
+Fork PR checks use `.github/ci-paths.json` ownership and dependent-consumer rules; unknown and shared configuration changes select the full routine gate. Independent lanes run in parallel, including four server-unit shards. Dev pushes and rebased `dev` retain the complete routine gate.
 
 Required matrix legs are declared as statically named jobs. Their shared steps use YAML anchors, while job-level `if` conditions let GitHub report an unaffected leg as genuinely skipped without allocating a runner or losing the exact required-check name.
 
