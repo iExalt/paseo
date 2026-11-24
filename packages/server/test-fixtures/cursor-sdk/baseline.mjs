@@ -1,3 +1,4 @@
+import { fixtureStore } from "./fixture-store.mjs";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
@@ -90,8 +91,7 @@ export async function checkBaseline({
   const { DaemonClient } = await import(
     pathToFileURL(require.resolve("@getpaseo/client/internal/daemon-client"))
   );
-  const { JsonlLocalAgentStore } = require("@cursor/sdk");
-  const store = () => new JsonlLocalAgentStore(join(paseoHome, "cursor-sdk"));
+  const store = () => fixtureStore(require, join(paseoHome, "cursor-sdk"));
   const connect = async () => {
     const client = new DaemonClient({
       url: `ws://${listener()}/ws`,
