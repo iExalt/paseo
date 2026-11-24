@@ -1,5 +1,13 @@
 import { Text } from "react-native";
-import { forwardRef, useCallback, useMemo, useState, type ComponentProps } from "react";
+import {
+  createContext,
+  forwardRef,
+  useCallback,
+  useContext,
+  useMemo,
+  useState,
+  type ComponentProps,
+} from "react";
 import type {
   CodeBlockRendererProps,
   LinkRendererProps,
@@ -31,7 +39,16 @@ function WebCodeBlock({ code, language }: CodeBlockRendererProps) {
 // The library styles links inline, so a stylesheet :hover rule cannot underline them.
 const LINK_HOVER_STYLE = { textDecoration: "underline" } as const;
 
-function WebLink({ link, anchorProps, children }: LinkRendererProps) {
+// MD4C also autolinks a URL label whose query contains `&`, so `[url](url)` can nest a link inside
+// the markdown link. Each anchor opens on click and the click bubbles, which opened two tabs.
+const InsideLink = createContext(false);
+
+function WebLink(props: LinkRendererProps) {
+  if (useContext(InsideLink)) return props.children;
+  return <OuterWebLink {...props} />;
+}
+
+function OuterWebLink({ link, anchorProps, children }: LinkRendererProps) {
   const forgeShorthand = useForgeShorthand();
   // A forge reference like `#12` carries its web URL so hover, copy and new-tab opens work.
   const forgeUrl = link.sourceType === "text" ? forgeShorthand?.resolve(link.url) : null;
@@ -58,7 +75,7 @@ function WebLink({ link, anchorProps, children }: LinkRendererProps) {
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {children}
+      <InsideLink.Provider value>{children}</InsideLink.Provider>
     </a>
   );
   return (
