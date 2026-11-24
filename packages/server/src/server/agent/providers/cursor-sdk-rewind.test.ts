@@ -7,7 +7,11 @@ import type { AgentStreamEvent } from "../agent-sdk-types.js";
 import { readCursorHistory, type HistorySdk } from "./cursor-sdk-history.js";
 import { CursorForkLinks, withCursorForkBlobs } from "./cursor-sdk-fork-store.js";
 import { CursorRewindError, forkCursorConversation } from "./cursor-sdk-rewind.js";
-import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
+import {
+  CursorTurnJournal,
+  cursorInstructionsInWindow,
+  type CursorHistoryTurn,
+} from "./cursor-sdk-turn-journal.js";
 
 const agentId = "agent-source";
 const cwd = "/workspace";
@@ -146,6 +150,9 @@ test("forks the conversation before a prompt and leaves the source chat intact",
   await withStore(async (fixture) => {
     await threeTurns(fixture);
     const { store, journal } = fixture;
+    const [first, , third] = await journal.read();
+    await journal.save({ ...first, instructionsHash: "instructions" });
+    await journal.save({ ...third, instructionsHash: "dropped" });
     const history = fixture.historySdk();
     const sourceHistory = await timeline(history, fixture, agentId);
     const sourceAgent = await store.agents.get({ agentId });
@@ -194,6 +201,9 @@ test("forks the conversation before a prompt and leaves the source chat intact",
     expect(forkHistory.map((row) => row.item)).toContainEqual(
       expect.objectContaining({ messageId: "steer-2" }),
     );
+    // The fork keeps turn 1's instructions, not those of the dropped turn 3.
+    const forkTurns = await journal.forAgent(fork.agentId).read();
+    expect(cursorInstructionsInWindow(forkTurns, "next")).toBe("instructions");
 
     expect(await store.agents.get({ agentId })).toEqual(sourceAgent);
     expect((await store.runs.list({ filter: { agentIds: [agentId] } })).items).toEqual(sourceRuns);

@@ -8,7 +8,11 @@ import type { AgentStreamEvent, ToolCallTimelineItem } from "../agent-sdk-types.
 import { limitAgentTimelineItemContent } from "../agent-timeline-content.js";
 import { cursorTimelineItems, mapCursorTool, replayCursorTool } from "./cursor-sdk-telemetry.js";
 import { readCursorHistory, readCursorLastUsage } from "./cursor-sdk-history.js";
-import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
+import {
+  CursorTurnJournal,
+  cursorInstructionsInWindow,
+  type CursorHistoryTurn,
+} from "./cursor-sdk-turn-journal.js";
 
 const agentId = "agent-offline";
 const cwd = "/worktree-no-longer-exists";
@@ -1110,4 +1114,38 @@ test("readCursorLastUsage restores context window reading and clears it after a 
       tokenReadingTurnId: "turn-1",
     });
   });
+});
+
+test("instructions stay in the window until a compaction or summary", () => {
+  const turn = (id: string, fields: Partial<CursorHistoryTurn> = {}): CursorHistoryTurn => ({
+    id,
+    createdAt: new Date(time).toISOString(),
+    user: { type: "user_message", text: id, messageId: id },
+    steers: [],
+    terminal: { status: "finished" },
+    ...fields,
+  });
+  const window = (...turns: CursorHistoryTurn[]) => cursorInstructionsInWindow(turns, "current");
+  const sent = (id: string, hash: string, fields: Partial<CursorHistoryTurn> = {}) =>
+    turn(id, { instructionsHash: hash, ...fields });
+
+  expect(window()).toBeUndefined();
+  expect(window(turn("legacy"))).toBeUndefined();
+  expect(window(sent("a", "h1"), turn("b"))).toBe("h1");
+  expect(window(sent("a", "h1"), sent("b", "h2"))).toBe("h2");
+  // The current turn never counts as delivered.
+  expect(window(sent("current", "h1"))).toBeUndefined();
+  // Cursor may drop the message of a turn that did not finish.
+  expect(window(sent("a", "h1"), sent("b", "h2", { terminal: { status: "cancelled" } }))).toBe(
+    "h1",
+  );
+  expect(
+    window(sent("a", "h2", { terminal: { status: "error", message: "failed" } })),
+  ).toBeUndefined();
+  expect(window(sent("a", "h1", { terminal: undefined }))).toBeUndefined();
+  expect(window(sent("a", "h1"), sent("b", "h2", { recovered: true }))).toBe("h1");
+  // A compaction or summary ends the window, even in the turn that sent the block.
+  expect(window(sent("a", "h1"), turn("b", { compact: true }), turn("c"))).toBeUndefined();
+  expect(window(sent("a", "h1", { summarized: true }))).toBeUndefined();
+  expect(window(turn("a", { compact: true }), sent("b", "h1"))).toBe("h1");
 });

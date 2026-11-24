@@ -33,6 +33,10 @@ const turnSchema = z.object({
   recovered: z.boolean().optional(),
   ownerStopPending: z.boolean().optional(),
   lastUsage: AgentUsageSchema.optional(),
+  // SHA-256 of the Paseo instructions this turn's message carried.
+  instructionsHash: z.string().optional(),
+  // A native summary replaced the conversation during this turn.
+  summarized: z.literal(true).optional(),
   user: userMessageSchema,
   steers: z.array(
     z.object({
@@ -56,6 +60,34 @@ const turnSchema = z.object({
 
 export type CursorHistoryTurn = z.infer<typeof turnSchema>;
 export type CursorHistoryUser = z.infer<typeof userMessageSchema>;
+
+export function cursorInstructionsHash(text: string): string {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+/**
+ * Hash of the Paseo instructions still in the native context window, if any.
+ * Like Codex's reference context (codex-rs core/src/session/mod.rs,
+ * record_context_updates_and_set_reference_context_item), instructions are
+ * sent once per window: a compaction or summary ends the window. Only a
+ * finished turn proves the SDK kept its message; Cursor may drop the input of
+ * cancelled, failed and recovered runs.
+ */
+export function cursorInstructionsInWindow(
+  turns: readonly CursorHistoryTurn[],
+  currentTurnId: string,
+): string | undefined {
+  for (let index = turns.length - 1; index >= 0; index -= 1) {
+    const turn = turns[index];
+    if (turn.id === currentTurnId) continue;
+    if (turn.compact || turn.summarized) return undefined;
+    if (turn.recovered) continue;
+    if (turn.instructionsHash && turn.terminal?.status === "finished") {
+      return turn.instructionsHash;
+    }
+  }
+  return undefined;
+}
 
 const PROCESSES = ".processes.ndjson";
 

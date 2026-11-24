@@ -323,8 +323,14 @@ export async function checkControls({
         "Missing native image MIME",
       );
     }
+    // Instructions go out once per context window: with the first prompt only.
+    assert.ok(
+      backend
+        .wire(wireStart, imageOnlyWireEnd)
+        .some((bytes) => bytes.includes(providerInstruction)),
+    );
     const mixedWire = backend.wire(imageOnlyWireEnd);
-    assert.ok(mixedWire.some((bytes) => bytes.includes(providerInstruction)));
+    assert.ok(!mixedWire.some((bytes) => bytes.includes(providerInstruction)));
     assert.ok(mixedWire.some((bytes) => bytes.includes(userText)));
     assert.ok(mixedWire.some((bytes) => bytes.includes(textAttachment)));
     assert.ok(mixedWire.some((bytes) => bytes.includes(file.fileName)));

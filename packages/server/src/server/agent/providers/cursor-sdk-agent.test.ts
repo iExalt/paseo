@@ -572,6 +572,60 @@ describe("Cursor SDK provider", () => {
     await resumed.close();
   });
 
+  it("sends instructions once per context window and again after a summary or a change", async () => {
+    const { client, config, send } = fixture();
+    const configured = { ...config, systemPrompt: "Project instructions" };
+    const block = (text: string, instructions = "Project instructions") =>
+      `<paseo_instructions>\n${instructions}\n</paseo_instructions>\n\n${text}`;
+    let at = 1000;
+    const next = (status: RunResult["status"] = "finished", messages: SDKMessage[] = []) => {
+      at += 1000;
+      send.mockResolvedValueOnce(makeRun(messages, { id: `run-${at}`, status, result: "ok" }, at));
+    };
+    const summary = { type: "summary", ...eventIds, status: "completed" } as SDKMessage;
+
+    const session = await client.createSession(configured);
+    next("cancelled");
+    await session.run("cancelled");
+    next();
+    await session.run("first");
+    next();
+    await session.run("second");
+    next("finished", [summary]);
+    await session.run("summarized");
+    next();
+    await session.run("after summary");
+    const handle = session.describePersistence()!;
+    await session.close();
+
+    const resumed = await client.resumeSession(handle, configured);
+    next();
+    await resumed.run("resumed");
+    await resumed.close();
+
+    const changed = await client.resumeSession(handle, {
+      ...configured,
+      daemonAppendSystemPrompt: "Updated",
+    });
+    next();
+    await changed.run("changed");
+    next();
+    await changed.run("unchanged");
+    await changed.close();
+
+    expect(send.mock.calls.map(([message]) => message.text)).toEqual([
+      // Cursor may drop a cancelled run's message, so the next turn sends again.
+      block("cancelled"),
+      block("first"),
+      "second",
+      "summarized",
+      block("after summary"),
+      "resumed",
+      block("changed", "Project instructions\n\nUpdated"),
+      "unchanged",
+    ]);
+  });
+
   it("uses the final result for terminal status and replays the same ordered tool updates", async () => {
     const { client, config, send } = fixture();
     const messages = [
