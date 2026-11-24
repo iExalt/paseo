@@ -8,6 +8,7 @@ import { ExternalCliCommandError } from "./cli/external";
 import {
   createDaemonCommandHandlers,
   registerDaemonManager,
+  resolveDaemonStartTimeoutMs,
   keepsTerminalsOnStop,
   stopCapturedDaemon,
   type DesktopDaemonStopReason,
@@ -373,5 +374,24 @@ describe("desktop stops and terminals", () => {
       stopCapturedDaemon({ ...harness.input, reason: "app_update", keepTerminals: true }),
     ).rejects.toThrow("unreachable");
     expect(harness.stops).toEqual([{ keepTerminals: true }]);
+  });
+});
+
+describe("resolveDaemonStartTimeoutMs", () => {
+  it("defaults to 30000 ms when unset or invalid and accepts positive integers", () => {
+    expect(resolveDaemonStartTimeoutMs({})).toBe(30_000);
+    expect(resolveDaemonStartTimeoutMs({ PASEO_DESKTOP_DAEMON_START_TIMEOUT_MS: "" })).toBe(30_000);
+    expect(resolveDaemonStartTimeoutMs({ PASEO_DESKTOP_DAEMON_START_TIMEOUT_MS: "0" })).toBe(
+      30_000,
+    );
+    expect(resolveDaemonStartTimeoutMs({ PASEO_DESKTOP_DAEMON_START_TIMEOUT_MS: "-500" })).toBe(
+      30_000,
+    );
+    expect(resolveDaemonStartTimeoutMs({ PASEO_DESKTOP_DAEMON_START_TIMEOUT_MS: "5000ms" })).toBe(
+      30_000,
+    );
+    expect(resolveDaemonStartTimeoutMs({ PASEO_DESKTOP_DAEMON_START_TIMEOUT_MS: " 5000 " })).toBe(
+      5_000,
+    );
   });
 });

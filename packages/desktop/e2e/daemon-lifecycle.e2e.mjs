@@ -26,6 +26,9 @@ const env = Object.fromEntries(
 env.HOME = root;
 env.USERPROFILE = root;
 env.PASEO_HOME = home;
+env.NODE_COMPILE_CACHE = path.join(root, "node-compile-cache");
+env.PASEO_DEFER_TERMINAL_WORKER_LAUNCH = "1";
+env.PASEO_DISABLE_BUILTIN_PLUGINS = "1";
 const server = net.createServer();
 await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
 const port = server.address().port;
@@ -169,7 +172,7 @@ try {
     const preload = path.join(root, "slow-worker.mjs");
     await writeFile(
       preload,
-      'if (process.argv[1]?.endsWith("daemon-worker.js")) await new Promise(resolve => setTimeout(resolve, 45000));',
+      'if (process.argv[1]?.endsWith("daemon-worker.js")) await new Promise(resolve => setTimeout(resolve, 20000));',
     );
     await openDesktop();
     // Playwright removes NODE_OPTIONS from electron.launch's environment.
@@ -177,6 +180,7 @@ try {
     await desktop.evaluate(
       (_, value) => {
         process.env.NODE_OPTIONS = value;
+        process.env.PASEO_DESKTOP_DAEMON_START_TIMEOUT_MS = "5000";
       },
       `--import=${pathToFileURL(preload).href}`,
     );
@@ -186,7 +190,7 @@ try {
     assert.equal(starting.status, "starting");
     assert.equal(starting.ownedByDesktop, true);
     assert.equal(starting.pid, captured.pid);
-    assert.ok(Date.now() - began < 40_000, "Desktop did not return its bounded starting state");
+    assert.ok(Date.now() - began < 15_000, "Desktop did not return its bounded starting state");
     process.kill(captured.pid, 0);
     await command("stop_desktop_daemon", { reason: "quit" });
     captured = null;
