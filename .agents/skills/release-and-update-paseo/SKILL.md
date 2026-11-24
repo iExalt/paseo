@@ -6,14 +6,20 @@ user-invocable: true
 
 # Release and update Paseo
 
-This skill chains two others. Load each one when you reach it and follow its rules;
-the steps here only add the hand-off between them.
+Load `release-stable` and `update-nix-paseo` at the steps that call them.
 
 ## 1. Merge the release PR
 
-Follow `release-stable` steps 1 to 4. A request that names the version approves
-that version. Otherwise quote the PR's version and its `deep (*)` check results,
-and ask before merging. Record the version, the PR number and its `mergedAt` time.
+When the user invokes this skill by name or asks to release and update Paseo,
+that request approves publishing the current pending release from `iExalt/paseo`'s
+`dev` branch and installing it on this Mac. If the user names a version, the
+approval applies only to that version.
+
+Follow `release-stable` steps 1 to 3. If there is no pending release PR, say so
+and stop. Use the approval from this request in place of the separate confirmation
+in `release-stable` step 4. Confirm the version and the required checks on the PR
+head you will merge, including the `deep (*)` lanes, then squash-merge. Record
+the version, the PR number and its `mergedAt` time.
 
 ## 2. Wait for the release to publish
 
