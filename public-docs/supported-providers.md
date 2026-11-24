@@ -91,10 +91,13 @@ Cursor SDK can ask a structured question in the chat. A pending question remains
 after you reconnect while its turn is still running. You can answer or dismiss it. Stopping
 the turn cancels the question.
 
-For a trusted registered workspace, Paseo adds `AGENTS.md` from the workspace root through
-the agent's working directory, the root `.cursorrules` file, and top-level `.cursor/rules/*.mdc`
-rules marked `alwaysApply: true`. This text accompanies the prompt and Cursor keeps its
-built-in instructions. Ambient settings, hooks, Cursor plugins, custom subagent definitions,
+Paseo adds your global Codex instructions (`AGENTS.override.md` or `AGENTS.md` in
+`$CODEX_HOME`, by default `~/.codex`). For a trusted registered workspace, it also adds
+`AGENTS.md` from the workspace root through the agent's working directory, the root
+`.cursorrules` file, and top-level `.cursor/rules/*.mdc` rules marked `alwaysApply: true`.
+Like Codex, Paseo sends this text once per context window: with the first prompt, and again
+after Cursor summarizes the conversation or the text changes. Cursor keeps its built-in
+instructions. Ambient settings, hooks, Cursor plugins, custom subagent definitions,
 and file-configured MCP stay disabled. Paseo accepts MCP servers explicitly supplied to the
 agent.
 
