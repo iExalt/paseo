@@ -1,3 +1,4 @@
+import { fixtureStore } from "./fixture-store.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -106,8 +107,7 @@ export async function checkControls({
     mimeType: "text/plain",
     text: textAttachment,
   });
-  const { JsonlLocalAgentStore } = require("@cursor/sdk");
-  const store = new JsonlLocalAgentStore(join(paseoHome, "cursor-sdk"));
+  const store = fixtureStore(require, join(paseoHome, "cursor-sdk"));
   const connect = () =>
     new DaemonClient({
       url: `ws://${listener()}/ws`,

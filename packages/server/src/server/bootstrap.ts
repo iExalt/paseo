@@ -151,6 +151,7 @@ import { AgentManager } from "./agent/agent-manager.js";
 import { AgentStorage } from "./agent/agent-storage.js";
 import { readCursorUsageHistory } from "./agent/providers/cursor-sdk-history.js";
 import { CursorTurnJournal } from "./agent/providers/cursor-sdk-turn-journal.js";
+import { closeCursorSdkStores, openCursorSdkStore } from "./agent/providers/cursor-sdk-store.js";
 import { SpendLedger } from "./agent/spend-ledger.js";
 import { attachAgentStoragePersistence } from "./persistence-hooks.js";
 import {
@@ -1013,7 +1014,12 @@ export async function createPaseoDaemon(
       if (!records.length) return;
       const { JsonlLocalAgentStore } = await import("@cursor/sdk");
       const directory = path.join(config.paseoHome, "cursor-sdk");
-      const store = new JsonlLocalAgentStore(directory);
+      const store = await openCursorSdkStore({
+        root: directory,
+        openLegacy: () => new JsonlLocalAgentStore(directory),
+        onMigrationError: (err) =>
+          logger.error({ err }, "Cursor SDK store migration failed; serving the JSONL store"),
+      });
       let incomplete = false;
       for (const record of records) {
         const id = record.persistence!.nativeHandle ?? record.persistence!.sessionId;
@@ -1958,6 +1964,9 @@ export async function createPaseoDaemon(
     detachAgentStoragePersistence();
     await agentStorage.flush().catch(() => undefined);
     await agentProviderRuntime.shutdown();
+    await closeCursorSdkStores().catch((err) =>
+      logger.warn({ err }, "Could not close the Cursor SDK store"),
+    );
     await pluginRuntime.stopAllPlugins();
     try {
       if (keepTerminals) {
