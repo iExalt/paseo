@@ -68,7 +68,9 @@ $PASEO_HOME/
 ├── runtime/
 │   └── managed-processes/
 │       └── {recordId}.json              # Helper processes owned by Paseo; reconciled on daemon bootstrap
-├── cursor-sdk/                          # Local Cursor SDK store (JSONL tables shared by all chats)
+├── cursor-sdk/                          # Local Cursor SDK store shared by all chats
+│   ├── sqlite/                          # SDK SQLite store: index.db plus agents/agent-{hash}/store.db per chat
+│   ├── *.ndjson                         # Pre-SQLite JSONL tables, frozen at migration
 │   ├── paseo-turns/{sha256(agent)}/     # Paseo's journal of each chat's submitted turns
 │   └── paseo-forks/{sha256(agent)}.json # Parent of an agent created by rewind
 ├── spend/
@@ -79,7 +81,9 @@ $PASEO_HOME/
 └── push-tokens.json                     # Expo push notification tokens
 ```
 
-Rewinding a Cursor SDK chat creates a new local SDK agent and leaves the original agent unchanged. The new agent stores only the checkpoint blobs it writes and reads the rest from its ancestors through `paseo-forks` (`packages/server/src/server/agent/providers/cursor-sdk-fork-store.ts`); the JSONL store rewrites a whole table on every write, so copying a chat's blobs made rewind scale with the store. Never delete an SDK agent that a fork names as its parent: the fork's conversation stops loading. Only Paseo's wrapped store resolves these links, so a plain `JsonlLocalAgentStore` opened on this directory sees a rewound agent's own blobs only.
+Paseo keeps Cursor SDK chats in the SDK's SQLite store under `cursor-sdk/sqlite/`. The SDK's `JsonlLocalAgentStore` parses a whole table on every read and rewrites it on every write; with a 129 MB checkpoint table, two active chats ran the daemon out of heap. On first open, `packages/server/src/server/agent/providers/cursor-sdk-store.ts` streams the JSONL tables into a staging directory, compares every row it copied, and renames it to `sqlite/`. A failed migration keeps serving the JSONL tables and retries on the next start, up to three times. The JSONL tables stay untouched and stop receiving writes once `sqlite/paseo-migration.json` exists, so a daemon from before this change opens every Cursor chat as it was at migration time and silently diverges from the SQLite copy.
+
+Rewinding a Cursor SDK chat creates a new local SDK agent and leaves the original agent unchanged. The new agent stores only the checkpoint blobs it writes and reads the rest from its ancestors through `paseo-forks` (`packages/server/src/server/agent/providers/cursor-sdk-fork-store.ts`), so a rewind never copies a chat's blobs. Never delete an SDK agent that a fork names as its parent: the fork's conversation stops loading. Only Paseo's wrapped store resolves these links, so a plain SDK store opened on this directory sees a rewound agent's own blobs only.
 
 The `agents/{sanitized-cwd}/` directory name is derived from the agent's `cwd` by stripping the filesystem root and replacing path separators with `-` (Windows drive letters become a `C-` style prefix). Persistent server stores write atomically by writing a temp file in the target directory and then renaming it into place.
 

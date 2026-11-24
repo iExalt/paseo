@@ -1,3 +1,4 @@
+import { fixtureStore } from "./fixture-store.mjs";
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
@@ -60,8 +61,7 @@ export async function checkOwnedRecovery({
   const { DaemonClient } = await import(
     pathToFileURL(require.resolve("@getpaseo/client/internal/daemon-client"))
   );
-  const { JsonlLocalAgentStore } = require("@cursor/sdk");
-  const store = new JsonlLocalAgentStore(join(paseoHome, "cursor-sdk"));
+  const store = fixtureStore(require, join(paseoHome, "cursor-sdk"));
   const socket = listener();
   const client = new DaemonClient({
     url: `ws://${socket}/ws`,
