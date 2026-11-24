@@ -150,8 +150,9 @@ test("forks the conversation before a prompt and leaves the source chat intact",
   await withStore(async (fixture) => {
     await threeTurns(fixture);
     const { store, journal } = fixture;
-    const [first] = await journal.read();
+    const [first, , third] = await journal.read();
     await journal.save({ ...first, instructionsHash: "instructions" });
+    await journal.save({ ...third, instructionsHash: "dropped" });
     const history = fixture.historySdk();
     const sourceHistory = await timeline(history, fixture, agentId);
     const sourceAgent = await store.agents.get({ agentId });
@@ -200,7 +201,7 @@ test("forks the conversation before a prompt and leaves the source chat intact",
     expect(forkHistory.map((row) => row.item)).toContainEqual(
       expect.objectContaining({ messageId: "steer-2" }),
     );
-    // The fork keeps the delivered instructions in its context window.
+    // The fork keeps turn 1's instructions, not those of the dropped turn 3.
     const forkTurns = await journal.forAgent(fork.agentId).read();
     expect(cursorInstructionsInWindow(forkTurns, "next")).toBe("instructions");
 
