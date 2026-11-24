@@ -3,8 +3,15 @@ import type { ChildProcess } from "node:child_process";
 import { basename } from "node:path";
 import { channel } from "node:diagnostics_channel";
 import { setTimeout as delay } from "node:timers/promises";
+import { CursorProcessLedger } from "./cursor-sdk-process-ledger.js";
 
 const owningTurn = new AsyncLocalStorage<CursorToolProcesses>();
+const untracked = new AsyncLocalStorage<true>();
+
+/** Run Paseo's own probe shells without marking live turns as having unknown shells. */
+export function withoutShellTracking<T>(start: () => T): T {
+  return untracked.run(true, start);
+}
 const shellExecutables = new Set([
   "sh",
   "bash",
@@ -17,31 +24,50 @@ const shellExecutables = new Set([
   "tcsh",
 ]);
 const posix = process.platform === "linux" || process.platform === "darwin";
-// The project-selected Node 26 implements the spawn tracing contract. For other
-// runtimes, require an actual attributable trace before trusting negative evidence.
-const knownSpawnTracing = posix && Number(process.versions.node.split(".")[0]) === 26;
+// Node 24 (the Electron desktop runtime) and the project-selected Node 26 publish
+// the spawn tracing channel. For other runtimes, require an actual attributable
+// trace before trusting negative evidence.
+export const knownSpawnTracing = posix && Number(process.versions.node.split(".")[0]) >= 24;
 
 interface SpawnEvent {
   process?: ChildProcess;
   options?: { detached?: boolean; args?: string[]; file?: string };
 }
 
+// The pinned SDK starts shell commands with -c. Its idle login-shell
+// prewarm also uses detached spawn, but has no command to stop.
+function isToolShell(options: NonNullable<SpawnEvent["options"]>): boolean {
+  return (
+    options.detached === true &&
+    Array.isArray(options.args) &&
+    options.args.includes("-c") &&
+    typeof options.file === "string" &&
+    shellExecutables.has(basename(options.file))
+  );
+}
+
 function observeSpawnStart(message: unknown): void {
-  const scope = owningTurn.getStore();
-  if (!scope || !posix) return;
+  if (!posix || untracked.getStore()) return;
   const { process: child, options } = (message ?? {}) as SpawnEvent;
   if (!child || !options) return;
-  scope.observeTrace();
-  // The pinned SDK starts shell commands with -c. Its idle login-shell
-  // prewarm also uses detached spawn, but has no command to stop.
-  if (options.detached !== true || !Array.isArray(options.args) || !options.args.includes("-c")) {
+  const scope = owningTurn.getStore();
+  if (!scope) {
+    if (isToolShell(options)) CursorProcessLedger.recordUnattributed();
     return;
   }
-  if (typeof options.file !== "string" || !shellExecutables.has(basename(options.file))) return;
+  scope.observeTrace();
+  if (!isToolShell(options)) return;
+  // Record the shell before it exists, so a crash cannot hide it from recovery.
+  const intent = scope.ledger?.intent();
   // Trace-end runs before Node assigns ChildProcess.pid. Register its
   // successful spawn event before Node starts the child instead.
   child.once("spawn", () => {
-    if (child.pid !== undefined && child.pid > 1) scope.addGroup(child.pid);
+    if (child.pid === undefined || child.pid <= 1) return;
+    scope.addGroup(child.pid);
+    if (intent !== undefined) scope.ledger?.spawned(intent, child.pid);
+  });
+  child.once("error", () => {
+    if (intent !== undefined && child.pid === undefined) scope.ledger?.failed(intent);
   });
 }
 
@@ -59,6 +85,15 @@ function groupMayExist(pgid: number): boolean {
 
 export class CursorToolProcesses {
   private readonly groups = new Set<number>();
+
+  /** Without a ledger, the turn keeps its process records in memory only. */
+  constructor(readonly ledger?: CursorProcessLedger) {}
+
+  /** The turn is joined or never reached the SDK; drop its process record. */
+  close(): void {
+    this.ledger?.close();
+  }
+
   private readonly shellCalls = new Set<string>();
   private observedTrace = false;
 
