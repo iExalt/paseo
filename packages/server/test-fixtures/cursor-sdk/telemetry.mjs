@@ -1,3 +1,4 @@
+import { fixtureStore } from "./fixture-store.mjs";
 import assert from "node:assert/strict";
 import { randomUUID } from "node:crypto";
 import { readFile, readdir, rm, writeFile } from "node:fs/promises";
@@ -41,8 +42,7 @@ async function connect({ listener, require }) {
 async function assertUsage({ client, args, id, usage, status, verifyCli = false }) {
   const snapshot = (await client.fetchAgent(id)).agent;
   const cliSnapshot = verifyCli ? (await args.cli("agent", "status", id)).snapshot : null;
-  const { JsonlLocalAgentStore } = args.require("@cursor/sdk");
-  const store = new JsonlLocalAgentStore(join(args.paseoHome, "cursor-sdk"));
+  const store = fixtureStore(args.require, join(args.paseoHome, "cursor-sdk"));
   const page = await store.runs.list({ filter: { agentIds: [snapshot.persistence.nativeHandle] } });
   const run = page.items.findLast((entry) => entry.status === status);
   assert.ok(run, `Missing native ${status} run`);

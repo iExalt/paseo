@@ -1,3 +1,4 @@
+import { fixtureStore, openFixtureStore } from "./fixture-store.mjs";
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { randomUUID } from "node:crypto";
@@ -15,8 +16,9 @@ const originalPrompt = maintenancePrefix + " external original.";
 const externalModel = "fixture-high";
 
 async function seedSessions(modulePath, cwd, storePath) {
-  const { Agent, JsonlLocalAgentStore } = createRequire(import.meta.url)(modulePath);
-  const create = (where) =>
+  const { Agent } = createRequire(import.meta.url)(modulePath);
+  // Seed whichever store the daemon under test reads: SQLite once it has migrated.
+  const create = async (where) =>
     Agent.create({
       apiKey,
       model: {
@@ -29,7 +31,7 @@ async function seedSessions(modulePath, cwd, storePath) {
       name: "P6 external Cursor conversation",
       local: {
         cwd,
-        store: new JsonlLocalAgentStore(where),
+        store: await openFixtureStore(createRequire(modulePath), where),
         settingSources: [],
         sandboxOptions: { enabled: false },
       },
@@ -142,9 +144,9 @@ export async function checkMaintenance({
     pathToFileURL(require.resolve("@getpaseo/client/internal/daemon-client"))
   );
   const sdkPath = require.resolve("@cursor/sdk");
-  const { Agent, JsonlLocalAgentStore } = require("@cursor/sdk");
+  const { Agent } = require("@cursor/sdk");
   const storePath = join(paseoHome, "cursor-sdk");
-  const store = new JsonlLocalAgentStore(storePath);
+  const store = fixtureStore(require, storePath);
   const { stdout } = await exec(
     process.execPath,
     [fileURLToPath(import.meta.url), "seed", sdkPath, workspace, storePath],

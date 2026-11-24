@@ -1,3 +1,4 @@
+import { fixtureStore } from "./fixture-store.mjs";
 import assert from "node:assert/strict";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
@@ -61,8 +62,7 @@ export async function checkLifecycle({
   const { DaemonClient } = await import(
     pathToFileURL(require.resolve("@getpaseo/client/internal/daemon-client"))
   );
-  const { JsonlLocalAgentStore } = require("@cursor/sdk");
-  const localStore = new JsonlLocalAgentStore(join(paseoHome, "cursor-sdk"));
+  const localStore = fixtureStore(require, join(paseoHome, "cursor-sdk"));
 
   const hold = join(workspace, "cursor-hold");
   const heldPidFile = join(workspace, "cursor-shell.pid");

@@ -18,7 +18,11 @@ import { AgentManager } from "../agent-manager.js";
 import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
 import { CursorQuestions } from "./cursor-sdk-questions.js";
 import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
-import { clearUnusedCursorReservation, CursorSdkAgentClient } from "./cursor-sdk-agent.js";
+import {
+  clearUnusedCursorReservation,
+  CursorSdkAgentClient,
+  type CursorSdkClientOptions,
+} from "./cursor-sdk-agent.js";
 import { listCursorSdkModels as listCursorModels } from "./cursor-sdk-availability.js";
 
 vi.mock("../execution-owner/execution-owner.js", async (load) => ({
@@ -64,6 +68,10 @@ function makeRun(messages: SDKMessage[], result: RunResult, createdAt = Date.UTC
 }
 
 const stores: string[] = [];
+// These tests seed and inspect the JSONL tables directly; cursor-sdk-store.test.ts covers SQLite.
+const jsonlStore: CursorSdkClientOptions = {
+  openStore: async ({ root, sdk }) => new sdk.JsonlLocalAgentStore(root),
+};
 
 afterEach(async () => {
   vi.mocked(supportsExecutionOwner).mockReset();
@@ -110,6 +118,7 @@ function fixture(initialReservation?: string) {
     undefined,
     storePath,
     emptyCostFetcher,
+    jsonlStore,
   );
   const config: AgentSessionConfig = { provider, cwd: process.cwd(), model: "model" };
   return { client, config, sdk, load, send, modelList, storePath, agent };
@@ -300,7 +309,15 @@ describe("Cursor SDK provider", () => {
     vi.stubEnv("CURSOR_API_KEY", "");
     try {
       const { config, load } = fixture();
-      const client = new CursorSdkAgentClient(undefined, load, undefined, async () => undefined);
+      const client = new CursorSdkAgentClient(
+        undefined,
+        load,
+        undefined,
+        async () => undefined,
+        undefined,
+        undefined,
+        jsonlStore,
+      );
       const manager = new AgentManager({
         clients: { [provider]: client },
         logger: pino({ level: "silent" }),
@@ -320,7 +337,15 @@ describe("Cursor SDK provider", () => {
     try {
       let storedKey: string | undefined;
       const { config, load, modelList, sdk } = fixture();
-      const client = new CursorSdkAgentClient(undefined, load, modelList, async () => storedKey);
+      const client = new CursorSdkAgentClient(
+        undefined,
+        load,
+        modelList,
+        async () => storedKey,
+        undefined,
+        undefined,
+        jsonlStore,
+      );
       await expect(client.isAvailable()).rejects.toThrow("Sign in to Cursor SDK");
       storedKey = "stored-key";
       expect(await client.isAvailable()).toBe(true);
@@ -365,6 +390,7 @@ describe("Cursor SDK provider", () => {
         async () => key,
         storePath,
         emptyCostFetcher,
+        jsonlStore,
       );
       const session = await client.createSession(config);
       try {
@@ -985,6 +1011,7 @@ it("keeps the canonical model and parameters when a new account changes its alia
     async () => key,
     storePath,
     emptyCostFetcher,
+    jsonlStore,
   );
   const session = await client.createSession({ ...config, model: "default" });
   try {
@@ -1168,6 +1195,7 @@ test("rewind moves the session to a fork and sends the next prompt there", async
     undefined,
     storePath,
     emptyCostFetcher,
+    jsonlStore,
   );
   const session = await client.resumeSession(
     { provider, sessionId: agentId, nativeHandle: agentId, metadata: { cwd } },
@@ -1293,6 +1321,7 @@ test("reports model context limits in catalog, forwards model-call-completed del
     undefined,
     storePath,
     emptyCostFetcher,
+    jsonlStore,
   );
 
   const catalog = await client.fetchCatalog({});
@@ -1400,6 +1429,7 @@ test("history-mode resume honors updated cursor_model_context and auto model wit
     undefined,
     storePath,
     emptyCostFetcher,
+    jsonlStore,
   );
   const handle = {
     provider,
@@ -1515,6 +1545,7 @@ test("tracks session cost across turns and preserves ancestor cost after rewind 
     undefined,
     storePath,
     costFetcher,
+    jsonlStore,
   );
   const session = await client.resumeSession(
     { provider, sessionId: costAgentId, nativeHandle: costAgentId, metadata: { cwd } },

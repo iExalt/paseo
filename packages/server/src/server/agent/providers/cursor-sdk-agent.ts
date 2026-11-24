@@ -1,3 +1,4 @@
+import type { Logger } from "pino";
 import {
   canRequestCursorShellEnvironment,
   prepareCursorShellEnvironment,
@@ -87,6 +88,7 @@ import {
 import { cursorCompactCommand, isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
 import { CursorForkLinks, withCursorForkBlobs } from "./cursor-sdk-fork-store.js";
+import { openCursorSdkStore } from "./cursor-sdk-store.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
 import { CursorQuestions, cursorQuestionToolName } from "./cursor-sdk-questions.js";
 import { cursorSpeakTool, cursorSpeakToolName } from "./cursor-sdk-voice.js";
@@ -128,6 +130,27 @@ const CAPABILITIES = {
 };
 
 type CursorSdk = HistorySdk & Pick<typeof import("@cursor/sdk"), "Agent" | "JsonlLocalAgentStore">;
+
+interface OpenCursorStoreInput {
+  root: string;
+  sdk: CursorSdk;
+  logger?: Logger;
+}
+
+export interface CursorSdkClientOptions {
+  logger?: Logger;
+  /** Tests substitute a store; the daemon opens the shared SQLite store. */
+  openStore?: (input: OpenCursorStoreInput) => Promise<LocalAgentStore>;
+}
+
+function openDefaultCursorStore({ root, sdk, logger }: OpenCursorStoreInput) {
+  return openCursorSdkStore({
+    root,
+    openLegacy: () => new sdk.JsonlLocalAgentStore(root),
+    onMigrationError: (err) =>
+      logger?.error({ err }, "Cursor SDK store migration failed; serving the JSONL store"),
+  });
+}
 type CursorBinding = ReturnType<typeof createCursorRunBinding> & { links: CursorForkLinks };
 type ResolvedCursorModel = SDKModel & { sdkId: string; catalogOptionKeys: Set<string> };
 
@@ -225,7 +248,7 @@ export class CursorSdkAgentClient implements AgentClient {
   readonly provider = PROVIDER;
   readonly capabilities = CAPABILITIES;
 
-  private binding?: CursorBinding;
+  private binding?: Promise<CursorBinding>;
   private catalog: { apiKey: string; models: SDKModel[] } | undefined;
 
   constructor(
@@ -235,13 +258,20 @@ export class CursorSdkAgentClient implements AgentClient {
     private readonly readStoredKey = readCursorSdkStoredKey,
     private readonly storePath = join(resolvePaseoHome(), "cursor-sdk"),
     private readonly costFetcher: CursorDashboardUsageFetcher = new CursorDashboardUsageClient(),
+    private readonly options: CursorSdkClientOptions = {},
   ) {}
 
-  private getBinding(sdk: CursorSdk): CursorBinding {
-    if (this.binding) return this.binding;
-    const links = new CursorForkLinks(this.storePath);
-    const store = withCursorForkBlobs(new sdk.JsonlLocalAgentStore(this.storePath), links);
-    return (this.binding = { ...createCursorRunBinding(store), links });
+  private getBinding(sdk: CursorSdk): Promise<CursorBinding> {
+    const { logger, openStore = openDefaultCursorStore } = this.options;
+    this.binding ??= openStore({ root: this.storePath, sdk, logger }).then((native) => {
+      const links = new CursorForkLinks(this.storePath);
+      return { ...createCursorRunBinding(withCursorForkBlobs(native, links)), links };
+    });
+    const binding = this.binding;
+    binding.catch(() => {
+      if (this.binding === binding) this.binding = undefined;
+    });
+    return binding;
   }
 
   private async requireApiKey(): Promise<string> {
@@ -337,13 +367,13 @@ export class CursorSdkAgentClient implements AgentClient {
 
   async listImportableSessions(options?: ListImportableSessionsOptions) {
     const sdk = await this.loadSdk();
-    return listCursorLocalSessions(this.getBinding(sdk).store, options);
+    return listCursorLocalSessions((await this.getBinding(sdk)).store, options);
   }
 
   async importSession(input: ImportProviderSessionInput, context: ImportProviderSessionContext) {
     const sdk = await this.loadSdk();
     const { agent, lastRun } = await readCursorLocalSessionForImport(
-      this.getBinding(sdk).store,
+      (await this.getBinding(sdk)).store,
       input,
     );
     if (!lastRun.model?.id) throw new Error("Cursor SDK could not identify the saved model.");
@@ -390,7 +420,7 @@ export class CursorSdkAgentClient implements AgentClient {
       const sdk = await this.loadSdk();
       return openCursorHistorySession({
         sdk,
-        store: this.getBinding(sdk).store,
+        store: (await this.getBinding(sdk)).store,
         journal: new CursorTurnJournal(this.storePath, id),
         handle,
         id,
@@ -425,7 +455,7 @@ export class CursorSdkAgentClient implements AgentClient {
     const apiKey = await this.requireApiKey();
     const cwd = await realpath(config.cwd);
     const sdk = await this.loadSdk();
-    const binding = this.getBinding(sdk);
+    const binding = await this.getBinding(sdk);
     const { store } = binding;
     if (nativeId) {
       await assertCursorRunReleased(
