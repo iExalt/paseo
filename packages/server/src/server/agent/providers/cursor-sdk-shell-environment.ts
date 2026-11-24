@@ -5,6 +5,7 @@ import { once } from "node:events";
 import { constants } from "node:fs";
 import { access, stat } from "node:fs/promises";
 import { delimiter, join } from "node:path";
+import { withoutShellTracking } from "./cursor-sdk-tool-processes.js";
 
 const identityKeys = [
   "PASEO_AGENT_ID",
@@ -187,12 +188,14 @@ let supportCheck: Promise<void> | undefined;
 
 async function verifySpawnEnvironment(): Promise<void> {
   const environment = createCursorShellEnvironment({ PASEO_CURSOR_ENV_PROBE: "enabled" });
-  const child = withCursorShellEnvironment(environment, () =>
-    spawn("/bin/sh", ["-c", `test -n "\${${restoreKey}:-}"`], {
-      detached: true,
-      env: {},
-      stdio: "ignore",
-    }),
+  const child = withoutShellTracking(() =>
+    withCursorShellEnvironment(environment, () =>
+      spawn("/bin/sh", ["-c", `test -n "\${${restoreKey}:-}"`], {
+        detached: true,
+        env: {},
+        stdio: "ignore",
+      }),
+    ),
   );
   const [code] = await once(child, "exit", { signal: AbortSignal.timeout(2000) });
   if (code !== 0) {
