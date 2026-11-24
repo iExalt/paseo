@@ -261,6 +261,16 @@ test("deep verification requires exact source and isolated harness configuration
 });
 
 test("deep entrypoint stops at a failed prerequisite or journey", () => {
+  const integration = deepCommands("integration");
+  assert.ok(
+    integration.some(
+      ([command, args]) =>
+        command === "npm" &&
+        args.includes("src/server/agent/providers/opencode-bridge.local.e2e.test.ts") &&
+        args.at(-1) === "versioned runtime",
+    ),
+    "Deep integration must run the versioned OpenCode runtime check",
+  );
   const commands = deepCommands("browser");
   assert.throws(() => deepCommands("real-provider"), /Unknown deep lane/);
   for (let failure = 0; failure < commands.length; failure++) {

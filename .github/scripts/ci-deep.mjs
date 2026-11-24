@@ -50,6 +50,20 @@ export function deepCommands(lane) {
           "--maxWorkers=1",
         ],
       ],
+      [
+        "npm",
+        [
+          "exec",
+          "--workspace=@getpaseo/server",
+          "--",
+          "vitest",
+          "run",
+          "--maxWorkers=1",
+          "src/server/agent/providers/opencode-bridge.local.e2e.test.ts",
+          "-t",
+          "versioned runtime",
+        ],
+      ],
       ["npm", ["ci", "--prefix", ".github/deep-providers", "--no-audit", "--no-fund"]],
       ["node", [".github/scripts/check-provider-versions.mjs"]],
     ];

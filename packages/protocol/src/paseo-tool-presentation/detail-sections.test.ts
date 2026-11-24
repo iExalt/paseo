@@ -1,5 +1,14 @@
 import { execFileSync } from "node:child_process";
-import { copyFileSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -175,19 +184,47 @@ describe("published Paseo tool-call detail entry", () => {
         path.join(fixture, "node_modules"),
         "junction",
       );
-      execFileSync(
-        process.execPath,
-        [
-          compiler,
-          "-p",
-          path.join(packageRoot, "tsconfig.json"),
-          "--outDir",
-          path.join(fixture, "dist"),
-          "--incremental",
-          "false",
-        ],
-        { stdio: "pipe" },
-      );
+      const existingDist = path.join(packageRoot, "dist");
+      const legacyRuntime = path.join(existingDist, "paseo-tool-call-detail.js");
+      const legacyTypes = path.join(existingDist, "paseo-tool-call-detail.d.ts");
+      const newestSourceMtimeMs = (dir: string): number => {
+        let newest = 0;
+        for (const entry of readdirSync(dir, { withFileTypes: true })) {
+          const full = path.join(dir, entry.name);
+          if (entry.isDirectory()) {
+            newest = Math.max(newest, newestSourceMtimeMs(full));
+          } else if (entry.isFile() && !entry.name.endsWith(".test.ts")) {
+            newest = Math.max(newest, statSync(full).mtimeMs);
+          }
+        }
+        return newest;
+      };
+      const distReady =
+        existsSync(legacyRuntime) &&
+        existsSync(legacyTypes) &&
+        (process.env.CI === "true" ||
+          Math.min(statSync(legacyRuntime).mtimeMs, statSync(legacyTypes).mtimeMs) >=
+            Math.max(
+              statSync(path.join(packageRoot, "package.json")).mtimeMs,
+              newestSourceMtimeMs(path.join(packageRoot, "src")),
+            ));
+      if (distReady) {
+        symlinkSync(existingDist, path.join(fixture, "dist"), "junction");
+      } else {
+        execFileSync(
+          process.execPath,
+          [
+            compiler,
+            "-p",
+            path.join(packageRoot, "tsconfig.json"),
+            "--outDir",
+            path.join(fixture, "dist"),
+            "--incremental",
+            "false",
+          ],
+          { stdio: "pipe" },
+        );
+      }
       writeFileSync(
         path.join(fixture, "consumer.mts"),
         `
