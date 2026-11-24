@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.37.1](https://github.com/iExalt/paseo/compare/paseo-v0.37.0...paseo-v0.37.1) (2026-11-24)
+
+
+### Bug Fixes
+
+* **cursor-sdk:** show only the compaction card for /compact ([#594](https://github.com/iExalt/paseo/issues/594)) ([701773e](https://github.com/iExalt/paseo/commit/701773eded9c904f95cb91a72b086c8f0993215e))
+
+
+### Performance Improvements
+
+* **ci:** parallelize routine integration and CLI spawn tests ([#597](https://github.com/iExalt/paseo/issues/597)) ([29b8c63](https://github.com/iExalt/paseo/commit/29b8c6337989f6d74216f01c4b65065d4d23b222))
+* **ci:** speed up deep verification cache restore, lifecycle e2e, and desktop timeout ([#598](https://github.com/iExalt/paseo/issues/598)) ([920b11d](https://github.com/iExalt/paseo/commit/920b11d94c55c2bcabd61a280eb86a7baa846e4a))
+* **server:** cut Cursor SDK loopback parity runtime by skipping unused daemon startup work ([#596](https://github.com/iExalt/paseo/issues/596)) ([4ab9258](https://github.com/iExalt/paseo/commit/4ab9258e03440167a23465bf974af7489bd57373))
+
 ## [0.37.0](https://github.com/iExalt/paseo/compare/paseo-v0.36.0...paseo-v0.37.0) (2026-11-23)
 
 
