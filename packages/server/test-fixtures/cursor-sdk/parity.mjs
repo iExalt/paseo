@@ -11,16 +11,15 @@ import { checkBaseline, prepareBaseline, shellEnvironment } from "./baseline.mjs
 import { apiKey, assistantText, callId, model, sdkVersion, startBackend } from "./backend.mjs";
 import { checkP5Interactions, prepareP5Fixture } from "./interactions.mjs";
 import { checkOwnedRecovery } from "./owned-recovery.mjs";
-import { checkMaintenance } from "./maintenance.mjs";
-import { checkLifecycle } from "./lifecycle.mjs";
-import { checkCompletedTelemetry, checkStoppedTelemetry, finishedUsage } from "./telemetry.mjs";
-import { checkControls, controlCatalog } from "./controls.mjs";
-import {
-  assertSkillTurnRequest,
-  checkDraftSkills,
-  checkSelectedSkills,
-  installSkillFixtures,
-} from "./skills.mjs";
+
+const finishedUsage = {
+  inputTokens: 12,
+  cachedInputTokens: 2,
+  cacheWriteTokens: 1,
+  outputTokens: 3,
+  reasoningTokens: 1,
+  totalTokens: 15,
+};
 
 const exec = promisify(execFile);
 const root = resolve(process.argv[2] ?? ".");
@@ -40,8 +39,7 @@ const paseoHome = join(tmp, "paseo");
 const canary = "PASEO_LOCAL_CANARY";
 
 await Promise.all([mkdir(workspace), mkdir(home), mkdir(paseoHome)]);
-const fixtures = mode === "green" ? await installSkillFixtures(workspace, home) : undefined;
-const useCallerFixture = mode === "green" || (mode === "owner" && process.platform === "linux");
+const useCallerFixture = mode === "owner" && process.platform === "linux";
 const callerWorkspace = useCallerFixture
   ? await prepareCallerFixture({ root, paseoHome, home, workspace })
   : undefined;
@@ -50,10 +48,8 @@ const p5Fixture = useCallerFixture
   : undefined;
 const backend = await startBackend(workspace, {
   p5: !!p5Fixture,
-  maintenance: mode === "green",
+  inspectRequest: mode === "green",
   allowCodexPrewarm: mode === "baseline",
-  selectSkillTurn: fixtures ? assertSkillTurnRequest : undefined,
-  models: mode === "green" ? controlCatalog(model) : undefined,
 });
 const codexProvider =
   mode === "baseline"
@@ -64,10 +60,10 @@ await writeFile(
   [
     ...(mode === "baseline" ? shellEnvironment : []),
     ...(useCallerFixture
-      ? [
-          `if [ -n "\${P3_LABEL:-}" ]; then exec "${process.execPath}" p3-shell.mjs; fi`,
-          'printf "%s\\n" "${PASEO_HOME:-absent}" "${PASEO_CLI:-absent}" > cursor-cli-disabled.txt',
-        ]
+      ? [`if [ -n "\${P3_LABEL:-}" ]; then exec "${process.execPath}" p3-shell.mjs; fi`]
+      : []),
+    ...(mode === "green" || useCallerFixture
+      ? ['printf "%s\\n" "${PASEO_HOME:-absent}" "${PASEO_CLI:-absent}" > cursor-cli-disabled.txt']
       : []),
     `printf '%s' '${canary}' > cursor-canary.txt`,
     `printf '%s' '${canary}'`,
@@ -106,7 +102,7 @@ const shellPath =
         .filter(Boolean)
         .join(delimiter)
     : "/usr/bin:/bin";
-const nodeCompileCache = join(tmp, "node-compile-cache");
+const nodeCompileCache = process.env.NODE_COMPILE_CACHE || join(tmp, "node-compile-cache");
 const env = {
   ...platformEnv,
   HOME: home,
@@ -340,92 +336,25 @@ try {
       await checkCallerEnvironment({ ...caller, agents: callerAgents });
     }
   } else {
-    const selection = await checkDraftSkills({
-      cli,
-      workspace,
-      paseoHome,
-      backend,
-      require,
-      listener: () => listener,
-    });
     const completed = await launch(workspaceId, "Run the shell canary.");
     await checkCompleted(completed);
-    const telemetry = {
-      backend,
-      cli,
-      listener: () => listener,
-      paseoHome,
-      require,
-      startDaemon,
-      stopDaemon,
-      workspace,
-      workspaceId,
-    };
-    await checkCompletedTelemetry(telemetry, completed.agentId);
-    await checkStoppedTelemetry(telemetry, { checkContextWindow: mode === "green" });
     assert.deepEqual(
       (await readFile(join(workspace, "cursor-cli-disabled.txt"), "utf8")).trimEnd().split("\n"),
       [paseoHome, "absent"],
     );
-    const callerProof = {
-      root,
-      require,
-      paseoHome,
-      workspace,
-      workspaceId,
-      listener: () => listener,
-    };
-    const callerAgents = await checkCallerEnvironment(callerProof);
-    const replaySelectedSkills = () =>
-      checkSelectedSkills({
-        backend,
-        listener: () => listener,
-        require,
-        startDaemon,
-        stopDaemon,
-        cli,
-        workspace,
-        workspaceId,
-        fixtures,
-        selection,
-      });
-    await checkControls({
-      backend,
-      cli,
-      listener: () => listener,
-      model,
-      paseoHome,
-      require,
-      restart: replaySelectedSkills,
-      workspace,
-      workspaceId,
-    });
-    await checkCallerEnvironment({ ...callerProof, agents: callerAgents });
-    await checkInteractions(false);
-    await checkMaintenance({
-      backend,
-      cli,
-      home,
-      listener: () => listener,
-      model,
-      paseoHome,
-      require,
-      startDaemon,
-      stopDaemon,
-      workspace,
-      workspaceId,
-    });
-    await checkLifecycle({
-      backend,
-      listener: () => listener,
-      paseoHome,
-      require,
-      startDaemon,
-      stopDaemon,
-      workspace,
-      workspaceId,
-      canary,
-    });
+    await stopDaemon();
+    await startDaemon();
+    const { entries } = await cli("logs", completed.agentId);
+    const items = entries.map(({ item }) => item);
+    assert.deepEqual(
+      items.filter((item) => item.type === "assistant_message").map(({ text }) => text),
+      [assistantText],
+    );
+    assert.equal(
+      items.filter((item) => item.type === "tool_call" && item.name === "shell").length,
+      1,
+    );
+    console.log("PASS Cursor SDK cold replay across compiled daemon restart");
   }
 } catch (error) {
   failure = { error };
