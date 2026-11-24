@@ -72,6 +72,7 @@ $PASEO_HOME/
 │   ├── sqlite/                          # SDK SQLite store: index.db plus agents/agent-{hash}/store.db per chat
 │   ├── *.ndjson                         # Pre-SQLite JSONL tables, frozen at migration
 │   ├── paseo-turns/{sha256(agent)}/     # Paseo's journal of each chat's submitted turns
+│   │   └── {sha256(turn)}.processes.ndjson # Shells a turn started; lets a restarted daemon recover the chat
 │   └── paseo-forks/{sha256(agent)}.json # Parent of an agent created by rewind
 ├── spend/
 │   └── ledger.jsonl                     # Dated spend and per-turn provider usage reports

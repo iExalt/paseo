@@ -129,6 +129,8 @@
                 "openSync",
                 "readSync"
               ],
+              // Intentional: spawn tracing calls the ledger synchronously, and each record must reach the file before Node starts the shell it names.
+              "server/agent/providers/cursor-sdk-process-ledger.ts": ["appendFileSync", "rmSync"],
               // TODO: diagnostics probes provider-owned auth/session storage; convert alongside provider discovery and readiness.
               "server/agent/providers/omp/agent.ts": ["existsSync"],
               // TODO: synchronous provider configuration discovery; move discovery into async launch preparation.

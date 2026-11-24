@@ -243,8 +243,20 @@ export async function checkLifecycle({
     ownedPid = undefined;
     await releaseHold();
     assert.equal(await readOptional(lateEffect), undefined);
+    // The crashed daemon and its recorded shell are gone, so the chat recovers without a hand repair.
+    const resumed = await eventually("crashed chat to accept a new prompt", async () => {
+      try {
+        return await send(crashed.id, "Continue after the held shell exited");
+      } catch (error) {
+        if (/could still be running/.test(error.message)) return undefined;
+        throw error;
+      }
+    });
+    assert.equal(resumed.disposition, "turn_started");
+    assert.equal((await client.waitForFinish(crashed.id, 12_000)).status, "idle");
+    assert.notEqual((await localStore.runs.get({ agentId: id, runId }))?.status, "running");
     console.log(
-      `PASS live writer preserved across SIGKILL and readmission refused before SDK send (resumeOnStartup=${resumeOnStartup})`,
+      `PASS live writer preserved across SIGKILL and readmission refused before SDK send, then recovered after the shell exited (resumeOnStartup=${resumeOnStartup})`,
     );
   }
 
