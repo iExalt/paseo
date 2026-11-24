@@ -57,6 +57,8 @@ const turnSchema = z.object({
 export type CursorHistoryTurn = z.infer<typeof turnSchema>;
 export type CursorHistoryUser = z.infer<typeof userMessageSchema>;
 
+const PROCESSES = ".processes.ndjson";
+
 function fileKey(id: string): string {
   return createHash("sha256").update(id).digest("hex");
 }
@@ -101,7 +103,9 @@ export class CursorTurnJournal {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     const prefix = fileKey(original.id);
     for (const name of await readdir(source.directory)) {
-      if (!name.startsWith(prefix) || name.endsWith(".turn.json")) continue;
+      // A copied turn is already joined; its process record belongs to the source chat.
+      if (!name.startsWith(prefix) || name.endsWith(".turn.json") || name.endsWith(PROCESSES))
+        continue;
       await copyFile(join(source.directory, name), join(this.directory, name));
     }
     await this.save(turn);
@@ -116,6 +120,11 @@ export class CursorTurnJournal {
     await mkdir(this.directory, { recursive: true, mode: 0o700 });
     // Retain structured attachment refs and image content independently of the model's echo.
     await writeJsonFileAtomic(this.inputPath(turnId, messageId), input);
+  }
+
+  /** Crash-safe record of the shells a turn started; see cursor-sdk-process-ledger.ts. */
+  processLedgerPath(turnId: string): string {
+    return join(this.directory, `${fileKey(turnId)}${PROCESSES}`);
   }
 
   private inputPath(turnId: string, messageId: string): string {
