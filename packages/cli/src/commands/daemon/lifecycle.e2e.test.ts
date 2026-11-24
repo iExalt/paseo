@@ -9,7 +9,7 @@ import {
   appendFile,
   rename,
 } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import net from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -17,11 +17,42 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { hashDaemonPassword } from "@getpaseo/server/auth";
 import { savePersistedConfig } from "@getpaseo/server/configuration";
 import { startDaemonInstance, readDaemonInstance } from "@getpaseo/server/daemon-control";
-import { expect, test } from "vitest";
+import { afterAll, test, type TestContext } from "vitest";
 import { connectToDaemon } from "../../utils/client.js";
 
 const repo = fileURLToPath(new URL("../../../../..", import.meta.url));
 const cli = path.join(repo, "packages/cli/dist/index.js");
+const compileCacheDir = mkdtempSync(path.join(tmpdir(), "paseo-lifecycle-compile-cache-"));
+
+const MAX_CONCURRENT_TESTS = 3;
+let activeTests = 0;
+const testQueue: Array<() => void> = [];
+
+async function withTestSlot<T>(fn: () => Promise<T>): Promise<T> {
+  if (activeTests >= MAX_CONCURRENT_TESTS) {
+    await new Promise<void>((resolve) => testQueue.push(resolve));
+  } else {
+    activeTests += 1;
+  }
+  try {
+    return await fn();
+  } finally {
+    const next = testQueue.shift();
+    if (next) {
+      next();
+    } else {
+      activeTests -= 1;
+    }
+  }
+}
+
+function concurrentTest(name: string, fn: (ctx: TestContext) => Promise<void>, timeout?: number) {
+  test.concurrent(name, (ctx) => withTestSlot(() => fn(ctx)), Math.max(timeout ?? 60_000, 60_000));
+}
+
+afterAll(() => {
+  rmSync(compileCacheDir, { recursive: true, force: true });
+});
 
 async function port() {
   const server = net.createServer();
@@ -32,12 +63,15 @@ async function port() {
   return value;
 }
 
-async function fixture() {
+async function fixture(testExpect: TestContext["expect"]) {
   const root = await mkdtemp(path.join(tmpdir(), "paseo lifecycle "));
   const env = {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("PASEO_"))),
     HOME: root,
     USERPROFILE: root,
+    NODE_COMPILE_CACHE: compileCacheDir,
+    PASEO_DEFER_TERMINAL_WORKER_LAUNCH: "1",
+    PASEO_DISABLE_BUILTIN_PLUGINS: "1",
   };
   const homes = [path.join(root, "a"), path.join(root, "b")];
   const owned = new Map<string, { pid: number; startedAt: string }>();
@@ -78,12 +112,12 @@ async function fixture() {
   }
   async function ok(args: string[], overrides?: NodeJS.ProcessEnv) {
     const result = await run(["--json", ...args], overrides);
-    expect(result.code, `${args.join(" ")}\n${result.stdout}\n${result.stderr}`).toBe(0);
+    testExpect(result.code, `${args.join(" ")}\n${result.stdout}\n${result.stderr}`).toBe(0);
     return result.json();
   }
   async function liveStatus(home: string, overrides?: NodeJS.ProcessEnv) {
     let status;
-    await expect
+    await testExpect
       .poll(
         async () => {
           status = await ok(["status", "--home", home], overrides);
@@ -92,7 +126,7 @@ async function fixture() {
         { timeout: 30_000 },
       )
       // A connected socket can outlive a status RPC timeout without reporting the worker.
-      .toMatchObject({ connectedDaemon: "reachable", workerPid: expect.any(Number) });
+      .toMatchObject({ connectedDaemon: "reachable", workerPid: testExpect.any(Number) });
     return status;
   }
   async function configure(home: string, listen: string) {
@@ -116,144 +150,162 @@ async function fixture() {
         /* Already exited. */
       }
     }
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   }
   return { root, homes, env, run, ok, liveStatus, configure, close };
 }
 
-test("managed two-home restart retains its supervisor and never routes ordinary commands or stop to the other home", async () => {
-  const f = await fixture();
-  const [a, b] = f.homes as [string, string];
-  const portA = await port(),
-    portB = await port(),
-    movedPort = await port();
-  try {
-    await f.configure(a, `127.0.0.1:${portA}`);
-    await f.configure(b, `127.0.0.1:${portB}`);
-    const launchA = await f.ok(["start", "--home", a, "--timeout", "30"]);
-    const poisoned = {
-      PASEO_HOME: a,
-      PASEO_HOST: `127.0.0.1:${portA}`,
-      PASEO_LISTEN: `127.0.0.1:${portA}`,
-      PORT: String(portA),
-      PASEO_WEB_UI_ENABLED: "true",
-      PASEO_RELAY_ENABLED: "true",
-    };
-    const launchB = await f.ok(["daemon", "start", "--home", b, "--timeout", "30"], poisoned);
-    expect(launchA.listen).toBe(`127.0.0.1:${portA}`);
-    expect(launchB.listen).toBe(`127.0.0.1:${portB}`);
-    const beforeA = await f.liveStatus(a);
-    const beforeB = await f.liveStatus(b, poisoned);
-    if (process.platform !== "win32") {
-      for (const home of [a, b]) expect((await stat(home)).mode & 0o777).toBe(0o700);
-      expect(existsSync(path.join(f.root, ".paseo"))).toBe(false);
+concurrentTest(
+  "managed two-home restart retains its supervisor and never routes ordinary commands or stop to the other home",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const [a, b] = f.homes as [string, string];
+    const portA = await port(),
+      portB = await port(),
+      movedPort = await port();
+    try {
+      await f.configure(a, `127.0.0.1:${portA}`);
+      await f.configure(b, `127.0.0.1:${portB}`);
+      const launchA = await f.ok(["start", "--home", a, "--timeout", "30"]);
+      const poisoned = {
+        PASEO_HOME: a,
+        PASEO_HOST: `127.0.0.1:${portA}`,
+        PASEO_LISTEN: `127.0.0.1:${portA}`,
+        PORT: String(portA),
+        PASEO_WEB_UI_ENABLED: "true",
+        PASEO_RELAY_ENABLED: "true",
+      };
+      const launchB = await f.ok(["daemon", "start", "--home", b, "--timeout", "30"], poisoned);
+      expect(launchA.listen).toBe(`127.0.0.1:${portA}`);
+      expect(launchB.listen).toBe(`127.0.0.1:${portB}`);
+      const beforeA = await f.liveStatus(a);
+      const beforeB = await f.liveStatus(b, poisoned);
+      if (process.platform !== "win32") {
+        for (const home of [a, b]) expect((await stat(home)).mode & 0o777).toBe(0o700);
+        expect(existsSync(path.join(f.root, ".paseo"))).toBe(false);
+      }
+
+      const repoB = path.join(f.root, "project-b");
+      await mkdir(repoB);
+      await f.ok(["project", "create", repoB, "--home", b], poisoned);
+      expect(await f.ok(["project", "ls", "--home", a])).toEqual([]);
+      expect((await f.ok(["project", "ls", "--home", b], poisoned)).length).toBe(1);
+      const stream = await f.run(["logs", "missing-agent", "--follow", "--home", b], poisoned);
+      expect(stream.stderr).toContain("No agent found matching: missing-agent");
+      const restart = await f.ok(["restart", "--home", b, "--timeout", "30"], poisoned);
+      expect(restart.supervisorPid).toBe(launchB.pid);
+      expect(restart.workerPid).not.toBe(beforeB.workerPid);
+      const saved = await f.ok(
+        ["daemon", "config", "set", "daemon.listen", `127.0.0.1:${movedPort}`, "--home", b],
+        poisoned,
+      );
+      expect(saved.restartRequiredPaths).toContain("daemon.listen");
+      await f.ok(["daemon", "restart", "--home", b, "--timeout", "30"], poisoned);
+      const moved = await f.liveStatus(b);
+      expect(moved.listen).toBe(`127.0.0.1:${movedPort}`);
+      expect(moved.pid).toBe(launchB.pid);
+      await f.ok(["daemon", "stop", "--home", b], poisoned);
+      const stoppedQuery = await f.run(["--json", "project", "ls", "--home", b], poisoned);
+      expect(stoppedQuery.code).toBe(1);
+      expect(stoppedQuery.stderr).toContain("DAEMON_NOT_RUNNING");
+      const afterA = await f.liveStatus(a);
+      expect(afterA.workerPid).toBe(beforeA.workerPid);
+      expect(afterA.pid).toBe(beforeA.pid);
+      expect(await f.ok(["project", "ls", "--home", a])).toEqual([]);
+    } finally {
+      await f.close();
     }
+  },
+  120_000,
+);
 
-    const repoB = path.join(f.root, "project-b");
-    await mkdir(repoB);
-    await f.ok(["project", "create", repoB, "--home", b], poisoned);
-    expect(await f.ok(["project", "ls", "--home", a])).toEqual([]);
-    expect((await f.ok(["project", "ls", "--home", b], poisoned)).length).toBe(1);
-    const stream = await f.run(["logs", "missing-agent", "--follow", "--home", b], poisoned);
-    expect(stream.stderr).toContain("No agent found matching: missing-agent");
-    const restart = await f.ok(["restart", "--home", b, "--timeout", "30"], poisoned);
-    expect(restart.supervisorPid).toBe(launchB.pid);
-    expect(restart.workerPid).not.toBe(beforeB.workerPid);
-    const saved = await f.ok(
-      ["daemon", "config", "set", "daemon.listen", `127.0.0.1:${movedPort}`, "--home", b],
-      poisoned,
-    );
-    expect(saved.restartRequiredPaths).toContain("daemon.listen");
-    await f.ok(["daemon", "restart", "--home", b, "--timeout", "30"], poisoned);
-    const moved = await f.liveStatus(b);
-    expect(moved.listen).toBe(`127.0.0.1:${movedPort}`);
-    expect(moved.pid).toBe(launchB.pid);
-    await f.ok(["daemon", "stop", "--home", b], poisoned);
-    const stoppedQuery = await f.run(["--json", "project", "ls", "--home", b], poisoned);
-    expect(stoppedQuery.code).toBe(1);
-    expect(stoppedQuery.stderr).toContain("DAEMON_NOT_RUNNING");
-    const afterA = await f.liveStatus(a);
-    expect(afterA.workerPid).toBe(beforeA.workerPid);
-    expect(afterA.pid).toBe(beforeA.pid);
-    expect(await f.ok(["project", "ls", "--home", a])).toEqual([]);
-  } finally {
-    await f.close();
-  }
-}, 120_000);
-
-test("removed flags and ambiguous targets fail before side effects; observation does not create a home", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  try {
-    await f.ok(["status", "--home", home]);
-    await f.ok(["daemon", "config", "get", "--home", home]);
-    expect(existsSync(home)).toBe(false);
-    for (const args of [
-      ["start", "--port", "12345"],
-      ["start", "--foreground"],
-      ["daemon", "restart", "--no-relay"],
-    ]) {
-      const result = await f.run(["--json", ...args, "--home", home]);
-      expect(result.code).toBe(1);
-      expect(result.stderr).toContain("REMOVED_LAUNCH_OPTION");
+concurrentTest(
+  "removed flags and ambiguous targets fail before side effects; observation does not create a home",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    try {
+      await f.ok(["status", "--home", home]);
+      await f.ok(["daemon", "config", "get", "--home", home]);
       expect(existsSync(home)).toBe(false);
+      for (const args of [
+        ["start", "--port", "12345"],
+        ["start", "--foreground"],
+        ["daemon", "restart", "--no-relay"],
+      ]) {
+        const result = await f.run(["--json", ...args, "--home", home]);
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain("REMOVED_LAUNCH_OPTION");
+        expect(existsSync(home)).toBe(false);
+      }
+      const ambiguous = await f.run(["--home", home, "project", "ls", "--host", "unused:12345"]);
+      expect(ambiguous.stderr).toContain("Choose either --home or --host");
+      expect(existsSync(home)).toBe(false);
+    } finally {
+      await f.close();
     }
-    const ambiguous = await f.run(["--home", home, "project", "ls", "--host", "unused:12345"]);
-    expect(ambiguous.stderr).toContain("Choose either --home or --host");
-    expect(existsSync(home)).toBe(false);
-  } finally {
-    await f.close();
-  }
-}, 30_000);
+  },
+  30_000,
+);
 
-test("local status uses the credential and reports the server id of a password-protected daemon", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  try {
-    await f.configure(home, `127.0.0.1:${await port()}`);
-    const configPath = path.join(home, "config.json");
-    const config = JSON.parse(await readFile(configPath, "utf8"));
-    config.daemon.auth = { password: await hashDaemonPassword("secret") };
-    await writeFile(configPath, JSON.stringify(config));
-    await f.ok(["start", "--home", home, "--timeout", "30"]);
-    const authenticated = await f.liveStatus(home, { PASEO_PASSWORD: "secret" });
-    expect(await f.ok(["daemon", "status", "--home", home])).toMatchObject({
-      connectedDaemon: "reachable",
-      serverId: authenticated.serverId,
-    });
-  } finally {
-    await f.close();
-  }
-}, 60_000);
+concurrentTest(
+  "local status uses the credential and reports the server id of a password-protected daemon",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    try {
+      await f.configure(home, `127.0.0.1:${await port()}`);
+      const configPath = path.join(home, "config.json");
+      const config = JSON.parse(await readFile(configPath, "utf8"));
+      config.daemon.auth = { password: await hashDaemonPassword("secret") };
+      await writeFile(configPath, JSON.stringify(config));
+      await f.ok(["start", "--home", home, "--timeout", "30"]);
+      const authenticated = await f.liveStatus(home, { PASEO_PASSWORD: "secret" });
+      expect(await f.ok(["daemon", "status", "--home", home])).toMatchObject({
+        connectedDaemon: "reachable",
+        serverId: authenticated.serverId,
+      });
+    } finally {
+      await f.close();
+    }
+  },
+  60_000,
+);
 
-test("an occupied initial or replacement address fails without false readiness or killing its owner", async () => {
-  const f = await fixture();
-  const [a, b] = f.homes as [string, string];
-  const portA = await port(),
-    portB = await port();
-  try {
-    await f.configure(a, `127.0.0.1:${portA}`);
-    await f.configure(b, `127.0.0.1:${portA}`);
-    await f.ok(["start", "--home", a, "--timeout", "30"]);
-    const before = await f.liveStatus(a);
-    const failed = await f.run(["--json", "start", "--home", b, "--timeout", "30"]);
-    expect(failed.code).toBe(1);
-    expect(failed.stderr).toContain("DAEMON_START_FAILED");
-    await f.ok(["daemon", "config", "set", "daemon.listen", `127.0.0.1:${portB}`, "--home", b]);
-    await f.ok(["start", "--home", b, "--timeout", "30"]);
-    await f.ok(["daemon", "config", "set", "daemon.listen", `127.0.0.1:${portA}`, "--home", b]);
-    const restart = await f.run(["--json", "restart", "--home", b, "--timeout", "30"]);
-    expect(restart.code).toBe(1);
-    expect(restart.stderr).toContain("RESTART_NOT_CONFIRMED");
-    await f.ok(["daemon", "stop", "--home", b]);
-    expect((await f.liveStatus(a)).workerPid).toBe(before.workerPid);
-  } finally {
-    await f.close();
-  }
-}, 120_000);
+concurrentTest(
+  "an occupied initial or replacement address fails without false readiness or killing its owner",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const [a, b] = f.homes as [string, string];
+    const portA = await port(),
+      portB = await port();
+    try {
+      await f.configure(a, `127.0.0.1:${portA}`);
+      await f.configure(b, `127.0.0.1:${portA}`);
+      await f.ok(["start", "--home", a, "--timeout", "30"]);
+      const before = await f.liveStatus(a);
+      const failed = await f.run(["--json", "start", "--home", b, "--timeout", "30"]);
+      expect(failed.code).toBe(1);
+      expect(failed.stderr).toContain("DAEMON_START_FAILED");
+      await f.ok(["daemon", "config", "set", "daemon.listen", `127.0.0.1:${portB}`, "--home", b]);
+      await f.ok(["start", "--home", b, "--timeout", "30"]);
+      await f.ok(["daemon", "config", "set", "daemon.listen", `127.0.0.1:${portA}`, "--home", b]);
+      const restart = await f.run(["--json", "restart", "--home", b, "--timeout", "30"]);
+      expect(restart.code).toBe(1);
+      expect(restart.stderr).toContain("RESTART_NOT_CONFIRMED");
+      await f.ok(["daemon", "stop", "--home", b]);
+      expect((await f.liveStatus(a)).workerPid).toBe(before.workerPid);
+    } finally {
+      await f.close();
+    }
+  },
+  120_000,
+);
 
-test("a slow worker outlives the caller's readiness deadline and remains stoppable", async () => {
-  const f = await fixture();
+test("a slow worker outlives the caller's readiness deadline and remains stoppable", async ({
+  expect,
+}) => {
+  const f = await fixture(expect);
   const home = f.homes[0]!;
   try {
     await f.configure(home, `127.0.0.1:${await port()}`);
@@ -286,104 +338,114 @@ test("a slow worker outlives the caller's readiness deadline and remains stoppab
   }
 }, 60_000);
 
-test("worker restart preserves an already-running legacy supervisor's launch flags", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  const filePort = await port(),
-    launchPort = await port();
-  try {
-    await f.configure(home, `127.0.0.1:${filePort}`);
-    const launch = await startDaemonInstance({
-      home,
-      command: process.execPath,
-      args: [
-        path.join(repo, "packages/server/dist/scripts/supervisor-entrypoint.js"),
-        "--no-relay",
-        "--no-web-ui",
-      ],
-      // The legacy CLI translated --port into PASEO_LISTEN before spawning.
-      env: { ...f.env, PASEO_LISTEN: `127.0.0.1:${launchPort}` },
-      mode: "deployment",
-      timeoutMs: 30_000,
-    });
-    const before = await f.liveStatus(home);
-    expect(before.listen).toBe(`127.0.0.1:${launchPort}`);
-    const restarted = await f.ok(["restart", "--home", home, "--timeout", "30"], {
-      PASEO_LISTEN: `127.0.0.1:${filePort}`,
-    });
-    expect(restarted.supervisorPid).toBe(launch.instance.pid);
-    expect(restarted.workerPid).not.toBe(before.workerPid);
-    expect((await f.ok(["status", "--home", home])).listen).toBe(before.listen);
-  } finally {
-    await f.close();
-  }
-}, 60_000);
+concurrentTest(
+  "worker restart preserves an already-running legacy supervisor's launch flags",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    const filePort = await port(),
+      launchPort = await port();
+    try {
+      await f.configure(home, `127.0.0.1:${filePort}`);
+      const launch = await startDaemonInstance({
+        home,
+        command: process.execPath,
+        args: [
+          path.join(repo, "packages/server/dist/scripts/supervisor-entrypoint.js"),
+          "--no-relay",
+          "--no-web-ui",
+        ],
+        // The legacy CLI translated --port into PASEO_LISTEN before spawning.
+        env: { ...f.env, PASEO_LISTEN: `127.0.0.1:${launchPort}` },
+        mode: "deployment",
+        timeoutMs: 30_000,
+      });
+      const before = await f.liveStatus(home);
+      expect(before.listen).toBe(`127.0.0.1:${launchPort}`);
+      const restarted = await f.ok(["restart", "--home", home, "--timeout", "30"], {
+        PASEO_LISTEN: `127.0.0.1:${filePort}`,
+      });
+      expect(restarted.supervisorPid).toBe(launch.instance.pid);
+      expect(restarted.workerPid).not.toBe(before.workerPid);
+      expect((await f.ok(["status", "--home", home])).listen).toBe(before.listen);
+    } finally {
+      await f.close();
+    }
+  },
+  60_000,
+);
 
-test("--replace-supervisor uses the installed runner and persisted config, retaining ownership and a live terminal", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  const savedPort = await port(),
-    legacyPort = await port();
-  let client: Awaited<ReturnType<typeof connectToDaemon>> | undefined;
-  try {
-    await f.configure(home, `127.0.0.1:${savedPort}`);
-    const oldRunner = path.join(f.root, "legacy-supervisor.mjs");
-    const launches = path.join(f.root, "legacy-launches.txt");
-    await writeFile(
-      oldRunner,
-      `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(launches)}, 'old-launch\\n');\nawait import(${JSON.stringify(pathToFileURL(path.join(repo, "packages/server/dist/scripts/supervisor-entrypoint.js")).href)});\n`,
-    );
-    const launch = await startDaemonInstance({
-      home,
-      command: process.execPath,
-      args: [oldRunner],
-      env: { ...f.env, PASEO_LISTEN: `127.0.0.1:${legacyPort}` },
-      mode: "deployment",
-      desktopManaged: true,
-      timeoutMs: 30_000,
-    });
-    const before = await f.liveStatus(home);
-    expect(before.listen).toBe(`127.0.0.1:${legacyPort}`);
-    client = await connectToDaemon({ target: { kind: "instance", home }, timeout: 10_000 });
-    const workspace = await client.createWorkspace({ source: { kind: "directory", path: f.root } });
-    expect(workspace.workspace?.id).toBeTruthy();
-    const terminal = await client.createTerminal(f.root, "survive replacement", undefined, {
-      workspaceId: workspace.workspace!.id,
-      command: process.execPath,
-      args: ["-e", "setInterval(() => {}, 1000)"],
-    });
-    expect(terminal.error).toBeNull();
-    expect(terminal.terminal?.id).toBeTruthy();
-    const terminalId = terminal.terminal!.id;
-    await client.close();
-    const replaced = await f.ok(
-      ["daemon", "restart", "--home", home, "--replace-supervisor", "--timeout", "30"],
-      { PASEO_SERVER_ID: "unrelated-invoking-environment" },
-    );
-    expect(replaced.previousSupervisorPid).toBe(launch.instance.pid);
-    expect(replaced.supervisorPid).not.toBe(launch.instance.pid);
-    const after = await f.liveStatus(home);
-    expect(after.listen).toBe(`127.0.0.1:${savedPort}`);
-    expect(after.serverId).toBe(before.serverId);
-    expect(after.desktopManaged).toBe(true);
-    expect(after.daemonVersion).toBe(
-      JSON.parse(await readFile(path.join(repo, "packages/server/package.json"), "utf8")).version,
-    );
-    expect(await readFile(launches, "utf8")).toBe("old-launch\n");
-    client = await connectToDaemon({ target: { kind: "instance", home }, timeout: 10_000 });
-    expect((await client.listTerminals(f.root)).terminals.some((t) => t.id === terminalId)).toBe(
-      true,
-    );
-  } finally {
-    await client?.close();
-    await f.close();
-  }
-}, 90_000);
+concurrentTest(
+  "--replace-supervisor uses the installed runner and persisted config, retaining ownership and a live terminal",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    const savedPort = await port(),
+      legacyPort = await port();
+    let client: Awaited<ReturnType<typeof connectToDaemon>> | undefined;
+    try {
+      await f.configure(home, `127.0.0.1:${savedPort}`);
+      const oldRunner = path.join(f.root, "legacy-supervisor.mjs");
+      const launches = path.join(f.root, "legacy-launches.txt");
+      await writeFile(
+        oldRunner,
+        `import { appendFileSync } from 'node:fs';\nappendFileSync(${JSON.stringify(launches)}, 'old-launch\\n');\nawait import(${JSON.stringify(pathToFileURL(path.join(repo, "packages/server/dist/scripts/supervisor-entrypoint.js")).href)});\n`,
+      );
+      const launch = await startDaemonInstance({
+        home,
+        command: process.execPath,
+        args: [oldRunner],
+        env: { ...f.env, PASEO_LISTEN: `127.0.0.1:${legacyPort}` },
+        mode: "deployment",
+        desktopManaged: true,
+        timeoutMs: 30_000,
+      });
+      const before = await f.liveStatus(home);
+      expect(before.listen).toBe(`127.0.0.1:${legacyPort}`);
+      client = await connectToDaemon({ target: { kind: "instance", home }, timeout: 10_000 });
+      const workspace = await client.createWorkspace({
+        source: { kind: "directory", path: f.root },
+      });
+      expect(workspace.workspace?.id).toBeTruthy();
+      const terminal = await client.createTerminal(f.root, "survive replacement", undefined, {
+        workspaceId: workspace.workspace!.id,
+        command: process.execPath,
+        args: ["-e", "setInterval(() => {}, 1000)"],
+      });
+      expect(terminal.error).toBeNull();
+      expect(terminal.terminal?.id).toBeTruthy();
+      const terminalId = terminal.terminal!.id;
+      await client.close();
+      const replaced = await f.ok(
+        ["daemon", "restart", "--home", home, "--replace-supervisor", "--timeout", "30"],
+        { PASEO_SERVER_ID: "unrelated-invoking-environment" },
+      );
+      expect(replaced.previousSupervisorPid).toBe(launch.instance.pid);
+      expect(replaced.supervisorPid).not.toBe(launch.instance.pid);
+      const after = await f.liveStatus(home);
+      expect(after.listen).toBe(`127.0.0.1:${savedPort}`);
+      expect(after.serverId).toBe(before.serverId);
+      expect(after.desktopManaged).toBe(true);
+      expect(after.daemonVersion).toBe(
+        JSON.parse(await readFile(path.join(repo, "packages/server/package.json"), "utf8")).version,
+      );
+      expect(await readFile(launches, "utf8")).toBe("old-launch\n");
+      client = await connectToDaemon({ target: { kind: "instance", home }, timeout: 10_000 });
+      expect((await client.listTerminals(f.root)).terminals.some((t) => t.id === terminalId)).toBe(
+        true,
+      );
+    } finally {
+      await client?.close();
+      await f.close();
+    }
+  },
+  90_000,
+);
 
 test.skipIf(process.platform === "win32")(
   "POSIX stop ignores a wrong endpoint even with copied identities; supported live identity overrides still restart",
-  async () => {
-    const f = await fixture();
+  async ({ expect }) => {
+    const f = await fixture(expect);
     const [a, b] = f.homes as [string, string];
     try {
       await f.configure(a, `127.0.0.1:${await port()}`);
@@ -409,53 +471,55 @@ test.skipIf(process.platform === "win32")(
   60_000,
 );
 
-test.skipIf(process.platform === "win32").each([["start"], ["daemon", "run"]])(
-  "explicit cancellation before readiness cleans up only this launch: %j",
-  async (...launchArgs) => {
-    const f = await fixture();
-    const home = f.homes[0]!;
-    let child: ReturnType<typeof spawn> | undefined;
-    try {
-      await f.configure(home, `127.0.0.1:${await port()}`);
-      const preload = path.join(f.root, "slow-worker.mjs");
-      await writeFile(
-        preload,
-        'if (process.argv[1]?.endsWith("daemon-worker.js")) await new Promise(resolve => setTimeout(resolve, 30000));',
-      );
-      child = spawn(process.execPath, [cli, ...launchArgs, "--home", home], {
-        cwd: repo,
-        env: { ...f.env, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` },
-        stdio: "ignore",
-      });
-      const exited = new Promise((resolve) => child!.once("exit", resolve));
-      // The lock file exists before its contents identify the supervisor.
-      let supervisorPid: number | undefined;
-      await expect
-        .poll(
-          async () => {
-            supervisorPid = (await readDaemonInstance(home))?.pid;
-            return supervisorPid;
-          },
-          { timeout: 10_000 },
-        )
-        .toBeTypeOf("number");
-      await f.ok(["status", "--home", home]);
-      child.kill("SIGINT");
-      await exited;
-      expect(() => process.kill(supervisorPid!, 0)).toThrow();
-      expect((await f.ok(["status", "--home", home])).localDaemon).toBe("stopped");
-    } finally {
-      child?.kill("SIGTERM");
-      await f.close();
-    }
-  },
-  60_000,
-);
+for (const launchArgs of [["start"], ["daemon", "run"]] as const) {
+  (process.platform === "win32" ? test.skip : concurrentTest)(
+    `explicit cancellation before readiness cleans up only this launch: ${JSON.stringify(launchArgs)}`,
+    async ({ expect }) => {
+      const f = await fixture(expect);
+      const home = f.homes[0]!;
+      let child: ReturnType<typeof spawn> | undefined;
+      try {
+        await f.configure(home, `127.0.0.1:${await port()}`);
+        const preload = path.join(f.root, "slow-worker.mjs");
+        await writeFile(
+          preload,
+          'if (process.argv[1]?.endsWith("daemon-worker.js")) await new Promise(resolve => setTimeout(resolve, 30000));',
+        );
+        child = spawn(process.execPath, [cli, ...launchArgs, "--home", home], {
+          cwd: repo,
+          env: { ...f.env, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` },
+          stdio: "ignore",
+        });
+        const exited = new Promise((resolve) => child!.once("exit", resolve));
+        // The lock file exists before its contents identify the supervisor.
+        let supervisorPid: number | undefined;
+        await expect
+          .poll(
+            async () => {
+              supervisorPid = (await readDaemonInstance(home))?.pid;
+              return supervisorPid;
+            },
+            { timeout: 10_000 },
+          )
+          .toBeTypeOf("number");
+        await f.ok(["status", "--home", home]);
+        child.kill("SIGINT");
+        await exited;
+        expect(() => process.kill(supervisorPid!, 0)).toThrow();
+        expect((await f.ok(["status", "--home", home])).localDaemon).toBe("stopped");
+      } finally {
+        child?.kill("SIGTERM");
+        await f.close();
+      }
+    },
+    60_000,
+  );
+}
 
 test.runIf(process.platform === "win32")(
   "Windows unbound stop requires explicit force",
-  async () => {
-    const f = await fixture();
+  async ({ expect }) => {
+    const f = await fixture(expect);
     const home = f.homes[0]!;
     try {
       await f.configure(home, `127.0.0.1:${await port()}`);
@@ -481,35 +545,39 @@ test.runIf(process.platform === "win32")(
   60_000,
 );
 
-test("empty explicit selectors never select the ambient daemon or create local state", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  try {
-    await f.configure(home, `127.0.0.1:${await port()}`);
-    await f.ok(["start", "--home", home]);
-    const before = await f.liveStatus(home);
-    for (const args of [
-      ["daemon", "stop", "--home", ""],
-      ["daemon", "stop", "--host", ""],
-      ["start", "--home", ""],
-      ["daemon", "config", "set", "daemon.relay.enabled", "true", "--home", ""],
-    ]) {
-      const refused = await f.run(["--json", ...args], { PASEO_HOME: home });
-      expect(refused.code).toBe(1);
-      expect(refused.stderr).toContain("TARGET_INVALID");
-      expect((await f.liveStatus(home)).workerPid).toBe(before.workerPid);
-      expect(existsSync(path.join(f.root, "paseo.pid"))).toBe(false);
-      expect(existsSync(path.join(f.root, "config.json"))).toBe(false);
+concurrentTest(
+  "empty explicit selectors never select the ambient daemon or create local state",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    try {
+      await f.configure(home, `127.0.0.1:${await port()}`);
+      await f.ok(["start", "--home", home]);
+      const before = await f.liveStatus(home);
+      for (const args of [
+        ["daemon", "stop", "--home", ""],
+        ["daemon", "stop", "--host", ""],
+        ["start", "--home", ""],
+        ["daemon", "config", "set", "daemon.relay.enabled", "true", "--home", ""],
+      ]) {
+        const refused = await f.run(["--json", ...args], { PASEO_HOME: home });
+        expect(refused.code).toBe(1);
+        expect(refused.stderr).toContain("TARGET_INVALID");
+        expect((await f.liveStatus(home)).workerPid).toBe(before.workerPid);
+        expect(existsSync(path.join(f.root, "paseo.pid"))).toBe(false);
+        expect(existsSync(path.join(f.root, "config.json"))).toBe(false);
+      }
+    } finally {
+      await f.close();
     }
-  } finally {
-    await f.close();
-  }
-}, 60_000);
+  },
+  60_000,
+);
 
 test.skipIf(process.platform === "win32")(
   "restart confirms the replacement worker when a provider probe is slow",
-  async () => {
-    const f = await fixture();
+  async ({ expect }) => {
+    const f = await fixture(expect);
     const home = f.homes[0]!;
     try {
       await f.configure(home, `127.0.0.1:${await port()}`);
@@ -537,149 +605,167 @@ test.skipIf(process.platform === "win32")(
   60_000,
 );
 
-test("IPv6 publication supports home-selected query and worker restart", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  const endpoint = `[::1]:${await port()}`;
-  try {
-    await f.configure(home, endpoint);
-    const launch = await f.ok(["start", "--home", home, "--timeout", "30"]);
-    expect(launch.listen).toBe(endpoint);
-    expect(await f.ok(["project", "ls", "--home", home])).toEqual([]);
-    const restarted = await f.ok(["restart", "--home", home, "--timeout", "30"]);
-    expect(restarted.supervisorPid).toBe(launch.pid);
-    expect(restarted.workerPid).not.toBe(restarted.previousWorkerPid);
-  } finally {
-    await f.close();
-  }
-}, 60_000);
-
-test("raw log following subscribes to a stored agent that exists only in B", async () => {
-  const f = await fixture();
-  const [a, b] = f.homes as [string, string];
-  let follower: ReturnType<typeof spawn> | undefined;
-  try {
-    await f.configure(a, `127.0.0.1:${await port()}`);
-    await f.configure(b, `127.0.0.1:${await port()}`);
-    const agentId = "4de8b157-7614-4c38-b189-e50e57fb9498";
-    const now = new Date().toISOString();
-    await mkdir(path.join(b, "agents"));
-    await writeFile(
-      path.join(b, "agents", `${agentId}.json`),
-      JSON.stringify({
-        id: agentId,
-        provider: "codex",
-        cwd: f.root,
-        title: "B-only stored agent",
-        createdAt: now,
-        updatedAt: now,
-        lastStatus: "closed",
-        persistence: null,
-      }),
-    );
-    const launchA = await f.ok(["start", "--home", a]);
-    await f.ok(["start", "--home", b]);
-    const absent = await f.run(["logs", agentId, "--home", a]);
-    expect(absent.stderr).toContain(`No agent found matching: ${agentId}`);
-    follower = spawn(
-      process.execPath,
-      [cli, "logs", agentId, "--follow", "--tail", "0", "--home", b],
-      {
-        cwd: f.root,
-        env: { ...f.env, PASEO_HOME: a, PASEO_HOST: launchA.listen },
-        stdio: ["ignore", "pipe", "pipe"],
-      },
-    );
-    let output = "",
-      errors = "";
-    follower.stdout!.on("data", (data) => {
-      output += data;
-    });
-    follower.stderr!.on("data", (data) => {
-      errors += data;
-    });
-    await expect.poll(() => output, { timeout: 15_000 }).toContain("Following logs (no history;");
-    expect(errors).not.toContain("No agent found matching");
-  } finally {
-    if (follower && follower.exitCode === null) {
-      const exited = new Promise((resolve) => follower!.once("exit", resolve));
-      follower.kill("SIGINT");
-      await exited;
+concurrentTest(
+  "IPv6 publication supports home-selected query and worker restart",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    const endpoint = `[::1]:${await port()}`;
+    try {
+      await f.configure(home, endpoint);
+      const launch = await f.ok(["start", "--home", home, "--timeout", "30"]);
+      expect(launch.listen).toBe(endpoint);
+      expect(await f.ok(["project", "ls", "--home", home])).toEqual([]);
+      const restarted = await f.ok(["restart", "--home", home, "--timeout", "30"]);
+      expect(restarted.supervisorPid).toBe(launch.pid);
+      expect(restarted.workerPid).not.toBe(restarted.previousWorkerPid);
+    } finally {
+      await f.close();
     }
-    await f.close();
-  }
-}, 60_000);
+  },
+  60_000,
+);
 
-test("a connection pinned to an earlier supervisor refuses its replacement", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  try {
-    await f.configure(home, `127.0.0.1:${await port()}`);
-    await f.ok(["start", "--home", home]);
-    const captured = (await readDaemonInstance(home))!;
-    await f.ok(["daemon", "stop", "--home", home]);
-    await f.ok(["start", "--home", home]);
-    const before = await f.liveStatus(home);
-    await expect(
-      connectToDaemon({ target: { kind: "instance", home }, instance: captured, timeout: 1000 }),
-    ).rejects.toMatchObject({ code: "DAEMON_REPLACED" });
-    expect((await f.liveStatus(home)).workerPid).toBe(before.workerPid);
-  } finally {
-    await f.close();
-  }
-}, 60_000);
+concurrentTest(
+  "raw log following subscribes to a stored agent that exists only in B",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const [a, b] = f.homes as [string, string];
+    let follower: ReturnType<typeof spawn> | undefined;
+    try {
+      await f.configure(a, `127.0.0.1:${await port()}`);
+      await f.configure(b, `127.0.0.1:${await port()}`);
+      const agentId = "4de8b157-7614-4c38-b189-e50e57fb9498";
+      const now = new Date().toISOString();
+      await mkdir(path.join(b, "agents"));
+      await writeFile(
+        path.join(b, "agents", `${agentId}.json`),
+        JSON.stringify({
+          id: agentId,
+          provider: "codex",
+          cwd: f.root,
+          title: "B-only stored agent",
+          createdAt: now,
+          updatedAt: now,
+          lastStatus: "closed",
+          persistence: null,
+        }),
+      );
+      const launchA = await f.ok(["start", "--home", a]);
+      await f.ok(["start", "--home", b]);
+      const absent = await f.run(["logs", agentId, "--home", a]);
+      expect(absent.stderr).toContain(`No agent found matching: ${agentId}`);
+      follower = spawn(
+        process.execPath,
+        [cli, "logs", agentId, "--follow", "--tail", "0", "--home", b],
+        {
+          cwd: f.root,
+          env: { ...f.env, PASEO_HOME: a, PASEO_HOST: launchA.listen },
+          stdio: ["ignore", "pipe", "pipe"],
+        },
+      );
+      let output = "",
+        errors = "";
+      follower.stdout!.on("data", (data) => {
+        output += data;
+      });
+      follower.stderr!.on("data", (data) => {
+        errors += data;
+      });
+      await expect.poll(() => output, { timeout: 15_000 }).toContain("Following logs (no history;");
+      expect(errors).not.toContain("No agent found matching");
+    } finally {
+      if (follower && follower.exitCode === null) {
+        const exited = new Promise((resolve) => follower!.once("exit", resolve));
+        follower.kill("SIGINT");
+        await exited;
+      }
+      await f.close();
+    }
+  },
+  60_000,
+);
 
-test("foreground deployment retains environment until its owner ends the launch; endpoint stop reports acknowledgment", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  const fileEndpoint = `127.0.0.1:${await port()}`,
-    deploymentEndpoint = `127.0.0.1:${await port()}`,
-    changedEndpoint = `127.0.0.1:${await port()}`;
-  let deployment: ReturnType<typeof spawn> | undefined;
-  try {
-    await f.configure(home, fileEndpoint);
-    deployment = spawn(process.execPath, [cli, "daemon", "run", "--home", home], {
-      cwd: f.root,
-      env: { ...f.env, PASEO_LISTEN: deploymentEndpoint, PASEO_RELAY_ENABLED: "false" },
-      stdio: "ignore",
-    });
-    await expect
-      .poll(async () => (await readDaemonInstance(home))?.listen, { timeout: 30_000 })
-      .toBe(deploymentEndpoint);
-    const before = await f.liveStatus(home);
-    expect(before.configuredListen).toBe(fileEndpoint);
-    const alreadyRunning = await f.run(["daemon", "run", "--home", home]);
-    expect(alreadyRunning.code, alreadyRunning.stderr).toBe(0);
-    expect((await f.liveStatus(home)).pid).toBe(before.pid);
-    expect((await f.liveStatus(home)).workerPid).toBe(before.workerPid);
-    const changed = await f.ok([
-      "daemon",
-      "config",
-      "set",
-      "daemon.listen",
-      changedEndpoint,
-      "--home",
-      home,
-    ]);
-    expect(changed.overrideControlledPaths).toContain("daemon.listen");
-    const restarted = await f.ok(["restart", "--home", home], { PASEO_LISTEN: fileEndpoint });
-    expect(restarted.supervisorPid).toBe(before.pid);
-    expect((await f.ok(["status", "--home", home])).listen).toBe(deploymentEndpoint);
-    const exited = new Promise((resolve) => deployment!.once("exit", resolve));
-    const remote = await f.ok(["daemon", "stop", "--host", deploymentEndpoint]);
-    expect(remote.action).toBe("shutdown_requested");
-    await exited;
-    const managed = await f.ok(["start", "--home", home]);
-    expect(managed.listen).toBe(changedEndpoint);
-    expect(managed.pid).not.toBe(before.pid);
-  } finally {
-    if (deployment?.exitCode === null) deployment.kill("SIGTERM");
-    await f.close();
-  }
-}, 90_000);
+concurrentTest(
+  "a connection pinned to an earlier supervisor refuses its replacement",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    try {
+      await f.configure(home, `127.0.0.1:${await port()}`);
+      await f.ok(["start", "--home", home]);
+      const captured = (await readDaemonInstance(home))!;
+      await f.ok(["daemon", "stop", "--home", home]);
+      await f.ok(["start", "--home", home]);
+      const before = await f.liveStatus(home);
+      await expect(
+        connectToDaemon({ target: { kind: "instance", home }, instance: captured, timeout: 1000 }),
+      ).rejects.toMatchObject({ code: "DAEMON_REPLACED" });
+      expect((await f.liveStatus(home)).workerPid).toBe(before.workerPid);
+    } finally {
+      await f.close();
+    }
+  },
+  60_000,
+);
 
-test("malformed configuration cannot turn a readiness timeout into launch cancellation", async () => {
-  const f = await fixture();
+concurrentTest(
+  "foreground deployment retains environment until its owner ends the launch; endpoint stop reports acknowledgment",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    const fileEndpoint = `127.0.0.1:${await port()}`,
+      deploymentEndpoint = `127.0.0.1:${await port()}`,
+      changedEndpoint = `127.0.0.1:${await port()}`;
+    let deployment: ReturnType<typeof spawn> | undefined;
+    try {
+      await f.configure(home, fileEndpoint);
+      deployment = spawn(process.execPath, [cli, "daemon", "run", "--home", home], {
+        cwd: f.root,
+        env: { ...f.env, PASEO_LISTEN: deploymentEndpoint, PASEO_RELAY_ENABLED: "false" },
+        stdio: "ignore",
+      });
+      await expect
+        .poll(async () => (await readDaemonInstance(home))?.listen, { timeout: 30_000 })
+        .toBe(deploymentEndpoint);
+      const before = await f.liveStatus(home);
+      expect(before.configuredListen).toBe(fileEndpoint);
+      const alreadyRunning = await f.run(["daemon", "run", "--home", home]);
+      expect(alreadyRunning.code, alreadyRunning.stderr).toBe(0);
+      expect((await f.liveStatus(home)).pid).toBe(before.pid);
+      expect((await f.liveStatus(home)).workerPid).toBe(before.workerPid);
+      const changed = await f.ok([
+        "daemon",
+        "config",
+        "set",
+        "daemon.listen",
+        changedEndpoint,
+        "--home",
+        home,
+      ]);
+      expect(changed.overrideControlledPaths).toContain("daemon.listen");
+      const restarted = await f.ok(["restart", "--home", home], { PASEO_LISTEN: fileEndpoint });
+      expect(restarted.supervisorPid).toBe(before.pid);
+      expect((await f.ok(["status", "--home", home])).listen).toBe(deploymentEndpoint);
+      const exited = new Promise((resolve) => deployment!.once("exit", resolve));
+      const remote = await f.ok(["daemon", "stop", "--host", deploymentEndpoint]);
+      expect(remote.action).toBe("shutdown_requested");
+      await exited;
+      const managed = await f.ok(["start", "--home", home]);
+      expect(managed.listen).toBe(changedEndpoint);
+      expect(managed.pid).not.toBe(before.pid);
+    } finally {
+      if (deployment?.exitCode === null) deployment.kill("SIGTERM");
+      await f.close();
+    }
+  },
+  90_000,
+);
+
+test("malformed configuration cannot turn a readiness timeout into launch cancellation", async ({
+  expect,
+}) => {
+  const f = await fixture(expect);
   const home = f.homes[0]!;
   let starter: ReturnType<typeof spawn> | undefined;
   try {
@@ -719,162 +805,187 @@ test("malformed configuration cannot turn a readiness timeout into launch cancel
   }
 }, 60_000);
 
-test("a background start that fails before the supervisor logs names the cause in a log that exists", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  const configPath = path.join(home, "config.json");
-  try {
-    await mkdir(home, { recursive: true });
-    await writeFile(configPath, '{"version":1,');
-    const failed = await f.run(["daemon", "start", "--home", home, "--timeout", "30"]);
-    expect(failed.code).toBe(1);
-    expect(failed.stderr).toContain(`Logs: ${path.join(home, "daemon.log")}`);
-    expect(failed.stderr).toContain(`Invalid JSON in ${configPath}`);
-    expect(await readFile(path.join(home, "daemon.log"), "utf8")).toContain(
-      `Invalid JSON in ${configPath}`,
-    );
-  } finally {
-    await f.close();
-  }
-}, 60_000);
-
-test("onboarding preserves native tool choice unless explicitly disabled", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  try {
-    await f.configure(home, `127.0.0.1:${await port()}`);
-    await f.ok(["daemon", "config", "set", "daemon.agentTools.enabled", "true", "--home", home]);
-    const preserved = await f.run(["onboard", "--home", home, "--voice", "disable"]);
-    expect(preserved.code, preserved.stderr).toBe(0);
-    expect(
-      (await f.ok(["daemon", "config", "get", "daemon.agentTools.enabled", "--home", home])).value,
-    ).toBe(true);
-
-    const disabled = await f.run([
-      "onboard",
-      "--home",
-      home,
-      "--voice",
-      "disable",
-      "--no-agent-tools",
-    ]);
-    expect(disabled.code, disabled.stderr).toBe(0);
-    expect(
-      (await f.ok(["daemon", "config", "get", "daemon.agentTools.enabled", "--home", home])).value,
-    ).toBe(false);
-  } finally {
-    await f.close();
-  }
-}, 60_000);
-
-test("daemon info exposes capabilities, diagnostics and local log tails", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  try {
-    await f.configure(home, `127.0.0.1:${await port()}`);
-    await f.ok(["daemon", "start", "--home", home, "--timeout", "30"]);
-    const status = await f.ok(["daemon", "status", "--home", home, "--latency"]);
-    expect(status).toMatchObject({
-      connectedDaemon: "reachable",
-      capabilities: expect.any(Object),
-      features: { daemonDiagnostics: true },
-      latencyMs: expect.any(Number),
-    });
-    const diagnostic = await f.ok(["daemon", "diagnostics", "--home", home]);
-    expect(diagnostic.diagnostic).toEqual(expect.any(String));
-    expect(diagnostic.diagnostic.length).toBeGreaterThan(0);
-    const logs = await f.ok(["daemon", "logs", "--home", home, "--tail", "2"]);
-    expect(logs.file).toBe(path.join(home, "daemon.log"));
-    expect(logs.text.split("\n").length).toBeLessThanOrEqual(2);
-    expect(await f.ok(["daemon", "logs", "--home", home, "--tail", "0"])).toMatchObject({
-      text: "",
-    });
-    const rejected = await f.run(["daemon", "logs", "--host", "127.0.0.1:1"]);
-    expect(rejected.code).not.toBe(0);
-  } finally {
-    await f.close();
-  }
-}, 60_000);
-
-test("daemon logs follow preserves unfinished lines and follows truncation and replacement", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  await mkdir(home, { recursive: true });
-  const file = path.join(home, "daemon.log");
-  await writeFile(file, "abc");
-  const child = spawn(process.execPath, [cli, "daemon", "logs", "--home", home, "--follow"], {
-    env: f.env,
-    stdio: ["ignore", "pipe", "pipe"],
-  });
-  let output = "";
-  child.stdout.on("data", (data) => {
-    output += data;
-  });
-  const closed = new Promise((resolve) => child.once("close", resolve));
-  try {
-    await expect.poll(() => output).toBe("abc");
-    await appendFile(file, "def\n");
-    await expect.poll(() => output).toBe("abcdef\n");
-    await writeFile(file, "x\n");
-    await expect.poll(() => output).toBe("abcdef\nx\n");
-    await rename(file, file + ".old");
-    await writeFile(file, "replacement\n");
-    await expect.poll(() => output).toBe("abcdef\nx\nreplacement\n");
-  } finally {
-    child.kill("SIGTERM");
-    await closed;
-    await f.close();
-  }
-  expect(output).toBe("abcdef\nx\nreplacement\n");
-}, 15_000);
-
-test("daemon log follow rejects normalized structured formats before reading", async () => {
-  const f = await fixture();
-  try {
-    for (const format of ["JSON", " YaMl "]) {
-      const result = await f.run([
-        "--format",
-        format,
-        "daemon",
-        "logs",
-        "--home",
-        f.homes[0]!,
-        "-f",
-      ]);
-      expect(result.code).not.toBe(0);
-      expect(result.stdout).toBe("");
-      expect(result.stderr).toContain("INVALID_FORMAT");
+concurrentTest(
+  "a background start that fails before the supervisor logs names the cause in a log that exists",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    const configPath = path.join(home, "config.json");
+    try {
+      await mkdir(home, { recursive: true });
+      await writeFile(configPath, '{"version":1,');
+      const failed = await f.run(["daemon", "start", "--home", home, "--timeout", "30"]);
+      expect(failed.code).toBe(1);
+      expect(failed.stderr).toContain(`Logs: ${path.join(home, "daemon.log")}`);
+      expect(failed.stderr).toContain(`Invalid JSON in ${configPath}`);
+      expect(await readFile(path.join(home, "daemon.log"), "utf8")).toContain(
+        `Invalid JSON in ${configPath}`,
+      );
+    } finally {
+      await f.close();
     }
-  } finally {
-    await f.close();
-  }
-});
+  },
+  60_000,
+);
 
-test("host discovery command entrypoints return canonical records from an isolated daemon", async () => {
-  const f = await fixture();
-  const home = f.homes[0]!;
-  try {
-    await f.configure(home, `127.0.0.1:${await port()}`);
-    await f.ok(["daemon", "start", "--home", home, "--timeout", "30"]);
-    const skills = await f.ok(["skills", "status", "--home", home]);
-    expect(skills.available).toEqual(expect.any(Array));
-    const models = await f.ok(["speech", "models", "ls", "--home", home]);
-    expect(models.models).toEqual(expect.any(Array));
-    const catalog = await f.ok(["plugin", "catalog", "--home", home]);
-    expect(catalog.plugins).toEqual(expect.any(Array));
-    const recent = await f.ok([
-      "agent",
-      "import",
-      "--list",
-      "--provider",
-      "codex",
-      "--cwd",
-      f.root,
-      "--home",
-      home,
-    ]);
-    expect(recent.entries).toEqual(expect.any(Array));
-  } finally {
-    await f.close();
-  }
-}, 60_000);
+concurrentTest(
+  "onboarding preserves native tool choice unless explicitly disabled",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    try {
+      await f.configure(home, `127.0.0.1:${await port()}`);
+      await f.ok(["daemon", "config", "set", "daemon.agentTools.enabled", "true", "--home", home]);
+      const preserved = await f.run(["onboard", "--home", home, "--voice", "disable"]);
+      expect(preserved.code, preserved.stderr).toBe(0);
+      expect(
+        (await f.ok(["daemon", "config", "get", "daemon.agentTools.enabled", "--home", home]))
+          .value,
+      ).toBe(true);
+
+      const disabled = await f.run([
+        "onboard",
+        "--home",
+        home,
+        "--voice",
+        "disable",
+        "--no-agent-tools",
+      ]);
+      expect(disabled.code, disabled.stderr).toBe(0);
+      expect(
+        (await f.ok(["daemon", "config", "get", "daemon.agentTools.enabled", "--home", home]))
+          .value,
+      ).toBe(false);
+    } finally {
+      await f.close();
+    }
+  },
+  60_000,
+);
+
+concurrentTest(
+  "daemon info exposes capabilities, diagnostics and local log tails",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    try {
+      await f.configure(home, `127.0.0.1:${await port()}`);
+      await f.ok(["daemon", "start", "--home", home, "--timeout", "30"]);
+      const status = await f.ok(["daemon", "status", "--home", home, "--latency"]);
+      expect(status).toMatchObject({
+        connectedDaemon: "reachable",
+        capabilities: expect.any(Object),
+        features: { daemonDiagnostics: true },
+        latencyMs: expect.any(Number),
+      });
+      const diagnostic = await f.ok(["daemon", "diagnostics", "--home", home]);
+      expect(diagnostic.diagnostic).toEqual(expect.any(String));
+      expect(diagnostic.diagnostic.length).toBeGreaterThan(0);
+      const logs = await f.ok(["daemon", "logs", "--home", home, "--tail", "2"]);
+      expect(logs.file).toBe(path.join(home, "daemon.log"));
+      expect(logs.text.split("\n").length).toBeLessThanOrEqual(2);
+      expect(await f.ok(["daemon", "logs", "--home", home, "--tail", "0"])).toMatchObject({
+        text: "",
+      });
+      const rejected = await f.run(["daemon", "logs", "--host", "127.0.0.1:1"]);
+      expect(rejected.code).not.toBe(0);
+    } finally {
+      await f.close();
+    }
+  },
+  60_000,
+);
+
+concurrentTest(
+  "daemon logs follow preserves unfinished lines and follows truncation and replacement",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    await mkdir(home, { recursive: true });
+    const file = path.join(home, "daemon.log");
+    await writeFile(file, "abc");
+    const child = spawn(process.execPath, [cli, "daemon", "logs", "--home", home, "--follow"], {
+      env: f.env,
+      stdio: ["ignore", "pipe", "pipe"],
+    });
+    let output = "";
+    child.stdout.on("data", (data) => {
+      output += data;
+    });
+    const closed = new Promise((resolve) => child.once("close", resolve));
+    try {
+      await expect.poll(() => output).toBe("abc");
+      await appendFile(file, "def\n");
+      await expect.poll(() => output).toBe("abcdef\n");
+      await writeFile(file, "x\n");
+      await expect.poll(() => output).toBe("abcdef\nx\n");
+      await rename(file, file + ".old");
+      await writeFile(file, "replacement\n");
+      await expect.poll(() => output).toBe("abcdef\nx\nreplacement\n");
+    } finally {
+      child.kill("SIGTERM");
+      await closed;
+      await f.close();
+    }
+    expect(output).toBe("abcdef\nx\nreplacement\n");
+  },
+  15_000,
+);
+
+concurrentTest(
+  "daemon log follow rejects normalized structured formats before reading",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    try {
+      for (const format of ["JSON", " YaMl "]) {
+        const result = await f.run([
+          "--format",
+          format,
+          "daemon",
+          "logs",
+          "--home",
+          f.homes[0]!,
+          "-f",
+        ]);
+        expect(result.code).not.toBe(0);
+        expect(result.stdout).toBe("");
+        expect(result.stderr).toContain("INVALID_FORMAT");
+      }
+    } finally {
+      await f.close();
+    }
+  },
+);
+
+concurrentTest(
+  "host discovery command entrypoints return canonical records from an isolated daemon",
+  async ({ expect }) => {
+    const f = await fixture(expect);
+    const home = f.homes[0]!;
+    try {
+      await f.configure(home, `127.0.0.1:${await port()}`);
+      await f.ok(["daemon", "start", "--home", home, "--timeout", "30"]);
+      const skills = await f.ok(["skills", "status", "--home", home]);
+      expect(skills.available).toEqual(expect.any(Array));
+      const models = await f.ok(["speech", "models", "ls", "--home", home]);
+      expect(models.models).toEqual(expect.any(Array));
+      const catalog = await f.ok(["plugin", "catalog", "--home", home]);
+      expect(catalog.plugins).toEqual(expect.any(Array));
+      const recent = await f.ok([
+        "agent",
+        "import",
+        "--list",
+        "--provider",
+        "codex",
+        "--cwd",
+        f.root,
+        "--home",
+        home,
+      ]);
+      expect(recent.entries).toEqual(expect.any(Array));
+    } finally {
+      await f.close();
+    }
+  },
+  60_000,
+);
