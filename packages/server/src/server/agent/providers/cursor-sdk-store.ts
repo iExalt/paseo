@@ -1,6 +1,7 @@
 import { createReadStream } from "node:fs";
 import { mkdir, open, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { setTimeout as delay } from "node:timers/promises";
 import { createInterface } from "node:readline";
 import { isDeepStrictEqual } from "node:util";
 import type { LocalAgentDocument, LocalAgentRunDocument, LocalAgentStore } from "@cursor/sdk";
@@ -23,6 +24,8 @@ const FAILURES_FILE = "sqlite.migration-failures";
 const MARKER = "paseo-migration.json";
 const WORKSPACE_REF = "paseo";
 const MAX_MIGRATION_ATTEMPTS = 3;
+// How long a daemon waits for another process to finish migrating the same store.
+const MIGRATION_WAIT_MS = 120_000;
 const LEGACY_TABLES = {
   agents: "agents.ndjson",
   runs: "runs.ndjson",
@@ -33,8 +36,19 @@ const LEGACY_TABLES = {
 export interface CursorStoreMigration {
   fresh: boolean;
   migratedAt: string;
-  counts: { agents: number; runs: number; runEvents: number; checkpoints: number };
+  counts: {
+    agents: number;
+    runs: number;
+    runEvents: number;
+    checkpoints: number;
+    /** Runs of deleted chats: JSONL `agents.delete` left them behind, SQLite refuses them. */
+    orphanRuns: number;
+    orphanRunEvents: number;
+  };
 }
+
+/** Another process holds the migration lock. */
+class MigrationBusyError extends Error {}
 
 export interface SqliteCursorStore extends LocalAgentStore {
   dispose(): Promise<void>;
@@ -64,11 +78,13 @@ async function openSdkSqlite(stateRoot: string): Promise<SqliteCursorStore> {
 export async function openCursorSdkStore(
   options: OpenCursorSdkStoreOptions,
 ): Promise<LocalAgentStore> {
-  let opened = stores.get(options.root);
+  // The provider and the spend ledger reach the same directory through different paths.
+  const root = resolve(options.root);
+  let opened = stores.get(root);
   if (!opened) {
-    opened = prepareStore(options);
-    stores.set(options.root, opened);
-    opened.catch(() => stores.delete(options.root));
+    opened = prepareStore({ ...options, root });
+    stores.set(root, opened);
+    opened.catch(() => stores.delete(root));
   }
   return (await opened).store;
 }
@@ -104,6 +120,14 @@ async function prepareStore(options: OpenCursorSdkStoreOptions): Promise<OpenSto
       await migrateCursorSdkStore(root, openSqlite);
       await rm(join(root, FAILURES_FILE), { force: true });
     } catch (error) {
+      if (error instanceof MigrationBusyError) {
+        if (!(await waitForMarker(join(target, MARKER)))) {
+          options.onMigrationError(error);
+          return { store: options.openLegacy() };
+        }
+        const sqlite = await openSqlite(target);
+        return { store: guardStore(sqlite), dispose: () => sqlite.dispose() };
+      }
       await writeFile(join(root, FAILURES_FILE), `${failures + 1}\n`).catch(() => undefined);
       options.onMigrationError(error);
       return { store: options.openLegacy() };
@@ -111,6 +135,15 @@ async function prepareStore(options: OpenCursorSdkStoreOptions): Promise<OpenSto
   }
   const sqlite = await openSqlite(target);
   return { store: guardStore(sqlite), dispose: () => sqlite.dispose() };
+}
+
+async function waitForMarker(marker: string): Promise<boolean> {
+  const deadline = Date.now() + MIGRATION_WAIT_MS;
+  while (Date.now() < deadline) {
+    if (await exists(marker)) return true;
+    await delay(100);
+  }
+  return exists(marker);
 }
 
 async function readFailures(root: string): Promise<number> {
@@ -137,8 +170,9 @@ export async function migrateCursorSdkStore(
     const store = await openSqlite(staging);
     let counts: CursorStoreMigration["counts"];
     try {
-      counts = await copyLegacyTables(root, store);
-      await verifyLegacyTables(root, store);
+      const copied = await copyLegacyTables(root, store);
+      counts = copied.counts;
+      await verifyLegacyTables(root, store, copied.orphans);
     } finally {
       await store.dispose();
     }
@@ -184,7 +218,7 @@ async function lock(path: string): Promise<() => Promise<void>> {
       if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
       const holder = Number.parseInt(await readFile(path, "utf8").catch(() => ""), 10);
       if (holder > 0 && processExists(holder)) {
-        throw new Error(`Cursor SDK store migration is running in process ${holder}`, {
+        throw new MigrationBusyError(`Cursor SDK store migration is running in process ${holder}`, {
           cause: error,
         });
       }
@@ -221,17 +255,36 @@ interface LegacyBlob {
 async function copyLegacyTables(
   root: string,
   store: SqliteCursorStore,
-): Promise<CursorStoreMigration["counts"]> {
-  const counts = { agents: 0, runs: 0, runEvents: 0, checkpoints: 0 };
+): Promise<{ counts: CursorStoreMigration["counts"]; orphans: Set<string> }> {
+  const counts = {
+    agents: 0,
+    runs: 0,
+    runEvents: 0,
+    checkpoints: 0,
+    orphanRuns: 0,
+    orphanRunEvents: 0,
+  };
+  const agents = new Set<string>();
+  const orphans = new Set<string>();
   for await (const agent of readTable<LocalAgentDocument>(root, "agents")) {
     await store.agents.create({ agent });
+    agents.add(agent.agentId);
     counts.agents++;
   }
   for await (const run of readTable<LocalAgentRunDocument>(root, "runs")) {
+    if (!agents.has(run.agentId)) {
+      orphans.add(run.runId);
+      counts.orphanRuns++;
+      continue;
+    }
     await store.runs.create({ run });
     counts.runs++;
   }
   for await (const event of readTable<LegacyEvent>(root, "runEvents")) {
+    if (orphans.has(event.runId)) {
+      counts.orphanRunEvents++;
+      continue;
+    }
     const copy = await store.runEvents.append({
       runId: event.runId,
       eventType: event.eventType,
@@ -257,14 +310,15 @@ async function copyLegacyTables(
     await assertBlobsPersist(store, blob.agentId);
     counts.checkpoints++;
   }
-  return counts;
+  return { counts, orphans };
 }
 
 /** Read every migrated row back and compare it with the JSONL row it came from. */
-async function verifyLegacyTables(root: string, store: LocalAgentStore): Promise<void> {
-  function mismatch(what: string): never {
-    throw new Error(`Cursor SDK store migration changed ${what}`);
-  }
+async function verifyLegacyTables(
+  root: string,
+  store: LocalAgentStore,
+  orphans: Set<string>,
+): Promise<void> {
   for await (const agent of readTable<LocalAgentDocument>(root, "agents")) {
     const copy = await store.agents.get({ agentId: agent.agentId });
     if (!copy || !isDeepStrictEqual(agentFields(copy), agentFields(agent))) {
@@ -272,28 +326,14 @@ async function verifyLegacyTables(root: string, store: LocalAgentStore): Promise
     }
   }
   for await (const run of readTable<LocalAgentRunDocument>(root, "runs")) {
+    if (orphans.has(run.runId)) continue;
     const copy = await store.runs.get({ agentId: run.agentId, runId: run.runId });
     if (!copy || !isDeepStrictEqual(runFields(withEndTime(copy)), runFields(run))) {
       mismatch(`run ${run.runId}`);
     }
   }
   for await (const event of readTable<LegacyEvent>(root, "runEvents")) {
-    const page = await store.runEvents.list({
-      runId: event.runId,
-      afterOffset: String(event.seq - 1),
-      limit: 1,
-    });
-    const copy = page.items[0];
-    if (
-      !copy ||
-      copy.seq !== event.seq ||
-      copy.eventType !== event.eventType ||
-      !isDeepStrictEqual(copy.payload, event.payload ?? null) ||
-      copy.payloadRef !== (event.payloadRef ?? null) ||
-      copy.idempotencyKey !== (event.idempotencyKey ?? null)
-    ) {
-      mismatch(`${event.runId} event ${event.seq}`);
-    }
+    if (!orphans.has(event.runId)) await verifyEvent(store, event);
   }
   for await (const blob of readTable<LegacyBlob>(root, "checkpoints")) {
     const copy = await store.checkpoints.get({ agentId: blob.agentId, blobId: blob.blobId });
@@ -301,6 +341,26 @@ async function verifyLegacyTables(root: string, store: LocalAgentStore): Promise
       mismatch(`checkpoint ${blob.blobId} of ${blob.agentId}`);
     }
   }
+}
+
+function mismatch(what: string): never {
+  throw new Error(`Cursor SDK store migration changed ${what}`);
+}
+
+async function verifyEvent(store: LocalAgentStore, event: LegacyEvent): Promise<void> {
+  const page = await store.runEvents.list({
+    runId: event.runId,
+    afterOffset: String(event.seq - 1),
+    limit: 1,
+  });
+  const copy = page.items[0];
+  const same =
+    copy?.seq === event.seq &&
+    copy.eventType === event.eventType &&
+    isDeepStrictEqual(copy.payload, event.payload ?? null) &&
+    copy.payloadRef === (event.payloadRef ?? null) &&
+    copy.idempotencyKey === (event.idempotencyKey ?? null);
+  if (!same) mismatch(`${event.runId} event ${event.seq}`);
 }
 
 function agentFields(agent: LocalAgentDocument) {
@@ -334,7 +394,8 @@ function runFields(run: LocalAgentRunDocument) {
     createdAt: run.createdAt,
     updatedAt: run.updatedAt,
     startedAt: run.startedAt ?? null,
-    endedAt: run.endedAt ?? null,
+    // SQLite keeps no end time for errored runs; withEndTime reports their last update.
+    endedAt: run.status === "error" ? null : (run.endedAt ?? null),
     startCheckpointRef: run.startCheckpointRef ?? null,
     latestCheckpointRef: run.latestCheckpointRef ?? null,
   };

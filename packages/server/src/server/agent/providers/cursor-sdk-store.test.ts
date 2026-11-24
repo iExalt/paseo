@@ -5,7 +5,11 @@ import { join } from "node:path";
 import * as sdk from "@cursor/sdk";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import { CursorForkLinks, withCursorForkBlobs } from "./cursor-sdk-fork-store.js";
-import { closeCursorSdkStores, openCursorSdkStore } from "./cursor-sdk-store.js";
+import {
+  closeCursorSdkStores,
+  migrateCursorSdkStore,
+  openCursorSdkStore,
+} from "./cursor-sdk-store.js";
 
 const time = Date.parse("2026-11-20T10:00:00Z");
 const blobId = (n: number) => createHash("sha256").update(`blob-${n}`).digest("hex");
@@ -51,7 +55,8 @@ function run(agentId: string, runId: string, turnNumber: number, status: "finish
     usageRef: null,
     usage: null,
     createdAt: time + turnNumber,
-    updatedAt: time + turnNumber + 50,
+    // An errored run can be updated after it ended.
+    updatedAt: time + turnNumber + (status === "error" ? 60 : 50),
     startedAt: time + turnNumber,
     endedAt: time + turnNumber + 50,
     startCheckpointRef: ref(turnNumber - 1),
@@ -80,6 +85,9 @@ async function seedLegacy() {
   }
   await legacy.runs.create({ run: run("agent-source", "run-1", 1, "finished") });
   await legacy.runs.create({ run: run("agent-source", "run-2", 2, "error") });
+  // JSONL agents.delete removed only the agent row of a deleted chat.
+  await legacy.runs.create({ run: run("agent-deleted", "run-orphan", 1, "finished") });
+  await legacy.runEvents.append({ runId: "run-orphan", eventType: "run_stream_event" });
   for (let i = 0; i < 3; i++) {
     for (const runId of ["run-1", "run-2"]) {
       await legacy.runEvents.append({
@@ -123,7 +131,7 @@ test("migrates every JSONL row into SQLite and leaves the JSONL tables untouched
   expect(await store.runs.get({ agentId: "agent-source", runId: "run-2" })).toMatchObject({
     status: "error",
     error: "The previous Cursor SDK run was interrupted.",
-    endedAt: time + 52,
+    endedAt: time + 62,
   });
   const events = await store.runEvents.list({ runId: "run-2", limit: 10 });
   expect(events.items.map((event) => [event.seq, event.payload])).toEqual([
@@ -134,7 +142,47 @@ test("migrates every JSONL row into SQLite and leaves the JSONL tables untouched
   expect(events.items[0]?.idempotencyKey).toBe("run-2-first");
   const inherited = await store.checkpoints.get({ agentId: "agent-fork", blobId: blobId(1) });
   expect(Buffer.from(inherited!).toString()).toBe("checkpoint 1");
+  expect(await store.runs.get({ agentId: "agent-deleted", runId: "run-orphan" })).toBeNull();
   expect(await readdir(root)).not.toContain("sqlite.staging");
+  expect(
+    JSON.parse(await readFile(join(root, "sqlite", "paseo-migration.json"), "utf8")).counts,
+  ).toMatchObject({ runs: 2, runEvents: 6, orphanRuns: 1, orphanRunEvents: 1 });
+});
+
+test("waits for another process's migration instead of serving the JSONL store", async () => {
+  await seedLegacy();
+  const { SqliteLocalAgentStore } = await import("@cursor/sdk/sqlite");
+  let locked!: () => void;
+  const lockHeld = new Promise<void>((resolve) => (locked = resolve));
+  // The other migration holds its lock while this process opens the store.
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  const migrating = migrateCursorSdkStore(root, async (stateRoot) => {
+    locked();
+    await released;
+    return SqliteLocalAgentStore.open({ workspaceRef: "paseo", stateRoot });
+  });
+  await lockHeld;
+  const opening = open();
+  // Give the opener time to find the lock held; if it is slower, the test still passes.
+  setTimeout(release, 300);
+
+  const [store] = await Promise.all([opening, migrating]);
+
+  expect(errors).toEqual([]);
+  expect(store).not.toBeInstanceOf(sdk.JsonlLocalAgentStore);
+  expect(await store.runs.get({ agentId: "agent-source", runId: "run-1" })).not.toBeNull();
+});
+
+test("stops retrying a migration after three failures", async () => {
+  await seedLegacy();
+  await writeFile(join(root, "sqlite.migration-failures"), "3\n");
+
+  const store = await open();
+
+  expect(store).toBeInstanceOf(sdk.JsonlLocalAgentStore);
+  expect(String(errors[0])).toContain(join(root, "sqlite.migration-failures"));
+  expect(await readdir(root)).not.toContain("sqlite");
 });
 
 test("opens the migrated store without migrating again", async () => {
