@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.37.3](https://github.com/iExalt/paseo/compare/paseo-v0.37.2...paseo-v0.37.3) (2026-11-24)
+
+
+### Bug Fixes
+
+* **cursor-sdk:** send instructions once per context window ([#603](https://github.com/iExalt/paseo/issues/603)) ([cbdc542](https://github.com/iExalt/paseo/commit/cbdc54215537ed3a2e2f756b1d16fbdf28b768b6))
+
+
+### Performance Improvements
+
+* **ci:** cache Playwright Chromium and Metro transforms in deep verification ([#606](https://github.com/iExalt/paseo/issues/606)) ([1694083](https://github.com/iExalt/paseo/commit/169408329253aed93dee78666eb447d1fd068690))
+* **ci:** trim redundant routine checks and rebalance routine lanes ([#604](https://github.com/iExalt/paseo/issues/604)) ([d830ef7](https://github.com/iExalt/paseo/commit/d830ef78f57208f56d577414e459e5c295268c7f))
+
 ## [0.37.2](https://github.com/iExalt/paseo/compare/paseo-v0.37.1...paseo-v0.37.2) (2026-11-24)
 
 
