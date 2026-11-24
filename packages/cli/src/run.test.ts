@@ -16,13 +16,18 @@ const childQueue: Array<() => void> = [];
 async function withChildSlot<T>(fn: () => Promise<T>): Promise<T> {
   if (activeChildren >= MAX_CHILD_CONCURRENCY) {
     await new Promise<void>((resolve) => childQueue.push(resolve));
+  } else {
+    activeChildren += 1;
   }
-  activeChildren += 1;
   try {
     return await fn();
   } finally {
-    activeChildren -= 1;
-    childQueue.shift()?.();
+    const next = childQueue.shift();
+    if (next) {
+      next();
+    } else {
+      activeChildren -= 1;
+    }
   }
 }
 

@@ -416,6 +416,15 @@ function launchFromStoreBundle(invocation: NodeEntrypointInvocation): NodeEntryp
   return moved;
 }
 
+const DEFAULT_DAEMON_START_TIMEOUT_MS = 30_000;
+
+export function resolveDaemonStartTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
+  const raw = env.PASEO_DESKTOP_DAEMON_START_TIMEOUT_MS?.trim();
+  if (!raw || !/^\d+$/.test(raw)) return DEFAULT_DAEMON_START_TIMEOUT_MS;
+  const parsed = Number(raw);
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : DEFAULT_DAEMON_START_TIMEOUT_MS;
+}
+
 async function launchDaemon(): Promise<DesktopDaemonStatus> {
   windowsUpdateAdmission.assertOpen();
   const home = getPaseoHome();
@@ -430,7 +439,7 @@ async function launchDaemon(): Promise<DesktopDaemonStatus> {
   try {
     await startDaemonInstance({
       home,
-      timeoutMs: 30_000,
+      timeoutMs: resolveDaemonStartTimeoutMs(),
       ...invocation,
       env: { ...invocation.env, PASEO_CLI: getBundledCliShimPath() },
       mode: "managed",
