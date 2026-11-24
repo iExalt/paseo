@@ -34,6 +34,7 @@ export function deepCommands(lane) {
           "run",
           "packages/cli/src/commands/daemon/lifecycle.e2e.test.ts",
           "--maxWorkers=1",
+          "--maxConcurrency=3",
         ],
       ],
       [
