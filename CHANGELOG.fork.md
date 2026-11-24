@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.37.2](https://github.com/iExalt/paseo/compare/paseo-v0.37.1...paseo-v0.37.2) (2026-11-24)
+
+
+### Bug Fixes
+
+* **cursor-sdk:** recover chats whose daemon crashed after their shells exited ([#602](https://github.com/iExalt/paseo/issues/602)) ([4e58b7b](https://github.com/iExalt/paseo/commit/4e58b7bad182bbc7af705fbe7717a81b7b1d1c60))
+* **cursor-sdk:** store chats in the SDK SQLite store ([#600](https://github.com/iExalt/paseo/issues/600)) ([8a07bf6](https://github.com/iExalt/paseo/commit/8a07bf6e839932bba05c19c49f7060f35a9f0fb1))
+
 ## [0.37.1](https://github.com/iExalt/paseo/compare/paseo-v0.37.0...paseo-v0.37.1) (2026-11-24)
 
 
