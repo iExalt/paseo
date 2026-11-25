@@ -1135,6 +1135,7 @@ it("coalesces SDK question callback replay and fences a stopped turn", async () 
   expect(tool.execute(input, context)).toBe(answer);
   expect(await tool.execute(changed, context)).toMatchObject({ isError: true });
   const [request] = questions.requests();
+  expect(request.title).toBe("Pick one");
   expect(request.input?.questions).toEqual([
     {
       header: "Question 1",
