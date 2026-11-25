@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.37.5](https://github.com/iExalt/paseo/compare/paseo-v0.37.4...paseo-v0.37.5) (2026-11-25)
+
+
+### Bug Fixes
+
+* **notifications:** show question text instead of input JSON ([#609](https://github.com/iExalt/paseo/issues/609)) ([15f6955](https://github.com/iExalt/paseo/commit/15f69554e52eaa0965f2d527142638bccf169583))
+
 ## [0.37.4](https://github.com/iExalt/paseo/compare/paseo-v0.37.3...paseo-v0.37.4) (2026-11-24)
 
 
