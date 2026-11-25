@@ -79,7 +79,7 @@ afterEach(async () => {
   for (const store of stores.splice(0)) await rm(store, { recursive: true, force: true });
 });
 
-function fixture(initialReservation?: string) {
+function fixture(initialReservation?: string, options: CursorSdkClientOptions = {}) {
   const modelList = vi.fn(async (_apiKey: string) => [model]);
   const storePath = mkdtempSync(join(tmpdir(), "paseo-cursor-adapter-"));
   stores.push(storePath);
@@ -118,7 +118,7 @@ function fixture(initialReservation?: string) {
     undefined,
     storePath,
     emptyCostFetcher,
-    jsonlStore,
+    { ...jsonlStore, ...options },
   );
   const config: AgentSessionConfig = { provider, cwd: process.cwd(), model: "model" };
   return { client, config, sdk, load, send, modelList, storePath, agent };
@@ -137,6 +137,36 @@ describe("Cursor SDK provider", () => {
       expect(agent[Symbol.asyncDispose]).not.toHaveBeenCalled();
       expect(sdk.Agent.resume).not.toHaveBeenCalled();
       expect(send).toHaveBeenCalledOnce();
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("logs SDK reconnects with their trigger", async () => {
+    const logger = pino({ level: "silent" });
+    const warn = vi.spyOn(logger, "warn");
+    const { client, config, send } = fixture(undefined, { logger });
+    send.mockImplementationOnce(async (_message, options) => {
+      options.local?.onConnectionStateChange?.({
+        state: "reconnecting",
+        attempt: 2,
+        trigger: { stallAborted: true },
+      });
+      return makeRun([], { id: runId, status: "finished" });
+    });
+    const session = await client.createSession(config);
+    try {
+      await session.run("Reconnect once");
+      expect(warn).toHaveBeenCalledExactlyOnceWith(
+        {
+          cursorAgentId: agentId,
+          model: "model",
+          state: "reconnecting",
+          attempt: 2,
+          trigger: { stallAborted: true },
+        },
+        "cursor_sdk.connection_state",
+      );
     } finally {
       await session.close();
     }
