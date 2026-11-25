@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.0](https://github.com/iExalt/paseo/compare/paseo-v0.37.5...paseo-v0.38.0) (2026-11-25)
+
+
+### Features
+
+* **server:** log Cursor SDK reconnects with their trigger ([#611](https://github.com/iExalt/paseo/issues/611)) ([c42c550](https://github.com/iExalt/paseo/commit/c42c5508e4da42e5b13c7cfe1bb7a0f492e9f94d))
+
 ## [0.37.5](https://github.com/iExalt/paseo/compare/paseo-v0.37.4...paseo-v0.37.5) (2026-11-25)
 
 
