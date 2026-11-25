@@ -122,6 +122,32 @@ describe("buildAgentAttentionNotificationPayload", () => {
     expect(payload.body).toBe('{"command":"echo hello"} - Hook requires approval');
   });
 
+  it("shows the first question instead of input JSON when a question has no title", () => {
+    const build = (description?: string) =>
+      buildAgentAttentionNotificationPayload({
+        reason: "permission",
+        serverId: "srv-1",
+        workspaceId: "workspace-1",
+        agentId: "agent-1",
+        permissionRequest: {
+          id: "perm-1",
+          provider: "cursor-sdk",
+          name: "ask_question",
+          kind: "question",
+          description,
+          input: {
+            questions: [
+              { header: "Question 1", question: "  ", options: [{ label: "A" }] },
+              { header: "Question 2", question: "How should we proceed?", options: [] },
+            ],
+          },
+        },
+      }).body;
+
+    expect(build()).toBe("How should we proceed?");
+    expect(build("Pick one")).toBe("How should we proceed? - Pick one");
+  });
+
   it("uses error-specific defaults when reason is error", () => {
     const payload = buildAgentAttentionNotificationPayload({
       reason: "error",

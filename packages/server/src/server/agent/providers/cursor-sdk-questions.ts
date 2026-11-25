@@ -92,11 +92,13 @@ export class CursorQuestions {
       multiSelect: item.is_multi_select ?? false,
       allowOther: true,
     }));
+    const title = input.questions[0].question.trim();
     const request: AgentPermissionRequest = {
       id,
       provider,
       name,
       kind: "question",
+      ...(title ? { title } : {}),
       input: { questions },
     };
     return new Promise((resolve) => {
