@@ -123,6 +123,24 @@ const safeStringify = (value: unknown): string | null => {
   }
 };
 
+// A title-less question would otherwise preview as its raw input JSON.
+const findFirstQuestionText = (request: NotificationPermissionRequest): string | undefined => {
+  const questions = request.kind === "question" ? request.input?.questions : undefined;
+  if (!Array.isArray(questions)) {
+    return undefined;
+  }
+  for (const item of questions) {
+    const text =
+      item && typeof item === "object" && "question" in item && typeof item.question === "string"
+        ? item.question.trim()
+        : "";
+    if (text) {
+      return text;
+    }
+  }
+  return undefined;
+};
+
 const buildPermissionDetails = (
   request: NotificationPermissionRequest | null | undefined,
 ): string | null => {
@@ -130,7 +148,7 @@ const buildPermissionDetails = (
     return null;
   }
 
-  const title = request.title?.trim();
+  const title = request.title?.trim() || findFirstQuestionText(request);
   const description = request.description?.trim();
   const details: string[] = [];
 
