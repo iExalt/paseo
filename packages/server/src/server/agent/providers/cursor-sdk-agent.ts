@@ -514,6 +514,7 @@ export class CursorSdkAgentClient implements AgentClient {
       },
       this.costFetcher,
       nativeId !== undefined,
+      this.options.logger,
     );
   }
 }
@@ -581,6 +582,7 @@ class CursorSdkAgent implements AgentSession {
     },
     costFetcher: CursorDashboardUsageFetcher,
     private readonly resumed: boolean,
+    private readonly logger?: Logger,
   ) {
     this.native = native;
     this.chatId = native.agent.agentId;
@@ -897,7 +899,16 @@ class CursorSdkAgent implements AgentSession {
           onDelta: ({ update }) => {
             if (update.type === "model-call-completed") onModelCallCompleted(update.usage);
           },
-          local: { customTools },
+          local: {
+            customTools,
+            // Each retry resumes from the last checkpoint and can replay the
+            // final message; the trigger says whether a stall or a drop caused it.
+            onConnectionStateChange: (state) =>
+              this.logger?.warn(
+                { cursorAgentId: this.id, model: model.id, ...state },
+                "cursor_sdk.connection_state",
+              ),
+          },
         }),
       );
     });
