@@ -4325,8 +4325,7 @@ export class Session {
   ): Promise<void> {
     const reason = CLIENT_SHUTDOWN_RPC_REASON;
     // A true result has already closed admission, so nothing may be awaited before the intent.
-    if (options.onlyIfIdle && !(await this.agentManager.stopAdmittingIfIdle())) {
-      this.sessionLogger.info("Idle-only shutdown declined: an agent still has work");
+    if (options.onlyIfIdle && !(await this.agentManager.stopAdmittingIfIdle(requestId))) {
       this.emit({
         type: "status",
         payload: {
