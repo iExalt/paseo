@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.2](https://github.com/iExalt/paseo/compare/paseo-v0.38.1...paseo-v0.38.2) (2026-11-26)
+
+
+### Bug Fixes
+
+* **daemon:** log what blocks idle shutdown ([#615](https://github.com/iExalt/paseo/issues/615)) ([c955e98](https://github.com/iExalt/paseo/commit/c955e98a022fde0906354867d0676fbd754b14da))
+
 ## [0.38.1](https://github.com/iExalt/paseo/compare/paseo-v0.38.0...paseo-v0.38.1) (2026-11-26)
 
 
