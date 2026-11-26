@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.3](https://github.com/iExalt/paseo/compare/paseo-v0.38.2...paseo-v0.38.3) (2026-11-26)
+
+
+### Bug Fixes
+
+* **cursor-sdk:** suppress replayed final reports after reconnect ([#617](https://github.com/iExalt/paseo/issues/617)) ([8a455cc](https://github.com/iExalt/paseo/commit/8a455cc6cdc33d7a365957f0e4f93ceb6e325dd7))
+
 ## [0.38.2](https://github.com/iExalt/paseo/compare/paseo-v0.38.1...paseo-v0.38.2) (2026-11-26)
 
 
