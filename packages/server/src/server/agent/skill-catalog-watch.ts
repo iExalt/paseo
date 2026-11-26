@@ -132,22 +132,29 @@ function observe(
   };
 }
 
+function scheduleSkillReconciliation(reconcile: () => Promise<void>, delayMs: number): () => void {
+  const timer = setTimeout(() => void reconcile(), delayMs);
+  timer.unref();
+  return () => clearTimeout(timer);
+}
+
 export function watchSkillChanges(
   roots: readonly string[] | (() => Promise<readonly CursorSkillRoot[]>),
   onChange: () => void | Promise<void>,
   onError: (error: unknown) => void,
   debounceMs = 150,
+  schedule = scheduleSkillReconciliation,
 ): SkillWatch {
   let closed = false;
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let cancelDebounce: (() => void) | undefined;
   let subscriptions: Array<() => void> = [];
   let preparing: Array<() => void> = [];
   let pending = Promise.resolve();
   let catalog: string | undefined;
   const change = () => {
     if (closed) return;
-    clearTimeout(timer);
-    timer = setTimeout(() => {
+    cancelDebounce?.();
+    cancelDebounce = schedule(() => {
       pending = pending
         .then(async () => {
           if (closed) return;
@@ -160,8 +167,8 @@ export function watchSkillChanges(
           return undefined;
         })
         .catch(onError);
+      return pending;
     }, debounceMs);
-    timer.unref();
   };
   async function reconcile(): Promise<string> {
     const next: Array<() => void> = [];
@@ -331,7 +338,7 @@ export function watchSkillChanges(
     ready,
     close() {
       closed = true;
-      clearTimeout(timer);
+      cancelDebounce?.();
       for (const unsubscribe of subscriptions) unsubscribe();
       for (const unsubscribe of preparing) unsubscribe();
       subscriptions = [];

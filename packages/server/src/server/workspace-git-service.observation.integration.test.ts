@@ -185,6 +185,9 @@ test("recursive observation updates tracked state and prunes ignored storms", as
   const observer = createFileObserver();
   let watcherStartCount = 0;
   let onWorkingTreeIgnoreUpdated: (() => void) | null = null;
+  const barriers = new Set<string>();
+  let barrierPath: string;
+  let acknowledgeBarrier: (() => void) | undefined;
   const deliveredEvents: Array<{
     directory: string;
     events: FileChange[];
@@ -193,8 +196,10 @@ test("recursive observation updates tracked state and prunes ignored storms", as
     const subscription = await observer.subscribe(
       directory,
       (error, events) => {
-        deliveredEvents.push({ directory, events });
-        callback(error, events);
+        const changes = events.filter((event) => !barriers.has(event.path));
+        deliveredEvents.push({ directory, events: changes });
+        callback(error, changes);
+        if (events.some((event) => event.path === barrierPath)) acknowledgeBarrier?.();
       },
       options,
     );
@@ -215,6 +220,35 @@ test("recursive observation updates tracked state and prunes ignored storms", as
       },
     };
   };
+  async function writeIgnoredStorm(directory: string) {
+    const observed = Promise.withResolvers<void>();
+    acknowledgeBarrier = observed.resolve;
+    const before = deliveredEvents.length;
+    barrierPath = path.join(repoDir, `observer-barrier-${barriers.size}`);
+    barriers.add(barrierPath);
+    for (let index = 0; index < 100; index += 1) {
+      writeFileSync(path.join(directory, `artifact-${index}.txt`), `${index}\n`);
+    }
+    // A visible event fences the storm on the same subscription.
+    mkdirSync(barrierPath);
+    await observed.promise;
+    acknowledgeBarrier = undefined;
+    // Classifying paths from an earlier OS event can finish after the barrier's batch.
+    await expect
+      .poll(() => observer.getDiagnostics(), { timeout: 15_000 })
+      .toMatchObject({
+        pendingEventCount: 0,
+        pendingClassificationCount: 0,
+        pendingReconciliationWorkCount: 0,
+        reconciliationInFlightCount: 0,
+      });
+    const fromStorm = deliveredEvents
+      .slice(before)
+      .flatMap(({ events }) =>
+        events.filter(({ path: eventPath }) => eventPath.startsWith(directory + path.sep)),
+      );
+    expect(fromStorm).toEqual([]);
+  }
   const fileObserver = {
     subscribe,
     getDiagnostics: () => observer.getDiagnostics(),
@@ -325,12 +359,13 @@ test("recursive observation updates tracked state and prunes ignored storms", as
     { timeout: 5_000 },
   );
 
+  const worktreeReadsBeforeEdit = getCheckoutWorktreeState.mock.calls.length;
   writeFileSync(trackedPath, "base\n");
   await vi.waitFor(
     () => {
       const events = deliveredEvents.flatMap((batch) => batch.events);
       expect(events.map((event) => event.path)).toContain(trackedPath);
-      expect(getCheckoutWorktreeState).toHaveBeenCalled();
+      expect(getCheckoutWorktreeState.mock.calls.length).toBeGreaterThan(worktreeReadsBeforeEdit);
       expect(service.getMetrics()).toMatchObject({
         workspaceRefreshInFlightCount: 0,
         workspaceRefreshQueuedCount: 0,
@@ -353,10 +388,7 @@ test("recursive observation updates tracked state and prunes ignored storms", as
   expect(getCheckoutDiff, JSON.stringify(deliveredEvents)).not.toHaveBeenCalled();
   expect(service.getMetrics().workspaceRefreshQueuedCount).toBe(0);
 
-  for (let index = 0; index < 100; index += 1) {
-    writeFileSync(path.join(ignoredDir, `artifact-${index}.txt`), `${index}\n`);
-  }
-  await new Promise((resolve) => setTimeout(resolve, 750));
+  await writeIgnoredStorm(ignoredDir);
 
   expect(runGitCommand).not.toHaveBeenCalled();
   expect(getCheckoutSnapshotFacts).not.toHaveBeenCalled();
@@ -474,10 +506,7 @@ test("recursive observation updates tracked state and prunes ignored storms", as
   diffListener.mockClear();
   runGitCommand.mockClear();
 
-  for (let index = 0; index < 100; index += 1) {
-    writeFileSync(path.join(remainingIgnoredDir, `artifact-${index}.txt`), `${index}\n`);
-  }
-  await new Promise((resolve) => setTimeout(resolve, 750));
+  await writeIgnoredStorm(remainingIgnoredDir);
 
   expect(runGitCommand).not.toHaveBeenCalled();
   expect(getCheckoutSnapshotFacts).not.toHaveBeenCalled();
@@ -838,6 +867,7 @@ test.skipIf(process.platform !== "linux")(
         },
       },
     );
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
     const service = new WorkspaceGitServiceImpl({ logger, paseoHome: path.join(root, "home") });
     const subscription = service.registerWorkspace({ cwd }, () => {});
     const commandCount = async () => {
@@ -845,22 +875,18 @@ test.skipIf(process.platform !== "linux")(
       return readFileSync(trace, "utf8").trim().split("\n").filter(Boolean).length;
     };
     try {
-      await expect
-        .poll(
-          () => {
-            const metrics = service.getMetrics();
-            // Metadata observation writes a canary after the working tree degrades.
-            return (
-              degraded &&
-              metrics.workspaceRefreshInFlightCount === 0 &&
-              metrics.workspaceObservationSetupInFlightCount === 0
-            );
-          },
-          { timeout: 15_000 },
-        )
-        .toBe(true);
+      await vi.waitFor(
+        () => {
+          const metrics = service.getMetrics();
+          // Metadata observation writes a canary after the working tree degrades.
+          expect(degraded).toBe(true);
+          expect(metrics.workspaceRefreshInFlightCount).toBe(0);
+          expect(metrics.workspaceObservationSetupInFlightCount).toBe(0);
+        },
+        { timeout: 15_000 },
+      );
       rmSync(cwd, { recursive: true, force: true });
-      await expect.poll(() => suspended, { timeout: 15_000 }).toBe(true);
+      await vi.waitFor(() => expect(suspended).toBe(true), { timeout: 15_000 });
       await expect.poll(() => service.getMetrics().workspaceRefreshInFlightCount).toBe(0);
       const commandsWhileMissing = await commandCount();
       await service.getSnapshot(cwd, {
@@ -870,7 +896,14 @@ test.skipIf(process.platform !== "linux")(
       });
       await service.refresh(cwd);
       expect(await commandCount()).toBe(commandsWhileMissing);
-      await new Promise((resolve) => setTimeout(resolve, 16_000));
+      // Drive multiple degraded poll intervals while the directory stays missing.
+      await vi.advanceTimersByTimeAsync(16_000);
+      await expect
+        .poll(() => service.getMetrics(), { timeout: 15_000 })
+        .toMatchObject({
+          workspaceRefreshInFlightCount: 0,
+          workspaceRefreshQueuedCount: 0,
+        });
       expect(await commandCount()).toBe(commandsWhileMissing);
 
       initializeRepo("restored");
@@ -889,6 +922,7 @@ test.skipIf(process.platform !== "linux")(
     } finally {
       subscription.unsubscribe();
       await service.dispose();
+      vi.useRealTimers();
       // The diagnostic sink outlives Git commands and owns writes into this fixture.
       await flushGitCommandTrace();
       if (previousTrace === undefined) delete process.env.PASEO_GIT_TRACE_FILE;
@@ -924,25 +958,39 @@ test("observation-driven refreshes run their Git work in the background lane", a
     await service.dispose();
     rmSync(root, { recursive: true, force: true });
   });
-  // Registration, observation setup and the first refresh settle before the
-  // measured change.
-  startGitCommandMetrics();
   await service.getSnapshot(repo, { includeForge: false });
-  await waitForGitCommandMetricsIdle({ quietMs: 500, timeoutMs: 10_000 });
-  stopGitCommandMetrics();
+  await expect
+    .poll(() => service.getMetrics(), { timeout: 10_000 })
+    .toMatchObject({
+      repositoryWorkspaceLinkCount: 1,
+      workspaceObservationSetupInFlightCount: 0,
+      workspaceRefreshInFlightCount: 0,
+    });
 
   startGitCommandMetrics();
   const deliveredBefore = heads.length;
   git("switch", "-c", "feature");
   await expect.poll(() => heads.slice(deliveredBefore), { timeout: 10_000 }).toContain("feature");
-  await waitForGitCommandMetricsIdle({ quietMs: 300, timeoutMs: 10_000 });
+  subscription.unsubscribe();
+  await service.dispose();
+  await waitForGitCommandMetricsIdle({ quietMs: 0, timeoutMs: 10_000 });
   const observed = stopGitCommandMetrics().submissions;
   expect(observed.length).toBeGreaterThan(0);
   expect(new Set(observed.map((command) => command.priority))).toEqual(new Set(["background"]));
 
+  const demandService = new WorkspaceGitServiceImpl({
+    logger: pino({ enabled: false }),
+    paseoHome: path.join(root, "home"),
+  });
+  cleanup.push(() => demandService.dispose());
+
   startGitCommandMetrics();
-  await service.getSnapshot(repo, { force: true, reason: "test-demand", includeForge: false });
-  await service.getCheckout(repo, { priority: "background" });
+  await demandService.getSnapshot(repo, {
+    force: true,
+    reason: "test-demand",
+    includeForge: false,
+  });
+  await demandService.getCheckout(repo, { priority: "background" });
   await waitForGitCommandMetricsIdle({ quietMs: 0, timeoutMs: 10_000 });
   const demand = stopGitCommandMetrics().submissions;
   const checkoutStart = demand.findIndex((command) => command.priority === "background");
@@ -956,7 +1004,11 @@ test("observation-driven refreshes run their Git work in the background lane", a
 
   startGitCommandMetrics();
   await runWithGitCommandPriority("high", () =>
-    service.getSnapshot(repo, { force: true, reason: "test-user-action", includeForge: false }),
+    demandService.getSnapshot(repo, {
+      force: true,
+      reason: "test-user-action",
+      includeForge: false,
+    }),
   );
   await waitForGitCommandMetricsIdle({ quietMs: 0, timeoutMs: 10_000 });
   const userAction = stopGitCommandMetrics().submissions;
@@ -1297,7 +1349,7 @@ test("a failed parent lookup is retried by the pull request status poll, keeping
   await expect.poll(() => pollStatus, { timeout: 10_000 }).toBeDefined();
   await expect.poll(() => lookups, { timeout: 10_000 }).toBe(1);
   // Let the failed lookup record its retry time before advancing the clock.
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => setImmediate(resolve));
 
   ghAnswers = true;
   nowMs += 61_000;
@@ -1603,7 +1655,7 @@ test("a failed parent lookup is not repeated by forced refreshes before the retr
   await service.getSnapshot(repo, { force: true, reason: "forge-web-test" });
   await expect.poll(() => lookups, { timeout: 10_000 }).toBe(1);
   // Let the failed lookup record its retry time.
-  await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => setImmediate(resolve));
   await service.getSnapshot(repo, { force: true, reason: "forge-web-test" });
   await service.getSnapshot(repo, { force: true, reason: "forge-web-test" });
 
