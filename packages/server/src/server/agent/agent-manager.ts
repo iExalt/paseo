@@ -173,6 +173,7 @@ function submittedPromptText(prompt: AgentPromptInput): string {
 }
 
 const IDLE_SHUTDOWN_PROBE_DEADLINE_MS = 5_000;
+const IDLE_SHUTDOWN_LOG_LIMIT = 20;
 
 export class AgentManagerShuttingDownError extends Error {
   constructor() {
@@ -1217,39 +1218,88 @@ export class AgentManager {
    * probes are async, so the synchronous checks run again after them; the caller must begin
    * shutdown in the same tick as a true result.
    */
-  async stopAdmittingIfIdle(): Promise<boolean> {
+  async stopAdmittingIfIdle(requestId?: string): Promise<boolean> {
     const snapshot = [...this.agents.values()].map((agent) => ({
       agent,
       updatedAt: agent.updatedAt,
     }));
-    const unchangedAndIdle = () =>
-      this.acceptingAgentRegistrations &&
-      this.agentRegistrationTasks.size === 0 &&
-      this.agents.size === snapshot.length &&
-      snapshot.every(
-        ({ agent, updatedAt }) =>
-          this.agents.get(agent.id) === agent &&
-          agent.updatedAt === updatedAt &&
-          this.agentHasNoPendingWork(agent),
+    const describeBlocker = (agent: ManagedAgent, reasons: string[]) => ({
+      agentId: agent.id,
+      provider: agent.provider,
+      lifecycle: agent.lifecycle,
+      reasons,
+      ...(agent.activeTurnStartedAt && reasons.includes("active_foreground_turn")
+        ? { durationMs: Math.max(0, Date.now() - agent.activeTurnStartedAt.getTime()) }
+        : {}),
+    });
+    const decline = (
+      phase: "before_probe" | "provider_probe" | "after_probe",
+      blockers: ReturnType<typeof describeBlocker>[],
+      daemonReasons: string[] = [],
+    ): false => {
+      this.logger.info(
+        {
+          event: "idle_shutdown_declined",
+          requestId,
+          phase,
+          daemonReasons,
+          blockerCount: blockers.length,
+          blockers: blockers.slice(0, IDLE_SHUTDOWN_LOG_LIMIT),
+        },
+        "Idle-only shutdown declined",
       );
-    if (!unchangedAndIdle()) return false;
+      return false;
+    };
+    const unchangedAndIdle = (phase: "before_probe" | "after_probe") => {
+      const daemonReasons: string[] = [];
+      if (!this.acceptingAgentRegistrations) daemonReasons.push("admission_closed");
+      if (this.agentRegistrationTasks.size > 0) daemonReasons.push("registration_in_flight");
+      if (this.agents.size !== snapshot.length) daemonReasons.push("agent_set_changed");
+      const blockers = snapshot.flatMap(({ agent, updatedAt }) => {
+        const current = this.agents.get(agent.id);
+        if (current !== agent) return [describeBlocker(current ?? agent, ["agent_set_changed"])];
+        const reasons = this.pendingWorkReasons(agent);
+        if (agent.updatedAt !== updatedAt) reasons.push("agent_changed");
+        return reasons.length > 0 ? [describeBlocker(agent, reasons)] : [];
+      });
+      return (
+        (daemonReasons.length === 0 && blockers.length === 0) ||
+        decline(phase, blockers, daemonReasons)
+      );
+    };
+    if (!unchangedAndIdle("before_probe")) return false;
     // Probe concurrently under one short deadline: the caller's stop deadline also covers the
     // connection and the exit, and a late commit would stop a daemon the caller gave up on.
+    const probes = snapshot.map(({ agent }) => ({
+      agent,
+      status: "pending" as "pending" | "allowed" | "provider_veto" | "provider_probe_error",
+    }));
+    const results = probes.map(async (probe) => {
+      try {
+        const session = probe.agent.session;
+        const allowed = session?.canStopRuntime ? await session.canStopRuntime() : true;
+        probe.status = allowed === true ? "allowed" : "provider_veto";
+      } catch (error) {
+        probe.status = "provider_probe_error";
+        throw error;
+      }
+    });
+    let timedOut = false;
     try {
-      const probes = snapshot.map(({ agent }) =>
-        agent.session?.canStopRuntime ? agent.session.canStopRuntime() : Promise.resolve(true),
-      );
-      const allowed = await withTimeout(
-        Promise.all(probes),
+      await withTimeout(
+        Promise.all(results),
         IDLE_SHUTDOWN_PROBE_DEADLINE_MS,
         "Idle shutdown probes timed out",
       );
-      if (!allowed.every((value) => value === true)) return false;
-    } catch (error) {
-      this.logger.warn({ err: error }, "Idle shutdown probe failed");
-      return false;
+    } catch {
+      timedOut = !probes.some(({ status }) => status === "provider_probe_error");
     }
-    if (!unchangedAndIdle()) return false;
+    const probeBlockers = probes.flatMap(({ agent, status }) => {
+      if (status === "allowed" || (status === "pending" && !timedOut)) return [];
+      return [describeBlocker(agent, [status === "pending" ? "provider_probe_timeout" : status])];
+    });
+    if (probeBlockers.length > 0) return decline("provider_probe", probeBlockers);
+    if (!unchangedAndIdle("after_probe")) return false;
     this.prepareForShutdown();
     this.admittingTurns = false;
     return true;
@@ -2534,25 +2584,31 @@ export class AgentManager {
   }
 
   private runtimeHasNoPendingWork(agent: LiveManagedAgent): boolean {
-    return agent.lifecycle === "idle" && !agent.internal && this.agentHasNoPendingWork(agent);
+    return (
+      agent.lifecycle === "idle" && !agent.internal && this.pendingWorkReasons(agent).length === 0
+    );
   }
 
   /** No turn, permission, mutation or running subagent a daemon stop would cut off. */
-  private agentHasNoPendingWork(agent: ManagedAgent): boolean {
+  private pendingWorkReasons(agent: ManagedAgent): string[] {
     const durableQuestions = new Set(persistedAsyncQuestions(agent.persistence).map((q) => q.id));
-    return (
-      (agent.lifecycle === "idle" || agent.lifecycle === "error" || agent.lifecycle === "closed") &&
-      agent.activeForegroundTurnId === null &&
-      !this.runs.hasRun(agent.id) &&
-      !agent.pendingReplacement &&
-      [...agent.pendingPermissions.keys()].every((id) => durableQuestions.has(id)) &&
-      agent.inFlightPermissionResponses.size === 0 &&
-      (this.collectingRuntimes.has(agent.id) || !this.lifecycleMutationTails.has(agent.id)) &&
-      !this.foregroundMutationTails.has(agent.id) &&
-      !this.replacementMutationTails.has(agent.id) &&
-      !this.sessionEventTails.has(agent.id) &&
-      !this.providerSubagents.list(agent.id).some((child) => child.status === "running")
-    );
+    const reasons: string[] = [];
+    if (agent.lifecycle === "initializing") reasons.push("agent_initializing");
+    if (agent.activeForegroundTurnId !== null) reasons.push("active_foreground_turn");
+    else if (agent.lifecycle === "running") reasons.push("agent_running");
+    if (this.runs.hasRun(agent.id)) reasons.push("active_run");
+    if ([...agent.pendingPermissions.keys()].some((id) => !durableQuestions.has(id)))
+      reasons.push("pending_approval");
+    if (agent.inFlightPermissionResponses.size > 0) reasons.push("approval_response_in_flight");
+    if (this.lifecycleMutationTails.has(agent.id) && !this.collectingRuntimes.has(agent.id))
+      reasons.push("lifecycle_mutation");
+    if (this.foregroundMutationTails.has(agent.id)) reasons.push("foreground_mutation");
+    if (agent.pendingReplacement || this.replacementMutationTails.has(agent.id))
+      reasons.push("session_replacement");
+    if (this.sessionEventTails.has(agent.id)) reasons.push("session_event_in_flight");
+    if (this.providerSubagents.list(agent.id).some((child) => child.status === "running"))
+      reasons.push("provider_subagent_running");
+    return reasons;
   }
 
   closeAgent(agentId: string): Promise<void> {
