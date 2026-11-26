@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
-import type { CursorSkillReference } from "@getpaseo/protocol/messages";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { AutocompleteOption, AutocompleteStatus } from "@/components/ui/autocomplete";
@@ -14,6 +13,7 @@ import {
 import { orderAutocompleteOptions } from "@/components/ui/autocomplete-utils";
 import { useAutocomplete } from "./use-autocomplete";
 import { useSessionStore } from "@/stores/session-store";
+import { useHostFeature } from "@/runtime/host-features";
 import { useHostRuntimeClient, useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { pluginDisplayName, usePluginList } from "@/plugins/plugin-list";
@@ -29,6 +29,8 @@ import {
   filterInlineSkillCommandEntries,
   findActiveSlashCommand,
   type SlashCommandRange,
+  cursorTextSkillCommands,
+  skillTokenPrefix,
 } from "@/utils/agent-command-autocomplete";
 import {
   applyFileMentionReplacement,
@@ -44,7 +46,6 @@ interface UseAgentAutocompleteInput {
   agentId: string;
   draft?: DraftCommandTarget;
   onAutocompleteApplied?: () => void;
-  onSkillSelected?: (skill: CursorSkillReference) => void;
   onClientSlashCommand?: (command: ClientSlashCommand) => void;
   canExecuteClientSlashCommand?: boolean;
   pluginClientSlashCommands?: readonly PluginClientSlashCommand[];
@@ -67,7 +68,7 @@ type AgentAutocompleteOption =
       type: "plugin_command";
       command: PluginClientSlashCommand;
     })
-  | (AutocompleteOption & { type: "provider_command"; skill?: CursorSkillReference })
+  | (AutocompleteOption & { type: "provider_command" })
   | (AutocompleteOption & {
       type: "workspace_entry";
       entryPath: string;
@@ -249,9 +250,6 @@ function mapCommandToOption(
   return {
     ...base,
     type: "provider_command",
-    ...(entry.command.skill
-      ? { id: `skill:${entry.command.skill.id}`, skill: entry.command.skill }
-      : {}),
     icon: isSkill ? "skill" : "command",
     description: entry.command.description,
     tag: isSkill ? context.t("agentAutocomplete.skillTag") : undefined,
@@ -283,7 +281,7 @@ function buildAutocompleteOptions(input: BuildAutocompleteOptionsInput): AgentAu
     const rootCommands: AvailableCommand[] = mergeSlashCommandSources({
       builtIn: CLIENT_SLASH_COMMANDS,
       plugins: input.pluginCommands,
-      provider: input.commands.filter((command) => !command.skill),
+      provider: input.commands,
       onPluginCollision(command, winner) {
         console.warn(
           `[Plugins] Client slash command /${command.name} from ${command.pluginId} ignored; ${winner} command wins`,
@@ -295,7 +293,6 @@ function buildAutocompleteOptions(input: BuildAutocompleteOptionsInput): AgentAu
         if (entry.source === "built-in") return { source: "client", command: entry.command };
         return entry;
       });
-    rootCommands.push(...providerCommands.filter((entry) => entry.command.skill));
     const availableCommands: AvailableCommand[] =
       input.mode === "skill" || input.activeSlashCommand?.position === "inline"
         ? filterInlineSkillCommandEntries(providerCommands)
@@ -306,11 +303,7 @@ function buildAutocompleteOptions(input: BuildAutocompleteOptionsInput): AgentAu
     );
     const context = {
       query: input.commandFilterQuery,
-      prefix:
-        input.mode === "skill" &&
-        (input.provider === "codex" || input.commands.some((command) => command.skill))
-          ? "$"
-          : "/",
+      prefix: input.mode === "skill" ? skillTokenPrefix(input.provider) : "/",
       pluginNames: input.pluginNames,
       t: input.t,
     };
@@ -577,7 +570,6 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     draft,
     onAutocompleteApplied,
     onClientSlashCommand,
-    onSkillSelected,
     canExecuteClientSlashCommand,
     pluginClientSlashCommands = [],
   } = input;
@@ -585,6 +577,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
   const { activeSlashCommand, activeSkillMention, showCommandAutocomplete, commandFilterQuery } =
     useCommandTokens(userInput, cursorIndex);
   const provider = useCommandProvider(serverId, agentId, draft);
+  const hostExpandsCursorSkillText = useHostFeature(serverId, "cursorSdkTextSkills");
 
   const activeFileMention = useMemo(
     () =>
@@ -709,10 +702,12 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       buildAutocompleteOptions({
         activeFileMention,
         commandFilterQuery,
-        commands:
+        commands: cursorTextSkillCommands(
           draft?.status === "ready" && draft.skillScope === "user"
             ? commandsQuery.commands.filter((command) => command.skill?.scope !== "workspace")
             : commandsQuery.commands,
+          hostExpandsCursorSkillText,
+        ),
         pluginCommands: pluginClientSlashCommands,
         pluginNames,
         activeSlashCommand,
@@ -754,6 +749,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
     fileSuggestionsQuery.error,
     fileSuggestionsQuery.isLoading,
     fileSuggestionsQuery.isPending,
+    hostExpandsCursorSkillText,
     isDraftContext,
     isVisible,
     mode,
@@ -796,13 +792,7 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
           onClientSlashCommand(selected.command);
           return;
         }
-        if (selected.type === "provider_command" && selected.skill) {
-          if (!token || !onSkillSelected) return;
-          setUserInput(current.text.slice(0, token.start) + current.text.slice(token.end));
-          onSkillSelected(selected.skill);
-        } else {
-          setUserInput(commandReplacement(selected, current, provider));
-        }
+        setUserInput(commandReplacement(selected, current, provider));
       }
       onAutocompleteApplied?.();
     },
@@ -810,7 +800,6 @@ export function useAgentAutocomplete(input: UseAgentAutocompleteInput): AgentAut
       canExecuteClientSlashCommand,
       onAutocompleteApplied,
       onClientSlashCommand,
-      onSkillSelected,
       setUserInput,
       userInput,
       cursorIndex,

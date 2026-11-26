@@ -6,9 +6,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { useDraftStore } from "@/stores/draft-store";
 import type { AttachmentMetadata, ComposerAttachment } from "@/attachments/types";
 import { createWorkspaceFileAttachment } from "@/attachments/workspace-file";
+import { agentCommandsQueryKey } from "@/agent-commands/cache";
 
-const { asyncStorage } = vi.hoisted(() => ({
+const { asyncStorage, formSwitch } = vi.hoisted(() => ({
   asyncStorage: new Map<string, string>(),
+  formSwitch: { accept: false },
 }));
 
 vi.hoisted(() => {
@@ -116,7 +118,7 @@ vi.mock("@/hooks/use-agent-form-state", () => ({
     isModelLoading: false,
     modelError: null,
     refreshProviderModels: () => undefined,
-    setProviderAndModelFromUser: () => undefined,
+    setProviderAndModelFromUser: () => formSwitch.accept,
     workingDirIsEmpty: false,
     persistFormPreferences: async () => undefined,
   }),
@@ -147,6 +149,7 @@ const { useAgentInputDraft } = await import("./input-draft");
 describe("useAgentInputDraft live contract", () => {
   beforeEach(() => {
     asyncStorage.clear();
+    formSwitch.accept = false;
     document.body.innerHTML = "<div id='root'></div>";
     localStorage.clear();
 
@@ -156,6 +159,66 @@ describe("useAgentInputDraft live contract", () => {
       attachmentFocusRequestByDraftKey: {},
       textReplacementRequestByDraftKey: {},
     });
+  });
+
+  it("carries skill tokens to the new provider only when the user switches", async () => {
+    let latest: ReturnType<typeof useAgentInputDraft> | null = null;
+    function Probe() {
+      latest = useAgentInputDraft({
+        draftKey: "draft:skills",
+        composer: { initialServerId: "host-1", isVisible: true, lockedWorkingDir: "/repo" },
+      });
+      return null;
+    }
+    const getLatest = () => {
+      if (!latest) throw new Error("Expected hook result");
+      return latest;
+    };
+    const queryClient = new QueryClient();
+    await queryClient.fetchQuery({
+      queryKey: agentCommandsQueryKey({
+        serverId: "host-1",
+        agentId: "",
+        draftConfig: { provider: "codex", cwd: "/repo" },
+      }),
+      queryFn: async () => [{ name: "brev-cli", description: "", argumentHint: "", kind: "skill" }],
+      meta: { agentCommandProvider: "codex", agentCommandCwd: "/repo" },
+    });
+    const render = (root: Root) =>
+      act(async () => {
+        root.render(
+          <QueryClientProvider client={queryClient}>
+            <Probe />
+          </QueryClientProvider>,
+        );
+      });
+    const container = document.getElementById("root")!;
+    let root = createTestRoot(container);
+    await render(root);
+    await act(async () => {
+      getLatest().editText("$brev-cli and $HOME");
+    });
+
+    // Restoring the draft never rewrites it.
+    await act(async () => root.unmount());
+    root = createTestRoot(container);
+    await render(root);
+    expect(getLatest().textSource.getSnapshot()).toBe("$brev-cli and $HOME");
+
+    // A switch the form refuses changes nothing.
+    let switched: boolean | undefined;
+    await act(async () => {
+      switched = getLatest().composerState?.setProviderAndModelFromUser("claude", "sonnet");
+    });
+    expect(switched).toBe(false);
+    expect(getLatest().textSource.getSnapshot()).toBe("$brev-cli and $HOME");
+
+    formSwitch.accept = true;
+    await act(async () => {
+      switched = getLatest().composerState?.setProviderAndModelFromUser("claude", "sonnet");
+    });
+    expect(switched).toBe(true);
+    expect(getLatest().textSource.getSnapshot()).toBe("/brev-cli and $HOME");
   });
 
   it("hydrates persisted text and attachments and returns draft-mode composer state for a caller-provided key", async () => {

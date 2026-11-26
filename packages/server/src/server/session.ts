@@ -157,7 +157,7 @@ import type {
   AgentTimelineFetchResult,
   ManagedAgent,
 } from "./agent/agent-manager.js";
-import { createAgentCommand } from "./agent/create-agent/create.js";
+import { createAgentCommand, isAgentOriginWorkspaceAgent } from "./agent/create-agent/create.js";
 import {
   inheritAgentBackground,
   inheritWorkspaceBackground,
@@ -5759,6 +5759,8 @@ export class Session {
                   },
                   id,
                   onReady,
+                  // An agent that creates a workspace wrote its first agent's prompt.
+                  isAgentOriginWorkspaceAgent(agentInput, request),
                 );
               }
             : undefined,
@@ -5871,6 +5873,7 @@ export class Session {
     msg: CreateAgentRequestMessage,
     agentId?: string,
     onAgentReady?: (agent: AgentSnapshotPayload) => Promise<void>,
+    agentOrigin?: boolean,
   ): Promise<CreatedAgent> {
     const {
       config,
@@ -5967,6 +5970,7 @@ export class Session {
           source: msg.callerAgentId
             ? { kind: "agent-message", agentId: msg.callerAgentId }
             : undefined,
+          agentOrigin,
           clientMessageId,
           outputSchema,
           images,
@@ -10391,6 +10395,7 @@ export class Session {
           activeTurnBehavior: requested === "steer" ? "steer" : "interrupt",
           sessionMode: msg.sessionMode,
           clearPendingPermissions: true,
+          runOptions: { expandCursorSkillTokens: true },
           beforeDispatch,
           logger: this.sessionLogger,
         });

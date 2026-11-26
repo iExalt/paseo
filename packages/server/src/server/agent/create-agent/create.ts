@@ -69,6 +69,8 @@ export interface CreateAgentFromSessionInput {
   background: boolean;
   initialPrompt?: string;
   source?: AgentPromptSource;
+  /** An agent wrote the initial prompt even though no caller is attached to the new agent. */
+  agentOrigin?: boolean;
   clientMessageId?: string;
   outputSchema?: Record<string, unknown>;
   images?: Array<{ data: string; mimeType: string }>;
@@ -176,6 +178,17 @@ interface ResolvedCreateAgent {
   createdWorktree?: CreatePaseoWorktreeWorkflowResult;
 }
 
+/**
+ * Whether an agent wrote a workspace's first agent prompt: the agent input or the workspace request
+ * names a caller. Such a prompt never selects Cursor skills by `/name`.
+ */
+export function isAgentOriginWorkspaceAgent(
+  agent: { callerAgentId?: string },
+  request: { callerAgentId?: string },
+): boolean {
+  return Boolean(agent.callerAgentId ?? request.callerAgentId);
+}
+
 export async function createAgentCommand(
   dependencies: CreateAgentCommandDependencies,
   input: CreateAgentCommandInput,
@@ -255,11 +268,14 @@ async function resolveSessionCreateAgent(
   const prompt = buildAgentPrompt(trimmedPrompt ?? "", input.images, input.attachments);
   const hasPromptContent = Array.isArray(prompt) ? prompt.length > 0 : prompt.length > 0;
   const clientMessageId = normalizeClientMessageId(input.clientMessageId);
+  // Only the user's own first message selects Cursor skills by `/name`.
+  const expandCursorSkillTokens = !input.callerAgentId && !input.source && !input.agentOrigin;
   const runOptions: AgentRunOptions | undefined =
-    input.outputSchema || clientMessageId
+    input.outputSchema || clientMessageId || expandCursorSkillTokens
       ? {
           ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
           ...(clientMessageId ? { clientMessageId } : {}),
+          ...(expandCursorSkillTokens ? { expandCursorSkillTokens } : {}),
         }
       : undefined;
   const workspaceId = input.workspaceId;

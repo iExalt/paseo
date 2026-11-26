@@ -9,7 +9,7 @@ import { createProviderSnapshotManagerStub } from "../../test-utils/session-stub
 import { AgentManager } from "../agent-manager.js";
 import { AgentStorage } from "../agent-storage.js";
 import type { CreatePaseoWorktreeWorkflowResult } from "../../worktree-session.js";
-import { createAgentCommand } from "./create.js";
+import { createAgentCommand, isAgentOriginWorkspaceAgent } from "./create.js";
 import { ForegroundPromptStart } from "../agent-run-state.js";
 import type { ManagedAgent } from "../agent-manager.js";
 
@@ -93,7 +93,44 @@ test("session create forwards clientMessageId to the initial prompt run options"
   expect(streamAgent).toHaveBeenCalledWith(
     "agent-1",
     "hello from create",
-    { clientMessageId: "msg-create-1" },
+    { clientMessageId: "msg-create-1", expandCursorSkillTokens: true },
+    expect.any(ForegroundPromptStart),
+  );
+
+  // An agent's first message to the agent it creates is not the user's.
+  await createAgentCommand(dependencies, {
+    kind: "session",
+    callerAgentId: "parent-agent",
+    config: { provider: "codex", cwd: "/tmp/paseo-create-test" },
+    workspaceId: "ws-create-test",
+    initialPrompt: "hello from an agent",
+    clientMessageId: "msg-create-2",
+    labels: {},
+    provisionalTitle: null,
+    firstAgentContext: { attachments: [] },
+  });
+  expect(streamAgent).toHaveBeenLastCalledWith(
+    "agent-1",
+    "hello from an agent",
+    { clientMessageId: "msg-create-2" },
+    expect.any(ForegroundPromptStart),
+  );
+
+  // So is the first message of a workspace an agent created.
+  await createAgentCommand(dependencies, {
+    kind: "session",
+    agentOrigin: true,
+    config: { provider: "codex", cwd: "/tmp/paseo-create-test" },
+    workspaceId: "ws-create-test",
+    initialPrompt: "hello from a workspace agent",
+    labels: {},
+    provisionalTitle: null,
+    firstAgentContext: { attachments: [] },
+  });
+  expect(streamAgent).toHaveBeenLastCalledWith(
+    "agent-1",
+    "hello from a workspace agent",
+    { clientMessageId: undefined },
     expect.any(ForegroundPromptStart),
   );
 });
@@ -472,4 +509,10 @@ test("session create with an internal config skips provider session persistence"
   );
   expect(createAgent.mock.calls[1]?.[0]).not.toHaveProperty("internal");
   expect(createAgent.mock.calls[1]?.[2]).not.toHaveProperty("persistSession");
+});
+
+test("a workspace's first agent prompt is the agent's when either request names a caller", () => {
+  expect(isAgentOriginWorkspaceAgent({}, {})).toBe(false);
+  expect(isAgentOriginWorkspaceAgent({ callerAgentId: "a" }, {})).toBe(true);
+  expect(isAgentOriginWorkspaceAgent({}, { callerAgentId: "a" })).toBe(true);
 });
