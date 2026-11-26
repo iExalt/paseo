@@ -22,7 +22,7 @@ export interface DaemonUpgradeState {
   error: string | null;
 }
 
-export type IdleStopResult = "stopped" | "declined" | "unsupported";
+export type IdleStopResult = "stopped" | "unsupported" | { action: "declined"; requestId?: string };
 /** "unknown" when the check failed; the upgrade retries instead of giving up. */
 export type ActiveRelease = "active" | "inactive" | "unknown";
 
@@ -234,9 +234,12 @@ export function createDaemonUpgrader<Status extends DaemonUpgradeStatus>(
         deps.log("daemon cannot stop only when idle; keeping it until it is stopped", details);
         return current;
       }
-      if (result === "declined") {
+      if (typeof result === "object") {
         report(current, "waiting", appVersion);
-        deps.log("daemon busy; upgrade waits for its agents", details);
+        deps.log("daemon busy; upgrade waits for its agents", {
+          ...details,
+          requestId: result.requestId,
+        });
         scheduleRetry(current, false);
         return current;
       }
