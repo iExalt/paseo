@@ -25,6 +25,12 @@ import {
 import { useDraftStore, type DraftInput } from "@/stores/draft-store";
 import { AfterPaintPublication } from "@/composer/after-paint-publication";
 import { useShallow } from "zustand/shallow";
+import { useQueryClient } from "@tanstack/react-query";
+import type { AgentProvider } from "@getpaseo/protocol/agent-types";
+import {
+  carryDraftSkillsToProvider,
+  readCachedProviderSkills,
+} from "@/composer/draft/provider-switch-skills";
 import type { ComposerTextSource } from "@/composer/text-source";
 import { isWeb } from "@/constants/platform";
 
@@ -198,6 +204,55 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     [saveDraft],
   );
 
+  // Switching provider carries the draft's skills along. This runs only when the user picks a
+  // provider, never when a saved draft is restored.
+  const queryClient = useQueryClient();
+  const formSetProviderAndModel = formState.setProviderAndModelFromUser;
+  const previousProvider = formState.selectedProvider;
+  const selectedServerId = formState.selectedServerId;
+  const setProviderAndModelFromUser = useCallback(
+    (provider: AgentProvider, modelId: string): boolean => {
+      if (!formSetProviderAndModel(provider, modelId)) return false;
+      if (!previousProvider || previousProvider === provider || !selectedServerId || !workingDir) {
+        return true;
+      }
+      textPublication.flush();
+      const record = useDraftStore.getState().drafts[draftKey];
+      if (record?.lifecycle !== "active") return true;
+      const attachmentsBefore = record.input.attachments ?? [];
+      const carried = carryDraftSkillsToProvider({
+        text: record.input.text,
+        attachments: attachmentsBefore,
+        previous: readCachedProviderSkills(queryClient, {
+          serverId: selectedServerId,
+          provider: previousProvider,
+          cwd: workingDir,
+        }),
+        provider,
+      });
+      if (carried.text !== record.input.text) replaceText(carried.text);
+      if (carried.attachments.length !== attachmentsBefore.length) {
+        setAttachments(carried.attachments);
+      }
+      return true;
+    },
+    [
+      draftKey,
+      formSetProviderAndModel,
+      previousProvider,
+      queryClient,
+      replaceText,
+      selectedServerId,
+      setAttachments,
+      textPublication,
+      workingDir,
+    ],
+  );
+  const draftFormState = useMemo(
+    () => ({ ...formState, setProviderAndModelFromUser }),
+    [formState, setProviderAndModelFromUser],
+  );
+
   const metadata = useDraftStore((state) => state.metadataByDraftKey[draftKey] ?? NO_METADATA);
   const setMetadata = useCallback(
     (patch: Record<string, JsonValue>) =>
@@ -331,7 +386,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     }
 
     return {
-      ...formState,
+      ...draftFormState,
       workingDir,
       effectiveModeId,
       effectiveModelId,
@@ -339,7 +394,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
       providerOptions: draftOptions,
       metadata,
       agentControls: buildDraftAgentControls({
-        formState,
+        formState: draftFormState,
         optionControls: draftOptionControls,
         options: draftShownOptions,
         onSetOption: setDraftOption,
@@ -361,7 +416,7 @@ export function useAgentInputDraft(input: UseAgentInputDraftInput): AgentInputDr
     draftShownOptions,
     setDraftOption,
     applyDraftAgentProfile,
-    formState,
+    draftFormState,
     metadata,
     setMetadata,
     workingDir,
