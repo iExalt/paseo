@@ -140,7 +140,7 @@ describe.skipIf(process.platform === "win32")("daemon stop --if-idle", () => {
       { daemonTarget: { kind: "instance", home }, ifIdle: true },
       daemon.deps,
     );
-    expect(result.data).toMatchObject({ action: "declined", home });
+    expect(result.data).toMatchObject({ action: "declined", home, requestId: "fake-request" });
     expect(daemon.shutdownRequests).toEqual([{ keepTerminals: true, onlyIfIdle: true }]);
     expect(supervisor.exitCode).toBeNull();
     expect(supervisor.signalCode).toBeNull();

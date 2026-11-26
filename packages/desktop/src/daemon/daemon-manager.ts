@@ -364,8 +364,13 @@ async function stopDaemonIfIdle(): Promise<IdleStopResult> {
       getPaseoHome(),
       "--if-idle",
       "--json",
-    ])) as { action?: unknown };
-    return result.action === "declined" ? "declined" : "stopped";
+    ])) as { action?: unknown; requestId?: unknown };
+    return result.action === "declined"
+      ? {
+          action: "declined",
+          requestId: typeof result.requestId === "string" ? result.requestId : undefined,
+        }
+      : "stopped";
   } catch (error) {
     if (error instanceof ExternalCliCommandError && error.code === "IDLE_SHUTDOWN_UNSUPPORTED")
       return "unsupported";
