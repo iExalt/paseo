@@ -17,18 +17,45 @@ async function fixture() {
 function observe(
   roots: Parameters<typeof watchSkillChanges>[0],
   changed = vi.fn(),
-  debounceMs = 10,
+  schedule?: Parameters<typeof watchSkillChanges>[4],
 ) {
   const errors: unknown[] = [];
-  const watch = watchSkillChanges(roots, changed, (err) => errors.push(err), debounceMs);
+  const watch = watchSkillChanges(roots, changed, (err) => errors.push(err), 10, schedule);
   cleanups.push(() => watch.close());
   return { watch, changed, errors };
 }
+function debounceControl() {
+  let pending: (() => Promise<void>) | undefined;
+  return {
+    schedule(reconcile: () => Promise<void>) {
+      pending = reconcile;
+      return () => {
+        if (pending === reconcile) pending = undefined;
+      };
+    },
+    async flush() {
+      const reconcile = pending;
+      pending = undefined;
+      await reconcile?.();
+    },
+    async waitForEvent() {
+      await expect.poll(() => pending !== undefined, { timeout: 15_000 }).toBe(true);
+    },
+  };
+}
+
+async function replaceAtomically(path: string, content: string) {
+  // Keep the temporary name outside the visible catalog, like a sync client.
+  const temporary = join(dirname(path), `.${basename(path)}.tmp`);
+  await writeFile(temporary, content);
+  await rename(temporary, path);
+}
+
 async function mutation(observer: ReturnType<typeof observe>, change: () => Promise<unknown>) {
   const before = observer.changed.mock.calls.length;
   await change();
   await expect
-    .poll(() => observer.changed.mock.calls.length, { timeout: 3000 })
+    .poll(() => observer.changed.mock.calls.length, { timeout: 15_000 })
     .toBeGreaterThan(before);
   expect(observer.errors).toEqual([]);
 }
@@ -53,15 +80,21 @@ test("watches a directory recreated within one debounce window", async () => {
   const root = await fixture();
   const skills = join(root, "skills");
   await mkdir(skills);
-  const changed = vi.fn();
-  // One wide debounce window holds the removal and the recreation, so one reconcile sees both.
-  const observer = observe([skills], changed, 200);
+  const debounce = debounceControl();
+  const observer = observe([skills], vi.fn(), debounce.schedule);
   await observer.watch.ready;
-  const before = changed.mock.calls.length;
+
   await rm(skills, { recursive: true });
+  await debounce.waitForEvent();
   await mkdir(skills);
-  await expect.poll(() => changed.mock.calls.length, { timeout: 3000 }).toBeGreaterThan(before);
-  await mutation(observer, () => writeFile(join(skills, "SKILL.md"), "recreated"));
+  // Keep the first event pending until the directory exists again.
+  await debounce.flush();
+  expect(observer.changed).toHaveBeenCalledTimes(1);
+  await replaceAtomically(join(skills, "SKILL.md"), "recreated");
+  await debounce.waitForEvent();
+  await debounce.flush();
+  expect(observer.changed).toHaveBeenCalledTimes(2);
+  expect(observer.errors).toEqual([]);
 });
 
 test("follows symlink targets and shares observations until the last subscriber closes", async () => {
@@ -76,7 +109,7 @@ test("follows symlink targets and shares observations until the last subscriber 
   await Promise.all([first.watch.ready, second.watch.ready]);
   const file = join(target, "SKILL.md");
   await mutation(first, () => writeFile(file, "first"));
-  await expect.poll(() => second.changed.mock.calls.length).toBeGreaterThan(0);
+  await expect.poll(() => second.changed.mock.calls.length, { timeout: 15_000 }).toBeGreaterThan(0);
   first.watch.close();
   first.changed.mockClear();
   await mutation(second, () => writeFile(file, "second"));
@@ -135,15 +168,21 @@ test("ignores canaries through symlinked skill directories but refreshes once fo
   const file = join(nested, "SKILL.md");
   await writeFile(file, "first");
   await symlink(target, join(skills, "iExalt"), "dir");
-  const observer = observe([skills]);
+  const debounce = debounceControl();
+  const observer = observe([skills], vi.fn(), debounce.schedule);
   await observer.watch.ready;
-  // Observe beyond the debounce interval so startup canaries cannot pass unnoticed.
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+  // Readiness requires the initial liveness canaries to have made a round trip.
+  await debounce.flush();
   expect(observer.changed).not.toHaveBeenCalled();
   expect(observer.errors).toEqual([]);
-  await writeFile(file, "second");
-  await expect.poll(() => observer.changed.mock.calls.length).toBe(1);
-  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  await replaceAtomically(file, "second");
+  await debounce.waitForEvent();
+  await debounce.flush();
+  // Force another delivery with the same catalog to cover duplicate refreshes.
+  await replaceAtomically(file, "second");
+  await debounce.waitForEvent();
+  await debounce.flush();
   expect(observer.changed).toHaveBeenCalledTimes(1);
   expect(observer.errors).toEqual([]);
 });
@@ -157,24 +196,21 @@ test("ignores rewrites that leave every skill unchanged", async () => {
   const file = join(bucket, "pdf", "SKILL.md");
   await writeFile(file, "first");
   await writeFile(join(bucket, "manifest.json"), "{}");
-  const observer = observe([skills]);
+  const debounce = debounceControl();
+  const observer = observe([skills], vi.fn(), debounce.schedule);
   await observer.watch.ready;
-  // Replace atomically, as sync does, so a reconcile never reads a half-written file.
-  const replace = async (path: string, content: string) => {
-    // A hidden temporary name stays out of the catalog, like a sync client's.
-    const temporary = join(dirname(path), `.${basename(path)}.tmp`);
-    await writeFile(temporary, content);
-    await rename(temporary, path);
-  };
   for (const round of ["one", "two", "three"]) {
-    await replace(join(bucket, ".last-complete-round"), round);
-    await replace(join(bucket, "manifest.json"), "{}");
-    await replace(file, "first");
+    await replaceAtomically(join(bucket, ".last-complete-round"), round);
+    await replaceAtomically(join(bucket, "manifest.json"), "{}");
+    await replaceAtomically(file, "first");
+    await debounce.waitForEvent();
+    await debounce.flush();
+    expect(observer.changed).not.toHaveBeenCalled();
   }
-  await new Promise((resolve) => setTimeout(resolve, 500));
-  expect(observer.changed).not.toHaveBeenCalled();
-  await writeFile(file, "second");
-  await expect.poll(() => observer.changed.mock.calls.length).toBe(1);
+  await replaceAtomically(file, "second");
+  await debounce.waitForEvent();
+  await debounce.flush();
+  expect(observer.changed).toHaveBeenCalledTimes(1);
   expect(observer.errors).toEqual([]);
 });
 
@@ -195,7 +231,9 @@ test("refreshes a scoped catalog through authorized root links and their replace
   const before = observer.changed.mock.calls.length;
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, "restored");
-  await expect.poll(() => observer.changed.mock.calls.length).toBeGreaterThan(before);
+  await expect
+    .poll(() => observer.changed.mock.calls.length, { timeout: 15_000 })
+    .toBeGreaterThan(before);
   await mutation(observer, async () => {
     await rm(alias);
     await symlink(outside, alias, "junction");

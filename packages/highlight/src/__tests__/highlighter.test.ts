@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { setImmediate } from "node:timers/promises";
 import { highlightCodeWithBudget, HIGHLIGHT_MAX_SOURCE_BYTES } from "../budgeted-highlighter.js";
 import type { HighlightToken } from "../types.js";
@@ -559,25 +559,28 @@ describe("highlightCodeWithBudget", () => {
   it("yields to IO while producing byte-identical output below the source budget", async () => {
     const code = "const value = Math.max(42, 7);\n".repeat(3_000);
     const expected = JSON.stringify(highlightCode(code, "file.ts"));
-    let ticks = 0;
-    let longestGap = 0;
-    let lastTick = performance.now();
-    const timer = setInterval(() => {
-      const now = performance.now();
-      longestGap = Math.max(longestGap, now - lastTick);
-      lastTick = now;
-      ticks++;
-    }, 1);
+    // Each parser checkpoint advances the clock by one millisecond.
+    let now = -1;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => ++now);
+    const completedYields: number[] = [];
+    const yields = vi.fn(async () => {
+      await setImmediate();
+      completedYields.push(now);
+    });
     try {
       const actual = await highlightCodeWithBudget(code, "file.ts", {
-        yieldToEventLoop: setImmediate,
+        yieldToEventLoop: yields,
       });
-      await new Promise((resolve) => setTimeout(resolve, 5));
-      expect(ticks).toBeGreaterThan(1);
-      expect(longestGap).toBeLessThan(50);
+      expect(completedYields.length).toBeGreaterThan(1);
+      expect(completedYields).toHaveLength(yields.mock.calls.length);
+      expect(completedYields[0]).toBe(4);
+      for (let index = 1; index < completedYields.length; index += 1) {
+        // One extra clock read starts the next four-millisecond slice.
+        expect(completedYields[index]! - completedYields[index - 1]!).toBe(5);
+      }
       expect(JSON.stringify(actual)).toBe(expected);
     } finally {
-      clearInterval(timer);
+      clock.mockRestore();
     }
   });
 
@@ -596,13 +599,22 @@ describe("highlightCodeWithBudget", () => {
 
   it("stops a parser that is cancelled between real event-loop turns", async () => {
     const controller = new AbortController();
-    const pending = highlightCodeWithBudget(
-      "const value = Math.max(42, 7);\n".repeat(3_000),
-      "file.ts",
-      { yieldToEventLoop: setImmediate, signal: controller.signal },
-    );
-    await setImmediate();
-    controller.abort();
-    expect(await pending).toBeNull();
+    let now = 0;
+    const clock = vi.spyOn(Date, "now").mockImplementation(() => (now += 10));
+    try {
+      const yieldToEventLoop = vi.fn(async () => {
+        await setImmediate();
+        controller.abort();
+      });
+      const result = await highlightCodeWithBudget(
+        "const value = Math.max(42, 7);\n".repeat(3_000),
+        "file.ts",
+        { yieldToEventLoop, signal: controller.signal },
+      );
+      expect(result).toBeNull();
+      expect(yieldToEventLoop).toHaveBeenCalledTimes(1);
+    } finally {
+      clock.mockRestore();
+    }
   });
 });

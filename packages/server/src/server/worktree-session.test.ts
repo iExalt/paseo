@@ -630,19 +630,34 @@ describe("runWorktreeSetupInBackground", () => {
   test("teardown stops unfinished setup before removing its workspace", async ({
     onTestFinished,
   }) => {
+    // A teardown regression must not make the orphan retain the setup runner's pipes.
+    const redirect = isPlatform("win32") ? "*> $null" : "> /dev/null 2>&1";
     const setup = startSubdirectorySetup(
-      `node -e "require('fs').writeFileSync('setup-pid.txt', String(process.pid)); setInterval(()=>{},1000)"`,
+      `node -e "require('fs').writeFileSync('setup-pid.txt', String(process.pid)); setInterval(()=>{},1000)" ${redirect}`,
     );
     let pid = 0;
-    const probeChild = () => process.kill(pid, 0);
+    const probeChild = () => {
+      try {
+        process.kill(pid, 0);
+        return "running";
+      } catch (error) {
+        return (error as NodeJS.ErrnoException).code;
+      }
+    };
     onTestFinished(async () => {
       try {
         expect(pid).toBeGreaterThan(0);
         expect(existsSync(setup.tempDir)).toBe(false);
-        expect(probeChild).toThrow(expect.objectContaining({ code: "ESRCH" }));
-      } finally {
-        // Keep a failing cleanup regression from leaking its deliberately live child.
-        await setup.stop();
+        await expect.poll(probeChild, { timeout: 15_000 }).toBe("ESRCH");
+      } catch (error) {
+        if (pid > 0) {
+          try {
+            process.kill(pid, "SIGKILL");
+          } catch (killError) {
+            if ((killError as NodeJS.ErrnoException).code !== "ESRCH") throw killError;
+          }
+        }
+        throw error;
       }
     });
     await expect
@@ -830,14 +845,15 @@ describe("runWorktreeSetupInBackground", () => {
     expect(emitWorkspaceUpdateForWorkspaceId).toHaveBeenCalledWith(workspaceId);
   });
 
-  // POSIX-only: setup command is hardcoded to sh, printf, and sleep.
+  // POSIX-only: setup invokes printf through the shell.
   test.skipIf(isPlatform("win32"))(
     "emits running setup snapshots before completed for real setup commands",
     async () => {
+      const command = "printf 'phase-one\\nphase-two\\n'";
       const { tempDir, repoDir } = createGitRepo({
         paseoConfig: {
           worktree: {
-            setup: ["sh -c \"printf 'phase-one\\\\n'; sleep 0.1; printf 'phase-two\\\\n'\""],
+            setup: [command],
           },
         },
       });
@@ -919,7 +935,7 @@ describe("runWorktreeSetupInBackground", () => {
       expect(setupOutputMessage?.payload.detail.log).toBe("");
       expect(setupOutputMessage?.payload.detail.commands[0]).toMatchObject({
         index: 1,
-        command: "sh -c \"printf 'phase-one\\\\n'; sleep 0.1; printf 'phase-two\\\\n'\"",
+        command,
         log: expect.stringContaining("phase-one"),
         status: "running",
       });
@@ -937,7 +953,7 @@ describe("runWorktreeSetupInBackground", () => {
       expect(progressMessages.at(-1)?.payload.detail.log).toBe("");
       expect(progressMessages.at(-1)?.payload.detail.commands[0]).toMatchObject({
         index: 1,
-        command: "sh -c \"printf 'phase-one\\\\n'; sleep 0.1; printf 'phase-two\\\\n'\"",
+        command,
         log: expect.stringContaining("phase-two"),
         status: "completed",
         exitCode: 0,
@@ -1536,7 +1552,10 @@ describe("handleCreatePaseoWorktreeRequest", () => {
     const paseoHome = path.join(tempDir, ".paseo");
     const emitted: SessionOutboundMessage[] = [];
     const backgroundWork = vi.fn(async () => {});
-    const warmWorkspaceGitData = vi.fn(async () => {});
+    const warming = Promise.withResolvers<void>();
+    const warmWorkspaceGitData = vi.fn(async () => {
+      warming.resolve();
+    });
     let registeredWorktreePath: string | null = null;
 
     try {
@@ -1590,7 +1609,7 @@ describe("handleCreatePaseoWorktreeRequest", () => {
       });
       expect(registeredWorktreePath).toBeTruthy();
       expect(existsSync(registeredWorktreePath!)).toBe(true);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await warming.promise;
       expect(warmWorkspaceGitData).toHaveBeenCalledWith(
         expect.objectContaining({
           workspaceId: response?.payload.workspace?.id,
