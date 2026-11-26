@@ -255,11 +255,14 @@ async function resolveSessionCreateAgent(
   const prompt = buildAgentPrompt(trimmedPrompt ?? "", input.images, input.attachments);
   const hasPromptContent = Array.isArray(prompt) ? prompt.length > 0 : prompt.length > 0;
   const clientMessageId = normalizeClientMessageId(input.clientMessageId);
+  // Only the user's own first message selects Cursor skills by `/name`.
+  const expandCursorSkillTokens = !input.callerAgentId && !input.source;
   const runOptions: AgentRunOptions | undefined =
-    input.outputSchema || clientMessageId
+    input.outputSchema || clientMessageId || expandCursorSkillTokens
       ? {
           ...(input.outputSchema ? { outputSchema: input.outputSchema } : {}),
           ...(clientMessageId ? { clientMessageId } : {}),
+          ...(expandCursorSkillTokens ? { expandCursorSkillTokens } : {}),
         }
       : undefined;
   const workspaceId = input.workspaceId;

@@ -41,6 +41,12 @@ import {
 } from "./cursor-skill-catalog.js";
 import { readCursorWorkspaceInstructions } from "./cursor-workspace-instructions.js";
 import { assertCursorSkillTarget, cursorSkillReferences } from "./prompt-attachments.js";
+import {
+  cursorSkillPromptText,
+  cursorSkillTokenCandidates,
+  matchCursorSkillTokens,
+  preferredCursorSkills,
+} from "./cursor-skill-tokens.js";
 import type { ProviderPaseoToolsPolicy } from "@getpaseo/protocol/provider-config";
 import { z } from "zod";
 import type { TerminalManager } from "../../terminal/terminal-manager.js";
@@ -1553,7 +1559,9 @@ export class AgentManager {
     if (this.providerEnabled.get("cursor-sdk") === false) {
       throw new Error("Cursor SDK is disabled on this host.");
     }
-    const skills = await scanCursorSkills(await this.resolveCursorSkillRoots(target));
+    const skills = preferredCursorSkills(
+      await scanCursorSkills(await this.resolveCursorSkillRoots(target)),
+    );
     return skills.map(({ name, reference, description }) => ({
       name,
       description,
@@ -1569,6 +1577,30 @@ export class AgentManager {
   ) {
     if (!references.length) return [];
     return resolveCursorSkills(await this.resolveCursorSkillRoots(target), references);
+  }
+
+  /** Skills the user's message selects: attached references, then `/name` tokens in its text. */
+  private async cursorSkillTurnReferences(
+    agent: ActiveManagedAgent,
+    prompt: AgentPromptInput,
+    options: AgentRunOptions | undefined,
+  ): Promise<CursorSkillReference[]> {
+    const references = cursorSkillReferences(typeof prompt === "string" ? undefined : prompt);
+    if (!options?.expandCursorSkillTokens || this.adapterOf(agent.provider) !== "cursor-sdk") {
+      return references;
+    }
+    const text = cursorSkillPromptText(prompt);
+    if (!cursorSkillTokenCandidates(text).length) return references;
+    const skills = await scanCursorSkills(
+      await this.resolveCursorSkillRoots({ cwd: agent.config.cwd, workspaceId: agent.workspaceId }),
+    );
+    const attached = new Set(references.map((reference) => reference.id));
+    return [
+      ...references,
+      ...matchCursorSkillTokens(text, skills)
+        .map((skill) => skill.reference)
+        .filter((reference) => !attached.has(reference.id)),
+    ];
   }
 
   async listDraftCommands(config: AgentSessionConfig): Promise<AgentSlashCommand[]> {
@@ -3489,7 +3521,7 @@ export class AgentManager {
     const agent = await this.ensureInteractiveSession(agentId);
     const blocks = typeof prompt === "string" ? undefined : prompt;
     assertCursorSkillTarget(blocks, agent.provider);
-    if (cursorSkillReferences(blocks).length) return false;
+    if ((await this.cursorSkillTurnReferences(agent, prompt, options)).length) return false;
     // Providers parse slash commands from the raw text, so a command another agent sent
     // must reach them without its sender envelope.
     const agentMessage = typeof prompt === "string" ? parseAgentMessage(prompt) : null;
@@ -3580,8 +3612,8 @@ export class AgentManager {
     try {
       let runOptions = options;
       const blocks = typeof prompt === "string" ? undefined : prompt;
-      const references = cursorSkillReferences(blocks);
       assertCursorSkillTarget(blocks, agent.provider);
+      const references = await this.cursorSkillTurnReferences(agent, prompt, options);
       if (references.length) {
         const resolveSelectedSkills = () =>
           this.validateCursorSkillSelection(
@@ -3992,7 +4024,11 @@ export class AgentManager {
     const expectedTurnId = agent.activeForegroundTurnId ?? agent.activeTurnId;
     const blocks = typeof prompt === "string" ? undefined : prompt;
     assertCursorSkillTarget(blocks, agent.provider);
-    if (!expectedTurnId || !agent.session.steerActiveTurn || cursorSkillReferences(blocks).length) {
+    if (
+      !expectedTurnId ||
+      !agent.session.steerActiveTurn ||
+      (await this.cursorSkillTurnReferences(agent, prompt, options)).length
+    ) {
       return { status: "unavailable" };
     }
     const result = await this.runSteerAdmission(agent, expectedTurnId, async () => {
@@ -4042,7 +4078,8 @@ export class AgentManager {
     assertCursorSkillTarget(blocks, agent.provider);
     // A selected skill needs a fresh turn so the daemon can validate it at dispatch.
     const result =
-      agent.session.steerActiveTurn && !cursorSkillReferences(blocks).length
+      agent.session.steerActiveTurn &&
+      !(await this.cursorSkillTurnReferences(agent, prompt, options)).length
         ? await this.runSteerAdmission(agent, expectedTurnId, async () => {
             const admission = await agent.session.steerActiveTurn!(prompt, {
               ...options,

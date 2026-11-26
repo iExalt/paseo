@@ -1095,6 +1095,70 @@ test("passes global instructions into a Cursor SDK turn without a workspace", as
   }
 });
 
+test("expands a Cursor SDK user's /name tokens, never attachments or agent messages, and never steers them", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "agent-manager-cursor-text-skills-"));
+  onTestFinished(() => rmSync(cwd, { recursive: true, force: true }));
+  const skills = join(cwd, "skills");
+  mkdirSync(join(skills, "deploy"), { recursive: true });
+  writeFileSync(
+    join(skills, "deploy", "SKILL.md"),
+    "---\nname: deploy\ndescription: Deploy it.\n---\ndeploy canary\n",
+  );
+  const sessions: SteeringTestSession[] = [];
+  const selected: string[][] = [];
+  const manager = new AgentManager({
+    clients: {
+      "cursor-sdk": new (class extends TestAgentClient {
+        override async createSession(): Promise<AgentSession> {
+          const session = new SteeringTestSession({ provider: "cursor-sdk", cwd });
+          const start = session.startTurn.bind(session);
+          vi.spyOn(session as AgentSession, "startTurn").mockImplementation(
+            async (prompt, options) => {
+              const resolved = (await options?.resolveCursorSkills?.()) ?? [];
+              selected.push(resolved.map(({ instructions }) => instructions.trim()));
+              return start(prompt);
+            },
+          );
+          sessions.push(session);
+          return session;
+        }
+      })(),
+    },
+    logger,
+    resolveCursorSkillRoots: async () => [{ path: skills, boundary: cwd, scope: "workspace" }],
+  });
+  const user = { runOptions: { expandCursorSkillTokens: true } };
+  const runs: Array<[AgentPromptInput, typeof user | undefined]> = [
+    ["/deploy now", user],
+    [
+      [
+        { type: "text", text: "review this" },
+        { type: "text", text: "/deploy", mimeType: "text/plain" },
+      ],
+      user,
+    ],
+    ["/deploy from another agent", undefined],
+  ];
+  const ids: string[] = [];
+  for (const [prompt, options] of runs) {
+    const agent = await manager.createAgent({ provider: "cursor-sdk", cwd }, undefined, {
+      workspaceId: undefined,
+    });
+    ids.push(agent.id);
+    onTestFinished(() => manager.closeAgent(agent.id));
+    await startAgentRun(manager, agent.id, prompt, logger, options);
+    await manager.waitForAgentRunStart(agent.id);
+  }
+  expect(selected).toEqual([["deploy canary"], [], []]);
+
+  await expect(
+    manager.steerOrDeferBehindActiveTurn(ids[0], "/deploy again", {
+      expandCursorSkillTokens: true,
+    }),
+  ).resolves.not.toEqual({ status: "steered" });
+  expect(sessions[0].steerCount).toBe(0);
+});
+
 test("an unavailable steer waits for the active turn instead of interrupting it", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = "unavailable";

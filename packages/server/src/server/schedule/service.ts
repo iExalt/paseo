@@ -1063,7 +1063,10 @@ export class ScheduleService {
       if (created.initialPromptError) {
         throw created.initialPromptError;
       }
-      const result = await this.agentManager.runAgent(agent.id, schedule.prompt);
+      // The user wrote the schedule's prompt, so its `/name` tokens select Cursor skills.
+      const result = await this.agentManager.runAgent(agent.id, schedule.prompt, {
+        expandCursorSkillTokens: true,
+      });
       const waitResult = await this.agentManager.waitForAgentEvent(agent.id, {
         waitForActive: true,
       });

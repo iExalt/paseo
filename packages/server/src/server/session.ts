@@ -10047,6 +10047,7 @@ export class Session {
           activeTurnBehavior: msg.activeTurnBehavior ?? "interrupt",
           sessionMode: msg.sessionMode,
           clearPendingPermissions: true,
+          runOptions: { expandCursorSkillTokens: true },
           beforeDispatch,
           logger: this.sessionLogger,
         });

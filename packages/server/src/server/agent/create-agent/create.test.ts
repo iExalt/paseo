@@ -91,6 +91,8 @@ test("session create forwards clientMessageId to the initial prompt run options"
 
   expect(streamAgent).toHaveBeenCalledWith("agent-1", "hello from create", {
     clientMessageId: "msg-create-1",
+    // The user typed it, so a Cursor SDK agent expands its `/name` skill tokens.
+    expandCursorSkillTokens: true,
   });
 });
 
