@@ -8,6 +8,7 @@ import { getServerId } from "../support/helpers/server-id";
 import { selectWorkspaceInSidebar } from "../support/helpers/sidebar";
 import { waitForSidebarHydration } from "../support/helpers/workspace-ui";
 import { buildHostWorkspaceRoute } from "../../src/utils/host-routes";
+import { DISMISS_GRACE_MS } from "../../src/notification-dismissal/plan";
 
 interface RecordedNotification {
   title: string;
@@ -16,9 +17,6 @@ interface RecordedNotification {
   reason: string | null;
   closed: boolean;
 }
-
-/** Longer than the dismissal grace period, so a premature close would have happened. */
-const SETTLE_MS = 3_000;
 
 function installNotificationRecorder(): void {
   const records: RecordedNotification[] = [];
@@ -76,6 +74,7 @@ async function openWorkspace(page: Page, workspaceId: string): Promise<void> {
 test.describe("Notification dismissal", () => {
   test("closes a thread's notification once it is read, answered or archived", async ({ page }) => {
     test.setTimeout(180_000);
+    await page.clock.install();
     await page.addInitScript(installNotificationRecorder);
     const seeded = await seedWorkspace({ repoPrefix: "notification-dismissal-" });
     try {
@@ -101,12 +100,15 @@ test.describe("Notification dismissal", () => {
       const finished = await waitForNotificationCount(page, 1);
       expect(finished).toMatchObject({ reason: "finished", renotify: true, closed: false });
       expect(finished.tag).toContain(encodeURIComponent(agent.id));
-      await expect(
-        workspaceRow(page, seeded.workspaceId).getByTestId("workspace-status-indicator-attention"),
-      ).toBeVisible({ timeout: 30_000 });
-      await page.waitForTimeout(SETTLE_MS);
+      const attentionIndicator = workspaceRow(page, seeded.workspaceId).getByTestId(
+        "workspace-status-indicator-attention",
+      );
+      await expect(attentionIndicator).toBeVisible({ timeout: 30_000 });
+      await page.clock.runFor(DISMISS_GRACE_MS + 1);
       expect((await readNotifications(page))[0]?.closed).toBe(false);
       await openWorkspace(page, seeded.workspaceId);
+      await expect(attentionIndicator).toBeHidden();
+      await page.clock.runFor(DISMISS_GRACE_MS + 1);
       await expect.poll(async () => (await readNotifications(page))[0]?.closed).toBe(true);
 
       // Question: reading the thread is not enough; answering it is.
@@ -116,9 +118,11 @@ test.describe("Notification dismissal", () => {
       expect(question).toMatchObject({ reason: "permission", tag: finished.tag, closed: false });
       await openWorkspace(page, seeded.workspaceId);
       await waitForPermissionPrompt(page);
-      await page.waitForTimeout(SETTLE_MS);
+      await page.clock.runFor(DISMISS_GRACE_MS + 1);
       expect((await readNotifications(page))[1]?.closed).toBe(false);
       await allowPermission(page);
+      await expect(page.getByTestId("permission-request-question")).toBeHidden();
+      await page.clock.runFor(DISMISS_GRACE_MS + 1);
       await expect.poll(async () => (await readNotifications(page))[1]?.closed).toBe(true);
 
       // Archive: closes without the thread being read.
@@ -126,7 +130,10 @@ test.describe("Notification dismissal", () => {
       const count = (await readNotifications(page)).length;
       await seeded.client.sendAgentMessage(agent.id, "Say goodbye.");
       await waitForNotificationCount(page, count + 1);
+      await expect(attentionIndicator).toBeVisible();
       await seeded.client.archiveAgent(agent.id);
+      await expect(attentionIndicator).toBeHidden();
+      await page.clock.runFor(DISMISS_GRACE_MS + 1);
       await expect.poll(async () => (await readNotifications(page))[count]?.closed).toBe(true);
     } finally {
       await seeded.cleanup();

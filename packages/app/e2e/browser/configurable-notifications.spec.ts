@@ -17,6 +17,11 @@ import { getServerId } from "../support/helpers/server-id";
 const paseoCli = path.resolve(process.cwd(), "../cli/bin/paseo");
 const notificationOsProof = process.env.PASEO_NOTIFICATION_OS_PROOF === "1";
 
+type RecordedAttention = Pick<
+  Extract<SessionOutboundMessage, { type: "agent_attention_required" }>["payload"],
+  "agentId" | "reason" | "shouldNotify" | "notification"
+>;
+
 function getNotificationOsProofPaths(): {
   profilePath: string;
   proofRoot: string;
@@ -105,6 +110,28 @@ function installNotificationRecorder(useOsProofRecorder: boolean): void {
   const calls: Array<{ title: string; body: string }> = [];
   Object.defineProperty(window, "__paseoNotificationCalls", { value: calls });
 
+  const processedAttention: RecordedAttention[] = [];
+  Object.defineProperty(window, "__paseoProcessedAttention", { value: processedAttention });
+  const afterDispatch = new MessageChannel();
+  afterDispatch.port1.addEventListener("message", ({ data }) => {
+    processedAttention.push(data);
+  });
+  afterDispatch.port1.start();
+  window.WebSocket = new Proxy(window.WebSocket, {
+    construct(target, args, newTarget) {
+      const socket: WebSocket = Reflect.construct(target, args, newTarget);
+      socket.addEventListener("message", ({ data }) => {
+        if (typeof data !== "string") return;
+        const envelope = JSON.parse(data);
+        if (envelope.type === "session" && envelope.message?.type === "agent_attention_required") {
+          // Let the app's socket listener and its permission microtask finish first.
+          afterDispatch.port2.postMessage(envelope.message.payload);
+        }
+      });
+      return socket;
+    },
+  });
+
   if (useOsProofRecorder) {
     const nativeNotification = window.Notification;
     if (!nativeNotification) throw new Error("This browser does not support notifications");
@@ -148,7 +175,16 @@ function installNotificationRecorder(useOsProofRecorder: boolean): void {
     const observationNote = document.createElement("div");
     observationNote.textContent =
       "The test grants this site permission only. macOS notification authorization is separate; observe the banner or Notification Center.";
-    panel.append(trial, observationNote);
+    const observed = document.createElement("button");
+    observed.type = "button";
+    observed.dataset.testid = "os-proof-observed";
+    observed.textContent = "Continue after checking Notification Center";
+    observed.addEventListener("click", () => {
+      observed.disabled = true;
+    });
+    observed.style.pointerEvents = "auto";
+    observed.disabled = true;
+    panel.append(trial, observationNote, observed);
     const attachPanel = () => document.body.append(panel);
     if (document.body) attachPanel();
     else document.addEventListener("DOMContentLoaded", attachPanel, { once: true });
@@ -183,6 +219,13 @@ async function showNotificationTrial(page: Page, label: string): Promise<void> {
     };
     target.__paseoSetNotificationTrial?.(nextLabel);
   }, label);
+}
+
+function readBrowserAttention(page: Page, agentId: string): Promise<RecordedAttention[]> {
+  return page.evaluate((id) => {
+    const target = window as Window & { __paseoProcessedAttention?: RecordedAttention[] };
+    return target.__paseoProcessedAttention?.filter((attention) => attention.agentId === id) ?? [];
+  }, agentId);
 }
 
 const osProofBaseTest = baseSupportTest.extend({
@@ -526,18 +569,26 @@ test.describe("configurable notifications journey", () => {
         // completion exercises the same finished transition without changing focus.
         await attentionClient.clearAgentAttention(agent.id);
         const eventCount = attentionForAgent().length;
+        const priorNotificationCount = (await notificationCalls()).length;
         await e2eWorkerClient.sendAgentMessage(agent.id, prompt);
         await e2eWorkerClient.waitForFinish(agent.id, 20_000);
         await expect.poll(() => attentionForAgent().length).toBe(eventCount + 1);
         expect(attentionForAgent().at(-1)?.reason).toBe("finished");
         expect(attentionForAgent().at(-1)?.notification?.body).toBe(expectedBody);
-        if (expectedNotifications.length > (await notificationCalls()).length) {
-          await expect.poll(notificationCalls).toHaveLength(expectedNotifications.length);
-        }
-        // The finished source event arrives after the server's notification decision.
-        // Give the browser event handler a bounded window before asserting no extra call.
-        await page.waitForTimeout(notificationOsProof ? 10_000 : 400);
+        await expect.poll(() => readBrowserAttention(page, agent.id)).toHaveLength(eventCount + 1);
+        expect((await readBrowserAttention(page, agent.id)).at(-1)).toMatchObject({
+          reason: "finished",
+          notification: { body: expectedBody },
+          shouldNotify: expectedNotifications.length > priorNotificationCount,
+        });
         expect(await notificationCalls()).toEqual(expectedNotifications);
+        if (notificationOsProof) {
+          const observed = page.getByTestId("os-proof-observed");
+          await observed.evaluate((button: HTMLButtonElement) => {
+            button.disabled = false;
+          });
+          await expect(observed).toBeDisabled({ timeout: 30_000 });
+        }
       };
 
       expect(await readWorkspaceNotifications(e2eWorkerClient, workspaceId)).toBe("on");
