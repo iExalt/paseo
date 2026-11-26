@@ -1849,18 +1849,25 @@ function ComposerContentImpl({
     [serverId, setQueuedMessages],
   );
 
+  // COMPAT(cursorSdkTextSkills): drafts saved before Cursor skills became text can still hold
+  // skill chips. Remove after 2027-05-26.
+  const draftProvider = commandDraft?.status === "ready" ? commandDraft.config.provider : undefined;
   const canSubmitSelectedSkills = useCallback(
     (outgoingAttachments: ComposerAttachment[]) => {
-      if (
-        outgoingAttachments.some((attachment) => attachment.kind === "skill") &&
-        client?.getLastServerInfoMessage()?.features?.cursorSdkSkillSelection !== true
-      ) {
+      const chip = outgoingAttachments.find((attachment) => attachment.kind === "skill");
+      if (chip && draftProvider !== undefined && draftProvider !== "cursor-sdk") {
+        setSendError(
+          `Remove the Cursor skill ${chip.reference.name}; it only works with Cursor SDK. Type its /name instead.`,
+        );
+        return false;
+      }
+      if (chip && client?.getLastServerInfoMessage()?.features?.cursorSdkSkillSelection !== true) {
         setSendError("Update the Paseo host to send selected Cursor skills.");
         return false;
       }
       return true;
     },
-    [client],
+    [client, draftProvider],
   );
 
   const queueMessage = useCallback(
@@ -2616,17 +2623,6 @@ function ComposerContentImpl({
       draft: commandDraft,
       canExecuteClientSlashCommand: buildOutgoingAttachments(attachments).length === 0,
       onClientSlashCommand: runClientSlashCommand,
-      onSkillSelected: (
-        reference: Extract<UserComposerAttachment, { kind: "skill" }>["reference"],
-      ) => {
-        setSelectedAttachments((current) => [
-          ...current.filter(
-            (attachment) =>
-              attachment.kind !== "skill" || attachment.reference.name !== reference.name,
-          ),
-          { kind: "skill", reference },
-        ]);
-      },
       pluginClientSlashCommands,
     }),
     [
@@ -2637,7 +2633,6 @@ function ComposerContentImpl({
       buildOutgoingAttachments,
       attachments,
       runClientSlashCommand,
-      setSelectedAttachments,
       pluginClientSlashCommands,
     ],
   );

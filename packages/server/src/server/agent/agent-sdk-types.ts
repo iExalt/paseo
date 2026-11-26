@@ -222,6 +222,11 @@ export interface AgentRunOptions {
   resumeFrom?: AgentPersistenceHandle;
   maxThinkingTokens?: number;
   clientMessageId?: string;
+  /**
+   * The prompt is the user's own message, so a Cursor SDK agent expands its `/name` skill tokens.
+   * Agent messages, daemon prompts and attachments never set it.
+   */
+  expandCursorSkillTokens?: boolean;
   /** Revalidates the selected references at native dispatch. */
   resolveCursorSkills?: () => Promise<ResolvedCursorSkill[]>;
   /** Resolves trusted instruction text at native dispatch. */

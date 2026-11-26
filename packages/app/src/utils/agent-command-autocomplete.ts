@@ -1,4 +1,9 @@
 import {
+  isCursorSkillTokenName,
+  SKILL_TOKEN_TRAILING_PUNCTUATION,
+  splitSkillTokenCode,
+} from "@getpaseo/protocol/messages";
+import {
   compareMatchScores,
   type MatchScore,
   scoreTextFields,
@@ -156,4 +161,63 @@ export function applySkillMentionReplacement(
   const after = input.text.slice(input.command.end);
   const replacement = `${before}$${input.commandName}${after}`;
   return input.command.end === input.text.length ? `${replacement} ` : replacement;
+}
+
+/** The prefix a provider reads a skill token by: Codex uses `$name`, the others `/name`. */
+export function skillTokenPrefix(provider: string | undefined): "$" | "/" {
+  return provider === "codex" ? "$" : "/";
+}
+
+/**
+ * Rewrites whole `$name` and `/name` tokens to the target provider's prefix when `name` is one of
+ * `names`. Tokens start the text or follow whitespace; code, paths, URLs and shell variables stay
+ * as typed.
+ */
+export function rewriteSkillTokens(input: {
+  text: string;
+  names: ReadonlySet<string>;
+  provider: string | undefined;
+}): string {
+  if (input.names.size === 0) return input.text;
+  const prefix = skillTokenPrefix(input.provider);
+  return splitSkillTokenCode(input.text)
+    .map((part, index) =>
+      index % 2 === 1
+        ? part
+        : part.replace(/(^|\s)[$/](\S+)/g, (token, lead: string, word: string) => {
+            for (let name = word; name; name = name.slice(0, -1)) {
+              if (input.names.has(name)) return `${lead}${prefix}${name}${word.slice(name.length)}`;
+              if (!SKILL_TOKEN_TRAILING_PUNCTUATION.test(name)) break;
+            }
+            return token;
+          }),
+    )
+    .join("");
+}
+
+/**
+ * Cursor SDK skills come from the daemon's catalog with a reference. A host that expands `/name`
+ * text lists them as plain skill commands, so choosing one inserts text. Skills whose name text
+ * cannot spell, skills a same-name command shadows (the daemon runs the command), and every Cursor
+ * skill on an older host stay out of the menu.
+ */
+export function cursorTextSkillCommands<TCommand extends { name: string; skill?: unknown }>(
+  commands: readonly TCommand[],
+  hostExpandsText: boolean,
+): TCommand[] {
+  const commandNames = new Set(
+    commands.filter((command) => !command.skill).map((command) => command.name),
+  );
+  return commands.flatMap((command) => {
+    if (!command.skill) return [command];
+    if (
+      !hostExpandsText ||
+      !isCursorSkillTokenName(command.name) ||
+      commandNames.has(command.name)
+    ) {
+      return [];
+    }
+    const { skill: _skill, ...textCommand } = command;
+    return [textCommand as TCommand];
+  });
 }
