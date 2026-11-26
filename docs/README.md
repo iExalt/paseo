@@ -49,6 +49,7 @@ Read the entries relevant to your task before non-trivial work. Fork notes live 
 - [upstream/keyboard-shortcuts.md](upstream/keyboard-shortcuts.md): Keyboard shortcut routing and native input ownership
 - [upstream/terminal-rendering.md](upstream/terminal-rendering.md): Terminal rendering and cell geometry
 - [upstream/file-observation.md](upstream/file-observation.md): Recursive watcher ownership, Linux constraints, teardown invariants, and Parcel comparison
+- [testing.md](testing.md): Controlled clocks, external readiness signals, and converting existing tests
 - [upstream/testing.md](upstream/testing.md): TDD workflow, determinism, real dependencies over mocks, test organization
 - [upstream/qa.md](upstream/qa.md): QA evidence bar for pull requests — platform matrix, version drift, performance, UI proof
 - [upstream/mobile-testing.md](upstream/mobile-testing.md): Maestro and mobile test workflows

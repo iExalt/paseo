@@ -176,11 +176,55 @@ const noInlineUseRef = {
   },
 };
 
+const sleepHelperNames = new Set(["sleep", "delay", "wait"]);
+
+function isPromiseTimer(node) {
+  const callback = node.arguments[0];
+  if (callback?.type !== "Identifier") return false;
+  let executor = node.parent;
+  if (executor?.type === "ExpressionStatement") executor = executor.parent;
+  if (executor?.type === "BlockStatement") executor = executor.parent;
+  const promise = executor?.parent;
+  return (
+    (executor?.type === "ArrowFunctionExpression" || executor?.type === "FunctionExpression") &&
+    executor.params[0]?.type === "Identifier" &&
+    executor.params[0].name === callback.name &&
+    promise?.type === "NewExpression" &&
+    promise.callee.type === "Identifier" &&
+    promise.callee.name === "Promise"
+  );
+}
+
+const noTestSleep = {
+  create(context) {
+    return {
+      CallExpression(node) {
+        const { callee } = node;
+        const name =
+          callee.type === "MemberExpression" ? propertyName(callee.property) : callee.name;
+        const literalDelay = typeof node.arguments[0]?.value === "number";
+        if (
+          (callee.type === "MemberExpression" && name === "waitForTimeout") ||
+          (callee.type === "Identifier" && sleepHelperNames.has(name) && literalDelay) ||
+          (callee.type === "Identifier" && name === "setTimeout" && isPromiseTimer(node))
+        ) {
+          context.report({
+            node,
+            message:
+              "Drive a controlled clock or wait for a readiness signal. See docs/testing.md.",
+          });
+        }
+      },
+    };
+  },
+};
+
 export default {
   meta: { name: "paseo" },
   rules: {
     "no-inline-use-ref": noInlineUseRef,
     "no-raw-pressable": noRawPressable,
     "no-sync-io": noSyncIo,
+    "no-test-sleep": noTestSleep,
   },
 };
