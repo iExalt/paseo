@@ -3,6 +3,8 @@ import { CursorSkillAttachmentSchema, CursorSkillReferenceSchema } from "./curso
 export {
   CursorSkillReferenceSchema,
   isCursorSkillTokenName,
+  SKILL_TOKEN_TRAILING_PUNCTUATION,
+  splitSkillTokenCode,
   type CursorSkillReference,
 } from "./cursor-skill.js";
 import {

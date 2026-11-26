@@ -4215,7 +4215,8 @@ export class AgentManager {
             iterator: this.streamAgent(agent.id, prompt, options),
           };
         }
-        const skillReferences = cursorSkillReferences(blocks);
+        // Fail before canceling the running turn when the selection can't run.
+        const skillReferences = await this.cursorSkillTurnReferences(agent, prompt, options);
         if (skillReferences.length) {
           await this.validateCursorSkillSelection(
             { cwd: agent.config.cwd, workspaceId: agent.workspaceId },

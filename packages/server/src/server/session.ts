@@ -5552,6 +5552,8 @@ export class Session {
                 return this.createSessionAgent(
                   {
                     ...agentInput,
+                    // An agent that creates a workspace is the caller of its first agent too.
+                    callerAgentId: agentInput.callerAgentId ?? request.callerAgentId,
                     type: "create_agent_request",
                     requestId,
                     config: {

@@ -94,6 +94,22 @@ test("session create forwards clientMessageId to the initial prompt run options"
     // The user typed it, so a Cursor SDK agent expands its `/name` skill tokens.
     expandCursorSkillTokens: true,
   });
+
+  // An agent's first message to the agent it creates is not the user's.
+  await createAgentCommand(dependencies, {
+    kind: "session",
+    callerAgentId: "parent-agent",
+    config: { provider: "codex", cwd: "/tmp/paseo-create-test" },
+    workspaceId: "ws-create-test",
+    initialPrompt: "hello from an agent",
+    clientMessageId: "msg-create-2",
+    labels: {},
+    provisionalTitle: null,
+    firstAgentContext: { attachments: [] },
+  });
+  expect(streamAgent).toHaveBeenLastCalledWith("agent-1", "hello from an agent", {
+    clientMessageId: "msg-create-2",
+  });
 });
 
 test("session create validates the requested mode against the provider's modes", async () => {

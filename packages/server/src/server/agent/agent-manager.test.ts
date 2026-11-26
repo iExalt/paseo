@@ -1159,6 +1159,41 @@ test("expands a Cursor SDK user's /name tokens, never attachments or agent messa
   expect(sessions[0].steerCount).toBe(0);
 });
 
+test("rejects an oversize Cursor SDK /name selection before canceling the running turn", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "agent-manager-cursor-text-skills-replace-"));
+  onTestFinished(() => rmSync(cwd, { recursive: true, force: true }));
+  const skills = join(cwd, "skills");
+  for (const name of ["aa", "bb", "cc"]) {
+    mkdirSync(join(skills, name), { recursive: true });
+    writeFileSync(
+      join(skills, name, "SKILL.md"),
+      `---\nname: ${name}\ndescription: Large.\n---\n${"x".repeat(60 * 1024)}\n`,
+    );
+  }
+  const session = new SteeringTestSession({ provider: "cursor-sdk", cwd });
+  const manager = new AgentManager({
+    clients: {
+      "cursor-sdk": new (class extends TestAgentClient {
+        override async createSession(): Promise<AgentSession> {
+          return session;
+        }
+      })(),
+    },
+    logger,
+    resolveCursorSkillRoots: async () => [{ path: skills, boundary: cwd, scope: "workspace" }],
+  });
+  const agent = await manager.createAgent({ provider: "cursor-sdk", cwd }, undefined, {
+    workspaceId: undefined,
+  });
+  onTestFinished(() => manager.closeAgent(agent.id));
+  await startAgentRun(manager, agent.id, "first", logger);
+  await manager.waitForAgentRunStart(agent.id);
+  await expect(
+    manager.replaceAgentRun(agent.id, "/aa /bb /cc", { expandCursorSkillTokens: true }),
+  ).rejects.toThrow("Select fewer Cursor skills");
+  expect(session.interruptCount).toBe(0);
+});
+
 test("an unavailable steer waits for the active turn instead of interrupting it", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = "unavailable";

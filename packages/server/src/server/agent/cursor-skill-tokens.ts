@@ -1,12 +1,14 @@
-import { isCursorSkillTokenName } from "@getpaseo/protocol/messages";
+import {
+  isCursorSkillTokenName,
+  SKILL_TOKEN_TRAILING_PUNCTUATION,
+  splitSkillTokenCode,
+} from "@getpaseo/protocol/messages";
 import type { AgentPromptInput } from "./agent-sdk-types.js";
 
 interface NamedCursorSkill {
   name: string;
   reference: { id: string; scope: "workspace" | "user" };
 }
-
-const trailingPunctuation = new Set([".", ",", ";", ":", "!", "?", ")", "]", "}", '"', "'"]);
 
 /**
  * The text the user typed. Pasted text, chat history and other attachments carry a MIME type, so
@@ -20,7 +22,9 @@ export function cursorSkillPromptText(prompt: AgentPromptInput): string {
 }
 
 function withoutCode(text: string): string {
-  return text.replace(/```[\s\S]*?(?:```|$)/g, " ").replace(/`[^`\n]*`/g, " ");
+  return splitSkillTokenCode(text)
+    .map((part, index) => (index % 2 === 1 ? " " : part))
+    .join("");
 }
 
 /**
@@ -30,10 +34,12 @@ function withoutCode(text: string): string {
 export function cursorSkillTokenCandidates(text: string): string[][] {
   const tokens: string[][] = [];
   for (const match of withoutCode(text).matchAll(/(?<=^|\s)\/(\S+)/g)) {
+    // No skill name holds a slash, so a path never costs a catalog scan.
+    if (match[1].includes("/")) continue;
     const candidates: string[] = [];
     for (let name = match[1]; name; name = name.slice(0, -1)) {
       candidates.push(name);
-      if (!trailingPunctuation.has(name.at(-1)!)) break;
+      if (!SKILL_TOKEN_TRAILING_PUNCTUATION.test(name)) break;
     }
     tokens.push(candidates);
   }
