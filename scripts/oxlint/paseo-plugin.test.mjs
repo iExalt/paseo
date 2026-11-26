@@ -170,3 +170,30 @@ test("useRef assigned to a variable, or read through .current, is allowed", () =
   );
   assert.equal(result.failed, false, result.output);
 });
+
+test("test sleeps warn only in the configured fork tests", () => {
+  const config = readFileSync(path.join(repoRoot, ".oxlintrc.json"), "utf8").replace(
+    '"./scripts/oxlint/paseo-plugin.mjs"',
+    JSON.stringify(pluginPath),
+  );
+  const source = `
+    declare const page: { waitForTimeout(ms: number): Promise<void> };
+    declare function sleep(ms: number): Promise<void>;
+    export async function probe() {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      await sleep(20);
+      await page.waitForTimeout(20);
+      setTimeout(() => {}, 20);
+    }
+  `;
+  const scoped = lintWithConfig(
+    source,
+    config,
+    "packages/app/e2e/browser/notification-dismissal.spec.ts",
+  );
+  assert.equal(scoped.failed, false, scoped.output);
+  assert.equal([...scoped.output.matchAll(/paseo\(no-test-sleep\)/g)].length, 3, scoped.output);
+  const upstream = lintWithConfig(source, config, "packages/app/e2e/browser/other.spec.ts");
+  assert.equal(upstream.failed, false, upstream.output);
+  assert.doesNotMatch(upstream.output, /no-test-sleep/);
+});

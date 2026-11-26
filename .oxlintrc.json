@@ -106,6 +106,18 @@
     "max-nested-callbacks": ["error", { "max": 3 }]
   },
   "overrides": [
+    // Keep this advisory rule scoped to converted fork tests.
+    {
+      "files": [
+        "packages/app/e2e/browser/configurable-notifications.spec.ts",
+        "packages/app/e2e/browser/notification-dismissal.spec.ts",
+        "packages/app/e2e/browser/terminal-bundled-font.spec.ts",
+        "packages/app/src/terminal/runtime/terminal-bundled-font.browser.test.ts",
+        "packages/server/src/server/agent/held-messages.test.ts",
+        "packages/server/src/server/agent/paseo-tools.contract.test.ts"
+      ],
+      "rules": { "paseo/no-test-sleep": "warn" }
+    },
     // Exceptions name individual APIs in individual modules; new APIs still fail in these files.
     // TODO entries are runtime debt, not startup exemptions. Do not add directory-wide exceptions.
     {

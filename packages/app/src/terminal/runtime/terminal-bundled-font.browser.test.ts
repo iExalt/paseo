@@ -43,16 +43,6 @@ function mountTerminal(): Mounted {
   return entry;
 }
 
-async function waitFor(predicate: () => boolean): Promise<void> {
-  const startedAt = performance.now();
-  while (!predicate()) {
-    if (performance.now() - startedAt > 5_000) {
-      throw new Error("Timed out waiting for the bundled terminal font");
-    }
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
-}
-
 function cellHeight(terminal: XtermProbe): number {
   return terminal._core._renderService.dimensions.css.cell.height;
 }
@@ -72,20 +62,20 @@ describe("bundled terminal font", () => {
   it("measures without the font while it loads, then switches and refits", async () => {
     const { terminal } = mountTerminal();
     expect(terminal.options.fontFamily).not.toMatch(/MesloLGS Nerd Font/);
-    await waitFor(() => cellHeight(terminal) > 0);
     const fallbackHeight = cellHeight(terminal);
+    expect(fallbackHeight).toBeGreaterThan(0);
     const fallbackRows = terminal.rows;
 
-    await waitFor(() => /MesloLGS Nerd Font/.test(terminal.options.fontFamily ?? ""));
+    await expect(loadBundledTerminalFont()).resolves.toBe(true);
+    expect(terminal.options.fontFamily).toMatch(/MesloLGS Nerd Font/);
     expect(document.fonts.check('13px "MesloLGS Nerd Font"', "\u{f0001}")).toBe(true);
 
     // Meslo's line height is 1.262 em; the usual fallbacks share its advance
     // width but are shorter, so height is what tells the fonts apart.
-    await waitFor(() => cellHeight(terminal) !== fallbackHeight);
     // xterm rounds the 16.4 px line box up to whole pixels.
     expect(cellHeight(terminal)).toBe(Math.ceil((13 * (2001 + 583)) / 2048));
     expect(fallbackHeight).toBeLessThan(cellHeight(terminal));
-    await waitFor(() => terminal.rows !== fallbackRows);
+    expect(terminal.rows).not.toBe(fallbackRows);
     expect(terminal.rows).toBe(Math.floor(400 / cellHeight(terminal)));
   });
 
