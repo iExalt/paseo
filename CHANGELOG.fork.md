@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.38.1](https://github.com/iExalt/paseo/compare/paseo-v0.38.0...paseo-v0.38.1) (2026-11-26)
+
+
+### Bug Fixes
+
+* **cursor-sdk:** select Cursor skills with /name text ([#613](https://github.com/iExalt/paseo/issues/613)) ([9970eec](https://github.com/iExalt/paseo/commit/9970eecc37e29e1e0c3fbb958d417284b22dfa71))
+
 ## [0.38.0](https://github.com/iExalt/paseo/compare/paseo-v0.37.5...paseo-v0.38.0) (2026-11-25)
 
 
