@@ -1579,18 +1579,31 @@ export class AgentManager {
     return resolveCursorSkills(await this.resolveCursorSkillRoots(target), references);
   }
 
-  /** Skills the user's message selects: attached references, then `/name` tokens in its text. */
-  private async cursorSkillTurnReferences(
+  /**
+   * Skills the user's message selects: attached references, then `/name` tokens in its text.
+   * Only a user's message to a Cursor SDK agent that holds a token reads the catalog. Every other
+   * prompt answers synchronously; callers await only a promise, so no provider's dispatch gains a
+   * microtask hop.
+   */
+  private cursorSkillTurnReferences(
     agent: ActiveManagedAgent,
     prompt: AgentPromptInput,
     options: AgentRunOptions | undefined,
-  ): Promise<CursorSkillReference[]> {
+  ): CursorSkillReference[] | Promise<CursorSkillReference[]> {
     const references = cursorSkillReferences(typeof prompt === "string" ? undefined : prompt);
     if (!options?.expandCursorSkillTokens || this.adapterOf(agent.provider) !== "cursor-sdk") {
       return references;
     }
     const text = cursorSkillPromptText(prompt);
     if (!cursorSkillTokenCandidates(text).length) return references;
+    return this.withCursorTextSkills(agent, text, references);
+  }
+
+  private async withCursorTextSkills(
+    agent: ActiveManagedAgent,
+    text: string,
+    references: CursorSkillReference[],
+  ): Promise<CursorSkillReference[]> {
     const skills = await scanCursorSkills(
       await this.resolveCursorSkillRoots({ cwd: agent.config.cwd, workspaceId: agent.workspaceId }),
     );
@@ -3521,7 +3534,8 @@ export class AgentManager {
     const agent = await this.ensureInteractiveSession(agentId);
     const blocks = typeof prompt === "string" ? undefined : prompt;
     assertCursorSkillTarget(blocks, agent.provider);
-    if ((await this.cursorSkillTurnReferences(agent, prompt, options)).length) return false;
+    const selected = this.cursorSkillTurnReferences(agent, prompt, options);
+    if ((Array.isArray(selected) ? selected : await selected).length) return false;
     // Providers parse slash commands from the raw text, so a command another agent sent
     // must reach them without its sender envelope.
     const agentMessage = typeof prompt === "string" ? parseAgentMessage(prompt) : null;
@@ -3613,7 +3627,8 @@ export class AgentManager {
       let runOptions = options;
       const blocks = typeof prompt === "string" ? undefined : prompt;
       assertCursorSkillTarget(blocks, agent.provider);
-      const references = await this.cursorSkillTurnReferences(agent, prompt, options);
+      const selected = this.cursorSkillTurnReferences(agent, prompt, options);
+      const references = Array.isArray(selected) ? selected : await selected;
       if (references.length) {
         const resolveSelectedSkills = () =>
           this.validateCursorSkillSelection(
@@ -4024,11 +4039,9 @@ export class AgentManager {
     const expectedTurnId = agent.activeForegroundTurnId ?? agent.activeTurnId;
     const blocks = typeof prompt === "string" ? undefined : prompt;
     assertCursorSkillTarget(blocks, agent.provider);
-    if (
-      !expectedTurnId ||
-      !agent.session.steerActiveTurn ||
-      (await this.cursorSkillTurnReferences(agent, prompt, options)).length
-    ) {
+    const selected = this.cursorSkillTurnReferences(agent, prompt, options);
+    const references = Array.isArray(selected) ? selected : await selected;
+    if (!expectedTurnId || !agent.session.steerActiveTurn || references.length) {
       return { status: "unavailable" };
     }
     const result = await this.runSteerAdmission(agent, expectedTurnId, async () => {
@@ -4077,9 +4090,10 @@ export class AgentManager {
     const blocks = typeof prompt === "string" ? undefined : prompt;
     assertCursorSkillTarget(blocks, agent.provider);
     // A selected skill needs a fresh turn so the daemon can validate it at dispatch.
+    const selected = this.cursorSkillTurnReferences(agent, prompt, options);
+    const references = Array.isArray(selected) ? selected : await selected;
     const result =
-      agent.session.steerActiveTurn &&
-      !(await this.cursorSkillTurnReferences(agent, prompt, options)).length
+      agent.session.steerActiveTurn && !references.length
         ? await this.runSteerAdmission(agent, expectedTurnId, async () => {
             const admission = await agent.session.steerActiveTurn!(prompt, {
               ...options,
@@ -4216,7 +4230,8 @@ export class AgentManager {
           };
         }
         // Fail before canceling the running turn when the selection can't run.
-        const skillReferences = await this.cursorSkillTurnReferences(agent, prompt, options);
+        const selected = this.cursorSkillTurnReferences(agent, prompt, options);
+        const skillReferences = Array.isArray(selected) ? selected : await selected;
         if (skillReferences.length) {
           await this.validateCursorSkillSelection(
             { cwd: agent.config.cwd, workspaceId: agent.workspaceId },
