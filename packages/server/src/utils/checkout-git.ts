@@ -6,6 +6,7 @@ import {
   stat as statFile,
   mkdtemp,
   copyFile,
+  utimes,
   realpath,
   access,
   rm,
@@ -3685,6 +3686,12 @@ export async function prepareAllChangesIndex(cwd: string, baseRef: string) {
 
 // write-tree rewrites its index. A private snapshot prevents an index read from
 // invalidating the observation that requested it.
+//
+// Git re-reads a file whose stat matches its index entry only when the entry is
+// not older than the index file ("racy git"). A fresh copy would be newer than
+// every entry, so a same-size edit made in the tick the index was written would
+// read as unchanged. The copy takes the source's mtime, read before copying and
+// rounded down to the second, so it is never later than the source.
 export async function snapshotComparisonIndex(cwd: string) {
   const directory = await mkdtemp(resolve(tmpdir(), "paseo-comparison-index-"));
   const indexFile = resolve(directory, "index");
@@ -3696,7 +3703,10 @@ export async function snapshotComparisonIndex(cwd: string) {
     const source = resolveGitRevParsePath(cwd, index.stdout);
     if (!source) throw new Error("Git did not return an index path");
     try {
+      const { atime, mtimeNs } = await statFile(source, { bigint: true });
+      const mtimeSeconds = (mtimeNs < 0n ? mtimeNs - 999_999_999n : mtimeNs) / 1_000_000_000n;
       await copyFile(source, indexFile);
+      await utimes(indexFile, atime, new Date(Number(mtimeSeconds) * 1000));
     } catch (error) {
       if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
       await runGitCommand(["read-tree", "--empty"], {
