@@ -1846,6 +1846,7 @@ it("captures input modes at the same committed cut as serialized bytes", async (
     }),
   );
   const mismatches: string[] = [];
+  let tail = "";
   let completed!: () => void;
   const output = new Promise<void>((resolve) => {
     completed = resolve;
@@ -1857,7 +1858,9 @@ it("captures input modes at the same committed cut as serialized bytes", async (
       if (!new TextDecoder().decode(cut.data).includes("\x1b[?1h"))
         mismatches.push(cut.metadata.replayPreamble);
     }
-    if (message.data.includes("MODE-CUT")) completed();
+    // A PTY read can end inside the marker, so look for it across chunk boundaries.
+    tail = (tail + message.data).slice(-"MODE-CUT".length);
+    if (tail.includes("MODE-CUT")) completed();
   });
   try {
     session.send({ type: "input", data: "go\r" });
