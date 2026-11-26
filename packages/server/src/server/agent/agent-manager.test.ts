@@ -15,6 +15,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { randomUUID } from "node:crypto";
+import pino from "pino";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import {
@@ -17032,7 +17033,21 @@ describe("stopAdmittingIfIdle", () => {
         return session;
       }
     })();
-    const manager = new AgentManager({ clients: { codex: client }, registry: storage, logger });
+    const declineLogs: unknown[] = [];
+    const shutdownLogger = pino(
+      { level: "info" },
+      {
+        write(line) {
+          const event = JSON.parse(line);
+          if (event.event === "idle_shutdown_declined") declineLogs.push(event);
+        },
+      },
+    );
+    const manager = new AgentManager({
+      clients: { codex: client },
+      registry: storage,
+      logger: shutdownLogger,
+    });
     onTestFinished(async () => {
       await Promise.all(manager.listAgents().map((agent) => manager.closeAgent(agent.id)));
       await storage.flush();
@@ -17053,6 +17068,7 @@ describe("stopAdmittingIfIdle", () => {
       storage,
       sessions,
       create,
+      declineLogs,
       setProbe: (next: () => Promise<boolean>) => {
         probe = next;
       },
@@ -17089,13 +17105,28 @@ describe("stopAdmittingIfIdle", () => {
   });
 
   test("declines while a turn runs and keeps admitting work", async () => {
-    const { manager, sessions, create } = idleShutdownHarness();
+    const { manager, sessions, create, declineLogs } = idleShutdownHarness();
     const agent = await create();
     const running = waitForAgentLifecycle(manager, agent.id, "running");
     sessions[0]!.pushEvent({ type: "turn_started", provider: "codex", turnId: "busy-1" });
     await running;
 
-    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(false);
+    await expect(manager.stopAdmittingIfIdle("request-turn")).resolves.toBe(false);
+    expect(declineLogs).toMatchObject([
+      {
+        requestId: "request-turn",
+        phase: "before_probe",
+        blockerCount: 1,
+        blockers: [
+          {
+            agentId: agent.id,
+            provider: "codex",
+            lifecycle: "running",
+            reasons: expect.arrayContaining(["agent_running"]),
+          },
+        ],
+      },
+    ]);
 
     sessions[0]!.pushEvent({
       type: "turn_canceled",
@@ -17109,8 +17140,8 @@ describe("stopAdmittingIfIdle", () => {
   });
 
   test("declines on a provider veto or a failed probe", async () => {
-    const { manager, create, setProbe } = idleShutdownHarness();
-    await create();
+    const { manager, create, setProbe, declineLogs } = idleShutdownHarness();
+    const agent = await create();
     setProbe(async () => false);
     await expect(manager.stopAdmittingIfIdle()).resolves.toBe(false);
     setProbe(async () => {
@@ -17119,6 +17150,13 @@ describe("stopAdmittingIfIdle", () => {
     await expect(manager.stopAdmittingIfIdle()).resolves.toBe(false);
     setProbe(async () => true);
     await expect(manager.stopAdmittingIfIdle()).resolves.toBe(true);
+    expect(declineLogs).toMatchObject([
+      { phase: "provider_probe", blockers: [{ agentId: agent.id, reasons: ["provider_veto"] }] },
+      {
+        phase: "provider_probe",
+        blockers: [{ agentId: agent.id, reasons: ["provider_probe_error"] }],
+      },
+    ]);
   });
 
   test("declines within one deadline when several probes hang", async () => {
@@ -17126,15 +17164,25 @@ describe("stopAdmittingIfIdle", () => {
     onTestFinished(() => {
       vi.useRealTimers();
     });
-    const { manager, create, setProbe } = idleShutdownHarness();
-    await create();
-    await create();
+    const { manager, create, setProbe, declineLogs } = idleShutdownHarness();
+    const first = await create();
+    const second = await create();
     setProbe(() => new Promise<boolean>(() => {}));
 
     const decision = manager.stopAdmittingIfIdle();
     await vi.advanceTimersByTimeAsync(5_000);
 
     await expect(decision).resolves.toBe(false);
+    expect(declineLogs).toMatchObject([
+      {
+        phase: "provider_probe",
+        blockerCount: 2,
+        blockers: [
+          { agentId: first.id, reasons: ["provider_probe_timeout"] },
+          { agentId: second.id, reasons: ["provider_probe_timeout"] },
+        ],
+      },
+    ]);
   });
 
   test("declines when a turn is admitted while the provider probe is pending", async () => {

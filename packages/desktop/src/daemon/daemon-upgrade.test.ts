@@ -1,4 +1,4 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
   createDaemonUpgrader,
   DAEMON_UPGRADE_RETRY_MS,
@@ -41,13 +41,14 @@ function harness(input: {
   const timers: Array<{ run: () => void; delayMs: number; cancelled: boolean }> = [];
   const calls = { stop: 0, launch: 0 };
   const changes: Array<DaemonUpgradeState | null> = [];
+  const log = vi.fn();
   const upgrader = createDaemonUpgrader({
     appVersion: () => "0.22.0",
     platform: "darwin",
     readStatus: async () => (statuses.length > 1 ? statuses.shift()! : statuses[0]!),
     stopIfIdle: async () => {
       calls.stop += 1;
-      const next = stops.shift() ?? "declined";
+      const next = stops.shift() ?? { action: "declined" };
       if (next instanceof Error) throw next;
       return next;
     },
@@ -58,7 +59,7 @@ function harness(input: {
     },
     managementEnabled: async () => input.managementEnabled ?? true,
     isActiveRelease: async () => (releases.length > 1 ? releases.shift()! : releases[0]!),
-    log: () => {},
+    log,
     onStateChanged: () => changes.push(upgrader.getState(OLD)),
     schedule: (run, delayMs) => {
       const timer = { run, delayMs, cancelled: false };
@@ -75,7 +76,7 @@ function harness(input: {
     timer!.run();
     await new Promise((resolve) => setImmediate(resolve));
   };
-  return { upgrader, calls, pending, fire, statuses, changes };
+  return { upgrader, calls, pending, fire, statuses, changes, log };
 }
 
 describe("needsDaemonUpgrade", () => {
@@ -110,11 +111,15 @@ describe("createDaemonUpgrader", () => {
   });
 
   test("keeps a busy daemon and replaces it once a retry finds it idle", async () => {
-    const { upgrader, calls, pending, fire, changes } = harness({
+    const { upgrader, calls, pending, fire, changes, log } = harness({
       statuses: [OLD],
-      stops: ["declined", "stopped"],
+      stops: [{ action: "declined", requestId: "request-busy" }, "stopped"],
     });
     await expect(upgrader.ensure()).resolves.toBe(OLD);
+    expect(log).toHaveBeenCalledWith(
+      "daemon busy; upgrade waits for its agents",
+      expect.objectContaining({ requestId: "request-busy" }),
+    );
     expect(upgrader.getState(OLD)).toMatchObject({
       phase: "waiting",
       targetVersion: "0.22.0",

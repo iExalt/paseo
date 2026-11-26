@@ -47,6 +47,7 @@ async function runStop(options: CommandOptions, deps: StopCommandDeps) {
   const onlyIfIdle = options.ifIdle === true;
   // An idle-only stop must never fall back to a signal, which kills agents and terminals.
   const keepTerminals = options.keepTerminals === true || onlyIfIdle;
+  let declinedRequestId: string | undefined;
   const requestShutdown = async (instance?: DaemonInstance) => {
     const { requireIdleShutdownCapability, requireTerminalKeepCapability } =
       await import("@getpaseo/client/internal/daemon-client");
@@ -61,7 +62,11 @@ async function runStop(options: CommandOptions, deps: StopCommandDeps) {
         keepTerminals,
         onlyIfIdle,
       });
-      return reply.status === "shutdown_declined" ? ("declined" as const) : undefined;
+      if (reply.status === "shutdown_declined") {
+        declinedRequestId = reply.requestId;
+        return "declined" as const;
+      }
+      return undefined;
     } finally {
       await client.close();
     }
@@ -106,7 +111,7 @@ async function runStop(options: CommandOptions, deps: StopCommandDeps) {
         };
   return {
     type: "single" as const,
-    data: result,
+    data: declinedRequestId ? { ...result, requestId: declinedRequestId } : result,
     schema: {
       idField: "action" as const,
       columns: [],
