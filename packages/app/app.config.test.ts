@@ -264,7 +264,7 @@ describe("fork build platform boundary", () => {
       cwd: __dirname,
       env: { ...process.env, APP_VARIANT: "fork" },
       encoding: "utf8",
-      timeout: 10_000,
+      timeout: 25_000,
     });
     expect(result.error).toBeUndefined();
     expect(result.status).toBe(1);
@@ -272,7 +272,7 @@ describe("fork build platform boundary", () => {
     expect(output).toContain("Fork iOS builds are not supported");
     expect(output).not.toContain("build:client");
     expect(output).not.toContain("expo run:ios");
-  });
+  }, 30_000);
 
   it("does not advertise an iOS identity or require credentials for generic fork config", () => {
     const { exp } = getConfig(__dirname);
