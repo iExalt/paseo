@@ -3,7 +3,7 @@ import { once } from "node:events";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Run, RunResult } from "@cursor/sdk";
+import type { Run, RunResult, SDKMessage } from "@cursor/sdk";
 import { afterEach, expect, test, vi } from "vitest";
 import type { AgentStreamEvent } from "../agent-sdk-types.js";
 import { CursorRunController } from "./cursor-sdk-run-controller.js";
@@ -74,6 +74,77 @@ async function fixture(reconcile?: ConstructorParameters<typeof CursorRunControl
     );
   return { controller, events, journal, start };
 }
+
+test("steering drains replay into the journal before dispatch and newer stream rows", async () => {
+  const { controller, events, journal } = await fixture();
+  const native = nativeRun("steer-reconnect");
+  const readerWaiting = Promise.withResolvers<void>();
+  const nextMessage = Promise.withResolvers<void>();
+  const observingNewer = Promise.withResolvers<void>();
+  const flushEntered = Promise.withResolvers<void>();
+  const finishAppend = Promise.withResolvers<void>();
+  const append = journal.append.bind(journal);
+  vi.spyOn(journal, "append").mockImplementation(async (turnId, item) => {
+    if (item.type === "assistant_message" && item.text === "older one") {
+      flushEntered.resolve();
+      await finishAppend.promise;
+    }
+    await append(turnId, item);
+  });
+  const assistantText = () =>
+    events.flatMap((event) =>
+      event.type === "timeline" && event.item.type === "assistant_message" ? [event.item.text] : [],
+    );
+  const nativeSteer = vi.fn(async (): Promise<"complete_delivered"> => "complete_delivered");
+  native.run.steer = nativeSteer;
+  const { turnId, completion } = await controller.start(
+    "start",
+    { text: "start" },
+    async (_input, bind, _throwIfStopped, execution) => {
+      const replay = execution.trackReplay();
+      const assistant = (text: string): SDKMessage => {
+        replay.onDelta({ type: "text-delta", text });
+        return {
+          type: "assistant",
+          agent_id: sessionId,
+          run_id: native.run.id,
+          message: { role: "assistant", content: [{ type: "text", text }] },
+        };
+      };
+      native.run.stream = async function* () {
+        yield assistant("original");
+        replay.onDelta({ type: "turn-ended" });
+        replay.reconnect();
+        yield assistant("older one");
+        yield assistant("older two");
+        readerWaiting.resolve();
+        await nextMessage.promise;
+        observingNewer.resolve();
+        yield assistant("newer");
+      };
+      await bind(native.run.id);
+      return native.run;
+    },
+  );
+  await readerWaiting.promise;
+  const steering = controller.steer("new question", { expectedTurnId: turnId });
+  await flushEntered.promise;
+  nextMessage.resolve();
+  await observingNewer.promise;
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  try {
+    expect(assistantText()).toEqual(["original"]);
+    expect(nativeSteer).not.toHaveBeenCalled();
+  } finally {
+    finishAppend.resolve();
+  }
+  const outcome = await steering;
+  native.finish();
+  expect(outcome).toMatchObject({ status: "accepted" });
+  await completion;
+  expect(assistantText()).toEqual(["original", "older one", "older two", "newer"]);
+  expect((await journal.read())[0].steers[0].after).toBe(3);
+});
 
 test("keeps a late SDK send rejection outside accepted-turn lifecycle", async () => {
   const { controller, events, journal, start } = await fixture();

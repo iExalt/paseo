@@ -803,7 +803,7 @@ class CursorSdkAgent implements AgentSession {
             ...(speak ? { [cursorSpeakToolName]: speak } : {}),
           },
           compact,
-          execution.onModelCallCompleted,
+          execution,
         );
     if (this.model === requested.model && this.options === requested.options) {
       this.model = selected;
@@ -883,7 +883,7 @@ class CursorSdkAgent implements AgentSession {
     bind: (runId: string) => Promise<void>,
     customTools: NonNullable<AgentOptions["local"]>["customTools"],
     compact: boolean,
-    onModelCallCompleted: CursorTurnExecution["onModelCallCompleted"],
+    execution: CursorTurnExecution,
   ): Promise<Run> {
     // summarize() uses the handle's model, unlike send({ model }).
     const native =
@@ -893,21 +893,26 @@ class CursorSdkAgent implements AgentSession {
       if (input === null) {
         return withCursorShellEnvironment(this.shellEnvironment, () => native.agent.summarize());
       }
+      const replay = execution.trackReplay();
       return withCursorShellEnvironment(this.shellEnvironment, () =>
         native.agent.send(input, {
           model,
           onDelta: ({ update }) => {
-            if (update.type === "model-call-completed") onModelCallCompleted(update.usage);
+            replay.onDelta(update);
+            if (update.type === "model-call-completed")
+              execution.onModelCallCompleted(update.usage);
           },
           local: {
             customTools,
             // Each retry resumes from the last checkpoint and can replay the
             // final message; the trigger says whether a stall or a drop caused it.
-            onConnectionStateChange: (state) =>
+            onConnectionStateChange: (state) => {
+              if (state.state === "reconnecting") replay.reconnect();
               this.logger?.warn(
                 { cursorAgentId: this.id, model: model.id, ...state },
                 "cursor_sdk.connection_state",
-              ),
+              );
+            },
           },
         }),
       );
