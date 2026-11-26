@@ -3,7 +3,14 @@ import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BroadcastChannel } from "node:worker_threads";
-import type { RunResult, SDKMessage, SDKModel, SDKUserMessage, SendOptions } from "@cursor/sdk";
+import type {
+  InteractionUpdate,
+  RunResult,
+  SDKMessage,
+  SDKModel,
+  SDKUserMessage,
+  SendOptions,
+} from "@cursor/sdk";
 import { AgentTimelineItemPayloadSchema } from "@getpaseo/protocol/messages";
 import { buildToolCallDisplayModel } from "@getpaseo/protocol/tool-call-display";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -15,7 +22,11 @@ import { supportsExecutionOwner } from "../execution-owner/execution-owner.js";
 import { hasHeldMessages } from "../held-messages.js";
 import { startAgentRun } from "../agent-prompt.js";
 import { AgentManager } from "../agent-manager.js";
-import type { AgentSessionConfig, AgentStreamEvent } from "../agent-sdk-types.js";
+import type {
+  AgentSessionConfig,
+  AgentStreamEvent,
+  AgentTimelineItem,
+} from "../agent-sdk-types.js";
 import { CursorQuestions } from "./cursor-sdk-questions.js";
 import { CursorTurnJournal, type CursorHistoryTurn } from "./cursor-sdk-turn-journal.js";
 import {
@@ -123,6 +134,266 @@ function fixture(initialReservation?: string, options: CursorSdkClientOptions = 
   const config: AgentSessionConfig = { provider, cwd: process.cwd(), model: "model" };
   return { client, config, sdk, load, send, modelList, storePath, agent };
 }
+
+const replayError = "Agent turn stopped after repeated resume attempts made no progress";
+const reconnect = "reconnect";
+const turnEnded = "turn-ended";
+const turnEndedWithoutUsage = "turn-ended-without-usage";
+const toolRequested = "tool-requested";
+
+function replayText(text: string): SDKMessage {
+  return {
+    ...eventIds,
+    type: "assistant",
+    message: { role: "assistant", content: [{ type: "text", text }] },
+  };
+}
+
+const replayThinking = { ...eventIds, type: "thinking", text: "Check the final result." } as const;
+const replayTool = {
+  ...eventIds,
+  type: "tool_call",
+  call_id: "check",
+  name: "readFile",
+  status: "completed",
+} as const;
+
+async function runWithReplay(
+  sequence: Array<
+    | SDKMessage
+    | typeof reconnect
+    | typeof turnEnded
+    | typeof turnEndedWithoutUsage
+    | typeof toolRequested
+  >,
+  result: Omit<RunResult, "id">,
+) {
+  const { client, config, send, storePath } = fixture();
+  send.mockImplementationOnce(async (_input, options) => {
+    const messages: SDKMessage[] = [];
+    // The producer is already ahead when Paseo begins reading the stream.
+    for (const step of sequence) {
+      if (step === reconnect) {
+        options.local?.onConnectionStateChange?.({ state: "reconnecting", attempt: 1 });
+        continue;
+      }
+      let update: InteractionUpdate;
+      if (step === turnEnded) {
+        const usage = {
+          inputTokens: 1,
+          outputTokens: 1,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          totalTokens: 2,
+        };
+        update = { type: "turn-ended", usage };
+        messages.push({ ...eventIds, type: "usage", usage });
+      } else if (step === turnEndedWithoutUsage) {
+        update = { type: "turn-ended" };
+      } else if (step === toolRequested) {
+        update = { type: "tool-requests-listed", callCount: 1 };
+      } else {
+        messages.push(step);
+        switch (step.type) {
+          case "assistant":
+            update = {
+              type: "text-delta",
+              text: step.message.content
+                .map((block) => (block.type === "text" ? block.text : ""))
+                .join(""),
+            };
+            break;
+          case "thinking":
+            update = { type: "thinking-delta", text: step.text };
+            break;
+          case "tool_call":
+            update = {
+              type: "tool-call-completed",
+              callId: step.call_id,
+              toolCall: { name: step.name },
+            } as InteractionUpdate;
+            break;
+          default:
+            throw new Error("Unexpected message in replay fixture");
+        }
+      }
+      await options.onDelta?.({ update });
+    }
+    return makeRun(messages, { id: runId, ...result });
+  });
+  const session = await client.createSession(config);
+  const events: AgentStreamEvent[] = [];
+  session.subscribe((event) => events.push(event));
+  try {
+    const completion = await session.run("Check the result").catch((error: unknown) => error);
+    const journal = new CursorTurnJournal(storePath, agentId);
+    const [turn] = await journal.read();
+    return { events, completion, items: await journal.readItems(turn.id), turn };
+  } finally {
+    await session.close();
+  }
+}
+
+describe("Cursor SDK reconnect replay", () => {
+  const report = "The requested check passed.";
+  const prefix = [
+    replayTool,
+    replayText("The requested "),
+    replayText("check passed."),
+    turnEnded,
+  ] as const;
+  const replay = [reconnect, replayThinking, replayText(report)] as const;
+  const textOf = (items: AgentTimelineItem[]) =>
+    items.flatMap((item) => (item.type === "assistant_message" ? [item.text] : [])).join("");
+
+  it("keeps the queued original output and leaves the replay out of the journal", async () => {
+    const { events, completion, items } = await runWithReplay([...prefix, ...replay], {
+      status: "finished",
+      result: report.repeat(2),
+    });
+    expect(completion).toMatchObject({ finalText: report });
+    expect(textOf(items)).toBe(report);
+    expect(items.map((item) => item.type)).toEqual([
+      "tool_call",
+      "assistant_message",
+      "assistant_message",
+    ]);
+    expect(
+      events
+        .filter((event) => event.type === "timeline")
+        .map((event) => event.item)
+        .slice(1),
+    ).toEqual(items);
+  });
+
+  it("completes a confirmed final replay when the SDK exhausts no-progress retries", async () => {
+    const { events, completion, turn } = await runWithReplay(
+      [
+        ...prefix,
+        reconnect,
+        replayText("The check completed successfully."),
+        turnEnded,
+        reconnect,
+        replayText("The check was successful."),
+        turnEnded,
+      ],
+      { status: "error", error: { message: replayError } },
+    );
+    expect(completion).toMatchObject({ finalText: report });
+    expect(turn.terminal).toEqual({ status: "finished", fallback: report });
+    expect(events.at(-1)).toMatchObject({ type: "turn_completed" });
+  });
+
+  it("uses the native turn end when the SDK sends no usage row", async () => {
+    const { completion, items } = await runWithReplay(
+      [...prefix.slice(0, -1), turnEndedWithoutUsage, ...replay],
+      { status: "finished", result: report },
+    );
+    expect(completion).toMatchObject({ finalText: report });
+    expect(textOf(items)).toBe(report);
+  });
+
+  it("preserves a new image split across deltas and the text before it", async () => {
+    const image = "\n\n![New result](./result.png)\n\n";
+    const split = image.indexOf("![") + 1;
+    const { items } = await runWithReplay(
+      [...prefix, ...replay, replayText(image.slice(0, split)), replayText(image.slice(split))],
+      { status: "finished", result: report },
+    );
+    expect(textOf(items)).toBe(report.repeat(2) + image);
+  });
+
+  it("releases the resumed text on cancellation", async () => {
+    const { completion, items, events } = await runWithReplay([...prefix, ...replay], {
+      status: "cancelled",
+    });
+    expect(completion).toMatchObject({ canceled: true });
+    expect(textOf(items)).toBe(report.repeat(2));
+    expect(events.at(-1)).toMatchObject({ type: "turn_canceled" });
+  });
+
+  it("flushes held output before a tool and continues in order", async () => {
+    const { completion, items } = await runWithReplay(
+      [...prefix, ...replay, { ...replayTool, call_id: "next" }, replayText("New answer.")],
+      { status: "finished", result: "New answer." },
+    );
+    expect(completion).toMatchObject({ finalText: "New answer." });
+    expect(items.slice(3)).toMatchObject([
+      { type: "reasoning", text: replayThinking.text },
+      { type: "assistant_message", text: report },
+      { type: "tool_call", callId: `${runId}:next` },
+      { type: "assistant_message", text: "New answer." },
+    ]);
+  });
+
+  it("handles another reconnect after an earlier retry did real work", async () => {
+    const { items } = await runWithReplay(
+      [replayText("I will run the check."), reconnect, toolRequested, ...prefix, ...replay],
+      { status: "finished", result: report },
+    );
+    expect(textOf(items)).toBe("I will run the check." + report);
+    expect(items.some((item) => item.type === "tool_call")).toBe(true);
+  });
+
+  it("keeps prior partial text out of a later recovered final result", async () => {
+    const partial = "The requested";
+    const { completion, items } = await runWithReplay(
+      [replayText(partial), reconnect, replayText(report), turnEnded, ...replay],
+      { status: "error", error: { message: replayError } },
+    );
+    expect(completion).toMatchObject({ finalText: report });
+    expect(textOf(items)).toBe(partial + report);
+  });
+
+  it("does not use a turn-ended update from a retry to qualify earlier partial text", async () => {
+    const { completion, items } = await runWithReplay(
+      [...prefix.slice(0, -1), reconnect, turnEnded, reconnect, replayText(report)],
+      { status: "error", error: { message: replayError } },
+    );
+    expect(completion).toEqual(new Error(replayError));
+    expect(textOf(items)).toBe(report.repeat(2));
+  });
+
+  it("keeps repeated text in an uninterrupted run", async () => {
+    const { items } = await runWithReplay([...prefix, ...replay.slice(1)], {
+      status: "finished",
+      result: report.repeat(2),
+    });
+    expect(textOf(items)).toBe(report.repeat(2));
+  });
+
+  it("keeps an extended answer after a partially streamed original", async () => {
+    const { items } = await runWithReplay([replayText("The requested "), ...replay], {
+      status: "finished",
+      result: report,
+    });
+    expect(textOf(items)).toBe("The requested " + report);
+  });
+
+  it.each([
+    {
+      label: "an unfinished model call",
+      before: prefix.slice(0, -1),
+      after: [],
+      message: replayError,
+    },
+    {
+      label: "a pending tool request",
+      before: prefix,
+      after: [toolRequested],
+      message: replayError,
+    },
+    { label: "an independent error", before: prefix, after: [], message: "Authentication failed." },
+  ])("keeps output and failure for $label", async ({ before, after, message }) => {
+    const { completion, items, events } = await runWithReplay([...before, ...replay, ...after], {
+      status: "error",
+      error: { message },
+    });
+    expect(completion).toEqual(new Error(message));
+    expect(textOf(items)).toBe(report.repeat(2));
+    expect(events.at(-1)).toMatchObject({ type: "turn_failed", error: message });
+  });
+});
 
 describe("Cursor SDK provider", () => {
   it("reuses the direct agent if an available execution owner fails enrollment", async () => {

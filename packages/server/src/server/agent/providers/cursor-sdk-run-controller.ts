@@ -19,6 +19,7 @@ import {
 import { waitForExecutionOwner } from "../execution-owner/owned-process.js";
 import { CURSOR_SDK_PROVIDER as PROVIDER } from "./cursor-sdk-auth.js";
 import { cursorUnresolvedSteerMessage, streamItems, terminalTools } from "./cursor-sdk-history.js";
+import { CursorReplayHoldback } from "./cursor-sdk-replay.js";
 import type { OwnerTerminalProof } from "./cursor-sdk-recovery.js";
 import { isCursorCompactPrompt } from "./cursor-sdk-maintenance.js";
 import { CursorProcessLedger } from "./cursor-sdk-process-ledger.js";
@@ -56,6 +57,7 @@ export interface CursorTurnExecution {
   instructionsInWindow: () => Promise<string | undefined>;
   /** Records, before dispatch, that this turn's message carries the instructions. */
   recordInstructions: (hash: string) => Promise<void>;
+  trackReplay: () => CursorReplayHoldback;
   onModelCallCompleted: (usage: Pick<TokenUsage, "inputTokens" | "outputTokens">) => void;
 }
 
@@ -83,6 +85,8 @@ interface CursorTurn {
   followUp?: Run;
   cancellations: Map<Run, Promise<void>>;
   current?: Run;
+  replay?: CursorReplayHoldback;
+  prepareReplaySteer?: () => Promise<number>;
   emitted: number;
   stopRequested: boolean;
   contextWindowMaxTokens?: number;
@@ -198,6 +202,7 @@ export class CursorRunController {
         record.instructionsHash = hash;
         await this.journal.save(record);
       },
+      trackReplay: () => (turn.replay = new CursorReplayHoldback()),
       onModelCallCompleted: (usage) => {
         if (turn.record.compact) return;
         turn.sawModelCallCompleted = true;
@@ -281,7 +286,6 @@ export class CursorRunController {
     if (!run || run.status !== "running" || !steer || !text) return { status: "unavailable" };
 
     const id = options.clientMessageId ?? `${turn.record.id}:steer:${randomUUID()}`;
-    const after = turn.emitted;
     const user = {
       type: "user_message" as const,
       text,
@@ -290,6 +294,7 @@ export class CursorRunController {
     };
     let locallyReported = false;
     const operation = (async (): Promise<SteerResult> => {
+      const after = turn.prepareReplaySteer ? await turn.prepareReplaySteer() : turn.emitted;
       await this.journal.saveInput(turn.record.id, id, prompt);
       if (turn.stopRequested || run.status !== "running") return { status: "unavailable" };
       // A steer can start a follow-up run whose shells belong to this turn.
@@ -431,9 +436,33 @@ export class CursorRunController {
     onItem: (item: AgentTimelineItem) => Promise<void>,
     usageByRun: Map<string, TokenUsage>,
     trigger: "manual" | "auto",
+    replay: CursorReplayHoldback | undefined,
   ): Promise<{ result: RunResult; streamError?: unknown }> {
     let streamError: unknown;
     let streamUsage: TokenUsage | undefined;
+    const hasRunningTools = () =>
+      Array.from(tools.values()).some((tool) => tool.status === "running");
+    const emitItems = async (items: AgentTimelineItem[]) => {
+      for (const item of items) await onItem(item);
+    };
+    // Stream projection, steer preparation and terminal drains share the journal writer.
+    // SDK operations stay outside this queue so a quiet stream cannot block steering.
+    let pendingWrite = Promise.resolve();
+    const write = <T>(action: () => Promise<T>): Promise<T> => {
+      const next = pendingWrite.then(action);
+      pendingWrite = next.then(
+        () => undefined,
+        () => undefined,
+      );
+      return next;
+    };
+    if (replay) {
+      turn.prepareReplaySteer = () =>
+        write(async () => {
+          await emitItems(replay.disable());
+          return turn.emitted;
+        });
+    }
     try {
       for await (const message of run.stream()) {
         if (message.type === "usage") streamUsage = addCursorUsage(streamUsage, message.usage);
@@ -456,7 +485,15 @@ export class CursorRunController {
             clearContextWindowUsed: true,
           });
         }
-        for (const item of streamItems(message, tools, trigger)) await onItem(item);
+        if (replay) {
+          await write(() =>
+            emitItems(
+              replay.observe(message, streamItems(message, tools, trigger), hasRunningTools),
+            ),
+          );
+        } else {
+          await emitItems(streamItems(message, tools, trigger));
+        }
       }
     } catch (error) {
       streamError = error;
@@ -465,8 +502,22 @@ export class CursorRunController {
     let result: RunResult | undefined;
     try {
       result = await run.wait();
+      if (replay) {
+        const nativeResult = result;
+        result = await write(async () => {
+          const settled = replay.finish(
+            nativeResult,
+            !streamError && !turn.stopRequested,
+            hasRunningTools,
+          );
+          await emitItems(settled.items);
+          return settled.result;
+        });
+      }
       return { result, streamError };
     } finally {
+      if (replay && !result) await write(() => emitItems(replay.disable()));
+      delete turn.prepareReplaySteer;
       // wait() includes reported model calls from an unfinished turn.
       const usage = result?.usage ?? run.usage ?? streamUsage;
       if (usage) usageByRun.set(run.id, usage);
@@ -481,6 +532,7 @@ export class CursorRunController {
     usageByRun: Map<string, TokenUsage>,
   ): Promise<{ result: RunResult; streamError?: unknown }> {
     let run = firstRun;
+    let replay = turn.replay;
     for (;;) {
       turn.current = run;
       if (turn.stopRequested && run !== firstRun) {
@@ -494,6 +546,7 @@ export class CursorRunController {
         onItem,
         usageByRun,
         turn.record.compact ? "manual" : "auto",
+        replay,
       );
       // A cancel still writing SDK state can race a replacement, even after run.wait.
       await turn.cancellations.get(run)?.catch(() => undefined);
@@ -533,6 +586,7 @@ export class CursorRunController {
       }
       turn.followUp = undefined;
       run = followUp;
+      replay = undefined;
     }
   }
 
