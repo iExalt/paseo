@@ -11,6 +11,8 @@ import {
   filterAndRankCommandAutocompleteEntries,
   filterInlineSkillCommandEntries,
   findActiveSlashCommand,
+  cursorTextSkillCommands,
+  rewriteSkillTokens,
 } from "./agent-command-autocomplete";
 
 describe("filterAndRankCommandAutocompleteEntries", () => {
@@ -243,5 +245,56 @@ describe("applySkillMentionReplacement", () => {
         provider: "pi",
       }),
     ).toBe("/skill:docs later");
+  });
+});
+
+describe("rewriteSkillTokens", () => {
+  const names = new Set(["docs", "plugin:review", "deploy"]);
+  const rewrite = (text: string, provider: string | undefined) =>
+    rewriteSkillTokens({ text, names, provider });
+
+  it("moves whole known tokens to the target prefix", () => {
+    expect(rewrite("$docs then $plugin:review, ok", "claude")).toBe(
+      "/docs then /plugin:review, ok",
+    );
+    expect(rewrite("/docs\n/deploy.", "codex")).toBe("$docs\n$deploy.");
+  });
+
+  it("leaves unknown names, longer words, variables, paths, URLs and code alone", () => {
+    const text = "$HOME $PATH /usr/bin /deploy-all $Docs a/docs https://x.dev/docs `/docs` $nope";
+    expect(rewrite(text, "codex")).toBe(text);
+    expect(rewrite("```\n$docs\n```", "claude")).toBe("```\n$docs\n```");
+  });
+
+  it("is idempotent and round-trips between providers", () => {
+    const codex = "$docs and $deploy; $HOME";
+    const claude = rewrite(codex, "claude");
+    expect(claude).toBe("/docs and /deploy; $HOME");
+    expect(rewrite(claude, "claude")).toBe(claude);
+    expect(rewrite(claude, "codex")).toBe(codex);
+  });
+});
+
+describe("cursorTextSkillCommands", () => {
+  const reference = { id: "a".repeat(64), revision: "b".repeat(64), scope: "user" as const };
+  const skill = (name: string) => ({
+    name,
+    description: "",
+    argumentHint: "",
+    kind: "skill",
+    skill: { ...reference, name: "skill-aaaa" },
+  });
+  const compact = { name: "compact", description: "", argumentHint: "" };
+  const commands = [compact, skill("docs"), skill("Code Review"), skill("compact")];
+
+  it("lists Cursor skills as plain text skills when the host expands /name", () => {
+    expect(cursorTextSkillCommands(commands, true)).toEqual([
+      compact,
+      { name: "docs", description: "", argumentHint: "", kind: "skill" },
+    ]);
+  });
+
+  it("hides Cursor skills from a host that cannot expand text", () => {
+    expect(cursorTextSkillCommands(commands, false)).toEqual([compact]);
   });
 });

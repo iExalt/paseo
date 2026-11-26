@@ -1,6 +1,12 @@
 import { AgentMessageSchema } from "./agent-message.js";
 import { CursorSkillAttachmentSchema, CursorSkillReferenceSchema } from "./cursor-skill.js";
-export { CursorSkillReferenceSchema, type CursorSkillReference } from "./cursor-skill.js";
+export {
+  CursorSkillReferenceSchema,
+  isCursorSkillTokenName,
+  SKILL_TOKEN_TRAILING_PUNCTUATION,
+  splitSkillTokenCode,
+  type CursorSkillReference,
+} from "./cursor-skill.js";
 import {
   HostsListRequestSchema,
   HostsAddRequestSchema,
@@ -4259,6 +4265,9 @@ export const ServerInfoStatusPayloadSchema = z
         workspaceRequestReceipts: z.boolean().optional(),
         creationLifecycle: z.boolean().optional(),
         cursorSdkSkillSelection: z.boolean().optional(),
+        // COMPAT(cursorSdkTextSkills): added in v0.39.0; remove gate after 2027-05-26.
+        // Cursor SDK agents expand `/name` skill tokens in the user's text.
+        cursorSdkTextSkills: z.boolean().optional(),
         // COMPAT(hubAgentRpc): added in v0.8.0; remove gate after 2027-03-05.
         hubAgentRpc: z.boolean().optional(),
         // COMPAT(internalAgents): added in v0.9.0; remove gate after 2027-03-17.
