@@ -2100,6 +2100,7 @@ export class VoiceAssistantWebSocketServer {
         workspaceSetupObservation: true,
         cursorSdkAuth: true,
         cursorSdkSkillSelection: true,
+        cursorSdkTextSkills: true,
         cursorSdkAuthRecovery: true,
         workspaceSortTimes: true,
         // COMPAT(providersSnapshot): keep optional until all clients rely on snapshot flow.
