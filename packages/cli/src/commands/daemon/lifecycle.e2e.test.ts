@@ -1,4 +1,6 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess } from "node:child_process";
+import { on } from "node:events";
+import type { Readable } from "node:stream";
 import {
   mkdtemp,
   mkdir,
@@ -53,6 +55,64 @@ function concurrentTest(name: string, fn: (ctx: TestContext) => Promise<void>, t
 afterAll(() => {
   rmSync(compileCacheDir, { recursive: true, force: true });
 });
+
+// Use stdout delivery as the acknowledgement for each file mutation.
+async function waitForOutput(
+  stream: Readable,
+  readOutput: () => string,
+  matches: (output: string) => boolean,
+) {
+  const chunks = on(stream, "data", {
+    close: ["end", "close"],
+    signal: AbortSignal.timeout(25_000),
+  });
+  try {
+    if (matches(readOutput())) return;
+    for await (const _ of chunks) {
+      if (matches(readOutput())) return;
+    }
+    throw new Error(`CLI stdout closed before the expected output: ${readOutput()}`);
+  } finally {
+    await chunks.return?.();
+  }
+}
+
+async function stopLogFollower(
+  child: ChildProcess,
+  closed: Promise<unknown>,
+  signal: NodeJS.Signals,
+) {
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    child.kill("SIGKILL");
+  }, 10_000);
+  try {
+    child.kill(signal);
+    await closed;
+    if (timedOut) throw new Error(`Log follower did not stop after ${signal}`);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function holdWorkerUntilReleased(root: string) {
+  const preload = path.join(root, "held-worker.mjs");
+  const release = path.join(root, "worker-release");
+  await writeFile(
+    preload,
+    `
+      import { existsSync } from "node:fs";
+      import { setTimeout as pollDelay } from "node:timers/promises";
+      if (process.argv[1]?.endsWith("daemon-worker.js")) {
+        const release = ${JSON.stringify(release)};
+        const signal = AbortSignal.timeout(90_000);
+        while (!existsSync(release)) await pollDelay(25, undefined, { signal });
+      }
+    `,
+  );
+  return { env: { NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` }, release };
+}
 
 async function port() {
   const server = net.createServer();
@@ -309,13 +369,9 @@ test("a slow worker outlives the caller's readiness deadline and remains stoppab
   const home = f.homes[0]!;
   try {
     await f.configure(home, `127.0.0.1:${await port()}`);
-    const preload = path.join(f.root, "slow-worker.mjs");
-    await writeFile(
-      preload,
-      'if (process.argv[1]?.endsWith("daemon-worker.js")) await new Promise(resolve => setTimeout(resolve, 5000));',
-    );
+    const heldWorker = await holdWorkerUntilReleased(f.root);
     const launch = await f.run(["--json", "start", "--home", home, "--timeout", "1"], {
-      NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+      ...heldWorker.env,
     });
     expect(launch.code).toBe(1);
     expect(launch.stderr).toContain("DAEMON_NOT_READY");
@@ -330,6 +386,7 @@ test("a slow worker outlives the caller's readiness deadline and remains stoppab
     const already = await f.ok(["start", "--home", home]);
     expect(already.action).toBe("already_running");
     expect(already.pid).toBe(pending.pid);
+    await writeFile(heldWorker.release, "ready");
     await f.ok(["project", "ls", "--home", home]);
     expect((await f.ok(["status", "--home", home])).pid).toBe(pending.pid);
     await f.ok(["daemon", "stop", "--home", home]);
@@ -480,14 +537,10 @@ for (const launchArgs of [["start"], ["daemon", "run"]] as const) {
       let child: ReturnType<typeof spawn> | undefined;
       try {
         await f.configure(home, `127.0.0.1:${await port()}`);
-        const preload = path.join(f.root, "slow-worker.mjs");
-        await writeFile(
-          preload,
-          'if (process.argv[1]?.endsWith("daemon-worker.js")) await new Promise(resolve => setTimeout(resolve, 30000));',
-        );
+        const heldWorker = await holdWorkerUntilReleased(f.root);
         child = spawn(process.execPath, [cli, ...launchArgs, "--home", home], {
           cwd: repo,
-          env: { ...f.env, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` },
+          env: { ...f.env, ...heldWorker.env },
           stdio: "ignore",
         });
         const exited = new Promise((resolve) => child!.once("exit", resolve));
@@ -523,13 +576,9 @@ test.runIf(process.platform === "win32")(
     const home = f.homes[0]!;
     try {
       await f.configure(home, `127.0.0.1:${await port()}`);
-      const preload = path.join(f.root, "slow-worker.mjs");
-      await writeFile(
-        preload,
-        'if (process.argv[1]?.endsWith("daemon-worker.js")) await new Promise(resolve => setTimeout(resolve, 30000));',
-      );
+      const heldWorker = await holdWorkerUntilReleased(f.root);
       const pending = await f.run(["--json", "start", "--home", home, "--timeout", "1"], {
-        NODE_OPTIONS: `--import=${pathToFileURL(preload).href}`,
+        ...heldWorker.env,
       });
       expect(pending.stderr).toContain("DAEMON_NOT_READY");
       const refused = await f.run(["--json", "daemon", "stop", "--home", home]);
@@ -632,6 +681,7 @@ concurrentTest(
     const f = await fixture(expect);
     const [a, b] = f.homes as [string, string];
     let follower: ReturnType<typeof spawn> | undefined;
+    let followerClosed: Promise<unknown> | undefined;
     try {
       await f.configure(a, `127.0.0.1:${await port()}`);
       await f.configure(b, `127.0.0.1:${await port()}`);
@@ -664,6 +714,8 @@ concurrentTest(
           stdio: ["ignore", "pipe", "pipe"],
         },
       );
+      const child = follower;
+      followerClosed = new Promise((resolve) => child.once("close", resolve));
       let output = "",
         errors = "";
       follower.stdout!.on("data", (data) => {
@@ -672,15 +724,20 @@ concurrentTest(
       follower.stderr!.on("data", (data) => {
         errors += data;
       });
-      await expect.poll(() => output, { timeout: 15_000 }).toContain("Following logs (no history;");
+      await waitForOutput(
+        follower.stdout!,
+        () => output,
+        (text) => text.includes("Following logs (no history;"),
+      );
       expect(errors).not.toContain("No agent found matching");
     } finally {
-      if (follower && follower.exitCode === null) {
-        const exited = new Promise((resolve) => follower!.once("exit", resolve));
-        follower.kill("SIGINT");
-        await exited;
+      try {
+        if (follower && followerClosed) {
+          await stopLogFollower(follower, followerClosed, "SIGINT");
+        }
+      } finally {
+        await f.close();
       }
-      await f.close();
     }
   },
   60_000,
@@ -772,14 +829,10 @@ test("malformed configuration cannot turn a readiness timeout into launch cancel
     await f.configure(home, `127.0.0.1:${await port()}`);
     const configPath = path.join(home, "config.json");
     const saved = await readFile(configPath, "utf8");
-    const preload = path.join(f.root, "slow-worker.mjs");
-    await writeFile(
-      preload,
-      'if (process.argv[1]?.endsWith("daemon-worker.js")) await new Promise(resolve => setTimeout(resolve, 30000));',
-    );
+    const heldWorker = await holdWorkerUntilReleased(f.root);
     starter = spawn(process.execPath, [cli, "--json", "start", "--home", home, "--timeout", "2"], {
       cwd: f.root,
-      env: { ...f.env, NODE_OPTIONS: `--import=${pathToFileURL(preload).href}` },
+      env: { ...f.env, ...heldWorker.env },
       stdio: ["ignore", "pipe", "pipe"],
     });
     let errors = "";
@@ -913,19 +966,29 @@ concurrentTest(
       output += data;
     });
     const closed = new Promise((resolve) => child.once("close", resolve));
+    const expectOutput = async (expected: string) => {
+      await waitForOutput(
+        child.stdout,
+        () => output,
+        (text) => text.length >= expected.length,
+      );
+      expect(output).toBe(expected);
+    };
     try {
-      await expect.poll(() => output).toBe("abc");
+      await expectOutput("abc");
       await appendFile(file, "def\n");
-      await expect.poll(() => output).toBe("abcdef\n");
+      await expectOutput("abcdef\n");
       await writeFile(file, "x\n");
-      await expect.poll(() => output).toBe("abcdef\nx\n");
-      await rename(file, file + ".old");
-      await writeFile(file, "replacement\n");
-      await expect.poll(() => output).toBe("abcdef\nx\nreplacement\n");
+      await expectOutput("abcdef\nx\n");
+      await writeFile(file + ".next", "replacement\n");
+      await rename(file + ".next", file);
+      await expectOutput("abcdef\nx\nreplacement\n");
     } finally {
-      child.kill("SIGTERM");
-      await closed;
-      await f.close();
+      try {
+        await stopLogFollower(child, closed, "SIGTERM");
+      } finally {
+        await f.close();
+      }
     }
     expect(output).toBe("abcdef\nx\nreplacement\n");
   },
