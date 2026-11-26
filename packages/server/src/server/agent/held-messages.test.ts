@@ -1,3 +1,4 @@
+import { setImmediate as nextEventLoopTurn } from "node:timers/promises";
 import { expect, test } from "vitest";
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import type { AgentManagerEvent, ManagedAgent } from "./agent-manager.js";
@@ -134,22 +135,25 @@ test("releases held messages one turn at a time in the order they arrived", asyn
 test("a head that meets another busy turn keeps its place ahead of later messages", async () => {
   const manager = new FakeManager();
   const delivered: string[] = [];
+  const busyDispatch = Promise.withResolvers<HeldDispatchResult>();
   let declines = 1;
   hold(manager, "a", delivered, {
-    dispatch: async () => {
+    dispatch: () => {
       if (declines-- > 0) {
         manager.startTurn("autonomous-turn");
-        return { kind: "busy", turnId: "autonomous-turn" };
+        return busyDispatch.promise;
       }
       delivered.push("a");
       manager.startTurn("a-turn");
-      return { kind: "settled" };
+      return Promise.resolve({ kind: "settled" });
     },
   });
   hold(manager, "b", delivered);
 
   manager.endTurn("turn_completed");
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(manager.agent?.activeTurnId).toBe("autonomous-turn");
+  busyDispatch.resolve({ kind: "busy", turnId: "autonomous-turn" });
+  await nextEventLoopTurn();
   expect(delivered).toEqual([]);
 
   manager.endTurn("turn_completed", "autonomous-turn");
@@ -206,13 +210,15 @@ test("a held message settles only after its dispatch registers a run", async () 
       }),
   });
   const outcome = waitForHeldMessage(manager.controller, AGENT_ID, "a");
+  expect(outcome).not.toBeNull();
   let settled = false;
   void outcome?.finally(() => {
     settled = true;
   });
 
   manager.endTurn("turn_completed");
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  expect(registerRun).toBeTypeOf("function");
+  await nextEventLoopTurn();
   expect(settled).toBe(false);
 
   registerRun();
@@ -227,7 +233,7 @@ test("a queued message waits for a permission that outlived its turn", async () 
   hold(manager, "queued", delivered, { kind: "queued" });
 
   manager.endTurn("turn_completed");
-  await new Promise((resolve) => setTimeout(resolve, 0));
+  await nextEventLoopTurn();
   expect(delivered).toEqual([]);
 
   manager.resolvePermissions();

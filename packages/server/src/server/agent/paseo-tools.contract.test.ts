@@ -219,6 +219,10 @@ async function sendMcpAndAwaitDispatch(
   return response;
 }
 
+async function expectFinishSubscriptionCount(server: object, count: number): Promise<void> {
+  await vi.waitFor(() => expect(serverSubscriptionRecords.get(server)!.size).toBe(count));
+}
+
 function agentsOf(response: {
   structuredContent: LooseStructuredContent;
 }): Array<Record<string, unknown>> {
@@ -3973,13 +3977,14 @@ class HeldTurnAgentSession implements AgentSession {
         messageId: randomUUID(),
       },
     });
-    setTimeout(() => {
+    // Publish the provider events after its start acknowledgment.
+    setImmediate(() => {
       if (this.activeTurnId !== turnId) return;
       this.pushEvent({ type: "turn_started", provider: this.provider, turnId });
       if (!this.holdTurns && this.activeTurnId === turnId) {
         this.finishTurn();
       }
-    }, 0);
+    });
     return { turnId };
   }
 
@@ -4221,9 +4226,8 @@ describe("send_agent_prompt native tool", () => {
         });
         if (rejected) {
           await expect(sending).rejects.toThrow("Steer rejected");
-          // Flush asynchronous notification work before checking that a rejected
-          // dispatch did not notify. Then prove a later successful send still can.
-          await new Promise((resolve) => setTimeout(resolve, 50));
+          // A rejected dispatch removes its registration without notifying.
+          await expectFinishSubscriptionCount(server, 0);
           expect(client.sessions[0]!.prompts).toHaveLength(0);
           await send({
             agentId: child.id,
@@ -4298,7 +4302,7 @@ describe("send_agent_prompt native tool", () => {
         });
         await expect(sending).rejects.toThrow("Steer rejected");
         if (!finishDuringSteer) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
+          await expectFinishSubscriptionCount(server, 1);
           expect(client.sessions[0]!.prompts).toHaveLength(0);
           client.sessions[1]!.finishTurn();
         }
@@ -4368,23 +4372,25 @@ describe("send_agent_prompt native tool", () => {
         const second = new Promise<PromptDispatchDisposition | false>((resolve) => {
           secondResolve = resolve;
         });
+        const decisions: Promise<void>[] = [];
         for (const dispatchResult of [first, second]) {
           const registration = await serverSubscriptions
             .get(server)!
             .register({ childAgentId: child.id, callerAgentId: parent.id }, true);
-          void dispatchResult.then((result) => {
-            if (result) registration.accept();
-            else void registration.reject();
-            return undefined;
-          });
+          decisions.push(
+            dispatchResult.then((result) => {
+              if (result) return registration.accept();
+              return registration.reject();
+            }),
+          );
         }
         firstResolve(firstAccepted ? "steered" : false);
         await first;
         secondResolve(secondAccepted ? "steered" : false);
         await second;
         client.sessions[1]!.finishTurn();
-        await vi.waitFor(() => expect(client.sessions[0]!.prompts).toHaveLength(1));
-        await new Promise((resolve) => setTimeout(resolve, 50));
+        await Promise.all(decisions);
+        await expectFinishSubscriptionCount(server, 0);
         expect(client.sessions[0]!.prompts).toHaveLength(1);
         expect(parseAgentMessage(client.sessions[0]!.prompts[0])).toMatchObject({
           source: { kind: "agent-notification", agentId: child.id, event: "finished" },
@@ -4687,34 +4693,32 @@ describe("send_agent_prompt native tool", () => {
     expect(response.structuredContent).toMatchObject({ success: true, deliveryStatus: "queued" });
     await dispatched();
     expect(childClient.sessions[0]!.prompts).toHaveLength(1);
-    return { child: childClient.sessions[0]!, notifications: parentClient.sessions[0]!.prompts };
-  }
-
-  async function settle(): Promise<void> {
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    return {
+      child: childClient.sessions[0]!,
+      notifications: parentClient.sessions[0]!.prompts,
+      server,
+    };
   }
 
   it.each(["steer", "queue"] as const)(
     "notifies on the held follow-up's own turn, not the turn it waited behind (ifRunning: %s)",
     async (ifRunning) => {
-      const { child, notifications } = await sendHeldFollowUp(ifRunning);
+      const { child, notifications, server } = await sendHeldFollowUp(ifRunning);
       child.finishTurn("First task done");
       await vi.waitFor(() => expect(child.prompts).toHaveLength(2));
-      await settle();
+      await expectFinishSubscriptionCount(server, 1);
       expect(notifications).toHaveLength(0);
       child.finishTurn("Follow-up done");
-      await vi.waitFor(() => expect(notifications).toHaveLength(1));
-      await settle();
+      await expectFinishSubscriptionCount(server, 0);
       expect(notifications).toHaveLength(1);
       expect(notifications[0]).toContain("Follow-up done");
     },
   );
 
   it("reports the earlier turn once when a stop discards the held follow-up", async () => {
-    const { child, notifications } = await sendHeldFollowUp("steer");
+    const { child, notifications, server } = await sendHeldFollowUp("steer");
     await child.interrupt();
-    await vi.waitFor(() => expect(notifications).toHaveLength(1));
-    await settle();
+    await expectFinishSubscriptionCount(server, 0);
     expect(child.prompts).toHaveLength(1);
     expect(notifications).toHaveLength(1);
   });
@@ -4922,8 +4926,7 @@ describe("send_agent_prompt native tool", () => {
           prompt.includes(`Agent ${childId} (Busy Child) finished.`),
         );
       }
-      await vi.waitFor(() => expect(finishNotifications()).not.toHaveLength(0));
-      await new Promise((resolve) => setTimeout(resolve, 100));
+      await expectFinishSubscriptionCount(server, 0);
       expect(finishNotifications()).toHaveLength(1);
       expect(parentClient.sessions[0]!.prompts).toHaveLength(1);
       expect(parseAgentMessage(parentClient.sessions[0]!.prompts[0])).toMatchObject({
