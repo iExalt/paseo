@@ -137,6 +137,18 @@ snapshot. The separate retry/cancellation guard verification task remains parked
 this inventory does not adopt it or add dependencies. Those are tracker/source
 statuses, not fresh runtime proof.
 
+### Git diff index snapshots
+
+For the next target-bound ledger refresh, verify that
+[`d49991318f088623155231a1e293d4efc7b3cade`](https://github.com/getpaseo/paseo/commit/d49991318f088623155231a1e293d4efc7b3cade)
+is an ancestor of the captured target. Then add a fully superseded drop row for
+`d27133f4bc34a630828548e8367b93f11d6c5e6c`. Match the subject `fix(diff): preserve index timestamps in worktree comparisons (#620)`
+and stable patch ID `d9a2c3f773f349eea1865452f8e821c992742e62`.
+
+Upstream covers both affected comparison paths. Drop the fork's extra regression
+variants and bigint rounding with the backport. The precision edge stays an
+upstream candidate. [PR #620](https://github.com/iExalt/paseo/pull/620)
+
 ## Reproduction and evidence boundary
 
 Recompute the captured curated list with `git rev-list --reverse --topo-order --no-merges BASE..TIP`. Compute identities with `git show --format= --binary --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --no-color SHA | git patch-id --stable`, paired with `git show -s --format=%s SHA`. A null patch ID identifies an empty patch; it does not classify the commit for dropping. The immutable capture and archive refs make the source review reachable after rewritten SHAs change. No new generator or proof framework is required to consume the ledger.
