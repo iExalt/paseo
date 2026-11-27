@@ -1,51 +1,50 @@
 # Upstream rebase inputs and supersession ledger
 
-The version 2 ledger carries the reviewed retained outcomes onto published `dev`. Exact fully superseded and empty/history-only matches are drop instructions; partial decisions require target-bound source retain receipts. Retained curated commits keep one-to-one replay. [The rebase procedure](upstream/rebase-dev.md#carry-supersession-decisions-forward) owns matching, target and release-boundary safeguards.
-
-The ledger carries the published decisions forward for rehearsal at the pinned mirror `518e58cd639f01f63da35544bce3eff5123b10ee`. The refreshed receipts record source review. Run the listed integration checks on the replay tree.
+The version 2 [ledger](upstream-rebase-inventory.json) records fork commits and
+their supersession decisions. Retained commits replay one-to-one. Partial
+decisions require a source retain receipt for the exact target.
+[The rebase procedure](upstream/rebase-dev.md#carry-supersession-decisions-forward)
+owns matching and release-boundary safeguards.
 
 ## Published rebase
 
-- Published fork dev: `c7eb9ec7b20b30bfdcb702a8e462f1ae10e0f170`, from [rebase-dev run 43810387905](https://github.com/iExalt/paseo/actions/runs/43810387905).
-- Backup of the pre-rebase dev: `backup/rebase-dev/43810387905-1` at `37a7244debe3ed1dd2b3682d4db94a5b55e2748e`.
-- Incorporated upstream: `0273b6b614bac623168d03e7f89f9e161274b468`.
-- Resolutions: `307f2300ce7786e06b74b6d40f2344738c9f479d`.
+- Published fork dev: `1a488ea75bb3d714ca442027d307e5156eeed181`, from [rebase-dev run 46025306940](https://github.com/iExalt/paseo/actions/runs/46025306940).
+- Pre-rebase dev: `78659722ce22d3365166cd3aa89047299eea9d8c`, preserved at `backup/rebase-dev/46025306940-1`.
+- Incorporated upstream: `518e58cd639f01f63da35544bce3eff5123b10ee`.
+- Resolutions: `9df92c453ba668eab31a448f372ad7b578611abd`.
 
-The published history has 143 non-merge commits above the incorporated upstream:
-140 replayed curated commits and the run's three generated commits. The verifier
-matched all 143 to a clean replay, commit for commit and tree for tree, apart from
-the generated `last-release-sha`. All 143 carry the pinned production signature
-and GitHub verification.
+The published history has 271 non-merge commits above the incorporated
+upstream. The verifier matched all 268 retained commits and three generated
+commits to the clean replay. Each published commit carries the pinned
+production signature and GitHub verification. The final tree differs only in
+the generated `last-release-sha`.
 
-After the published carry-forward, the ledger had 145 rows: 136 carried rows, seven new keep rows and two historical
-fully superseded rows that match no current commit. Rows were carried through the
-replay's original-to-rewritten mapping, not by subject, because each rebase adds
-generated commits with repeated subjects. The carry changed 18 patch IDs and every
-SHA hint. The new keep rows are #498 to #501 and this rebase's three generated
-commits. The ledger check for that publication retained every published commit.
+The ledger carries 143 prior rows by replay position and recomputes their
+identities on published dev. Of those rows, 61 have a changed patch ID. It adds
+128 keep rows, including the three generated commits, and preserves three
+historical drop decisions. The engine planner retains the full published
+history with zero drops at the incorporated upstream.
 
-[The manifest](upstream-rebase-inventory.json) records the carried keys, incoming
-paths and capture provenance. The previous ledger is available at
-[the pre-rebase dev](https://github.com/iExalt/paseo/blob/37a7244debe3ed1dd2b3682d4db94a5b55e2748e/docs/upstream-rebase-inventory.json).
+Seven of the ten partial patches changed during replay. Each changed receipt
+records the fresh source decision and the original and published patch
+comparison. Three receipts retain their existing patch ID. Review all partial
+decisions against any newer upstream before rehearsal.
 
-## Pending replay
-
-The ten partial rows carry refreshed source reviews for the pinned mirror. Each
-receipt names the evidence commits, the fork behavior to retain and the checks
-to run against the replay tree. A newer target requires source review and new
-receipts for all ten rows.
-
-The ledger's minimum upstream ancestor advances to `d49991318f088623155231a1e293d4efc7b3cade`
-so the planner rejects targets that lack the #620 replacement. The manifest's
-incoming inventory and `refs.actual_upstream` record the published capture above.
+The minimum upstream ancestor remains
+`d49991318f088623155231a1e293d4efc7b3cade` to require the #620 replacement.
+The manifest records the publication in `provenance.published_rebase` and
+preserves the earlier source capture in `counts`, the incoming inventory,
+and the other `refs` fields. The
+[previous ledger](https://github.com/iExalt/paseo/blob/78659722ce22d3365166cd3aa89047299eea9d8c/docs/upstream-rebase-inventory.json)
+records the source decisions before this publication.
 
 ## Decisions
 
-| Category             | Ledger rows | Replay                                                                                          |
-| -------------------- | ----------: | ----------------------------------------------------------------------------------------------- |
-| keep                 |         133 | Retain one-to-one.                                                                              |
-| partially superseded |          10 | Retain with the exact-target source review receipt.                                             |
-| fully superseded     |           3 | Drop the #620 backport. The other two rows record historical drops absent from current history. |
+| Category             | Ledger rows | Replay                                              |
+| -------------------- | ----------: | --------------------------------------------------- |
+| keep                 |         261 | Retain one-to-one.                                  |
+| partially superseded |          10 | Retain with the exact-target source review receipt. |
+| fully superseded     |           3 | Historical drops absent from published history.     |
 
 ### Fully superseded behavior
 
@@ -67,7 +66,7 @@ incoming inventory and `refs.actual_upstream` record the published capture above
   upstream `d49991318f088623155231a1e293d4efc7b3cade` preserves the index timestamp
   and covers same-size edits in both comparison modes. The decision accepts
   dropping the fork's fixture hardening and bigint rounding. The precision edge
-  remains an upstream candidate. Run both comparison cases after replay.
+  remains an upstream candidate. Keep both comparison cases in validation.
   [Supersession decision #623](https://github.com/iExalt/paseo/pull/623)
 
 ### Partial overlap
@@ -139,10 +138,9 @@ statuses, not fresh runtime proof.
 
 Recompute the captured curated list with `git rev-list --reverse --topo-order --no-merges BASE..TIP`. Compute identities with `git show --format= --binary --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --no-color SHA | git patch-id --stable`, paired with `git show -s --format=%s SHA`. A null patch ID identifies an empty patch; it does not classify the commit for dropping. The immutable capture and archive refs make the source review reachable after rewritten SHAs change. No new generator or proof framework is required to consume the ledger.
 
-The published carry-forward swept every ledger identity against published history and all 40
-incoming subjects and touched paths, then checked the partial rows against their
-listed source paths. It does not claim a line-by-line audit of every incoming
-change or runtime parity. Non-keep decisions retain their source evidence.
+The carry-forward checks each ledger identity against the published chain.
+The partial receipts record source decisions. Platform and device proof
+remains scoped to the checks that ran.
 
 Later replay uses Git >=2.55 and the merge-backend procedure in [the rebase guide](upstream/rebase-dev.md). Validation runs `mise run --skip-tools ci:routine` against the exact candidate; the workflow pins Node 26.13.0 / npm 11.20.0. That guide owns execution and diagnostics; this document records the source inventory and performance baseline.
 
@@ -153,5 +151,6 @@ passed eight routine lanes in 210 seconds from plan start to the required check
 image `20261111.196.1`, Node 26.13.0 / npm 11.20.0 and a warm installed-dependency
 cache. Compare a future candidate under the same lane, runner and cache
 conditions; a docs-only PR selects fewer checks and cannot establish candidate
-performance parity. No candidate CI, build, replay or platform result is
-implied by publication of this docs PR.
+performance parity. This rebase's [full Routine CI](https://github.com/iExalt/paseo/actions/runs/46013384653)
+passed ten lanes in 248 seconds from event to completion on the reviewed candidate.
+The workflow used a cold dependency install after the lock changed.
