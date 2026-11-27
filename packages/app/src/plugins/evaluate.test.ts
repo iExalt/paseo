@@ -1011,7 +1011,7 @@ describe("evaluatePluginClientBundle", () => {
 
   it("excludes PushNotificationIOS and checks enumerable react-native/index.js getters for invariant throws", () => {
     const require = createRequire(import.meta.url);
-    const rnIndexPath = require.resolve("react-native/index.js");
+    const rnIndexPath = require.resolve("react-native");
     const rnIndexSource = readFileSync(rnIndexPath, "utf8");
     const getterBodies = new Map<string, string>();
     const getterPattern = /get\s+([A-Za-z0-9_$]+)\s*\(\)\s*\{([\s\S]*?)\n\s*\},/g;
