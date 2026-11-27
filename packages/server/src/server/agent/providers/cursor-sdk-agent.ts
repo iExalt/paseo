@@ -89,6 +89,7 @@ import { cursorCompactCommand, isCursorCompactPrompt } from "./cursor-sdk-mainte
 import { createCursorRunBinding } from "./cursor-sdk-run-binding.js";
 import { CursorForkLinks, withCursorForkBlobs } from "./cursor-sdk-fork-store.js";
 import { openCursorSdkStore } from "./cursor-sdk-store.js";
+import { loadCursorSdk } from "./cursor-sdk-loader.js";
 import { CursorRunController, type CursorTurnExecution } from "./cursor-sdk-run-controller.js";
 import { CursorQuestions, cursorQuestionToolName } from "./cursor-sdk-questions.js";
 import { cursorSpeakTool, cursorSpeakToolName } from "./cursor-sdk-voice.js";
@@ -253,7 +254,7 @@ export class CursorSdkAgentClient implements AgentClient {
 
   constructor(
     private readonly runtimeSettings?: ProviderRuntimeSettings,
-    private readonly loadSdk: () => Promise<CursorSdk> = () => import("@cursor/sdk"),
+    private readonly loadSdk: () => Promise<CursorSdk> = loadCursorSdk,
     private readonly listModels = listCursorSdkModels,
     private readonly readStoredKey = readCursorSdkStoredKey,
     private readonly storePath = join(resolvePaseoHome(), "cursor-sdk"),

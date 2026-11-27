@@ -1,6 +1,7 @@
 import { Console } from "node:console";
 import type { AgentOptions, Run, SDKAgent, SDKMessage, SDKUserMessage } from "@cursor/sdk";
 import { withCursorShellEnvironment } from "../providers/cursor-sdk-shell-environment.js";
+import { loadCursorSdk } from "../providers/cursor-sdk-loader.js";
 import {
   cursorQuestionToolDescriptor,
   cursorQuestionToolName,
@@ -68,7 +69,7 @@ async function main() {
     for (const [name, entry] of Object.entries(env)) {
       if (entry !== undefined) process.env[name] = entry;
     }
-    const { Agent } = await import("@cursor/sdk");
+    const { Agent } = await loadCursorSdk();
     if (!channel.connected) throw new Error("Cursor SDK owner disconnected before opening.");
     const store = proxyCursorStore(channel.request);
     return withCursorShellEnvironment(shellEnvironment, async () => {
