@@ -1,150 +1,126 @@
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
+index e73cc12..8aa9ba8 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/build.gradle.kts
 @@ -1,4 +1,4 @@
  plugins {
--  kotlin("jvm") version "2.1.20" apply false
-+  kotlin("jvm") version "2.3.20" apply false
+-  kotlin("jvm") version "2.2.21" apply false
++  kotlin("jvm") version "2.4.21" apply false
    id("java-gradle-plugin")
  }
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
+index a62ddab..4224cd6 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin-shared/build.gradle.kts
-@@ -1,9 +1,10 @@
- import org.gradle.api.tasks.testing.logging.TestExceptionFormat
-+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
- import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
+@@ -4,7 +4,7 @@ import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
  
  plugins {
    kotlin("jvm")
 -  kotlin("plugin.serialization") version "1.9.24"
-+  kotlin("plugin.serialization") version "2.3.20"
++  kotlin("plugin.serialization") version "2.4.21"
  }
  
  repositories {
-@@ -23,8 +24,8 @@ java {
- }
- 
- tasks.withType<KotlinCompile> {
--  kotlinOptions {
--    jvmTarget = JavaVersion.VERSION_11.toString()
-+  compilerOptions {
-+    jvmTarget.set(JvmTarget.JVM_11)
-   }
- }
- 
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts
+index fef7853..de0b7bc 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/build.gradle.kts
-@@ -14,17 +14,17 @@
+@@ -15,7 +15,7 @@ repositories {
  dependencies {
    implementation(project(":expo-autolinking-plugin-shared"))
    implementation(gradleApi())
--  compileOnly("com.android.tools.build:gradle:8.5.0")
+-  compileOnly("com.android.tools.build:gradle:9.2.1")
 +  compileOnly("com.android.tools.build:gradle:9.5.3")
- }
-
- java {
--  sourceCompatibility = JavaVersion.VERSION_11
--  targetCompatibility = JavaVersion.VERSION_11
-+  sourceCompatibility = JavaVersion.VERSION_17
-+  targetCompatibility = JavaVersion.VERSION_17
- }
-
- tasks.withType<KotlinCompile> {
-   compilerOptions {
--    jvmTarget.set(JvmTarget.JVM_11)
-+    jvmTarget.set(JvmTarget.JVM_17)
-   }
- }
-
-diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
---- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
-+++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
-@@ -15,7 +15,7 @@
- dependencies {
-   implementation(project(":expo-autolinking-plugin-shared"))
-   implementation(gradleApi())
--  compileOnly("com.android.tools.build:gradle:8.5.0")
-+  compileOnly("com.android.tools.build:gradle:9.5.3")
-
-   testImplementation("junit:junit:4.13.2")
-   testImplementation("com.google.truth:truth:1.1.2")
-@@ -23,13 +23,13 @@
- }
-
- java {
--  sourceCompatibility = JavaVersion.VERSION_11
--  targetCompatibility = JavaVersion.VERSION_11
-+  sourceCompatibility = JavaVersion.VERSION_17
-+  targetCompatibility = JavaVersion.VERSION_17
- }
-
- tasks.withType<KotlinCompile> {
-   compilerOptions {
--    jvmTarget.set(JvmTarget.JVM_11)
-+    jvmTarget.set(JvmTarget.JVM_17)
-   }
- }
-
-diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
---- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
-+++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
-@@ -14,7 +14,7 @@
- dependencies {
-   implementation(project(":expo-autolinking-plugin-shared"))
-   implementation(gradleApi())
--  compileOnly("com.android.tools.build:gradle:8.5.0")
-+  compileOnly("com.android.tools.build:gradle:9.5.3")
-
-   testImplementation("junit:junit:4.13.2")
-   testImplementation("com.google.truth:truth:1.1.2")
-@@ -22,13 +22,13 @@
- }
-
- java {
--  sourceCompatibility = JavaVersion.VERSION_11
--  targetCompatibility = JavaVersion.VERSION_11
-+  sourceCompatibility = JavaVersion.VERSION_17
-+  targetCompatibility = JavaVersion.VERSION_17
- }
-
- tasks.withType<KotlinCompile> {
-   compilerOptions {
--    jvmTarget.set(JvmTarget.JVM_11)
-+    jvmTarget.set(JvmTarget.JVM_17)
-   }
- }
-
-diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingPlugin.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingPlugin.kt
-index 702910510..501070e89 100644
---- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingPlugin.kt
-+++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/ExpoAutolinkingPlugin.kt
-@@ -87,12 +87,12 @@ open class ExpoAutolinkingPlugin : Plugin<Project> {
-       .dependsOn(generatePackagesList)
+   // Only used to ask the Kotlin Gradle plugin loaded by the app for its version - the app provides it at runtime.
+   compileOnly(kotlin("gradle-plugin"))
  
-     // Adds the generated file to the source set.
--    project.extensions.getByType(AndroidComponentsExtension::class.java).finalizeDsl { ext ->
--      ext
-+    project.extensions.getByType(AndroidComponentsExtension::class.java).finalizeDsl {
-+      project.extensions.getByType(BaseExtension::class.java)
-         .sourceSets
-         .getByName("main")
-         .java
--        .srcDirs(getPackageListDir(project), getInlineModulesDir(project))
-+        .srcDirs(getPackageListDir(project).get().asFile, getInlineModulesDir(project).get().asFile)
-     }
+@@ -24,13 +24,13 @@ dependencies {
+ }
+ 
+ java {
+-  sourceCompatibility = JavaVersion.VERSION_11
+-  targetCompatibility = JavaVersion.VERSION_11
++  sourceCompatibility = JavaVersion.VERSION_17
++  targetCompatibility = JavaVersion.VERSION_17
+ }
+ 
+ tasks.withType<KotlinCompile> {
+   compilerOptions {
+-    jvmTarget.set(JvmTarget.JVM_11)
++    jvmTarget.set(JvmTarget.JVM_17)
    }
+ }
  
 diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/KSPLookup.kt b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/KSPLookup.kt
+index deb4220..90035c6 100644
 --- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/KSPLookup.kt
 +++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-plugin/src/main/kotlin/expo/modules/plugin/KSPLookup.kt
 @@ -2,7 +2,7 @@
  package expo.modules.plugin
-
+ 
  // Starting with KSP 2.3.0, KSP is no longer tied to a specific Kotlin version.
 -const val latestKspVersion = "2.3.7"
 +const val latestKspVersion = "2.3.14"
-
+ 
  // For older Kotlin versions, KSP releases were tied to specific Kotlin versions.
  val KSPLookup = mapOf(
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
+index d9fce6d..b5db7e0 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-autolinking-settings-plugin/build.gradle.kts
+@@ -15,7 +15,7 @@ repositories {
+ dependencies {
+   implementation(project(":expo-autolinking-plugin-shared"))
+   implementation(gradleApi())
+-  compileOnly("com.android.tools.build:gradle:9.2.1")
++  compileOnly("com.android.tools.build:gradle:9.5.3")
+ 
+   testImplementation("junit:junit:4.13.2")
+   testImplementation("com.google.truth:truth:1.1.2")
+@@ -23,13 +23,13 @@ dependencies {
+ }
+ 
+ java {
+-  sourceCompatibility = JavaVersion.VERSION_11
+-  targetCompatibility = JavaVersion.VERSION_11
++  sourceCompatibility = JavaVersion.VERSION_17
++  targetCompatibility = JavaVersion.VERSION_17
+ }
+ 
+ tasks.withType<KotlinCompile> {
+   compilerOptions {
+-    jvmTarget.set(JvmTarget.JVM_11)
++    jvmTarget.set(JvmTarget.JVM_17)
+   }
+ }
+ 
+diff --git a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
+index 6e5e6d1..e018c63 100644
+--- a/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
++++ b/node_modules/expo-modules-autolinking/android/expo-gradle-plugin/expo-max-sdk-override-plugin/build.gradle.kts
+@@ -14,7 +14,7 @@ repositories {
+ dependencies {
+   implementation(project(":expo-autolinking-plugin-shared"))
+   implementation(gradleApi())
+-  compileOnly("com.android.tools.build:gradle:9.2.1")
++  compileOnly("com.android.tools.build:gradle:9.5.3")
+ 
+   testImplementation("junit:junit:4.13.2")
+   testImplementation("com.google.truth:truth:1.1.2")
+@@ -22,13 +22,13 @@ dependencies {
+ }
+ 
+ java {
+-  sourceCompatibility = JavaVersion.VERSION_11
+-  targetCompatibility = JavaVersion.VERSION_11
++  sourceCompatibility = JavaVersion.VERSION_17
++  targetCompatibility = JavaVersion.VERSION_17
+ }
+ 
+ tasks.withType<KotlinCompile> {
+   compilerOptions {
+-    jvmTarget.set(JvmTarget.JVM_11)
++    jvmTarget.set(JvmTarget.JVM_17)
+   }
+ }
+ 

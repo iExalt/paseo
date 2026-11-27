@@ -5,9 +5,13 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
+const requireFromExpo = createRequire(require.resolve("expo/package.json"));
 
 test("Expo export preserves the fatal error before exiting with queued logging", () => {
-  const source = readFileSync(require.resolve("@expo/cli/build/src/export/exportApp.js"), "utf8");
+  const source = readFileSync(
+    requireFromExpo.resolve("@expo/cli/build/src/export/exportApp.js"),
+    "utf8",
+  );
   const bundleStart = source.indexOf("bundle = await devServer.nativeExportBundleAsync(");
   assert.notEqual(bundleStart, -1);
   const catchStart = source.indexOf("} catch (error) {", bundleStart);

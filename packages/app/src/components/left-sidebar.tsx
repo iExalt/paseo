@@ -25,7 +25,7 @@ import {
 import {
   Gesture,
   type GestureType,
-  ScrollView as GHScrollView,
+  LegacyScrollView as GHScrollView,
 } from "react-native-gesture-handler";
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from "react-native-reanimated";
 import { scheduleOnRN } from "react-native-worklets";

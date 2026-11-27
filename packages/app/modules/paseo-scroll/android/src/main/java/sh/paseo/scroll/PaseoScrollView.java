@@ -35,10 +35,11 @@ final class PaseoScrollView extends ReactScrollView {
     super(context);
   }
 
+  // RN 0.88 exposes this internal Kotlin setter to the manager under its JVM name.
   @Override
-  public void setMaintainVisibleContentPosition(
+  public void setMaintainVisibleContentPosition$ReactAndroid(
       @Nullable MaintainVisibleScrollPositionHelper.Config config) {
-    super.setMaintainVisibleContentPosition(config);
+    super.setMaintainVisibleContentPosition$ReactAndroid(config);
     visibleContentPosition = config;
   }
 

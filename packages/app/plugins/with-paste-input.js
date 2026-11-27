@@ -49,9 +49,13 @@ function withPasteInput(config) {
     return modConfig;
   });
   const withScene = withInfoPlist(withDelegate, (modConfig) => {
-    const scenes =
-      modConfig.modResults.UIApplicationSceneManifest?.UISceneConfigurations
-        ?.UIWindowSceneSessionRoleApplication;
+    const manifest = (modConfig.modResults.UIApplicationSceneManifest ??= {
+      UIApplicationSupportsMultipleScenes: false,
+    });
+    const configurations = (manifest.UISceneConfigurations ??= {});
+    const scenes = (configurations.UIWindowSceneSessionRoleApplication ??= [
+      { UISceneConfigurationName: "Default Configuration" },
+    ]);
     if (!scenes || scenes.length !== 1) {
       throw new Error("Paste input requires Expo's single scene configuration");
     }

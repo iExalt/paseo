@@ -40,7 +40,7 @@ async function playEncodedAudio(
   const extension = FILE_EXTENSIONS[mimeType.split(";")[0].trim()] ?? "audio";
   const file = new File(Paths.cache, `paseo-audio-${Date.now()}-${nextFileId++}.${extension}`);
   try {
-    file.write(bytes);
+    await file.write(bytes);
     const player = createAudioPlayer(file.uri, {
       updateInterval: 100,
       keepAudioSessionActive: context.isCaptureActive(),

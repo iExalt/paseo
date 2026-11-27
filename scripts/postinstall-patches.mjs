@@ -16,9 +16,7 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@react-native-async-storage/async-storage",
     patchPrefix: "@react-native-async-storage+async-storage+",
   },
-  // Gradle 9.8 needs newer Kotlin metadata support; Expo's Pika compiler caps
-  // the version at 2.3.20. Keep these plugin compilers consistent until Expo and
-  // React Native ship compatible pins.
+  // Align the included Gradle plugins to the app toolchain and its Pika compiler.
   {
     nodeModulesPath: "node_modules/@react-native/gradle-plugin",
     patchPrefix: "@react-native+gradle-plugin+",
@@ -31,9 +29,7 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/expo-dev-launcher",
     patchPrefix: "expo-dev-launcher+",
   },
-  // Backport for expo-modules-core 57.0.24: https://github.com/expo/expo/pull/49634.
-  // Remove the Activity hunks when Expo includes that fix; retain the Gradle plugin
-  // compiler alignment until Expo ships a compatible pin.
+  // Retain the Activity recreation regression test for Expo’s upstream fix.
   {
     nodeModulesPath: "node_modules/expo-modules-core",
     patchPrefix: "expo-modules-core+",
@@ -41,6 +37,11 @@ const patchedPackages = [
   {
     nodeModulesPath: "node_modules/@expo/cli",
     patchPrefix: "@expo+cli+",
+  },
+  {
+    nodeModulesPath: "node_modules/expo/node_modules/@expo/cli",
+    patchPrefix: "@expo+cli+",
+    cwd: "node_modules/expo",
   },
   // Registry cleanup: remove after react-native-unistyles ships
   // https://github.com/jpudysz/react-native-unistyles/pull/1203.
@@ -60,17 +61,7 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@gorhom/portal",
     patchPrefix: "@gorhom+portal+",
   },
-  // Backport of React 19.3.0 to the development builds: clear each render timing after reporting
-  // it. The browser keeps every performance measure for the life of the page, so a development
-  // session held millions of them and gigabytes of memory. Remove when react-dom is >= 19.3.0.
-  {
-    nodeModulesPath: "node_modules/react-dom",
-    patchPrefix: "react-dom+",
-  },
-  // Backport of https://github.com/software-mansion/react-native-reanimated/pull/10435
-  // (Reanimated 4.7.1): skip synchronous Android prop updates for unmounted view tags
-  // instead of throwing and printing a full stack trace on the UI thread per tag per event.
-  // Remove when the installed Reanimated is >= 4.7.1.
+  // Avoid serializing UI-thread events that have no worklet listener.
   {
     nodeModulesPath: "node_modules/react-native-reanimated",
     patchPrefix: "react-native-reanimated+",

@@ -41,7 +41,8 @@
             "buildToolsVersion": "37.0.0"
           }
         }
-      ]
+      ],
+      "../with-compile-sdk-minor"
     ]
   }
 }

@@ -1,8 +1,8 @@
 diff --git a/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-dev.js b/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-dev.js
-index daab0e3..d3a629c 100644
+index 615eb91..e0dde01 100644
 --- a/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-dev.js
 +++ b/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-dev.js
-@@ -16214,12 +16214,21 @@ __DEV__ &&
+@@ -17573,12 +17573,21 @@ __DEV__ &&
            else if (
              "topTouchEnd" === topLevelType ||
              "topTouchCancel" === topLevelType
@@ -30,7 +30,7 @@ index daab0e3..d3a629c 100644
                for (
                  topLevelType = 0;
                  topLevelType < touchBank.length;
-@@ -16236,6 +16245,7 @@ __DEV__ &&
+@@ -17595,6 +17604,7 @@ __DEV__ &&
                (null != topLevelType && topLevelType.touchActive) ||
                  console.error("Cannot find single active touch.");
              }
@@ -38,7 +38,7 @@ index daab0e3..d3a629c 100644
          },
          touchHistory: touchHistory
        },
-@@ -16314,12 +16324,18 @@ __DEV__ &&
+@@ -17673,12 +17683,18 @@ __DEV__ &&
            nativeEvent,
            nativeEventTarget
          ) {
@@ -60,10 +60,10 @@ index daab0e3..d3a629c 100644
                return (
                  console.warn(
 diff --git a/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-prod.js b/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-prod.js
-index 2625bf6..3d85e32 100644
+index bf3cacd..d4b00c5 100644
 --- a/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-prod.js
 +++ b/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-prod.js
-@@ -546,12 +546,21 @@ var instrumentationCallback,
+@@ -587,12 +587,21 @@ var instrumentationCallback,
        else if (
          "topTouchEnd" === topLevelType ||
          "topTouchCancel" === topLevelType
@@ -91,7 +91,7 @@ index 2625bf6..3d85e32 100644
            for (
              topLevelType = 0;
              topLevelType < touchBank.length;
-@@ -564,6 +573,7 @@ var instrumentationCallback,
+@@ -605,6 +614,7 @@ var instrumentationCallback,
                touchHistory.indexOfSingleActiveTouch = topLevelType;
                break;
              }
@@ -99,7 +99,7 @@ index 2625bf6..3d85e32 100644
      },
      touchHistory: touchHistory
    };
-@@ -745,12 +755,18 @@ var ResponderEventPlugin = {
+@@ -786,12 +796,18 @@ var ResponderEventPlugin = {
        nativeEvent,
        nativeEventTarget
      ) {
@@ -121,10 +121,10 @@ index 2625bf6..3d85e32 100644
        ResponderTouchHistoryStore.recordTouchTrack(topLevelType, nativeEvent);
        if (
 diff --git a/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-profiling.js b/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-profiling.js
-index 544c754..4d5ec08 100644
+index 1934f48..3ed5c50 100644
 --- a/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-profiling.js
 +++ b/node_modules/react-native/Libraries/Renderer/implementations/ReactFabric-profiling.js
-@@ -611,12 +611,21 @@ var instrumentationCallback,
+@@ -654,12 +654,21 @@ var instrumentationCallback,
        else if (
          "topTouchEnd" === topLevelType ||
          "topTouchCancel" === topLevelType
@@ -152,7 +152,7 @@ index 544c754..4d5ec08 100644
            for (
              topLevelType = 0;
              topLevelType < touchBank.length;
-@@ -629,6 +638,7 @@ var instrumentationCallback,
+@@ -672,6 +681,7 @@ var instrumentationCallback,
                touchHistory.indexOfSingleActiveTouch = topLevelType;
                break;
              }
@@ -160,7 +160,7 @@ index 544c754..4d5ec08 100644
      },
      touchHistory: touchHistory
    };
-@@ -810,12 +820,18 @@ var ResponderEventPlugin = {
+@@ -853,12 +863,18 @@ var ResponderEventPlugin = {
        nativeEvent,
        nativeEventTarget
      ) {
@@ -181,12 +181,50 @@ index 544c754..4d5ec08 100644
          else return null;
        ResponderTouchHistoryStore.recordTouchTrack(topLevelType, nativeEvent);
        if (
+diff --git a/node_modules/react-native/ReactAndroid/build.gradle.kts b/node_modules/react-native/ReactAndroid/build.gradle.kts
+index 8942123..983ea25 100644
+--- a/node_modules/react-native/ReactAndroid/build.gradle.kts
++++ b/node_modules/react-native/ReactAndroid/build.gradle.kts
+@@ -45,7 +45,7 @@ extra["publishing_version"] = project.findProperty("VERSION_NAME")?.toString()!!
+ // This is the version of CMake we're requesting to the Android SDK to use.
+ // If missing it will be downloaded automatically. Only CMake versions shipped with the
+ // Android SDK are supported (you can find them listed in the SDK Manager of Android Studio).
+-val cmakeVersion = System.getenv("CMAKE_VERSION") ?: "3.30.5"
++val cmakeVersion = System.getenv("CMAKE_VERSION") ?: "4.1.2"
+ 
+ extra["cmake_version"] = cmakeVersion
+ 
+diff --git a/node_modules/react-native/gradle/libs.versions.toml b/node_modules/react-native/gradle/libs.versions.toml
+index 0bba908..630ef11 100644
+--- a/node_modules/react-native/gradle/libs.versions.toml
++++ b/node_modules/react-native/gradle/libs.versions.toml
+@@ -4,9 +4,9 @@ minSdk = "24"
+ targetSdk = "36"
+ compileSdk = "37"
+ buildTools = "37.0.0"
+-ndkVersion = "27.1.12297006"
++ndkVersion = "30.0.16248370"
+ # Dependencies versions
+-agp = "9.2.1"
++agp = "9.5.3"
+ androidx-annotation = "1.6.0"
+ androidx-appcompat = "1.7.0"
+ androidx-autofill = "1.3.0"
+@@ -30,7 +30,7 @@ javax-inject = "1"
+ jsc-android = "2026004.0.1"
+ jsr305 = "3.0.2"
+ junit = "4.13.2"
+-kotlin = "2.2.0"
++kotlin = "2.4.21"
+ ktfmt = "0.22.0"
+ mockito = "3.12.4"
+ mockito-kotlin = "3.2.0"
 diff --git a/node_modules/react-native/src/private/renderer/events/ReactNativeResponder.js b/node_modules/react-native/src/private/renderer/events/ReactNativeResponder.js
-index da29336..7167a2f 100644
+index 1323f08..9d6ddc2 100644
 --- a/node_modules/react-native/src/private/renderer/events/ReactNativeResponder.js
 +++ b/node_modules/react-native/src/private/renderer/events/ReactNativeResponder.js
-@@ -560,9 +560,13 @@ export function processResponderEvent(
- ): void {
+@@ -605,9 +605,13 @@ export function processResponderEvent(
+ 
    // Track touch count
    if (isStartish(topLevelType)) {
 -    trackedTouchCount += 1;
@@ -202,13 +240,13 @@ index da29336..7167a2f 100644
      } else {
        if (__DEV__) {
 diff --git a/node_modules/react-native/src/private/renderer/events/ResponderTouchHistoryStore.js b/node_modules/react-native/src/private/renderer/events/ResponderTouchHistoryStore.js
-index c0b4d12..b4aab95 100644
+index 19d06b9..cd33e9f 100644
 --- a/node_modules/react-native/src/private/renderer/events/ResponderTouchHistoryStore.js
 +++ b/node_modules/react-native/src/private/renderer/events/ResponderTouchHistoryStore.js
-@@ -234,7 +234,14 @@ const ResponderTouchHistoryStore = {
+@@ -243,7 +243,14 @@ const ResponderTouchHistoryStore = {
      } else if (isEndish(topLevelType)) {
        nativeEvent.changedTouches.forEach(recordTouchEnd);
-       touchHistory.numberActiveTouches = nativeEvent.touches.length;
+       touchHistory.numberActiveTouches = nativeEvent.touches?.length ?? 0;
 -      if (touchHistory.numberActiveTouches === 1) {
 +      if (touchHistory.numberActiveTouches === 0) {
 +        for (let i = 0; i < touchBank.length; i++) {
@@ -221,27 +259,3 @@ index c0b4d12..b4aab95 100644
          for (let i = 0; i < touchBank.length; i++) {
            const touchTrackToCheck = touchBank[i];
            if (touchTrackToCheck != null && touchTrackToCheck.touchActive) {
-diff --git a/node_modules/react-native/ReactAndroid/build.gradle.kts b/node_modules/react-native/ReactAndroid/build.gradle.kts
---- a/node_modules/react-native/ReactAndroid/build.gradle.kts
-+++ b/node_modules/react-native/ReactAndroid/build.gradle.kts
-@@ -49,7 +49,7 @@
- // This is the version of CMake we're requesting to the Android SDK to use.
- // If missing it will be downloaded automatically. Only CMake versions shipped with the
- // Android SDK are supported (you can find them listed in the SDK Manager of Android Studio).
--val cmakeVersion = System.getenv("CMAKE_VERSION") ?: "3.30.5"
-+val cmakeVersion = System.getenv("CMAKE_VERSION") ?: "4.1.2"
-
- extra["cmake_version"] = cmakeVersion
-
-diff --git a/node_modules/react-native/gradle/libs.versions.toml b/node_modules/react-native/gradle/libs.versions.toml
---- a/node_modules/react-native/gradle/libs.versions.toml
-+++ b/node_modules/react-native/gradle/libs.versions.toml
-@@ -4,7 +4,7 @@
- targetSdk = "36"
- compileSdk = "36"
- buildTools = "36.0.0"
--ndkVersion = "27.1.12297006"
-+ndkVersion = "30.0.16248370"
- # Dependencies versions
- agp = "8.12.0"
- androidx-annotation = "1.6.0"

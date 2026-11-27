@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultHostAppearance } from "@/hosts/appearance";
 import { i18n } from "@/i18n/i18next";
 import {
@@ -12,6 +12,10 @@ import type {
   HostProfile,
   RelayHostConnection,
 } from "@/types/host-connection";
+
+vi.mock("expo-file-system", () => ({}));
+vi.mock("expo-file-system/legacy", () => ({}));
+vi.mock("expo-sharing", () => ({}));
 
 const FILE_BYTES = new TextEncoder().encode("relay download payload");
 const FILE_PATH = "reports/données été.bin";

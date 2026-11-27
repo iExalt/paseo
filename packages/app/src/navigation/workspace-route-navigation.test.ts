@@ -7,19 +7,15 @@ import {
 } from "./workspace-route-navigation";
 
 function createNavigationRef(
-  rootState: unknown,
   options: { ready?: boolean; currentRoute?: { name: string; params?: object } } = {},
 ) {
-  const dispatch = vi.fn();
   let ready = options.ready ?? true;
   const readyListeners = new Set<() => void>();
   const navigation = {
     isReady: () => ready,
-    getRootState: () => rootState,
     getCurrentRoute: () => options.currentRoute,
-    dispatch,
     addListener: (event: string, listener: () => void) => {
-      if (event === "ready") readyListeners.add(listener);
+      if (event === "state") readyListeners.add(listener);
       return () => readyListeners.delete(listener);
     },
   };
@@ -30,7 +26,6 @@ function createNavigationRef(
 
   return {
     navigationRef,
-    dispatch,
     becomeReady() {
       ready = true;
       for (const listener of readyListeners) listener();
@@ -41,123 +36,22 @@ function createNavigationRef(
 describe("navigateToHostWorkspaceRoute", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    registerWorkspaceRouteNavigationRef(createNavigationRef({}).navigationRef)();
+    registerWorkspaceRouteNavigationRef(createNavigationRef().navigationRef)();
   });
 
-  it("falls back to route navigation when no host route is mounted yet", () => {
-    const { navigationRef, dispatch } = createNavigationRef({
-      key: "root-stack",
-      routeNames: ["index", "settings/[section]", "h/[serverId]"],
-      routes: [{ key: "settings-general", name: "settings/[section]" }],
-    });
+  it("preserves the full workspace href and its open intent", () => {
+    const { navigationRef } = createNavigationRef();
     registerWorkspaceRouteNavigationRef(navigationRef);
     const dismissTo = vi.fn();
+    const href = "/h/server-1/workspace/workspace-a?open=agent%3Aagent-1";
 
-    navigateToHostWorkspaceRoute("/h/server-1/workspace/workspace-a", { dismissTo });
+    navigateToHostWorkspaceRoute(href, { dismissTo });
 
-    expect(dispatch).not.toHaveBeenCalled();
-    expect(dismissTo).toHaveBeenCalledWith("/h/server-1/workspace/workspace-a");
-  });
-
-  it("pops to the mounted host route and targets the requested workspace", () => {
-    const { navigationRef, dispatch } = createNavigationRef({
-      key: "root-stack",
-      index: 1,
-      routeNames: ["index", "settings/[section]", "h/[serverId]"],
-      routes: [
-        {
-          key: "host-server-1",
-          name: "h/[serverId]",
-          params: { serverId: "server-1" },
-        },
-        { key: "settings-general", name: "settings/[section]" },
-      ],
-    });
-    registerWorkspaceRouteNavigationRef(navigationRef);
-    const dismissTo = vi.fn();
-
-    navigateToHostWorkspaceRoute("/h/server-1/workspace/workspace-a", { dismissTo });
-
-    expect(dismissTo).not.toHaveBeenCalled();
-    expect(dispatch).toHaveBeenCalledWith({
-      type: "POP_TO",
-      target: "root-stack",
-      payload: {
-        name: "h/[serverId]",
-        params: {
-          serverId: "server-1",
-          screen: "workspace/[workspaceId]/index",
-          params: {
-            serverId: "server-1",
-            workspaceId: "workspace-a",
-          },
-          pop: true,
-        },
-      },
-    });
-  });
-
-  it("uses route navigation when the mounted host route is already focused", () => {
-    const { navigationRef, dispatch } = createNavigationRef({
-      key: "root-stack",
-      index: 0,
-      routes: [
-        {
-          key: "host-server-1",
-          name: "h/[serverId]",
-          params: { serverId: "server-1" },
-        },
-      ],
-    });
-    registerWorkspaceRouteNavigationRef(navigationRef);
-    const dismissTo = vi.fn();
-
-    navigateToHostWorkspaceRoute("/h/server-1/workspace/workspace-b", { dismissTo });
-
-    expect(dispatch).not.toHaveBeenCalled();
-    expect(dismissTo).toHaveBeenCalledWith("/h/server-1/workspace/workspace-b");
-  });
-
-  it("preserves a workspace open intent in the POP_TO target", () => {
-    const { navigationRef, dispatch } = createNavigationRef({
-      key: "root-stack",
-      index: 1,
-      routes: [
-        { key: "host-server-1", name: "h/[serverId]" },
-        { key: "new", name: "new" },
-      ],
-    });
-    registerWorkspaceRouteNavigationRef(navigationRef);
-
-    navigateToHostWorkspaceRoute("/h/server-1/workspace/workspace-a?open=agent%3Aagent-1");
-
-    expect(dispatch).toHaveBeenCalledWith({
-      type: "POP_TO",
-      target: "root-stack",
-      payload: {
-        name: "h/[serverId]",
-        params: {
-          serverId: "server-1",
-          screen: "workspace/[workspaceId]/index",
-          params: {
-            serverId: "server-1",
-            workspaceId: "workspace-a",
-            open: "agent:agent-1",
-          },
-          pop: true,
-        },
-      },
-    });
+    expect(dismissTo).toHaveBeenCalledExactlyOnceWith(href);
   });
 
   it("waits for the root navigator before applying a route intent", () => {
-    const { navigationRef, becomeReady } = createNavigationRef(
-      {
-        key: "root-stack",
-        routes: [{ key: "launcher", name: "index" }],
-      },
-      { ready: false },
-    );
+    const { navigationRef, becomeReady } = createNavigationRef({ ready: false });
     registerWorkspaceRouteNavigationRef(navigationRef);
     const dismissTo = vi.fn();
 
@@ -175,7 +69,7 @@ describe("navigateToHostWorkspaceRoute", () => {
     navigateToHostWorkspaceRoute("/h/server-1/workspace/workspace-a", { dismissTo });
     expect(dismissTo).not.toHaveBeenCalled();
 
-    const root = createNavigationRef({}, { ready: false });
+    const root = createNavigationRef({ ready: false });
     const unregister = registerWorkspaceRouteNavigationRef(root.navigationRef);
     expect(dismissTo).not.toHaveBeenCalled();
     root.becomeReady();
@@ -184,7 +78,7 @@ describe("navigateToHostWorkspaceRoute", () => {
   });
 
   it("keeps only the latest route intent while the root navigator is unavailable", () => {
-    const { navigationRef, becomeReady } = createNavigationRef({}, { ready: false });
+    const { navigationRef, becomeReady } = createNavigationRef({ ready: false });
     registerWorkspaceRouteNavigationRef(navigationRef);
     const firstDismissTo = vi.fn();
     const latestDismissTo = vi.fn();
@@ -202,7 +96,7 @@ describe("navigateToHostWorkspaceRoute", () => {
   });
 
   it("preserves a pending route intent across root navigator re-registration", () => {
-    const first = createNavigationRef({}, { ready: false });
+    const first = createNavigationRef({ ready: false });
     const unregisterFirst = registerWorkspaceRouteNavigationRef(first.navigationRef);
     const dismissTo = vi.fn();
     navigateToHostWorkspaceRoute("/h/server-1/workspace/workspace-a", { dismissTo });
@@ -211,10 +105,7 @@ describe("navigateToHostWorkspaceRoute", () => {
     first.becomeReady();
     expect(dismissTo).not.toHaveBeenCalled();
 
-    const replacement = createNavigationRef({
-      key: "root-stack",
-      routes: [{ key: "launcher", name: "index" }],
-    });
+    const replacement = createNavigationRef();
     registerWorkspaceRouteNavigationRef(replacement.navigationRef);
 
     expect(dismissTo).toHaveBeenCalledWith("/h/server-1/workspace/workspace-a");
@@ -223,7 +114,7 @@ describe("navigateToHostWorkspaceRoute", () => {
 
 describe("getFocusedWorkspaceSelection", () => {
   function focus(currentRoute?: { name: string; params?: object }) {
-    registerWorkspaceRouteNavigationRef(createNavigationRef({}, { currentRoute }).navigationRef);
+    registerWorkspaceRouteNavigationRef(createNavigationRef({ currentRoute }).navigationRef);
   }
 
   it("returns the workspace on screen", () => {

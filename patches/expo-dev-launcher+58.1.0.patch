@@ -1,35 +1,36 @@
 diff --git a/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/build.gradle.kts b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/build.gradle.kts
+index 961966c..359a857 100644
 --- a/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/build.gradle.kts
 +++ b/node_modules/expo-dev-launcher/expo-dev-launcher-gradle-plugin/build.gradle.kts
-@@ -2,7 +2,7 @@
+@@ -2,7 +2,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
  import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
+ 
  plugins {
--  kotlin("jvm") version "2.1.20"
-+  kotlin("jvm") version "2.3.20"
+-  kotlin("jvm") version "2.2.21"
++  kotlin("jvm") version "2.4.21"
    id("java-gradle-plugin")
  }
-
-@@ -13,18 +13,18 @@
-
+ 
+@@ -13,18 +13,18 @@ repositories {
+ 
  dependencies {
    implementation(gradleApi())
 -  compileOnly("com.android.tools.build:gradle:8.5.0")
 +  compileOnly("com.android.tools.build:gradle:9.5.3")
    implementation("com.facebook.react:react-native-gradle-plugin")
  }
-
+ 
  java {
 -  sourceCompatibility = JavaVersion.VERSION_11
 -  targetCompatibility = JavaVersion.VERSION_11
 +  sourceCompatibility = JavaVersion.VERSION_17
 +  targetCompatibility = JavaVersion.VERSION_17
  }
-
+ 
  tasks.withType<KotlinCompile> {
    compilerOptions {
 -    jvmTarget.set(JvmTarget.JVM_11)
 +    jvmTarget.set(JvmTarget.JVM_17)
    }
  }
-
+ 

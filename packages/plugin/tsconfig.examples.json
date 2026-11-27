@@ -6,6 +6,8 @@
     "lib": ["ES2023"],
     "jsx": "react-jsx",
     "strict": true,
+    // Keep legacy React Native types until app code and dependencies migrate to Strict API.
+    "customConditions": ["react-native", "react-native-legacy-deep-imports"],
     "skipLibCheck": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
