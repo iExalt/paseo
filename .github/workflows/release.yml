@@ -568,7 +568,7 @@ jobs:
           set +o pipefail
           yes | "$sdkmanager" --licenses > /dev/null
           set -o pipefail
-          "$sdkmanager" --install "platform-tools" "platforms;android-37.0" "platforms;android-37.2" "build-tools;37.0.0"
+          "$sdkmanager" --install "platform-tools" "platforms;android-37.0" "platforms;android-37.2" "build-tools;36.0.0" "build-tools;37.0.0"
           bash scripts/runner-swap.sh enable
       - name: Install ccache
         timeout-minutes: 3

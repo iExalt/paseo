@@ -138,7 +138,6 @@ export default {
         backgroundColor: "#000000",
         foregroundImage: "./assets/images/android-icon-foreground.png",
       },
-      edgeToEdgeEnabled: true,
       predictiveBackGestureEnabled: false,
       softwareKeyboardLayoutMode: "resize",
       // Allow HTTP connections for local network hosts (required for release builds)
@@ -220,14 +219,13 @@ export default {
         "expo-build-properties",
         {
           ios: {
-            enableSceneSupport: true,
             deploymentTarget: "16.4",
           },
           android: {
             minSdkVersion: 29,
             compileSdkVersion: 37,
             buildToolsVersion: "37.0.0",
-            kotlinVersion: "2.3.20",
+            kotlinVersion: "2.4.21",
             // Allow HTTP connections for local network hosts in release builds
             usesCleartextTraffic: true,
             enableMinifyInReleaseBuilds: true,

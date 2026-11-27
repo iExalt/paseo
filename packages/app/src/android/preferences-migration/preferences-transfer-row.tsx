@@ -120,7 +120,7 @@ export function PreferencesTransferRow({
       });
       const name = `paseo-preferences-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
       file = new File(Paths.cache, name);
-      file.write(contents);
+      await file.write(contents);
       if (!(await Sharing.isAvailableAsync()))
         throw new Error(t("settings.about.preferenceTransfer.shareUnavailable"));
       await Sharing.shareAsync(file.uri, {

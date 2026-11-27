@@ -1,0 +1,121 @@
+diff --git a/node_modules/react-native-gesture-handler/lib/module/web/tools/PointerEventManager.js b/node_modules/react-native-gesture-handler/lib/module/web/tools/PointerEventManager.js
+index 7879b63..8868f06 100644
+--- a/node_modules/react-native-gesture-handler/lib/module/web/tools/PointerEventManager.js
++++ b/node_modules/react-native-gesture-handler/lib/module/web/tools/PointerEventManager.js
+@@ -24,9 +24,6 @@ export default class PointerEventManager extends EventManager {
+     }
+     const adaptedEvent = this.mapEvent(event, EventTypes.DOWN);
+     const target = event.target;
+-    if (!POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) && this.view.getAttribute('role') !== 'button') {
+-      target.setPointerCapture(adaptedEvent.pointerId);
+-    }
+     this.markAsInBounds(adaptedEvent.pointerId);
+     this.trackedPointers.add(adaptedEvent.pointerId);
+     if (++this.activePointersCounter > 1) {
+@@ -35,6 +32,16 @@ export default class PointerEventManager extends EventManager {
+     } else {
+       this.onPointerDown(adaptedEvent);
+     }
++
++    // Capture only a pointer the handler still tracks after seeing it. A handler that fails
++    // the pointer on down (a touch-only pan rejecting the mouse) resets, and a capture it kept
++    // would confine the browser's text selection to the pressed element.
++    if (
++      this.trackedPointers.has(adaptedEvent.pointerId) &&
++      !POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName)
++    ) {
++      target.setPointerCapture(adaptedEvent.pointerId);
++    }
+   };
+   pointerUpCallback = event => {
+     // When we call reset on gesture handlers, it also resets their event managers
+@@ -47,7 +54,14 @@ export default class PointerEventManager extends EventManager {
+     const adaptedEvent = this.mapEvent(event, EventTypes.UP);
+     const target = event.target;
+     if (!POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) && this.view.getAttribute('role') !== 'button') {
+-      target.releasePointerCapture(adaptedEvent.pointerId);
++      try {
++        if (target.hasPointerCapture(adaptedEvent.pointerId)) {
++          target.releasePointerCapture(adaptedEvent.pointerId);
++        }
++      } catch {
++        // Pointer capture is implicitly released after pointerup/pointercancel.
++        // Some browsers can report stale capture state during gesture teardown.
++      }
+     }
+     this.markAsOutOfBounds(adaptedEvent.pointerId);
+     this.trackedPointers.delete(adaptedEvent.pointerId);
+@@ -77,7 +91,7 @@ export default class PointerEventManager extends EventManager {
+     // incorporating it here seems stupid), so we just call it again here, every time
+     // pointer moves until it succeeds.
+     // God, I do love web development.
+-    if (!target?.hasPointerCapture(event.pointerId) && !POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) && this.view.getAttribute('role') !== 'button') {
++    if (this.trackedPointers.has(event.pointerId) && !target?.hasPointerCapture(event.pointerId) && !POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) && this.view.getAttribute('role') !== 'button') {
+       target.setPointerCapture(event.pointerId);
+     }
+     const inBounds = isPointerInBounds(this.view, {
+diff --git a/node_modules/react-native-gesture-handler/src/web/tools/PointerEventManager.ts b/node_modules/react-native-gesture-handler/src/web/tools/PointerEventManager.ts
+index 7c92891..fe443a3 100644
+--- a/node_modules/react-native-gesture-handler/src/web/tools/PointerEventManager.ts
++++ b/node_modules/react-native-gesture-handler/src/web/tools/PointerEventManager.ts
+@@ -35,13 +35,6 @@ export default class PointerEventManager extends EventManager<HTMLElement> {
+     const adaptedEvent: AdaptedEvent = this.mapEvent(event, EventTypes.DOWN);
+     const target = event.target as HTMLElement;
+ 
+-    if (
+-      !POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) &&
+-      this.view.getAttribute('role') !== 'button'
+-    ) {
+-      target.setPointerCapture(adaptedEvent.pointerId);
+-    }
+-
+     this.markAsInBounds(adaptedEvent.pointerId);
+     this.trackedPointers.add(adaptedEvent.pointerId);
+ 
+@@ -51,6 +44,17 @@ export default class PointerEventManager extends EventManager<HTMLElement> {
+     } else {
+       this.onPointerDown(adaptedEvent);
+     }
++
++    // Capture only a pointer the handler still tracks after seeing it. A handler that fails
++    // the pointer on down (a touch-only pan rejecting the mouse) resets, and a capture it kept
++    // would confine the browser's text selection to the pressed element.
++    if (
++      this.trackedPointers.has(adaptedEvent.pointerId) &&
++      !POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) &&
++      this.view.getAttribute('role') !== 'button'
++    ) {
++      target.setPointerCapture(adaptedEvent.pointerId);
++    }
+   };
+ 
+   private pointerUpCallback = (event: PointerEvent) => {
+@@ -65,11 +69,17 @@ export default class PointerEventManager extends EventManager<HTMLElement> {
+     const adaptedEvent: AdaptedEvent = this.mapEvent(event, EventTypes.UP);
+     const target = event.target as HTMLElement;
+ 
+-    if (
+-      !POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) &&
++    if (!POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) &&
+       this.view.getAttribute('role') !== 'button'
+     ) {
+-      target.releasePointerCapture(adaptedEvent.pointerId);
++      try {
++        if (target.hasPointerCapture(adaptedEvent.pointerId)) {
++          target.releasePointerCapture(adaptedEvent.pointerId);
++        }
++      } catch {
++        // Pointer capture is implicitly released after pointerup/pointercancel.
++        // Some browsers can report stale capture state during gesture teardown.
++      }
+     }
+ 
+     this.markAsOutOfBounds(adaptedEvent.pointerId);
+@@ -104,6 +114,7 @@ export default class PointerEventManager extends EventManager<HTMLElement> {
+     // pointer moves until it succeeds.
+     // God, I do love web development.
+     if (
++      this.trackedPointers.has(event.pointerId) &&
+       !target?.hasPointerCapture(event.pointerId) &&
+       !POINTER_CAPTURE_EXCLUDE_LIST.has(target.tagName) &&
+       this.view.getAttribute('role') !== 'button'

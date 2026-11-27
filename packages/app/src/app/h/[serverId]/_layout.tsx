@@ -19,6 +19,10 @@ const SCREEN_OWNED_APPEARANCE = ["workspace/[workspaceId]/index"] as const;
 
 const AGENT_SCREEN_OPTIONS = { gestureEnabled: false };
 
+function getWorkspaceDeckRouteId() {
+  return "workspace-deck";
+}
+
 export default function HostRouteLayout() {
   return <KnownHostRoute />;
 }
@@ -51,7 +55,11 @@ function KnownHostRoute() {
       screenOwnedAppearance={SCREEN_OWNED_APPEARANCE}
     >
       <Stack.Screen name="index" />
-      <Stack.Screen name="workspace/[workspaceId]/index" />
+      {/* WorkspaceDeck retains individual workspaces within this shared route. */}
+      <Stack.Screen
+        name="workspace/[workspaceId]/index"
+        dangerouslySingular={getWorkspaceDeckRouteId}
+      />
       <Stack.Screen name="agent/[agentId]" options={AGENT_SCREEN_OPTIONS} />
       <Stack.Screen name="sessions" />
       <Stack.Screen name="open-project" />

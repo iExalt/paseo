@@ -1,7 +1,8 @@
 diff --git a/node_modules/react-native-unistyles/android/build.gradle b/node_modules/react-native-unistyles/android/build.gradle
+index 85103f2..c81962d 100644
 --- a/node_modules/react-native-unistyles/android/build.gradle
 +++ b/node_modules/react-native-unistyles/android/build.gradle
-@@ -91,6 +91,7 @@
+@@ -91,6 +91,7 @@ if (isNewArchitectureEnabled()) {
  
  android {
      compileSdkVersion safeExtGet('compileSdkVersion', 35)
@@ -10,9 +11,10 @@ diff --git a/node_modules/react-native-unistyles/android/build.gradle b/node_mod
  
      defaultConfig {
 diff --git a/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles/withUnistyles.js b/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles/withUnistyles.js
+index f792ae1..f51c581 100644
 --- a/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles/withUnistyles.js
 +++ b/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles/withUnistyles.js
-@@ -21,6 +21,7 @@
+@@ -21,6 +21,7 @@ const withUnistyles = (Component, mappings) => {
      ...props
    }) => {
      const narrowedProps = props;
@@ -20,7 +22,7 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles
      const [classNames, animatedStyles] = (0, _getClassname.getClassName)(narrowedProps.style, true) ?? [];
      const contentContainerStyleClassNames = (0, _getClassname.getClassName)(narrowedProps.contentContainerStyle);
      const {
-@@ -34,10 +35,10 @@
+@@ -34,10 +35,10 @@ const withUnistyles = (Component, mappings) => {
      const {
        key: uniPropsKey,
        ...unistyleProps
@@ -34,9 +36,10 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles
          // Override default component styles with undefined values to reset them
          // animated styles can't be a class, so they stay inline
 diff --git a/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles/withUnistyles.native.js b/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles/withUnistyles.native.js
+index 72fe734..c50710b 100644
 --- a/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles/withUnistyles.native.js
 +++ b/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles/withUnistyles.native.js
-@@ -82,6 +82,7 @@
+@@ -82,6 +82,7 @@ const withUnistyles = (Component, mappings) => {
      ...props
    }) => {
      const narrowedProps = props;
@@ -44,7 +47,7 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles
      const NativeComponent = Component;
  
      // @ts-ignore we don't know the type of the component
-@@ -139,13 +140,13 @@
+@@ -135,13 +136,13 @@ const withUnistyles = (Component, mappings) => {
      const {
        key: uniPropsKey,
        ...unistyleProps
@@ -61,9 +64,10 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/core/withUnistyles
          style: styleSecrets.styles
        } : {}),
 diff --git a/node_modules/react-native-unistyles/lib/commonjs/web/registry.js b/node_modules/react-native-unistyles/lib/commonjs/web/registry.js
+index 900f276..c03af2b 100644
 --- a/node_modules/react-native-unistyles/lib/commonjs/web/registry.js
 +++ b/node_modules/react-native-unistyles/lib/commonjs/web/registry.js
-@@ -13,6 +13,17 @@
+@@ -13,6 +13,17 @@ class UnistylesRegistry {
    stylesheets = new Map();
    stylesCache = new Set();
    stylesCounter = new Map();
@@ -81,7 +85,7 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/web/registry.js b/
    disposeListenersMap = new Map();
    dependenciesMap = new Map();
    // without the Babel plugin, what the StyleSheet function itself read, without the reads of its dynamic functions
-@@ -119,29 +130,35 @@
+@@ -119,29 +130,35 @@ class UnistylesRegistry {
      };
    };
    connect = (ref, hash) => {
@@ -102,13 +106,13 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/web/registry.js b/
 -    const stylesCounter = this.stylesCounter.get(hash) ?? new Set();
 -    stylesCounter.delete(ref);
 -    if (stylesCounter.size === 0) {
--      // Safe to drop now: connect creates a new Set and the cleanup below only checks the DOM
+-      // Safe to drop now: connect creates a new Set, which the cleanup below checks
 -      this.stylesCounter.delete(hash);
 -
 -      // Move this to the end of the event loop so the element is removed from the DOM
 -      return Promise.resolve().then(() => {
--        // Check if element is still in the DOM
--        if (document.querySelector(`.${hash}`)) {
+-        // Keep the style while an element uses it, even one connected outside the DOM, eg. in a portal attached later
+-        if (this.stylesCounter.has(hash) || document.querySelector(`.${hash}`)) {
 -          return false;
 -        }
 -        this.css.remove(hash);
@@ -137,7 +141,7 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/web/registry.js b/
    };
    add = (value, forChild) => {
      const generatedHash = (0, _utils.generateHash)(value);
-@@ -164,6 +181,7 @@
+@@ -164,6 +181,7 @@ class UnistylesRegistry {
    };
    reset = () => {
      this.disposeListenersMap.forEach(dispose => dispose());
@@ -146,9 +150,10 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/web/registry.js b/
      this.stylesheets.clear();
      this.stylesCache.clear();
 diff --git a/node_modules/react-native-unistyles/lib/commonjs/web/runtime.js b/node_modules/react-native-unistyles/lib/commonjs/web/runtime.js
+index cec249f..6a60104 100644
 --- a/node_modules/react-native-unistyles/lib/commonjs/web/runtime.js
 +++ b/node_modules/react-native-unistyles/lib/commonjs/web/runtime.js
-@@ -35,10 +35,17 @@
+@@ -35,10 +35,17 @@ class UnistylesRuntime {
      return this.darkMedia;
    }
    get colorScheme() {
@@ -169,9 +174,10 @@ diff --git a/node_modules/react-native-unistyles/lib/commonjs/web/runtime.js b/n
        default:
          return _types.ColorScheme.Unspecified;
 diff --git a/node_modules/react-native-unistyles/lib/module/core/withUnistyles/withUnistyles.js b/node_modules/react-native-unistyles/lib/module/core/withUnistyles/withUnistyles.js
+index 266b795..0a6d6aa 100644
 --- a/node_modules/react-native-unistyles/lib/module/core/withUnistyles/withUnistyles.js
 +++ b/node_modules/react-native-unistyles/lib/module/core/withUnistyles/withUnistyles.js
-@@ -16,6 +16,7 @@
+@@ -16,6 +16,7 @@ export const withUnistyles = (Component, mappings) => {
      ...props
    }) => {
      const narrowedProps = props;
@@ -179,7 +185,7 @@ diff --git a/node_modules/react-native-unistyles/lib/module/core/withUnistyles/w
      const [classNames, animatedStyles] = getClassName(narrowedProps.style, true) ?? [];
      const contentContainerStyleClassNames = getClassName(narrowedProps.contentContainerStyle);
      const {
-@@ -29,10 +30,10 @@
+@@ -29,10 +30,10 @@ export const withUnistyles = (Component, mappings) => {
      const {
        key: uniPropsKey,
        ...unistyleProps
@@ -193,9 +199,10 @@ diff --git a/node_modules/react-native-unistyles/lib/module/core/withUnistyles/w
          // Override default component styles with undefined values to reset them
          // animated styles can't be a class, so they stay inline
 diff --git a/node_modules/react-native-unistyles/lib/module/core/withUnistyles/withUnistyles.native.js b/node_modules/react-native-unistyles/lib/module/core/withUnistyles/withUnistyles.native.js
+index 4542e3e..dae5ecc 100644
 --- a/node_modules/react-native-unistyles/lib/module/core/withUnistyles/withUnistyles.native.js
 +++ b/node_modules/react-native-unistyles/lib/module/core/withUnistyles/withUnistyles.native.js
-@@ -75,6 +75,7 @@
+@@ -75,6 +75,7 @@ export const withUnistyles = (Component, mappings) => {
      ...props
    }) => {
      const narrowedProps = props;
@@ -203,7 +210,7 @@ diff --git a/node_modules/react-native-unistyles/lib/module/core/withUnistyles/w
      const NativeComponent = Component;
  
      // @ts-ignore we don't know the type of the component
-@@ -132,13 +133,13 @@
+@@ -128,13 +129,13 @@ export const withUnistyles = (Component, mappings) => {
      const {
        key: uniPropsKey,
        ...unistyleProps
@@ -220,9 +227,10 @@ diff --git a/node_modules/react-native-unistyles/lib/module/core/withUnistyles/w
          style: styleSecrets.styles
        } : {}),
 diff --git a/node_modules/react-native-unistyles/lib/module/web/registry.js b/node_modules/react-native-unistyles/lib/module/web/registry.js
+index dabcc57..1aed296 100644
 --- a/node_modules/react-native-unistyles/lib/module/web/registry.js
 +++ b/node_modules/react-native-unistyles/lib/module/web/registry.js
-@@ -9,6 +9,17 @@
+@@ -9,6 +9,17 @@ export class UnistylesRegistry {
    stylesheets = new Map();
    stylesCache = new Set();
    stylesCounter = new Map();
@@ -240,7 +248,7 @@ diff --git a/node_modules/react-native-unistyles/lib/module/web/registry.js b/no
    disposeListenersMap = new Map();
    dependenciesMap = new Map();
    // without the Babel plugin, what the StyleSheet function itself read, without the reads of its dynamic functions
-@@ -115,29 +126,35 @@
+@@ -115,29 +126,35 @@ export class UnistylesRegistry {
      };
    };
    connect = (ref, hash) => {
@@ -261,13 +269,13 @@ diff --git a/node_modules/react-native-unistyles/lib/module/web/registry.js b/no
 -    const stylesCounter = this.stylesCounter.get(hash) ?? new Set();
 -    stylesCounter.delete(ref);
 -    if (stylesCounter.size === 0) {
--      // Safe to drop now: connect creates a new Set and the cleanup below only checks the DOM
+-      // Safe to drop now: connect creates a new Set, which the cleanup below checks
 -      this.stylesCounter.delete(hash);
 -
 -      // Move this to the end of the event loop so the element is removed from the DOM
 -      return Promise.resolve().then(() => {
--        // Check if element is still in the DOM
--        if (document.querySelector(`.${hash}`)) {
+-        // Keep the style while an element uses it, even one connected outside the DOM, eg. in a portal attached later
+-        if (this.stylesCounter.has(hash) || document.querySelector(`.${hash}`)) {
 -          return false;
 -        }
 -        this.css.remove(hash);
@@ -296,7 +304,7 @@ diff --git a/node_modules/react-native-unistyles/lib/module/web/registry.js b/no
    };
    add = (value, forChild) => {
      const generatedHash = generateHash(value);
-@@ -160,6 +177,7 @@
+@@ -160,6 +177,7 @@ export class UnistylesRegistry {
    };
    reset = () => {
      this.disposeListenersMap.forEach(dispose => dispose());
@@ -305,9 +313,10 @@ diff --git a/node_modules/react-native-unistyles/lib/module/web/registry.js b/no
      this.stylesheets.clear();
      this.stylesCache.clear();
 diff --git a/node_modules/react-native-unistyles/lib/module/web/runtime.js b/node_modules/react-native-unistyles/lib/module/web/runtime.js
+index 0e6fac4..2d06cfd 100644
 --- a/node_modules/react-native-unistyles/lib/module/web/runtime.js
 +++ b/node_modules/react-native-unistyles/lib/module/web/runtime.js
-@@ -31,10 +31,17 @@
+@@ -31,10 +31,17 @@ export class UnistylesRuntime {
      return this.darkMedia;
    }
    get colorScheme() {
@@ -328,9 +337,10 @@ diff --git a/node_modules/react-native-unistyles/lib/module/web/runtime.js b/nod
        default:
          return ColorScheme.Unspecified;
 diff --git a/node_modules/react-native-unistyles/src/core/withUnistyles/withUnistyles.native.tsx b/node_modules/react-native-unistyles/src/core/withUnistyles/withUnistyles.native.tsx
+index ae055ce..e487b58 100644
 --- a/node_modules/react-native-unistyles/src/core/withUnistyles/withUnistyles.native.tsx
 +++ b/node_modules/react-native-unistyles/src/core/withUnistyles/withUnistyles.native.tsx
-@@ -125,6 +125,7 @@
+@@ -125,6 +125,7 @@ export const withUnistyles = <TComponent, TMappings extends GenericComponentProp
  
      return ({ ref, ...props }: PropsWithUnistyles & { ref?: Ref<GenericComponentRef<TComponent>> }) => {
          const narrowedProps = props as PropsWithUnistyles & UnistyleStyles
@@ -338,7 +348,7 @@ diff --git a/node_modules/react-native-unistyles/src/core/withUnistyles/withUnis
          const NativeComponent = Component as ComponentType
  
          // @ts-ignore we don't know the type of the component
-@@ -187,14 +188,14 @@
+@@ -183,14 +184,14 @@ export const withUnistyles = <TComponent, TMappings extends GenericComponentProp
          }, [narrowedProps.style, narrowedProps.contentContainerStyle, scope])
  
          const { key: mappingsKey, ...mappingsProps } = mappings ? mappings(proxifiedTheme, proxifiedRuntime) : {}
@@ -357,9 +367,10 @@ diff --git a/node_modules/react-native-unistyles/src/core/withUnistyles/withUnis
                  ? {
                        style: styleSecrets.styles,
 diff --git a/node_modules/react-native-unistyles/src/core/withUnistyles/withUnistyles.tsx b/node_modules/react-native-unistyles/src/core/withUnistyles/withUnistyles.tsx
+index 8ac7f03..1091802 100644
 --- a/node_modules/react-native-unistyles/src/core/withUnistyles/withUnistyles.tsx
 +++ b/node_modules/react-native-unistyles/src/core/withUnistyles/withUnistyles.tsx
-@@ -28,13 +28,14 @@
+@@ -28,13 +28,14 @@ export const withUnistyles = <TComponent, TMappings extends GenericComponentProp
  
      return ({ ref, ...props }: PropsWithUnistyles & { ref?: Ref<GenericComponentRef<TComponent>> }) => {
          const narrowedProps = props as PropsWithUnistyles & UnistyleStyles
@@ -376,7 +387,7 @@ diff --git a/node_modules/react-native-unistyles/src/core/withUnistyles/withUnis
              : {}
  
          const emptyStyles = narrowedProps.style
-@@ -46,7 +47,7 @@
+@@ -46,7 +47,7 @@ export const withUnistyles = <TComponent, TMappings extends GenericComponentProp
              : undefined
  
          const combinedProps = {
@@ -386,9 +397,10 @@ diff --git a/node_modules/react-native-unistyles/src/core/withUnistyles/withUnis
                  ? {
                        // Override default component styles with undefined values to reset them
 diff --git a/node_modules/react-native-unistyles/src/web/registry.ts b/node_modules/react-native-unistyles/src/web/registry.ts
+index 27f8e85..66029f2 100644
 --- a/node_modules/react-native-unistyles/src/web/registry.ts
 +++ b/node_modules/react-native-unistyles/src/web/registry.ts
-@@ -14,7 +14,24 @@
+@@ -14,7 +14,24 @@ type StyleSheetFunction = (theme: UnistylesTheme, miniRuntime: UnistylesMiniRunt
  export class UnistylesRegistry {
      private readonly stylesheets = new Map<StyleSheetWithSuperPowers<StyleSheet>, StyleSheet>()
      private readonly stylesCache = new Set<string>()
@@ -414,16 +426,15 @@ diff --git a/node_modules/react-native-unistyles/src/web/registry.ts b/node_modu
      private readonly disposeListenersMap = new Map<object, VoidFunction>()
      private readonly dependenciesMap = new Map<StyleSheetWithSuperPowers<StyleSheet>, Set<UnistyleDependency>>()
      // without the Babel plugin, what the StyleSheet function itself read, without the reads of its dynamic functions
-@@ -155,36 +172,61 @@
+@@ -155,36 +172,61 @@ export class UnistylesRegistry {
      }
  
      connect = (ref: HTMLElement, hash: string) => {
 -        const stylesCounter = this.stylesCounter.get(hash) ?? new Set()
--
++        this.stylesCounter.set(hash, (this.stylesCounter.get(hash) ?? 0) + 1)
+ 
 -        stylesCounter.add(ref)
 -        this.stylesCounter.set(hash, stylesCounter)
-+        this.stylesCounter.set(hash, (this.stylesCounter.get(hash) ?? 0) + 1)
-+
 +        if (!this.finalizationRegistry) {
 +            return
 +        }
@@ -440,46 +451,39 @@ diff --git a/node_modules/react-native-unistyles/src/web/registry.ts b/node_modu
  
      remove = (ref: HTMLElement, hash: string) => {
 -        const stylesCounter = this.stylesCounter.get(hash) ?? new Set()
--
--        stylesCounter.delete(ref)
--
--        if (stylesCounter.size === 0) {
--            // Safe to drop now: connect creates a new Set and the cleanup below only checks the DOM
--            this.stylesCounter.delete(hash)
--
--            // Move this to the end of the event loop so the element is removed from the DOM
--            return Promise.resolve().then(() => {
--                // Check if element is still in the DOM
--                if (document.querySelector(`.${hash}`)) {
--                    return false
--                }
--
--                this.css.remove(hash)
--                this.stylesCache.delete(hash)
--
--                return true
--            })
--        }
--
--        return Promise.resolve(false)
 +        const token = this.finalizerTokens.get(ref)?.get(hash)?.pop()
-+
+ 
+-        stylesCounter.delete(ref)
 +        if (token) {
 +            this.finalizationRegistry?.unregister(token)
 +        }
-+
+ 
+-        if (stylesCounter.size === 0) {
+-            // Safe to drop now: connect creates a new Set, which the cleanup below checks
+-            this.stylesCounter.delete(hash)
 +        return this.decrementAndMaybeCleanup(hash)
 +    }
-+
+ 
+-            // Move this to the end of the event loop so the element is removed from the DOM
+-            return Promise.resolve().then(() => {
+-                // Keep the style while an element uses it, even one connected outside the DOM, eg. in a portal attached later
+-                if (this.stylesCounter.has(hash) || document.querySelector(`.${hash}`)) {
+-                    return false
+-                }
 +    private decrementAndMaybeCleanup = (hash: string): Promise<boolean> => {
 +        const next = (this.stylesCounter.get(hash) ?? 0) - 1
-+
+ 
+-                this.css.remove(hash)
+-                this.stylesCache.delete(hash)
 +        if (next > 0) {
 +            this.stylesCounter.set(hash, next)
-+
+ 
+-                return true
+-            })
 +            return Promise.resolve(false)
-+        }
-+
+         }
+ 
+-        return Promise.resolve(false)
 +        // Drop the empty bucket from the Map
 +        this.stylesCounter.delete(hash)
 +
@@ -503,7 +507,7 @@ diff --git a/node_modules/react-native-unistyles/src/web/registry.ts b/node_modu
      }
  
      add = (value: UnistylesValues, forChild?: boolean) => {
-@@ -207,6 +249,8 @@
+@@ -207,6 +249,8 @@ export class UnistylesRegistry {
  
      reset = () => {
          this.disposeListenersMap.forEach((dispose) => dispose())
@@ -513,9 +517,10 @@ diff --git a/node_modules/react-native-unistyles/src/web/registry.ts b/node_modu
          this.stylesheets.clear()
          this.stylesCache.clear()
 diff --git a/node_modules/react-native-unistyles/src/web/runtime.ts b/node_modules/react-native-unistyles/src/web/runtime.ts
+index 980b0c2..6e038db 100644
 --- a/node_modules/react-native-unistyles/src/web/runtime.ts
 +++ b/node_modules/react-native-unistyles/src/web/runtime.ts
-@@ -39,10 +39,18 @@
+@@ -39,10 +39,18 @@ export class UnistylesRuntime {
      }
  
      get colorScheme() {

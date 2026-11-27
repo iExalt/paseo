@@ -13,10 +13,13 @@ dependencies {
   if (findProject(':expo-notifications') != null) {
     implementation project(':expo-notifications')
   } else {
-    // SDK57 autolinks prebuilt modules from its local Maven repository.
+    // Expo autolinks prebuilt modules from its local Maven repository.
     def configFile = ["node", "--print", "require.resolve('expo-notifications/expo-module.config.json')"].execute(null, rootDir).text.trim()
-    def publication = new groovy.json.JsonSlurper().parse(new File(configFile)).android.publication
-    implementation "${publication.groupId}:${publication.artifactId}:${publication.version}"
+    def json = new groovy.json.JsonSlurper()
+    def nativeConfig = new File(configFile)
+    def publication = json.parse(nativeConfig).android.publication
+    def publicationVersion = publication.version ?: json.parse(new File(nativeConfig.parentFile, "package.json")).version
+    implementation "${publication.groupId}:${publication.artifactId}:${publicationVersion}"
   }
   testImplementation "junit:junit:4.13.2"
 }

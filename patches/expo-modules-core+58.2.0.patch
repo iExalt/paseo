@@ -1,63 +1,25 @@
-diff --git a/node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt b/node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
-index a5b971e..7ef1b59 100644
---- a/node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
-+++ b/node_modules/expo-modules-core/android/src/main/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistry.kt
-@@ -29,6 +29,7 @@ import expo.modules.kotlin.safeGetParcelable
- import expo.modules.kotlin.safeGetParcelableExtra
- import java.io.Serializable
- import java.util.Random
-+import java.util.concurrent.CountDownLatch
+diff --git a/node_modules/expo-modules-core/android/build.gradle b/node_modules/expo-modules-core/android/build.gradle
+index 0718a1e..0f4108d 100644
+--- a/node_modules/expo-modules-core/android/build.gradle
++++ b/node_modules/expo-modules-core/android/build.gradle
+@@ -97,7 +97,7 @@ if (workletsProject != null) {
  
- private const val TAG = "ActivityResultRegistry"
+ def reactNativeWorkletsRootDir = workletsProject?.projectDir?.parentFile
  
-@@ -222,6 +223,7 @@ class AppContextActivityResultRegistry(
-     return object : AppContextActivityResultLauncher<I, O>() {
-       override fun launch(input: I, callback: ActivityResultCallback<O>) {
-         val requestCode = keyToRequestCode[key]
-+          ?: reregister(key, contract, fallbackCallback)
-           ?: throw IllegalStateException("Attempting to launch an unregistered ActivityResultLauncher with contract $contract and input $input. You must ensure the ActivityResultLauncher is registered before calling launch()")
+-def expoModulesV2Version = "0.3.0"
++def expoModulesV2Version = "0.3.1"
  
-         keyToCallbacksAndContract[key] = CallbacksAndContract(fallbackCallback, callback, contract)
-@@ -240,6 +242,39 @@ class AppContextActivityResultRegistry(
-     }
+ configurations {
+   // Artifact-only: the C++ sources, not something to put on any classpath.
+@@ -322,7 +322,7 @@ dependencies {
+     implementation workletsProject
    }
  
-+  /**
-+   * A registration is bound to one Activity's lifecycle and dropped by its ON_DESTROY,
-+   * while launchers outlive the Activity inside the AppContext. Registers [key] again
-+   * against the live Activity and returns its request code. register() adds a lifecycle
-+   * observer, which androidx requires on the main thread; launch() runs on the module's
-+   * IO dispatcher, so the call is marshalled there.
-+   */
-+  private fun <I : Serializable, O> reregister(
-+    key: String,
-+    contract: AppContextActivityResultContract<I, O>,
-+    fallbackCallback: AppContextActivityResultFallbackCallback<I, O>
-+  ): Int? {
-+    val liveActivity = activity
-+    if (Looper.myLooper() == Looper.getMainLooper()) {
-+      register(key, liveActivity, contract, fallbackCallback)
-+    } else {
-+      val registered = CountDownLatch(1)
-+      var failure: Throwable? = null
-+      Handler(Looper.getMainLooper()).post {
-+        try {
-+          register(key, liveActivity, contract, fallbackCallback)
-+        } catch (e: Throwable) {
-+          failure = e
-+        } finally {
-+          registered.countDown()
-+        }
-+      }
-+      registered.await()
-+      failure?.let { throw it }
-+    }
-+    return keyToRequestCode[key]
-+  }
-+
-   /**
-    * Persist the state of the registry.
-    */
+-  implementation("io.github.expo.pika:pika-api:1.1.0")
++  implementation("io.github.expo.pika:pika-api:1.1.2")
+ 
+   implementation("io.github.expo.kolibri:kolibri-android")
+   api("io.github.expo:expo-modules-v2-react:${expoModulesV2Version}")
 diff --git a/node_modules/expo-modules-core/android/src/test/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistryRecreationTest.kt b/node_modules/expo-modules-core/android/src/test/java/expo/modules/kotlin/activityresult/AppContextActivityResultRegistryRecreationTest.kt
 new file mode 100644
 index 0000000..89a8eb1
@@ -143,58 +105,50 @@ index 0000000..89a8eb1
 +  }
 +}
 diff --git a/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts b/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
+index d69284b..377e247 100644
 --- a/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
 +++ b/node_modules/expo-modules-core/expo-module-gradle-plugin/build.gradle.kts
-@@ -3,7 +3,7 @@
+@@ -3,7 +3,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
  import org.jetbrains.kotlin.gradle.tasks.KotlinCompile
-
+ 
  plugins {
--  kotlin("jvm") version "2.1.20"
-+  kotlin("jvm") version "2.3.20"
+-  kotlin("jvm") version "2.2.21"
++  kotlin("jvm") version "2.4.21"
    id("java-gradle-plugin")
  }
-
-@@ -29,7 +29,7 @@
-
+ 
+@@ -29,11 +29,11 @@ val isExpoAutolinkingSettingsPluginAvailable = expoAutolinkingSettingsPlugin ==
+ 
  dependencies {
    implementation(gradleApi())
--  compileOnly("com.android.tools.build:gradle:8.5.0")
+-  compileOnly("com.android.tools.build:gradle:9.2.1")
 +  compileOnly("com.android.tools.build:gradle:9.5.3")
    implementation("com.facebook.react:react-native-gradle-plugin")
    implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.6.3")
-   implementation("io.github.lukmccall.pika:pika-gradle:0.3.2")
-@@ -43,8 +43,8 @@
+-  implementation("io.github.expo.pika:pika-gradle:1.1.0")
+-  implementation("io.github.expo:expo-modules-v2-gradle-plugin:0.3.0")
++  implementation("io.github.expo.pika:pika-gradle:1.1.2")
++  implementation("io.github.expo:expo-modules-v2-gradle-plugin:0.3.1")
+ 
+   if (isExpoAutolinkingSettingsPluginAvailable) {
+     implementation("expo.modules:expo-autolinking-plugin-shared")
+@@ -44,8 +44,8 @@ dependencies {
  }
-
+ 
  java {
 -  sourceCompatibility = JavaVersion.VERSION_11
 -  targetCompatibility = JavaVersion.VERSION_11
 +  sourceCompatibility = JavaVersion.VERSION_17
 +  targetCompatibility = JavaVersion.VERSION_17
-
+ 
    sourceSets {
      val path = if (isExpoAutolinkingSettingsPluginAvailable) {
-@@ -58,7 +58,7 @@
-
+@@ -59,7 +59,7 @@ java {
+ 
  tasks.withType<KotlinCompile> {
    compilerOptions {
 -    jvmTarget.set(JvmTarget.JVM_11)
 +    jvmTarget.set(JvmTarget.JVM_17)
    }
  }
-
-diff --git a/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/android/AndroidLibraryExtension.kt b/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/android/AndroidLibraryExtension.kt
-index 9bfae8d79..69c35d0d5 100644
---- a/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/android/AndroidLibraryExtension.kt
-+++ b/node_modules/expo-modules-core/expo-module-gradle-plugin/src/main/kotlin/expo/modules/plugin/android/AndroidLibraryExtension.kt
-@@ -6,8 +6,9 @@ internal fun LibraryExtension.applySDKVersions(compileSdk: Int, minSdk: Int, tar
-   this.compileSdk = compileSdk
-   defaultConfig {
-     this@defaultConfig.minSdk = minSdk
--    this@defaultConfig.targetSdk = targetSdk
-   }
-+  testOptions.targetSdk = targetSdk
-+  lint.targetSdk = targetSdk
- }
  
- internal fun LibraryExtension.applyLinterOptions() {

@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { View } from "react-native";
-import { ScrollView, type ScrollView as ScrollViewType } from "react-native-gesture-handler";
+import {
+  LegacyScrollView as ScrollView,
+  type LegacyScrollView as ScrollViewType,
+} from "react-native-gesture-handler";
 import {
   createAnimatedComponent,
   useAnimatedScrollHandler,

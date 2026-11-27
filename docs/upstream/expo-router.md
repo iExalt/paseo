@@ -74,15 +74,12 @@ is authoritative. Callers should not choose between separate route and tab
 navigation APIs.
 
 The root stack owns `h/[serverId]`; the host stack owns
-`workspace/[workspaceId]/index`. Repeated global-route hops must `POP_TO` the
-root host route and pass the nested workspace screen when a host route is
-already mounted, or Expo Router can append extra hidden workspace deck entries.
-The workspace navigation helper inspects the mounted navigation state to make
-that decision; if no host route is mounted yet, it falls back to ordinary route
-navigation. Both paths wait for the root navigation container to be ready. The
-workspace navigation owner keeps the latest pending intent across ref
-re-registration and applies it on the container's `ready` event; routes must not
-add their own readiness retries.
+`workspace/[workspaceId]/index`. Pass the full workspace href to Expo Router's
+`dismissTo`. It resolves the nested destination and pops through the mounted
+stacks. A raw action with nested `screen` and `params` introduces literal route
+params in SDK 58 and can leave extra workspace deck entries. The navigation
+owner keeps the latest pending intent across ref re-registration and applies
+it when the root container is ready.
 
 Those hidden entries are not harmless: composer floating panels can measure
 against the wrong deck and disappear offscreen. Follow the

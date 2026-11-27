@@ -34,7 +34,7 @@ export function createExpoAttachmentFileSystem(): AttachmentFileSystem {
       await FileSystem.makeDirectoryAsync(uri, options);
     },
     async writeBytes(uri, bytes) {
-      new File(uri).write(bytes);
+      await new File(uri).write(bytes);
     },
     async copy(input) {
       await FileSystem.copyAsync(input);

@@ -279,3 +279,123 @@ index 0c854d6..7dc2828 100644
    }
    return props.transform as TransformsStyle['transform'];
  }
+diff --git a/node_modules/react-native-svg/lib/commonjs/lib/resolveAssetUri.web.js b/node_modules/react-native-svg/lib/commonjs/lib/resolveAssetUri.web.js
+index 2fca49c..dd1d542 100644
+--- a/node_modules/react-native-svg/lib/commonjs/lib/resolveAssetUri.web.js
++++ b/node_modules/react-native-svg/lib/commonjs/lib/resolveAssetUri.web.js
+@@ -5,8 +5,21 @@ Object.defineProperty(exports, "__esModule", {
+ });
+ exports.resolveAssetUri = resolveAssetUri;
+ var _reactNative = require("react-native");
+-var _registry = require("@react-native/assets-registry/registry");
+-// @ts-expect-error react-native/assets-registry doesn't export types.
++
++function getAssetByID(assetId) {
++  // React Native Web 0.21.4+ exports the registry. Older versions use the package below.
++  const publicAssetRegistry = _reactNative.AssetRegistry;
++  if (publicAssetRegistry != null) {
++    return publicAssetRegistry.getAssetByID(assetId);
++  }
++  let registry;
++  try {
++    registry = require('@react-native/assets-registry/registry');
++  } catch {
++    // Not available in this bundle.
++  }
++  return registry?.getAssetByID(assetId);
++}
+ 
+ const svgDataUriPattern = /^(data:image\/svg\+xml;utf8,)(.*)/;
+ 
+@@ -15,7 +28,7 @@ function resolveAssetUri(source) {
+   let src = {};
+   if (typeof source === 'number') {
+     // get the URI from the packager
+-    const asset = (0, _registry.getAssetByID)(source);
++    const asset = getAssetByID(source);
+     if (asset == null) {
+       throw new Error(`Image: asset with ID "${source}" could not be found. Please check the image source or packager.`);
+     }
+diff --git a/node_modules/react-native-svg/lib/module/lib/resolveAssetUri.web.js b/node_modules/react-native-svg/lib/module/lib/resolveAssetUri.web.js
+index 939b783..9f7bcc2 100644
+--- a/node_modules/react-native-svg/lib/module/lib/resolveAssetUri.web.js
++++ b/node_modules/react-native-svg/lib/module/lib/resolveAssetUri.web.js
+@@ -1,6 +1,20 @@
++import * as ReactNative from 'react-native';
+ import { PixelRatio } from 'react-native';
+-// @ts-expect-error react-native/assets-registry doesn't export types.
+-import { getAssetByID } from '@react-native/assets-registry/registry';
++function getAssetByID(assetId) {
++  // React Native Web 0.21.4+ exports the registry. Older versions use the package below.
++  const publicAssetRegistry = ReactNative.AssetRegistry;
++  if (publicAssetRegistry != null) {
++    return publicAssetRegistry.getAssetByID(assetId);
++  }
++  let registry;
++  try {
++    registry = require('@react-native/assets-registry/registry');
++  } catch {
++    // Not available in this bundle.
++  }
++  return registry?.getAssetByID(assetId);
++}
++
+ const svgDataUriPattern = /^(data:image\/svg\+xml;utf8,)(.*)/;
+ 
+ // Based on that function: https://github.com/necolas/react-native-web/blob/54c14d64dabd175e8055e1dc92e9196c821f9b7d/packages/react-native-web/src/exports/Image/index.js#L118-L156
+diff --git a/node_modules/react-native-svg/src/lib/resolveAssetUri.web.ts b/node_modules/react-native-svg/src/lib/resolveAssetUri.web.ts
+index a4f0193..4d5f320 100644
+--- a/node_modules/react-native-svg/src/lib/resolveAssetUri.web.ts
++++ b/node_modules/react-native-svg/src/lib/resolveAssetUri.web.ts
+@@ -1,10 +1,9 @@
++import * as ReactNative from 'react-native';
+ import {
+   ImageResolvedAssetSource,
+   PixelRatio,
+   type ImageProps as RNImageProps,
+ } from 'react-native';
+-// @ts-expect-error react-native/assets-registry doesn't export types.
+-import { getAssetByID } from '@react-native/assets-registry/registry';
+ 
+ export type PackagerAsset = {
+   __packager_asset: boolean;
+@@ -18,6 +17,30 @@ export type PackagerAsset = {
+   type: string;
+ };
+ 
++type AssetRegistry = {
++  getAssetByID(assetId: number): PackagerAsset | undefined;
++};
++
++function getAssetByID(assetId: number): PackagerAsset | undefined {
++  // react-native-web 0.21.4+ exports the registry.
++  // Use a namespace import: older versions do not have this export, and a
++  // named import fails the build there.
++  const publicAssetRegistry = (
++    ReactNative as unknown as { AssetRegistry?: AssetRegistry }
++  ).AssetRegistry;
++  if (publicAssetRegistry != null) {
++    return publicAssetRegistry.getAssetByID(assetId);
++  }
++  // Older react-native-web: fallback to @react-native/assets-registry, as before.
++  let registry: AssetRegistry | undefined;
++  try {
++    registry = require('@react-native/assets-registry/registry');
++  } catch {
++    // Not available in this bundle.
++  }
++  return registry?.getAssetByID(assetId);
++}
++
+ const svgDataUriPattern = /^(data:image\/svg\+xml;utf8,)(.*)/;
+ 
+ // Based on that function: https://github.com/necolas/react-native-web/blob/54c14d64dabd175e8055e1dc92e9196c821f9b7d/packages/react-native-web/src/exports/Image/index.js#L118-L156
+@@ -27,7 +50,7 @@ export function resolveAssetUri(
+   let src: Partial<ImageResolvedAssetSource> = {};
+   if (typeof source === 'number') {
+     // get the URI from the packager
+-    const asset: PackagerAsset | null = getAssetByID(source);
++    const asset = getAssetByID(source);
+     if (asset == null) {
+       throw new Error(
+         `Image: asset with ID "${source}" could not be found. Please check the image source or packager.`

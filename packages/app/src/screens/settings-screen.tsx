@@ -7,7 +7,7 @@ import { useDaemonStatus } from "@/desktop/hooks/use-daemon-status";
 import { daemonUpgradeForHost } from "@/desktop/daemon/daemon-upgrade-status";
 import type { ComponentType, ReactNode } from "react";
 import { Alert, Pressable, ScrollView, View, type PressableStateCallbackType } from "react-native";
-import { useNavigation, useRouter } from "expo-router";
+import { useRouter } from "expo-router";
 import { useFocusEffect, usePreventRemove } from "expo-router/react-navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
@@ -1195,7 +1195,6 @@ interface SettingsBeforeLeaveGuard {
  * iOS can interactively dismiss the screen on a back swipe.
  */
 function useSettingsBeforeLeaveGuard() {
-  const navigation = useNavigation();
   const beforeLeaveRef = useRef<SettingsBeforeLeaveGuard | null>(null);
   const dirtyUnsubRef = useRef<(() => void) | null>(null);
   const [preventRemove, setPreventRemove] = useState(false);
@@ -1227,15 +1226,15 @@ function useSettingsBeforeLeaveGuard() {
     });
   }, []);
 
-  usePreventRemove(preventRemove, ({ data }) => {
+  usePreventRemove(preventRemove, ({ repeat }) => {
     const guard = beforeLeaveRef.current;
     if (!guard?.isDirty()) {
-      navigation.dispatch(data.action);
+      repeat();
       return;
     }
     const confirmAndLeave = async () => {
       if (await guard.confirmDiscard()) {
-        navigation.dispatch(data.action);
+        repeat();
       }
     };
     void confirmAndLeave();

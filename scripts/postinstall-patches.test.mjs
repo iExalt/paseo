@@ -215,6 +215,7 @@ function loadReactFabricDispatchEvent(bundleName, isDev) {
   };
 
   const privateInterface = {
+    fabricUIManager: nativeFabricUIManager,
     ReactNativeViewConfigRegistry: {
       get: () => ({}),
       customBubblingEventTypes: {
@@ -265,10 +266,10 @@ function loadReactFabricDispatchEvent(bundleName, isDev) {
     if (id === "scheduler") {
       return nodeRequire("scheduler");
     }
-    if (id === "react-native/Libraries/ReactPrivate/ReactNativePrivateInitializeCore") {
+    if (id === "react-native/setup-env") {
       return {};
     }
-    if (id === "react-native/Libraries/ReactPrivate/ReactNativePrivateInterface") {
+    if (id === "react-native/react-private-interface") {
       return privateInterface;
     }
     return nodeRequire(id);

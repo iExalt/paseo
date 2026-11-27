@@ -2,6 +2,8 @@
   "extends": "expo/tsconfig.base",
   "compilerOptions": {
     "strict": true,
+    // Keep legacy React Native types until app code and dependencies migrate to Strict API.
+    "customConditions": ["react-native", "react-native-legacy-deep-imports"],
     "paths": {
       "@/*": ["./src/*"]
     }

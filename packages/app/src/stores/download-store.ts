@@ -376,7 +376,7 @@ async function saveDownloadedBytes({
   }
   // Resolve and write in one tick so two downloads of the same name cannot pick the same path.
   const targetFile = resolveDownloadTargetFile(fileName);
-  targetFile.write(bytes);
+  targetFile.writeSync(bytes);
   return targetFile.uri;
 }
 

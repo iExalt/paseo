@@ -5,9 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const requireFromExpo = createRequire(require.resolve("expo/package.json"));
 const requireFromExpoCli = createRequire(requireFromExpo.resolve("@expo/cli/package.json"));
 const { getPrebuildConfigAsync } = requireFromExpoCli("@expo/prebuild-config");
-const { compileModsAsync } = requireFromExpoCli(
-  "@expo/config-plugins/build/plugins/mod-compiler.js",
-);
+const { compileModsAsync } = requireFromExpoCli("@expo/config-plugins");
 
 interface ManifestEntry {
   $: Record<string, string>;
@@ -91,6 +89,14 @@ it("allows all orientations on iPhone and iPad", async () => {
     ];
     expect(plist.UISupportedInterfaceOrientations).toEqual(orientations);
     expect(plist["UISupportedInterfaceOrientations~ipad"]).toEqual(orientations);
+    expect(
+      plist.UIApplicationSceneManifest.UISceneConfigurations.UIWindowSceneSessionRoleApplication,
+    ).toEqual([
+      {
+        UISceneConfigurationName: "Default Configuration",
+        UISceneDelegateClassName: "PaseoSceneDelegate",
+      },
+    ]);
   } finally {
     await rm(root, { recursive: true, force: true });
   }
@@ -391,13 +397,6 @@ describe("fork build platform boundary", () => {
 
 it("registers the hardware keyboard plugin once", () => {
   const pluginPath = "./modules/paseo-hardware-keyboard/app.plugin";
-  const plugin = require(pluginPath);
-  const { getDynamicConfig } = requireFromExpoCli("@expo/config/build/getConfig");
-  const { config } = getDynamicConfig(`${__dirname}/app.config.js`, {
-    projectRoot: __dirname,
-    config: {},
-  });
-  expect(
-    config.plugins.filter((entry: unknown) => entry === pluginPath || entry === plugin),
-  ).toHaveLength(1);
+  const { exp: config } = getConfig(__dirname);
+  expect(config.plugins.filter((entry: unknown) => entry === pluginPath)).toHaveLength(1);
 });

@@ -1,0 +1,73 @@
+diff --git a/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml b/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml
+index 65dd0b1..a6b783b 100644
+--- a/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml
++++ b/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml
+@@ -1,10 +1,10 @@
+ [versions]
+-agp = "9.2.1"
++agp = "9.5.3"
+ gson = "2.8.9"
+ guava = "31.0.1-jre"
+ javapoet = "1.13.0"
+ junit = "4.13.2"
+-kotlin = "2.2.0"
++kotlin = "2.4.21"
+ assertj = "3.25.1"
+ ktfmt = "0.22.0"
+ 
+diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
+index 1450a70..e378fa8 100644
+--- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
++++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
+@@ -55,18 +55,15 @@ dependencies {
+   testImplementation(project(":shared-testutil"))
+ }
+ 
+-// We intentionally don't build for Java 17 as users will see a cryptic bytecode version
+-// error first. Instead we produce a Java 11-compatible Gradle Plugin, so that AGP can print their
+-// nice message showing that JDK 11 (or 17) is required first
+-java { targetCompatibility = JavaVersion.VERSION_11 }
++// AGP exposes Java 17 variants.
++java { targetCompatibility = JavaVersion.VERSION_17 }
+ 
+ kotlin { jvmToolchain(17) }
+ 
+ tasks.withType<KotlinCompile>().configureEach {
+   compilerOptions {
+     apiVersion.set(KotlinVersion.KOTLIN_2_0)
+-    // See comment above on JDK 11 support
+-    jvmTarget.set(JvmTarget.JVM_11)
++    jvmTarget.set(JvmTarget.JVM_17)
+     allWarningsAsErrors.set(
+         project.properties["enableWarningsAsErrors"]?.toString()?.toBoolean() ?: false,
+     )
+diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
+index 890edb5..0ab054a 100644
+--- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
++++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
+@@ -8,6 +8,7 @@
+ package com.facebook.react
+ 
+ import com.android.build.api.variant.ApplicationAndroidComponentsExtension
++import com.android.build.gradle.BaseExtension
+ import com.android.build.api.variant.LibraryAndroidComponentsExtension
+ import com.android.build.gradle.internal.tasks.factory.dependsOn
+ import com.facebook.react.internal.PrivateReactExtension
+@@ -244,7 +245,7 @@ class ReactPlugin : Plugin<Project> {
+     if (isLibrary) {
+       project.extensions.getByType(LibraryAndroidComponentsExtension::class.java).finalizeDsl { ext
+         ->
+-        ext.sourceSets
++        project.extensions.getByType(BaseExtension::class.java).sourceSets
+             .getByName("main")
+             .java
+             .directories
+@@ -253,7 +254,7 @@ class ReactPlugin : Plugin<Project> {
+     } else {
+       project.extensions.getByType(ApplicationAndroidComponentsExtension::class.java).finalizeDsl {
+           ext ->
+-        ext.sourceSets
++        project.extensions.getByType(BaseExtension::class.java).sourceSets
+             .getByName("main")
+             .java
+             .directories
