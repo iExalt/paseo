@@ -36,7 +36,7 @@ check_source() {
   [[ "$(git rev-parse HEAD)" == "${SOURCE_SHA:?}" ]] || fail "Checkout differs from the source SHA."
   [[ -z "$(git status --porcelain)" ]] || fail "The checkout is not clean."
   [[ "$(jq -er .version package.json)" == "$VERSION" ]] || fail "package.json version differs."
-  [[ "$(nix --version)" == "nix (Nix) 2.34.7" ]] || fail "Expected Nix 2.34.7."
+  [[ "$(nix --version)" == "nix (Nix) 2.36.0" ]] || fail "Expected Nix 2.36.0."
 }
 
 build() {

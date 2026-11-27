@@ -540,6 +540,9 @@ ACP agents communicate over JSON-RPC 2.0 on stdio. Paseo spawns the agent proces
 
 Paseo also ships an in-app ACP provider catalog for common agents, including CodeWhale, Cursor, DeepAgents, DimCode, Gemini CLI, Hermes, Qwen Code, and Kimi Code. Most catalog entries create the same `extends: "acp"` provider config shown below. Goose, Hermes, and Hoplite activate their [bundled providers](plugins.md#built-in-plugins) instead. An existing `extends: "acp"` entry for goose or Hermes migrates to the bundled provider on load and keeps a custom command. Hermes agents saved with the old adapter resume with their mode translated (`plugins/hermes-provider/server/legacy-modes.ts`).
 
+Dirac supports Node.js 22.13 through 24.x. If the daemon uses a newer Node.js version, point
+Dirac's command at an npm launcher running under a supported Node.js release.
+
 ### Adding a generic ACP provider
 
 Set `extends: "acp"` and provide a `command`:

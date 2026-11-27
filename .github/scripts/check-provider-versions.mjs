@@ -10,9 +10,9 @@ const lock = JSON.parse(readFileSync(join(prefix, "package-lock.json"), "utf8"))
 const home = mkdtempSync(join(tmpdir(), "paseo-provider-versions-"));
 try {
   for (const [name, binary, expected] of [
-    ["@anthropic-ai/claude-code", "claude", "2.1.296 (Claude Code)"],
-    ["@openai/codex", "codex", "codex-cli 0.162.1"],
-    ["opencode-ai", "opencode", "1.18.35"],
+    ["@anthropic-ai/claude-code", "claude", "2.1.332 (Claude Code)"],
+    ["@openai/codex", "codex", "codex-cli 0.172.0"],
+    ["opencode-ai", "opencode", "1.19.6"],
   ]) {
     const entry = lock.packages[`node_modules/${name}`];
     assert.ok(entry.integrity && entry.resolved, `Missing locked integrity for ${name}`);

@@ -28,8 +28,8 @@
     "test:e2e:lifecycle": "npx tsx tests/e2e/agent-lifecycle.test.ts"
   },
   "dependencies": {
-    "@clack/core": "1.5.1",
-    "@clack/prompts": "^1.8.1",
+    "@clack/core": "1.6.0",
+    "@clack/prompts": "^1.9.0",
     "@getpaseo/client": "0.38.4",
     "@getpaseo/protocol": "0.38.4",
     "@getpaseo/server": "0.38.4",
@@ -37,16 +37,16 @@
     "commander": "^15.1.0",
     "mime-types": "^3.0.2",
     "tree-kill": "^1.2.2",
-    "ws": "^8.22.0",
+    "ws": "^8.23.0",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.2",
     "tsx": "^4.23.15",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
-    "vitest": "^5.0.3",
+    "vitest": "^5.1.2",
     "zx": "^8.8.5"
   }
 }

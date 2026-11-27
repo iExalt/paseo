@@ -7,8 +7,8 @@ const {
   withAppBuildGradle,
 } = require("expo/config-plugins");
 
-const distributionUrl = "https\\://services.gradle.org/distributions/gradle-9.8.2-bin.zip";
-const distributionSha256Sum = "21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607";
+const distributionUrl = "https\\://services.gradle.org/distributions/gradle-9.9.3-bin.zip";
+const distributionSha256Sum = "4f2135b741f272acc88c168a52202a0a63fceee0cd61ee753da79694cd2b1e4b";
 
 function configureGradleWrapper(source) {
   if (!/^distributionUrl=.+$/m.test(source)) {
@@ -25,7 +25,18 @@ function configureAndroidBuildGradle(source) {
   if (!dependency.test(source)) {
     throw new Error("Could not find the Android Gradle plugin dependency");
   }
-  return source.replace(dependency, "classpath('com.android.tools.build:gradle:9.2.1')");
+  return source.replace(dependency, "classpath('com.android.tools.build:gradle:9.5.3')");
+}
+
+function configureCompileSdk(source) {
+  const configured =
+    "compileSdk { version = release(rootProject.ext.compileSdkVersion) { minorApiLevel = 2 } }";
+  if (source.includes(configured)) return source;
+  const compileSdk = /^( +)compileSdk rootProject\.ext\.compileSdkVersion$/m;
+  if (!compileSdk.test(source)) {
+    throw new Error("Could not find the Android app's compile SDK configuration");
+  }
+  return source.replace(compileSdk, `$1${configured}`);
 }
 
 function configureAndroidAppBuildGradle(source) {
@@ -53,7 +64,7 @@ function configureHermesCommand(source) {
 function withAndroidGradle(config) {
   config = withAppBuildGradle(config, (modConfig) => {
     modConfig.modResults.contents = configureHermesCommand(
-      configureAndroidAppBuildGradle(modConfig.modResults.contents),
+      configureCompileSdk(configureAndroidAppBuildGradle(modConfig.modResults.contents)),
     );
     return modConfig;
   });
@@ -95,3 +106,4 @@ module.exports.configureGradleWrapper = configureGradleWrapper;
 module.exports.configureAndroidBuildGradle = configureAndroidBuildGradle;
 module.exports.configureAndroidAppBuildGradle = configureAndroidAppBuildGradle;
 module.exports.configureHermesCommand = configureHermesCommand;
+module.exports.configureCompileSdk = configureCompileSdk;

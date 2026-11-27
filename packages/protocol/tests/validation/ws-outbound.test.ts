@@ -20,7 +20,8 @@ const generatedWSOutboundPath = resolve(
 const require = createRequire(import.meta.url);
 
 async function compileInlineSchema(sourceSchema: string): Promise<GeneratedSchema> {
-  const scratchRoot = resolve(protocolRoot, "../../.tmp");
+  // Keep fixture imports in the protocol workspace when npm nests the compiler.
+  const scratchRoot = resolve(protocolRoot, ".tmp");
   await mkdir(scratchRoot, { recursive: true });
   const tempDir = await mkdtemp(join(scratchRoot, "paseo-zod-aot-"));
 

@@ -134,6 +134,12 @@ const patchedPackages = [
     patchPrefix: "react-native-svg+",
   },
   // Android's onShouldStartLoadWithRequest reports isTopFrame; see the browser pane.
+  // A default generic of undefined also collapses WebView's prop intersection to never.
+  {
+    nodeModulesPath: "packages/app/node_modules/react-native-webview",
+    patchPrefix: "react-native-webview+",
+    cwd: "packages/app",
+  },
   {
     nodeModulesPath: "node_modules/react-native-webview",
     patchPrefix: "react-native-webview+",

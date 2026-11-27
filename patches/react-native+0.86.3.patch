@@ -221,3 +221,27 @@ index c0b4d12..b4aab95 100644
          for (let i = 0; i < touchBank.length; i++) {
            const touchTrackToCheck = touchBank[i];
            if (touchTrackToCheck != null && touchTrackToCheck.touchActive) {
+diff --git a/node_modules/react-native/ReactAndroid/build.gradle.kts b/node_modules/react-native/ReactAndroid/build.gradle.kts
+--- a/node_modules/react-native/ReactAndroid/build.gradle.kts
++++ b/node_modules/react-native/ReactAndroid/build.gradle.kts
+@@ -49,7 +49,7 @@
+ // This is the version of CMake we're requesting to the Android SDK to use.
+ // If missing it will be downloaded automatically. Only CMake versions shipped with the
+ // Android SDK are supported (you can find them listed in the SDK Manager of Android Studio).
+-val cmakeVersion = System.getenv("CMAKE_VERSION") ?: "3.30.5"
++val cmakeVersion = System.getenv("CMAKE_VERSION") ?: "4.1.2"
+
+ extra["cmake_version"] = cmakeVersion
+
+diff --git a/node_modules/react-native/gradle/libs.versions.toml b/node_modules/react-native/gradle/libs.versions.toml
+--- a/node_modules/react-native/gradle/libs.versions.toml
++++ b/node_modules/react-native/gradle/libs.versions.toml
+@@ -4,7 +4,7 @@
+ targetSdk = "36"
+ compileSdk = "36"
+ buildTools = "36.0.0"
+-ndkVersion = "27.1.12297006"
++ndkVersion = "30.0.16248370"
+ # Dependencies versions
+ agp = "8.12.0"
+ androidx-annotation = "1.6.0"

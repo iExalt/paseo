@@ -12,7 +12,7 @@ function useStyles(theme: PluginSurfaceProps["theme"], compact: boolean) {
       content: {
         padding: compact ? 20 : 36,
         gap: 20,
-        width: "100%",
+        width: "100%" as const,
         maxWidth: 760,
         alignSelf: "center",
       },

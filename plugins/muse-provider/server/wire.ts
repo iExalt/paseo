@@ -1,7 +1,12 @@
 import { z } from "zod";
 
 export const fingerprint =
-  "sha256:e0e163db6ccf00dbe68402ce55d6319b3edc33c421f31e9583b587b2de8a118f";
+  "sha256:6bf518067b065a503ea7d4f081a44fc056b532cf4b362a1894024863b25fb2aa";
+export const supportedFingerprints = new Set([
+  fingerprint,
+  // Muse Code 1.4.1, covered by the recorded MSP compatibility fixtures.
+  "sha256:e0e163db6ccf00dbe68402ce55d6319b3edc33c421f31e9583b587b2de8a118f",
+]);
 export const effortSchema = z.enum([
   "none",
   "minimal",

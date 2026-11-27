@@ -44,10 +44,10 @@ The formula reserves three digits each for minor and patch. If either reaches `1
 
 ## Prerequisites (local dev)
 
-Local Android builds run on macOS (or Linux) and need the Android toolchain, pinned in `.tool-versions` (`java temurin-25.0.4+101.0.LTS`, `android-sdk 23.0`) and wired up by `mise.toml` (which derives `ANDROID_HOME` and the command-line tool paths from the `android-sdk` entry). With [mise](https://mise.jdx.dev):
+Local Android builds run on macOS (or Linux) and need the Android toolchain, pinned in `.tool-versions` (`java temurin-27.0.1`, `android-sdk 23.0`) and wired up by `mise.toml` (which derives `ANDROID_HOME` and the command-line tool paths from the `android-sdk` entry). With [mise](https://mise.jdx.dev):
 
 ```bash
-mise install        # Temurin Java 25 + Android command-line tools 23.0
+mise install        # Temurin Java 27 + Android command-line tools 23.0
 ```
 
 > **Pin a real `android-sdk` version, not `latest`.** The mise `android-sdk` plugin's `latest` has resolved to the ancient `1.0` bundle, which predates the `emulator` package. Version `23.0` ships Android CLI; `sdkmanager` is now a deprecated compatibility wrapper. Keep the `android-sdk` version in `.tool-versions` and `[tools]` in `mise.toml` synchronized; `mise.toml` derives its Android paths from `.tool-versions`.
@@ -57,8 +57,8 @@ mise install        # Temurin Java 25 + Android command-line tools 23.0
 ```bash
 android sdk install "platform-tools"
 android sdk install "emulator"
-android sdk install "platforms;android-36"
-android sdk install "build-tools;36.0.0"
+android sdk install "platforms;android-37.0" "platforms;android-37.2"
+android sdk install "build-tools;37.0.0" "ndk;30.0.16248370"
 android sdk install "system-images;android-36;google_apis;arm64-v8a"
 avdmanager create avd -n paseo -k "system-images;android-36;google_apis;arm64-v8a" -d pixel_7
 emulator @paseo     # start it; leave running
@@ -69,14 +69,14 @@ On an Intel Mac, use the `x86_64` system image:
 ```bash
 android sdk install "platform-tools"
 android sdk install "emulator"
-android sdk install "platforms;android-36"
-android sdk install "build-tools;36.0.0"
+android sdk install "platforms;android-37.0" "platforms;android-37.2"
+android sdk install "build-tools;37.0.0" "ndk;30.0.16248370"
 android sdk install "system-images;android-36;google_apis;x86_64"
 avdmanager create avd -n paseo -k "system-images;android-36;google_apis;x86_64" -d pixel_7
 emulator @paseo     # start it; leave running
 ```
 
-Gradle auto-fetches the platform/build-tools it needs once licenses are accepted, so adjust `android-36` only if it asks for a different level.
+The app compiles against API 37.2 and native libraries use the base API 37.0. The API 36 emulator image can still run the app. Gradle can fetch missing packages after you accept the SDK licenses.
 
 ## Local build + install
 

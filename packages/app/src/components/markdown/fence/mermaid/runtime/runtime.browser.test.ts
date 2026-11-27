@@ -232,6 +232,27 @@ describe("Mermaid sandbox runtime", () => {
     expect(result).toMatchObject({ type: "rendered", revision: 1, source });
   });
 
+  it("renders YAML frontmatter and strips active content from diagram labels", async () => {
+    const frame = await mountRuntime(undefined, { allowSameOrigin: true });
+    const source = [
+      "---",
+      "title: Quoted & parsed",
+      "---",
+      "flowchart TD",
+      '  A["Rendered <img src=x onerror=alert(1)>"] --> B[Next]',
+    ].join("\n");
+
+    expect(await render(frame, { revision: 1, source })).toMatchObject({
+      type: "rendered",
+      revision: 1,
+    });
+    const svg = frame.contentDocument?.querySelector("#diagram svg");
+    expect(svg?.textContent).toContain("Quoted & parsed");
+    expect(svg?.textContent).toContain("Rendered");
+    expect(svg?.querySelector("img")).not.toBeNull();
+    expect(svg?.querySelector("script, [onerror]")).toBeNull();
+  });
+
   it("still renders a flowchart edge id", async () => {
     const frame = await mountRuntime();
     const source = "flowchart LR\n  A[Start] e1@--> B[End]";
