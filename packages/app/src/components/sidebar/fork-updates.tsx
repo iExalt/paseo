@@ -73,7 +73,7 @@ export function SidebarForkUpdateButton({ Button }: SidebarUpdateControlProps) {
       testID="sidebar-fork-update"
       label={
         busy
-          ? t(message.key, message.params)
+          ? t(message.key, message.params ?? {})
           : t("desktop.updates.nix.updateTooltip", { version: formattedVersion })
       }
       icon={busy ? SpinningLoaderIcon : CircleArrowUp}

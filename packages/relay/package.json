@@ -41,7 +41,7 @@
     "@noble/hashes": "^2.4.0",
     "base64-js": "^1.5.1",
     "tweetnacl": "^1.0.3",
-    "ws": "^8.23.0"
+    "ws": "^8.23.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.11",

@@ -596,17 +596,20 @@ function OptionList<Value extends string>({
   testIDPrefix: string;
 }): ReactNode {
   const { t } = useTranslation();
-  return values.map((value) => (
-    <OptionItem
-      key={value}
-      value={value}
-      icon={icons[value]}
-      label={t(labelKeys[value])}
-      selected={value === selectedValue}
-      onSelect={onSelect}
-      testID={`${testIDPrefix}-${value}`}
-    />
-  ));
+  return values.map((value) => {
+    const labelKey: string = labelKeys[value];
+    return (
+      <OptionItem
+        key={value}
+        value={value}
+        icon={icons[value]}
+        label={t(labelKey)}
+        selected={value === selectedValue}
+        onSelect={onSelect}
+        testID={`${testIDPrefix}-${value}`}
+      />
+    );
+  });
 }
 
 /**

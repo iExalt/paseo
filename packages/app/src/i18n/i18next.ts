@@ -51,7 +51,6 @@ observeI18nInit(
     .use(bundledTranslations)
     .use(initReactI18next)
     .init({
-      compatibilityJSON: "v4",
       fallbackLng: "en",
       lng: "en",
       partialBundledLanguages: true,
