@@ -6,10 +6,12 @@
 // round caps and joins, centered to a 527-unit ink footprint). Lockups outline
 // Plus Jakarta Sans SemiBold to SVG paths so every file is self-contained.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadSync } from "opentype.js";
+
+const { Path, parse } = createRequire(import.meta.url)("opentype.js");
 
 const root = path.dirname(fileURLToPath(import.meta.url));
 const marksDir = path.join(root, "marks");
@@ -93,14 +95,25 @@ function renderLockupSvg({ font, markPath, markFactor, label, color }) {
   const baselineY = markCenter - fontSize / 2 + halfLeading + ascender;
 
   const textOriginX = LOCKUP_PAD + LOCKUP_INK + visibleGapEm * fontSize;
-  const textPath = font.getPath(label, textOriginX, baselineY, fontSize);
+  // The fixed Latin labels need only glyph outlines and pair kerning.
+  // This avoids contextual GSUB substitutions the font parser cannot shape.
+  const textPath = new Path();
+  const glyphs = Array.from(label, (character) => font.charToGlyph(character));
+  const fontScale = fontSize / font.unitsPerEm;
+  let glyphX = textOriginX;
+  for (const [index, glyph] of glyphs.entries()) {
+    textPath.extend(glyph.getPath(glyphX, baselineY, fontSize));
+    const next = glyphs[index + 1];
+    const kerning = next ? font.getKerningValue(glyph, next) : 0;
+    glyphX += ((glyph.advanceWidth ?? 0) + kerning) * fontScale;
+  }
   const bounds = textPath.getBoundingBox();
   const width = Math.ceil(bounds.x2 + LOCKUP_PAD);
 
   return [
     `<svg width="${width}" height="${LOCKUP_HEIGHT}" viewBox="0 0 ${width} ${LOCKUP_HEIGHT}" fill="none" xmlns="http://www.w3.org/2000/svg">`,
     `  <path d="${bakedMark}" stroke="${color}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" />`,
-    `  <path d="${textPath.toPathData(2)}" fill="${color}" />`,
+    `  <path d="${textPath.toPathData({ decimalPlaces: 2, optimize: false, flipY: false })}" fill="${color}" />`,
     "</svg>",
     "",
   ].join("\n");
@@ -110,7 +123,7 @@ function build() {
   mkdirSync(marksDir, { recursive: true });
   mkdirSync(lockupsDir, { recursive: true });
 
-  const font = loadSync(fontPath);
+  const font = parse(Uint8Array.from(readFileSync(fontPath)).buffer);
 
   const marks = [
     { slug: "paseo", d: PASEO_MARK_PATH },
