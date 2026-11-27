@@ -2,6 +2,8 @@
   lib,
   stdenv,
   buildNpmPackage,
+  callPackage,
+  buildNpm ? callPackage ./build-npm.nix { },
   fetchNpmDeps,
   runCommand,
   writeTextDir,
@@ -85,6 +87,12 @@ buildNpmPackage rec {
   };
 
   nodejs = nodejs_26;
+
+  # The npm config hook runs after patching and must use this build-only CLI.
+  prePatch = ''
+    export PATH="${buildNpm}/bin:$PATH"
+    npm --version
+  '';
 
   # npmConfigHook requires the cache's lockfile to equal the source's, so
   # this puts the full lockfile next to the shared registry cache.

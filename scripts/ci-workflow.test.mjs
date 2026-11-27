@@ -115,6 +115,19 @@ function filesUnder(relativeDirectory, predicate) {
     .sort();
 }
 
+test("npm lifecycle approvals cover the exact packages with install scripts", () => {
+  const { allowScripts } = JSON.parse(readFileSync(new URL("package.json", repoRoot), "utf8"));
+  const { packages } = JSON.parse(readFileSync(new URL("package-lock.json", repoRoot), "utf8"));
+  const pending = new Set();
+  for (const [path, entry] of Object.entries(packages)) {
+    const index = path.lastIndexOf("node_modules/");
+    if (index < 0 || !entry.hasInstallScript) continue;
+    const name = entry.name ?? path.slice(index + "node_modules/".length);
+    pending.add(`${name}@${entry.version}`);
+  }
+  assert.deepEqual(Object.keys(allowScripts).sort(), [...pending].sort());
+});
+
 test("published npm packages declare and ship the repository license", () => {
   const rootManifest = JSON.parse(readFileSync(new URL("package.json", repoRoot), "utf8"));
   assert.equal(
@@ -122,12 +135,13 @@ test("published npm packages declare and ship the repository license", () => {
     "node scripts/publish-release-packages.mjs",
   );
   const workspaceArgs = PUBLISH_WORKSPACES.map((name) => `--workspace=${name}`);
-  const packed = JSON.parse(
+  const packOutput = JSON.parse(
     execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json", ...workspaceArgs], {
       cwd: repoRoot,
       encoding: "utf8",
     }),
   );
+  const packed = Object.values(packOutput);
   const manifests = new Map(
     rootManifest.workspaces.map((workspace) => {
       const directory = new URL(`${workspace}/`, repoRoot);

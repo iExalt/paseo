@@ -68,15 +68,21 @@ export async function startNpmRegistry(packages: FixturePackage[]) {
       }
       prepared.push({ directory, manifest, pkg, index });
     }
-    // Pack all fixtures in one npm process instead of paying startup once per package.
-    const { stdout } = await execCommand(
+    // Pack all fixtures together. npm 12's JSON output can collapse versions with the same name.
+    await execCommand(
       "npm",
-      ["pack", "--ignore-scripts", "--json", ...prepared.map(({ directory }) => directory)],
-      { cwd: root },
+      ["pack", "--ignore-scripts", ...prepared.map(({ directory }) => directory)],
+      {
+        cwd: root,
+      },
     );
-    const packed: Array<{ filename: string }> = JSON.parse(stdout);
     for (const { manifest, pkg, index } of prepared) {
-      const artifact = await readFile(path.join(root, packed[index].filename));
+      const filename = `${manifest.name.replace(/^@/, "").replace("/", "-")}-${manifest.version}.tgz`;
+      const artifact = await readFile(path.join(root, filename)).catch((cause) => {
+        throw new Error(`npm pack did not create a readable fixture tarball: ${filename}`, {
+          cause,
+        });
+      });
       const artifactPath = `/artifacts/${index}.tgz`;
       artifacts.set(artifactPath, artifact);
       const published = {

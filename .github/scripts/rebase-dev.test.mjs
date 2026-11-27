@@ -2238,7 +2238,7 @@ export const planCommands = (selection) => [
     const run = (file, args, opts) => {
       calls.push([file, ...args]);
       if (file === "gh") return JSON.stringify(args[1].includes("/jobs") ? { jobs } : workflowRun);
-      if (file === "npm") {
+      if (file === "mise") {
         if (!format) throw new Error("format failed");
         return "";
       }
@@ -2254,7 +2254,7 @@ export const planCommands = (selection) => [
   };
   const { detail, calls } = await check();
   assert.match(detail, new RegExp(`^42 at ${merge}, tree ${tree}$`));
-  assert.ok(calls.some((args) => args.join(" ") === "npm run format:check"));
+  assert.ok(calls.some((args) => args.join(" ") === "mise run npm -- run format:check"));
   const otherTree = git(
     repositoryPath,
     "commit-tree",

@@ -483,7 +483,7 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
   const setup = steps.find((step) => step.name === "Configure pinned npm installation");
   assert.match(setup.run, /npm_config_cache=\$RUNNER_TEMP\/npm-cache/);
   assert.match(setup.run, /v26\.13\.1/);
-  assert.match(setup.run, /11\.20\.0/);
+  assert.match(setup.run, /packageManager/);
   assert.ok(!steps.some((step) => step.uses?.includes("upload-artifact")));
   const tools = steps.find((step) => step.uses === "./.github/actions/setup-ci-tools");
   assert.equal(tools.with.actionlint, "true");
@@ -500,4 +500,5 @@ test("workflow aggregate rejects every incomplete result without ineffective cac
   assert.match(activate.run, /mise link node@26\.13\.1/);
   assert.match(activate.run, /readlink -f/);
   assert.match(activate.run, /11\.20\.0/);
+  assert.ok(action.runs.steps.some((step) => step.uses === "./.github/actions/setup-build-npm"));
 });

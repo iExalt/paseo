@@ -18,6 +18,10 @@ RUN set -eux; \
 WORKDIR /tmp/paseo-src
 COPY . .
 
+RUN npm install --global --prefix /opt/paseo-build-npm --ignore-scripts --no-audit --no-fund \
+    "$(node -p 'require("./package.json").packageManager')"
+ENV PATH=/opt/paseo-build-npm/bin:$PATH
+
 RUN set -eux; \
     if [ -n "${PASEO_VERSION:-}" ]; then \
       test "$(node -p "require('./package.json').version")" = "${PASEO_VERSION}"; \
@@ -66,12 +70,18 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=source-pack /tmp/paseo-packs /tmp/paseo-packs
-RUN set -eux; \
+RUN --mount=type=bind,from=source-pack,source=/opt/paseo-build-npm,target=/tmp/paseo-build-npm \
+    set -eux; \
     if [ "$(dpkg --print-architecture)" = arm64 ]; then \
       apt-get update; \
       apt-get install -y --no-install-recommends g++ make python3; \
     fi; \
-    npm_config_nodedir=/usr/local npm install -g /tmp/paseo-packs/*.tgz; \
+    node_pty_version="$(tar -xOf /tmp/paseo-packs/getpaseo-server-*.tgz package/package.json \
+      | node -p 'const version = JSON.parse(require("node:fs").readFileSync(0, "utf8")).dependencies["node-pty"]; \
+        require("node:assert/strict").match(version, /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/, "node-pty must use an exact version"); \
+        version')"; \
+    npm_config_nodedir=/usr/local /tmp/paseo-build-npm/bin/npm install --global \
+      --allow-scripts="node-pty@$node_pty_version" /tmp/paseo-packs/*.tgz; \
     if [ "$(dpkg --print-architecture)" = arm64 ]; then \
       apt-get purge -y --auto-remove g++ make python3; \
       rm -rf /var/lib/apt/lists/*; \
@@ -81,7 +91,8 @@ RUN set -eux; \
     server_entry="$(npm root -g)/@getpaseo/server/dist/scripts/supervisor-entrypoint.js"; \
     test -f "$server_entry"; \
     printf '%s\n' "$server_entry" > /etc/paseo-server-entry; \
-    node --check "$server_entry"
+    node --check "$server_entry"; \
+    node -e 'require("node:module").createRequire(process.argv[1])("node-pty")' "$server_entry"
 
 RUN set -eux; \
     existing_group="$(getent group 1000 | cut -d: -f1 || true)"; \

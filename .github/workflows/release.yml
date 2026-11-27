@@ -172,6 +172,7 @@ jobs:
         with:
           node-version: "26.13.1"
           package-manager-cache: false
+      - uses: ./.github/actions/setup-build-npm
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
         with:
           install_url: https://releases.nixos.org/nix/nix-2.36.0/install
@@ -287,6 +288,7 @@ jobs:
         with:
           node-version: "26.13.1"
           package-manager-cache: false
+      - uses: ./.github/actions/setup-build-npm
       - uses: cachix/install-nix-action@382a9ed9481c7c1f94f68b72ef105b3417c73877 # v32.1.0
         with:
           install_url: https://releases.nixos.org/nix/nix-2.36.0/install
@@ -347,6 +349,7 @@ jobs:
           package-manager-cache: false
           registry-url: https://npm.pkg.github.com
           scope: "@boudra"
+      - uses: ./.github/actions/setup-build-npm
       - name: Install JavaScript dependencies
         env:
           NODE_AUTH_TOKEN: ${{ github.token }}
@@ -427,6 +430,7 @@ jobs:
           package-manager-cache: false
           registry-url: https://npm.pkg.github.com
           scope: "@boudra"
+      - uses: ./.github/actions/setup-build-npm
       # Restore only the cache entries the latest published release pinned, each
       # checked against its pinned sha256; anything else builds that cache cold.
       # Never fall back to routine CI's node_modules: any dev push writes those.
