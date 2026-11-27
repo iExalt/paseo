@@ -21,8 +21,8 @@ export interface ScheduleCreateOptions extends ScheduleCommandOptions {
   mode?: string;
   thinking?: string;
   isolation?: "local" | "worktree";
-  cwd?: string;
   archiveOnFinish?: boolean;
+  cwd?: string;
   maxRuns?: string;
   expiresIn?: string;
   runNow?: boolean;

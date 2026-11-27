@@ -1767,6 +1767,92 @@ test("waits for the daemon to acknowledge push token revocation", async () => {
   await revocation;
 });
 
+test.each([false, true])(
+  "negotiates browser host discovery and selection (supported=%s)",
+  async (supported) => {
+    const mock = createMockTransport();
+    const client = new DaemonClient({
+      url: "ws://test",
+      clientId: "browser-host-selection",
+      reconnect: { enabled: false },
+      transportFactory: () => mock.transport,
+    });
+    clients.push(client);
+    const connecting = client.connect();
+    mock.triggerOpen({
+      features: { browserCommandCli: true, browserCommandHostSelection: supported },
+    });
+    await connecting;
+
+    const browserHost = {
+      browserHostId: "a".repeat(64),
+      label: "Workspace · Window 2",
+      canOpenTabs: true,
+    };
+    const list = client.executeBrowserCommand({
+      command: { command: "list_tabs", args: {} },
+      workspaceId: "workspace-1",
+    });
+    const request = parseSentFrame(mock.sent.at(-1));
+    expect(request.browserHosts).toBe(supported ? true : undefined);
+    mock.triggerMessage(
+      wrapSessionMessage({
+        type: "browser.command.execute.response",
+        payload: {
+          requestId: request.requestId,
+          result: {
+            requestId: request.requestId,
+            ok: true,
+            result: { command: "list_tabs", tabs: [] },
+          },
+          context: supported ? { browserHosts: [browserHost] } : {},
+        },
+      }),
+    );
+    await expect(list).resolves.toMatchObject({
+      context: supported ? { browserHosts: [browserHost] } : {},
+    });
+
+    const selecting = client.executeBrowserCommand({
+      command: { command: "new_tab", args: {} },
+      workspaceId: "workspace-1",
+      browserHostId: browserHost.browserHostId,
+    });
+    if (!supported) {
+      await expect(selecting).rejects.toThrow("Update the Paseo host to select a browser host.");
+      expect(mock.sent).toHaveLength(1);
+      return;
+    }
+
+    const selection = parseSentFrame(mock.sent.at(-1));
+    expect(selection).toMatchObject({
+      browserHosts: true,
+      browserHostId: browserHost.browserHostId,
+    });
+    mock.triggerMessage(
+      wrapSessionMessage({
+        type: "browser.command.execute.response",
+        payload: {
+          requestId: selection.requestId,
+          result: {
+            requestId: selection.requestId,
+            ok: true,
+            result: {
+              command: "new_tab",
+              browserId: "11111111-1111-4111-8111-111111111111",
+              workspaceId: "workspace-1",
+              url: "about:blank",
+              browserHost,
+            },
+          },
+          context: {},
+        },
+      }),
+    );
+    await expect(selecting).resolves.toMatchObject({ result: { result: { browserHost } } });
+  },
+);
+
 test("registers a push token with or without notification preferences", async () => {
   const mock = createMockTransport();
   const client = new DaemonClient({
@@ -1804,6 +1890,15 @@ test("registers a push token with or without notification preferences", async ()
   expect(parseSentFrame(mock.sent.at(-1))).toEqual({
     type: "register_push_token",
     token: "ExponentPushToken[with-prefs]",
+    preferences,
+  });
+
+  const registrationId = "11111111-1111-4111-8111-111111111111";
+  client.registerPushToken("ExponentPushToken[android]", registrationId, preferences);
+  expect(parseSentFrame(mock.sent.at(-1))).toEqual({
+    type: "register_push_token",
+    token: "ExponentPushToken[android]",
+    androidLifecycleRegistrationId: registrationId,
     preferences,
   });
 });
@@ -9149,40 +9244,43 @@ test("agent orchestration options are rejected before sending to an older host",
   expect(transport.sent).toHaveLength(0);
 });
 
-test("send agent message forwards mode and notification and returns the resolved agent and disposition", async () => {
-  const transport = createMockTransport();
-  const client = new DaemonClient({
-    url: "ws://test",
-    clientId: "orchestration-send",
-    transportFactory: () => transport.transport,
-    reconnect: { enabled: false },
-  });
-  clients.push(client);
-  const connected = client.connect();
-  transport.triggerOpen({ features: { agentOrchestrationParity: true } });
-  await connected;
+test.each(["sendAgentMessage", "sendMessage"] as const)(
+  "forwards mode and notification and returns the resolved agent and disposition using %s",
+  async (send) => {
+    const transport = createMockTransport();
+    const client = new DaemonClient({
+      url: "ws://test",
+      clientId: "orchestration-send",
+      transportFactory: () => transport.transport,
+      reconnect: { enabled: false },
+    });
+    clients.push(client);
+    const connected = client.connect();
+    transport.triggerOpen({ features: { agentOrchestrationParity: true } });
+    await connected;
 
-  const sent = client.sendAgentMessage("thread-abc", "continue", {
-    sessionMode: "plan",
-    notifyOnFinish: false,
-  });
-  const request = parseSentFrame(transport.sent[0]);
-  expect(request).toMatchObject({ sessionMode: "plan", notifyOnFinish: false });
-  transport.triggerMessage(
-    wrapSessionMessage({
-      type: "send_agent_message_response",
-      payload: {
-        requestId: request.requestId,
-        agentId: "agent-1",
-        accepted: true,
-        error: null,
-        disposition: "out_of_band",
-      },
-    }),
-  );
-  // The daemon reports the Paseo ID it resolved the session ID to.
-  await expect(sent).resolves.toEqual({ agentId: "agent-1", disposition: "out_of_band" });
-});
+    const sent = client[send]("thread-abc", "continue", {
+      sessionMode: "plan",
+      notifyOnFinish: false,
+    });
+    const request = parseSentFrame(transport.sent[0]);
+    expect(request).toMatchObject({ sessionMode: "plan", notifyOnFinish: false });
+    transport.triggerMessage(
+      wrapSessionMessage({
+        type: "send_agent_message_response",
+        payload: {
+          requestId: request.requestId,
+          agentId: "agent-1",
+          accepted: true,
+          error: null,
+          disposition: "out_of_band",
+        },
+      }),
+    );
+    // The daemon reports the Paseo ID it resolved the session ID to.
+    await expect(sent).resolves.toEqual({ agentId: "agent-1", disposition: "out_of_band" });
+  },
+);
 
 test("creation lifecycle acknowledgement reaches the observer before the final response", async () => {
   const transport = createMockTransport();
@@ -9789,8 +9887,11 @@ describe("agent sender active-turn behaviors", () => {
     expect(transport.sent).toHaveLength(sentBefore);
   });
 
-  test("queue needs an agent sender", async () => {
-    const { client, transport } = await connect({ agentActiveTurnBehaviors: true });
+  test("queue needs an agent sender on modern hosts even if they support the legacy queue capability", async () => {
+    const { client, transport } = await connect({
+      agentActiveTurnBehaviors: true,
+      agentSendQueue: true,
+    });
     await expect(
       client.sendAgentMessage("recipient", "review", { activeTurnBehavior: "queue" }),
     ).rejects.toThrow('activeTurnBehavior "queue" needs an agent sender');
@@ -11060,6 +11161,35 @@ describe("provider options across daemon versions", () => {
       controls: [expect.objectContaining({ key: "service_tier" })],
     });
   });
+
+  test.each([
+    { config: { agentTools: { enabled: false } }, field: "agentTools", enabled: false },
+    {
+      config: { agentTools: { enabled: false }, mcp: { injectIntoAgents: true } },
+      field: "agentTools",
+      enabled: false,
+    },
+    { config: { mcp: { injectIntoAgents: true } }, field: "mcp", enabled: true },
+    { config: { mcp: { enabled: true } }, field: null, enabled: false },
+    { config: {}, field: null, enabled: false },
+  ])(
+    "reads tools config field $field from the host response",
+    async ({ config, field, enabled }) => {
+      // Fork v0.27.0 already shipped native tools without the CLI's daemonConfigEdit bit.
+      const { client, sentMessages, mock } = await connect({});
+      const reading = client.getDaemonConfig();
+      const [read] = sentMessages();
+      mock.triggerMessage(
+        wrapSessionMessage({
+          type: "get_daemon_config_response",
+          payload: { requestId: read.requestId, config },
+        }),
+      );
+      expect((await reading).config.agentTools.enabled).toBe(enabled);
+      expect(client.getAgentToolsConfigField()).toBe(field);
+      await client.close();
+    },
+  );
 
   test("a legacy daemon's profiles are read and saved by their options", async () => {
     const { client, sentMessages, mock } = await connect({});

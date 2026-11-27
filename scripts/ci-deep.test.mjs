@@ -281,12 +281,19 @@ test("deep entrypoint stops at a failed prerequisite or journey", () => {
   const commands = deepCommands("browser");
   assert.throws(() => deepCommands("real-provider"), /Unknown deep lane/);
   for (let failure = 0; failure < commands.length; failure++) {
-    let calls = 0;
+    const started = [];
+    const cleaned = [];
     assert.throws(
-      () => runDeep(commands, () => ({ status: calls++ === failure ? 1 : 0 })),
+      () =>
+        runDeep(
+          commands,
+          (_, __, { env }) => ({ status: started.push(env.CI_DEEP_OWNER) - 1 === failure ? 1 : 0 }),
+          (owner) => cleaned.push(owner),
+        ),
       /Deep command failed/,
     );
-    assert.equal(calls, failure + 1);
+    assert.equal(started.length, failure + 1);
+    assert.deepEqual(cleaned, started);
   }
 });
 

@@ -18,10 +18,12 @@ nav: 命令参考
 
 每一行都以 `paseo browser` 开头。方括号表示可选参数。
 
+如果有多个宿主可以打开标签页，请运行 `list-tabs --json`，从 `context.browserHosts` 中选择宿主 ID，再传给 `new-tab --browser-host <id>`。宿主断开连接后，请重新列出标签页。
+
 | 命令和参数                                              | 用途                                                                                  |
 | ------------------------------------------------------- | ------------------------------------------------------------------------------------- |
 | `list-tabs`                                             | 列出所选上下文中的标签页。                                                            |
-| `new-tab [url]`                                         | 在后台打开一个标签页并返回它的浏览器 ID。                                             |
+| `new-tab [url] [--browser-host <id>]`                   | 在后台打开一个标签页并返回它的浏览器 ID。                                             |
 | `close-tab <browser-id>`                                | 关闭标签页及其 webview。                                                              |
 | `resize <browser-id> <width> <height>`                  | 以像素为单位调整视口大小。                                                            |
 | `snapshot <browser-id>`                                 | 读取无障碍树和最新的元素引用。                                                        |

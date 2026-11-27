@@ -3142,6 +3142,7 @@ export const fr: TranslationResources = {
       },
       pairDevices: {
         rowTitle: "Associer un appareil",
+        rowHint: "Scannez un QR code ou copiez un lien pour connecter votre téléphone à cet hôte",
         keepAwake: {
           title: "Garder ce Mac éveillé pour le relais",
           hint: "Empêche la mise en veille sur secteur tant que le relais est activé, pour que les appareils distants puissent joindre ce Mac. Consomme plus d'énergie et chauffe davantage sur secteur.",

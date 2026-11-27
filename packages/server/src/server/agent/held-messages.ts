@@ -9,6 +9,12 @@ import type { AgentManager, AgentManagerEvent } from "./agent-manager.js";
 export type HeldMessageKind = "deferred" | "queued";
 export type HeldMessageOutcome = "dispatched" | "discarded";
 
+export interface HeldMessageAdmission {
+  outcome: Promise<HeldMessageOutcome>;
+  /** Withdraws now, or after an in-flight provider declines the dispatch. */
+  withdraw(): boolean;
+}
+
 /** A dispatch either settled (started or steered into a turn) or met a turn it cannot steer into. */
 export type HeldDispatchResult = { kind: "settled" } | { kind: "busy"; turnId: string };
 
@@ -25,6 +31,7 @@ export interface HoldMessageParams {
 interface HeldMessage extends HoldMessageParams {
   /** A deferred message leaves only after its turn ends without being canceled. */
   turnEnded: boolean;
+  withdrawRequested: boolean;
   settle: (outcome: HeldMessageOutcome) => void;
   outcome: Promise<HeldMessageOutcome>;
 }
@@ -49,13 +56,20 @@ class AgentHeldMessages {
     private readonly onEmpty: () => void,
   ) {}
 
-  hold(params: HoldMessageParams): Promise<HeldMessageOutcome> {
+  hold(params: HoldMessageParams): HeldMessageAdmission {
     let settle!: (outcome: HeldMessageOutcome) => void;
     const outcome = new Promise<HeldMessageOutcome>((resolve) => {
       settle = resolve;
     });
     // The turn may have ended while the provider was declining the steer.
-    this.entries.push({ ...params, turnEnded: !this.isTurnActive(params.turnId), settle, outcome });
+    const entry = {
+      ...params,
+      turnEnded: !this.isTurnActive(params.turnId),
+      withdrawRequested: false,
+      settle,
+      outcome,
+    };
+    this.entries.push(entry);
     this.unsubscribe ??= this.manager.subscribe((event) => this.handleEvent(event), {
       agentId: this.agentId,
       includeInternal: true,
@@ -71,7 +85,19 @@ class AgentHeldMessages {
       "agent.held_message.held",
     );
     this.pump();
-    return outcome;
+    return {
+      outcome,
+      withdraw: () => {
+        if (this.dispatching && this.entries[0] === entry) {
+          entry.withdrawRequested = true;
+          return false;
+        }
+        if (!this.entries.includes(entry)) return false;
+        this.remove(entry, "discarded");
+        this.pump();
+        return true;
+      },
+    };
   }
 
   outcomeOf(messageId: string): Promise<HeldMessageOutcome> | null {
@@ -146,7 +172,7 @@ class AgentHeldMessages {
     // Another turn took the agent first; stay at the head, now behind that turn.
     head.turnId = result.turnId;
     const ended = this.endedTurns.get(result.turnId);
-    if (ended === "canceled" && head.kind === "deferred") {
+    if (head.withdrawRequested || (ended === "canceled" && head.kind === "deferred")) {
       this.remove(head, "discarded");
     } else {
       head.turnEnded = ended !== undefined || !this.isTurnActive(result.turnId);
@@ -155,7 +181,10 @@ class AgentHeldMessages {
 
   private isTurnActive(turnId: string | null): boolean {
     const agent = this.manager.getAgent(this.agentId);
-    return agent?.activeTurnId === turnId || agent?.activeForegroundTurnId === turnId;
+    return (
+      turnId !== null &&
+      (agent?.activeTurnId === turnId || agent?.activeForegroundTurnId === turnId)
+    );
   }
 
   private discard(predicate: (entry: HeldMessage) => boolean, reason: string): void {
@@ -199,7 +228,7 @@ export function holdMessage(
   agentId: string,
   params: HoldMessageParams,
   logger: Logger,
-): Promise<HeldMessageOutcome> {
+): HeldMessageAdmission {
   const agents = agentsFor(manager);
   let held = agents.get(agentId);
   if (!held) {

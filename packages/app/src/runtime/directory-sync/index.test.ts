@@ -1830,7 +1830,7 @@ async function createDamagedLegacyProjectDirectory(serverId: string, renameSeq: 
       await reopened.flush();
       const restarted = reopen();
       restarted.setHosts([serverId]);
-      return [...(await restarted.readDirectory(serverId)).projects.keys()].sort();
+      return [...((await restarted.readDirectory(serverId))?.projects.keys() ?? [])].sort();
     },
     close: async () => {
       directory.dispose();

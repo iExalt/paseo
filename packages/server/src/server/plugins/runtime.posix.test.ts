@@ -334,6 +334,7 @@ export default function contribute(server) {
       await runtime.stopAll();
     }
   });
+
   it.each([
     { specifier: "@getpaseo/plugin", moduleDirectory: "shared" },
     { specifier: "@getpaseo/plugin", moduleDirectory: "server" },

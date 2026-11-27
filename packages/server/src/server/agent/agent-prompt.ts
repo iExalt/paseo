@@ -72,7 +72,7 @@ export interface StartAgentRunOptions {
 
 /**
  * "deferred" is server-internal: the steer waits for the active turn to end and then starts its
- * own turn. Responses omit it, since the wire enum predates it. "queued" waits for the agent to go
+ * own turn. "queued" waits for the agent to go
  * idle; only queue requests produce it.
  */
 export type PromptDispatchDisposition =
@@ -225,10 +225,10 @@ async function dispatchWithStartRetry(
   try {
     return await startAgentRunInner(agentManager, agentId, prompt, logger, options, promptStart);
   } catch (error) {
-    const steering =
+    const waitForActiveTurn =
       (options?.activeTurnBehavior === "steer" || options?.activeTurnBehavior === "queue") &&
       !options.idleOnly;
-    if (!steering || !(error instanceof AgentTurnBusyError) || error.turnId) throw error;
+    if (!waitForActiveTurn || !(error instanceof AgentTurnBusyError) || error.turnId) throw error;
     return await startAgentRunInner(agentManager, agentId, prompt, logger, options, promptStart);
   }
 }
@@ -439,7 +439,8 @@ function holdBehindActiveTurn(
           throw error;
         });
         if (result.disposition === "busy") return { kind: "busy", turnId: result.turnId };
-        if (result.disposition === "turn_started") await result.started;
+        if (result.disposition === "turn_started")
+          await waitForAgentRunStartWithTimeout(agentManager, agentId, result.started);
         return { kind: "settled" };
       },
     },

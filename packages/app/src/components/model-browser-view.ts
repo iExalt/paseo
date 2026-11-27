@@ -173,11 +173,13 @@ export type ModelBrowserNavItem =
   | { key: string; kind: "provider"; providerId: string; providerLabel: string }
   | { key: string; kind: "model"; provider: string; modelId: string; modelIndex: number };
 
-export type ModelBrowserProfileSection<TProfile extends NavigableProfileRow = NavigableProfileRow> =
-    | { kind: "none" }
-    | { kind: "createProfile" }
-    | { kind: "profiles"; rows: TProfile[] }
-    | { kind: "searchProfiles"; rows: TProfile[]; showModelsHeading: boolean };
+export type ModelBrowserProfileSection<
+  TProfile extends NavigableProfileRow = NavigableProfileRow,
+> =
+  | { kind: "none" }
+  | { kind: "createProfile" }
+  | { kind: "profiles"; rows: TProfile[] }
+  | { kind: "searchProfiles"; rows: TProfile[]; showModelsHeading: boolean };
 
 export type ModelBrowserProjection<TProfile extends NavigableProfileRow = NavigableProfileRow> =
   | { kind: "providerLoading"; navItems: ModelBrowserNavItem[] }

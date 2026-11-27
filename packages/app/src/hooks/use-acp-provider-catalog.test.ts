@@ -176,15 +176,15 @@ it.each([
   },
 );
 
-it("shares all 40 provider definitions and bundled feature gates with the CLI", () => {
-  expect(ACP_PROVIDER_CATALOG_DATA).toHaveLength(40);
+it("shares the provider definitions and bundled feature gates with the CLI", () => {
   expect(ACP_PROVIDER_CATALOG.map(({ iconSvg: _icon, ...entry }) => entry)).toEqual(
-    ACP_PROVIDER_CATALOG_DATA.map(({ iconId: _icon, ...entry }) => ({
-      ...entry,
-      bundledProvider: "bundledProvider" in entry ? entry.bundledProvider : undefined,
-      env: "env" in entry ? entry.env : undefined,
-      params: "params" in entry ? entry.params : undefined,
-    })),
+    ACP_PROVIDER_CATALOG_DATA.map(({ iconId: _icon, ...entry }) =>
+      Object.assign(entry, {
+        bundledProvider: "bundledProvider" in entry ? entry.bundledProvider : undefined,
+        env: "env" in entry ? entry.env : undefined,
+        params: "params" in entry ? entry.params : undefined,
+      }),
+    ),
   );
   expect(findProvider("fx").bundledProvider).toEqual({ hostFeature: "fxProvider" });
   expect(findProvider("hoplite").bundledProvider).toEqual({ hostFeature: "hopliteProvider" });

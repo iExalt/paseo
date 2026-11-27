@@ -25,8 +25,8 @@ import type { AgentMode, AgentProvider, AgentSessionConfig } from "../agent-sdk-
 import type { AgentManager } from "../agent-manager.js";
 import {
   ActiveTurnBehaviorSchema,
-  AgentActiveTurnBehaviorSchema,
   AgentProfileSchema,
+  AgentActiveTurnBehaviorSchema,
   AgentSendBehaviorSchema,
   type AgentSendBehavior,
   ReplyRuleSchema,
@@ -1239,13 +1239,13 @@ function createToolCatalog(
     prompt: z.string(),
     sessionMode: z.string().optional().describe("Optional mode to set before running the prompt."),
     ifRunning: AgentSendBehaviorSchema.optional().describe(
-      "What to do when the agent is mid-turn: steer adds the prompt to the running turn, queue runs it as a new turn once the agent is idle, interrupt cancels the turn and starts a new one.",
+      "Legacy alias for activeTurnBehavior. Queue starts a new turn once the agent is idle.",
     ),
   };
   const agentToAgentSendAgentPromptInputSchema = {
     ...commonSendAgentPromptInputSchema,
     activeTurnBehavior: AgentActiveTurnBehaviorSchema.optional().describe(
-      'Leave this out unless the message cannot wait. Default "queue": the message waits until the agent\'s running turn ends. "steer": the message joins the running turn; a provider that cannot steer defers the message. "interrupt": the running turn stops and a new turn starts with the message. A steer or interrupt carries the messages you queued before it, in order.',
+      'Leave this out unless the message cannot wait. Default "queue": the message waits until the agent\'s running turn ends. "steer": the message joins the running turn when supported, otherwise it waits for the turn to finish. "interrupt": the running turn stops and a new turn starts with the message. A steer or interrupt carries the messages you queued before it, in order.',
     ),
     notifyOnFinish: z
       .boolean()
@@ -1257,7 +1257,7 @@ function createToolCatalog(
   const topLevelSendAgentPromptInputSchema = {
     ...commonSendAgentPromptInputSchema,
     activeTurnBehavior: ActiveTurnBehaviorSchema.optional().describe(
-      'Default "steer": the prompt joins the running turn when the provider supports it, otherwise waits behind it. "interrupt" replaces the turn.',
+      'Default "steer": the prompt joins the running turn when supported, otherwise it waits for the turn to finish. "interrupt" starts a new turn.',
     ),
     notifyOnFinish: z
       .boolean()
@@ -2061,8 +2061,8 @@ function createToolCatalog(
       title: "Send agent prompt",
       description:
         scope === "agent"
-          ? "Send a message to another agent. The response returns at once. Its guidance says whether the message waits for the running turn to end, joins it, or interrupts it, and how to deliver a waiting message now. Leave activeTurnBehavior out unless the message cannot wait. The recipient reads your messages in the order you sent them. A steer the recipient has not read is lost if its turn stops or is interrupted, along with the messages it carried. Finish notifications are enabled by default for direct children, and their completion reports include the target’s last response by default. Paseo supplies caller identity."
-          : "Send a prompt to an agent. An active turn receives the prompt if it supports steering. Use interrupt to replace it.",
+          ? "Send a message to another agent. The response returns at once. Its guidance says whether the message waits for the running turn to end, joins it, or interrupts it, and how to deliver a waiting message now. Leave activeTurnBehavior out unless the message cannot wait. The recipient reads your messages in the order you sent them. When steering is unavailable, the message waits for the turn to finish. Finish notifications default on for direct children and include the last response when available. Paseo supplies caller identity."
+          : "Send a prompt to an agent. A running turn takes the prompt when it can steer. Use interrupt to replace the turn.",
       inputSchema: sendAgentPromptInputSchema,
       outputSchema: {
         success: z.boolean(),

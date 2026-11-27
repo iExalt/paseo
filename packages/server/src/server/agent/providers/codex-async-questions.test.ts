@@ -379,7 +379,7 @@ test("an idle question answer starts before queued messages without canceling ei
         activeTurnBehavior: "queue",
         runOptions: { clientMessageId: "queued-work" },
       }),
-    ).resolves.toEqual({ disposition: "queued" });
+    ).resolves.toMatchObject({ disposition: "queued" });
     const queued = waitForHeldMessage(manager, agent.id, "queued-work");
     expect(queued).not.toBeNull();
 

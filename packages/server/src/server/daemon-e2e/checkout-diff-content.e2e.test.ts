@@ -444,7 +444,7 @@ test("SDK diff journey publishes a tag tree, commits a one-file refresh and shar
     writeFileSync(join(cwd, "b.ts"), "export const b = 1;\n");
     git(cwd, "add", ".");
     git(cwd, "-c", "commit.gpgsign=false", "commit", "-m", "base");
-    git(cwd, "tag", "v1");
+    git(cwd, "-c", "tag.gpgsign=false", "tag", "v1");
     writeFileSync(join(cwd, "a.ts"), "export const a = 2;\n");
     writeFileSync(join(cwd, "b.ts"), "export const b = 2;\n");
     const compare = {

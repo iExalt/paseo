@@ -59,6 +59,7 @@ import { z } from "zod";
 import { renderPromptAttachmentAsText } from "../prompt-attachments.js";
 import { composeAgentSystemPrompt, composeSystemPromptParts } from "../system-prompt.js";
 import { CodexInstructionSnapshot } from "./codex/instruction-snapshot.js";
+
 import {
   type CodexSkillTextSource,
   codexUserMessageSkillCalls,
@@ -2142,7 +2143,6 @@ function updateHistoricalSubAgentActivity(
   };
 }
 
-/** Threads an item says its own thread spawned; messaging or waiting on a thread is not a spawn. */
 function readCodexSpawnedSubAgentThreadIds(item: unknown): string[] {
   const activity = readCodexSubAgentActivity(item);
   if (activity) {
@@ -5705,7 +5705,7 @@ export class CodexAppServerAgentSession implements AgentSession {
     )
       return false;
     // History-only resumes read disk without owning a provider process.
-    if (!this.client) return this.connectionState === "history-ready";
+    if (!this.client) return false;
     if (this.client.hasExited()) return true;
     // Older app servers reject this request. A failed or malformed probe must retain
     // the process: command completion alone does not mean its terminal has exited.

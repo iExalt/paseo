@@ -87,7 +87,7 @@ describe("daemon web UI bootstrap", () => {
   test("returns 404 for missing metadata while serving web UI deep links", async () => {
     const distDir = await createWebUiDist();
     daemonHandle = await createTestPaseoDaemon({
-      mcpEnabled: true,
+      agentToolsEnabled: true,
       webUi: { enabled: true, distDir },
     });
     const origin = `http://127.0.0.1:${daemonHandle.port}`;
@@ -155,7 +155,7 @@ describe("daemon web UI bootstrap", () => {
     const distDir = await createWebUiDist();
 
     daemonHandle = await createTestPaseoDaemon({
-      mcpEnabled: false,
+      agentToolsEnabled: false,
       webUi: {
         enabled: true,
         distDir,

@@ -17,6 +17,10 @@ import { ToolbarButton, paneContentToolbarIconSize } from "@/components/ui/pane-
 import { SearchField } from "@/components/ui/search-field";
 import { useIsCompactFormFactor } from "@/constants/layout";
 import { isWeb } from "@/constants/platform";
+import { setModelHidden } from "@/create-agent-preferences/preferences";
+import { Switch } from "@/components/ui/switch";
+import { useFormPreferences } from "@/hooks/use-form-preferences";
+import { useToast } from "@/contexts/toast-api-context";
 import { useDaemonConfig } from "@/hooks/use-daemon-config";
 import { CODE_SURFACE_DATASET } from "@/styles/code-surface";
 import { settingsStyles } from "@/styles/settings";
@@ -52,10 +56,12 @@ function rankModels<T>(items: T[], query: string, fields: (item: T) => string[])
 export function ProviderModels({
   serverId,
   entry,
+  hideWhenEmpty,
   refresh,
 }: {
   serverId: string;
   entry: ProviderEntry;
+  hideWhenEmpty: boolean;
   /**
    * Lists the models the provider reports, with search and the way to ask for them again. Null for
    * a provider that is not running, which reports none.
@@ -139,6 +145,10 @@ export function ProviderModels({
     [discoveredModels.length, refresh],
   );
 
+  if (hideWhenEmpty && discoveredModels.length === 0 && additionalModels.length === 0) {
+    return null;
+  }
+
   let discoveredBody: React.ReactNode;
   if (discoveredModels.length === 0) {
     discoveredBody = (
@@ -152,7 +162,13 @@ export function ProviderModels({
     discoveredBody = <MutedRow>{t("settings.providers.models.noSearchMatches")}</MutedRow>;
   } else {
     discoveredBody = filteredDiscovered.map((model, index) => (
-      <DiscoveredModelRow key={model.id} model={model} first={index === 0} />
+      <DiscoveredModelRow
+        key={model.id}
+        model={model}
+        first={index === 0}
+        serverId={serverId}
+        provider={provider}
+      />
     ));
   }
 
@@ -167,6 +183,8 @@ export function ProviderModels({
         key={model.id}
         model={model}
         first={index === 0}
+        serverId={serverId}
+        provider={provider}
         deleting={deletingModelId === model.id}
         onDelete={handleDeleteCustom}
       />
@@ -238,20 +256,78 @@ function MutedRow({ children }: { children: string }) {
   );
 }
 
-function DiscoveredModelRow({ model, first }: { model: AgentModelDefinition; first: boolean }) {
+interface ModelVisibilityProps {
+  serverId: string;
+  provider: string;
+}
+
+function ModelVisibilitySwitch({
+  serverId,
+  provider,
+  model,
+}: ModelVisibilityProps & { model: { id: string; label: string } }) {
+  const { t } = useTranslation();
+  const toast = useToast();
+  const { preferences, updatePreferences, isLoading } = useFormPreferences();
+  const [saving, setSaving] = useState(false);
+  const hidden = preferences.hiddenModelIds?.[serverId]?.[provider]?.includes(model.id) ?? false;
+  const setVisible = useCallback(
+    (visible: boolean) => {
+      setSaving(true);
+      void updatePreferences((current) =>
+        setModelHidden({
+          preferences: current,
+          serverId,
+          provider,
+          modelId: model.id,
+          hidden: !visible,
+        }),
+      )
+        .catch((error: unknown) =>
+          toast.error(error instanceof Error ? error.message : String(error)),
+        )
+        .finally(() => setSaving(false));
+    },
+    [model.id, provider, serverId, toast, updatePreferences],
+  );
+  return (
+    <Switch
+      value={!hidden}
+      onValueChange={setVisible}
+      disabled={isLoading || saving}
+      accessibilityLabel={t("settings.providers.models.showInPicker", { model: model.label })}
+      testID={`model-visibility-${model.id}`}
+    />
+  );
+}
+
+function DiscoveredModelRow({
+  model,
+  first,
+  serverId,
+  provider,
+}: ModelVisibilityProps & { model: AgentModelDefinition; first: boolean }) {
   return (
     <View style={[styles.modelRow, !first && settingsStyles.rowBorder]}>
-      <Text style={styles.modelTitle} numberOfLines={1}>
+      <Text style={[styles.modelTitle, styles.customModelText]} numberOfLines={1}>
         {model.label}
       </Text>
-      <Text style={styles.monoHint} numberOfLines={1} selectable dataSet={CODE_SURFACE_DATASET}>
+      <Text
+        style={[styles.monoHint, styles.customModelText]}
+        numberOfLines={1}
+        selectable
+        dataSet={CODE_SURFACE_DATASET}
+      >
         {model.id}
       </Text>
       {model.description ? (
         <Text style={styles.descriptionInline} numberOfLines={1}>
           {model.description}
         </Text>
-      ) : null}
+      ) : (
+        <View style={styles.modelRowFiller} />
+      )}
+      <ModelVisibilitySwitch model={model} serverId={serverId} provider={provider} />
     </View>
   );
 }
@@ -261,7 +337,9 @@ function CustomModelRow({
   first,
   deleting,
   onDelete,
-}: {
+  serverId,
+  provider,
+}: ModelVisibilityProps & {
   model: ProviderProfileModel;
   first: boolean;
   deleting: boolean;
@@ -285,6 +363,7 @@ function CustomModelRow({
         {model.id}
       </Text>
       <View style={styles.modelRowFiller} />
+      <ModelVisibilitySwitch model={model} serverId={serverId} provider={provider} />
       <ToolbarButton
         label={t("settings.providers.models.removeModel", { id: model.id })}
         onPress={handleDelete}

@@ -66,9 +66,7 @@ interface WebSocketServerInternals {
   sessions: Map<unknown, unknown>;
   broadcastAgentAttention(params: {
     agentId: string;
-    provider: string;
     reason: string;
-    attentionTimestamp: Date | null;
     completionSubject?: {
       turnId: string;
       text: string;
@@ -244,7 +242,7 @@ function connectClient(
     appVisible: boolean;
     appVisibilityChangedAt?: Date;
   } | null,
-  options: Parameters<typeof createSessionWithActivity>[1] = {},
+  options: { subscribed?: boolean; modern?: boolean; replyRuleNotifications?: boolean } = {},
 ) {
   const ws = createOpenSocket();
   const delivery = new SessionDelivery(() => {});
@@ -334,7 +332,6 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
         })),
         getLastAssistantMessage,
       },
-      undefined,
       undefined,
       undefined,
       { title: "Fix login redirect" },
@@ -438,7 +435,6 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
         agentId,
         provider: "claude",
         reason: "finished",
-        attentionTimestamp: new Date(),
         completionSubject: {
           turnId: `turn-${agentId}`,
           text: "No news.",
@@ -489,7 +485,6 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
       agentId: "agent-1",
       provider: "claude",
       reason: "finished",
-      attentionTimestamp: new Date(),
       completionSubject: {
         turnId: "turn-1",
         text: "No news.",
@@ -522,7 +517,6 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
       agentId: "agent-1",
       provider: "claude",
       reason: "finished",
-      attentionTimestamp: new Date(),
     });
 
     expect(pushNotifications.sent).toHaveLength(1);
@@ -799,7 +793,6 @@ describe("VoiceAssistantWebSocketServer notification payloads", () => {
         agentId: "agent-1",
         provider: "claude",
         reason,
-        attentionTimestamp: new Date(),
       });
 
       await vi.waitFor(() => expect(routedWorkspaceIds).toHaveLength(1));
@@ -852,12 +845,7 @@ it("an old broadcast keeps its exact committed episode across a read and newer f
     },
   });
   const broadcast = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention;
-  const pending = broadcast.call(server, {
-    agentId: "agent-1",
-    provider: "claude",
-    reason: "finished",
-    attentionTimestamp: new Date(1_000),
-  });
+  const pending = broadcast.call(server, { agentId: "agent-1", reason: "finished" });
   expect(applySnapshot).toHaveBeenCalledOnce();
   // A was cleared and a new unread B now exists before A's continuation is resumed.
   active.mockResolvedValue([b]);
@@ -878,12 +866,7 @@ it("shutdown drains an admitted attention snapshot and refuses late publication"
     applySnapshot,
   });
   const broadcast = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention;
-  const publication = broadcast.call(server, {
-    agentId: "agent-1",
-    provider: "claude",
-    reason: "finished",
-    attentionTimestamp: new Date(1_000),
-  });
+  const publication = broadcast.call(server, { agentId: "agent-1", reason: "finished" });
   expect(applySnapshot).toHaveBeenCalledOnce();
   let closed = false;
   const closing = server.close().then(() => {
@@ -899,12 +882,7 @@ it("shutdown drains an admitted attention snapshot and refuses late publication"
     await Promise.all([publication, closing]);
   }
   expect(pushNotifications.sent).toEqual([]);
-  await broadcast.call(server, {
-    agentId: "agent-1",
-    provider: "claude",
-    reason: "finished",
-    attentionTimestamp: new Date(1_000),
-  });
+  await broadcast.call(server, { agentId: "agent-1", reason: "finished" });
   expect(applySnapshot).toHaveBeenCalledOnce();
 });
 
@@ -925,12 +903,7 @@ it("shutdown prevents an attention send paused after snapshot persistence", asyn
   });
   const publication = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention.call(
     server,
-    {
-      agentId: "agent-1",
-      provider: "claude",
-      reason: "finished",
-      attentionTimestamp: new Date(1_000),
-    },
+    { agentId: "agent-1", reason: "finished" },
   );
   await started;
   try {
@@ -1012,12 +985,7 @@ it("shutdown waits for an already launched attention send to acknowledge cancell
   });
   const publication = asInternals<WebSocketServerInternals>(server).broadcastAgentAttention.call(
     server,
-    {
-      agentId: "agent-1",
-      provider: "claude",
-      reason: "finished",
-      attentionTimestamp: new Date(1_000),
-    },
+    { agentId: "agent-1", reason: "finished" },
   );
   await started;
   let closed = false;

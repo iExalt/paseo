@@ -1480,7 +1480,6 @@ test("create_agent_request does not publish the pre-prompt snapshot after the pr
           get: () => ({ mcp: { injectIntoAgents: false }, providers: {} }),
           onChange: () => () => {},
         }),
-        mcpBaseUrl: null,
         stt: null,
         tts: null,
         generateWorkspaceName: async () => null,

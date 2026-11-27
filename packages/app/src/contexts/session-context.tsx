@@ -18,10 +18,7 @@ import { requestTimelineReplacement } from "@/timeline/timeline-replacement";
 import { type ViewedTimelineOwner } from "@/timeline/viewed-timeline-sync";
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { parseServerInfoStatusPayload } from "@getpaseo/protocol/messages";
-import {
-  resolveAgentAttentionTitle,
-  type AgentAttentionNotificationPayload,
-} from "@getpaseo/protocol/agent-attention-notification";
+import type { AgentAttentionNotificationPayload } from "@getpaseo/protocol/agent-attention-notification";
 import {
   deliverAgentAttentionOsNotification,
   deliverPluginOsNotification,
@@ -207,22 +204,14 @@ function SessionProviderInternal({ children, serverId, client }: SessionProvider
       timestamp: string;
       notification?: AgentAttentionNotificationPayload;
     }) => {
-      const session = useSessionStore.getState().sessions[serverId];
-      const agentTitle = session?.agents.get(params.agentId)?.title;
       deliverAgentAttentionOsNotification({
         serverId,
         params,
         appState: appStateRef.current,
-        session,
+        session: useSessionStore.getState().sessions[serverId],
         attentionNotified: attentionNotifiedRef.current,
         preferences: getCurrentNotificationPreferences(queryClient),
-        sendNotification: params.notification
-          ? sendOsNotification
-          : (notification) =>
-              sendOsNotification({
-                ...notification,
-                title: resolveAgentAttentionTitle(params.reason, agentTitle),
-              }),
+        sendNotification: sendOsNotification,
       });
     },
     [queryClient, serverId],

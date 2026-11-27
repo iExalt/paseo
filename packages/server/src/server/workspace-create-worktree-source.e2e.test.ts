@@ -7,8 +7,6 @@ import { afterAll, expect, onTestFinished, test } from "vitest";
 
 import { DaemonClient } from "./test-utils/index.js";
 import { WebSocket } from "ws";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import {
   DaemonClient as SocketDaemonClient,
   type WebSocketLike,
@@ -694,7 +692,7 @@ function setupCommandOutput(detail: { commands: Array<{ log: string }> }): strin
 
 // Setup output is opt-in even for multiple sockets sharing one logical client.
 test("setup details follow one workspace/source and restore after reconnect with minimal directory status", async () => {
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: true });
+  const daemon = await createTestPaseoDaemon({ agentToolsEnabled: true });
   const { repoDir, tempRoot } = createGitRepoWithBranch();
   const clients: SocketDaemonClient[] = [];
   const sockets = new Map<string, WebSocket[]>();
@@ -702,11 +700,8 @@ test("setup details follow one workspace/source and restore after reconnect with
   const setupWireDetails: Array<{ log: string; commands: Array<{ log: string }> }> = [];
   const observations: Array<{ release(): Promise<void> }> = [];
   const workspaces: Array<{ id: string; workspaceDirectory?: string }> = [];
-  const mcp = new Client({ name: "setup-test", version: "1.0.0" });
+  const toolClient = daemon.nativeTools();
   try {
-    await mcp.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${daemon.port}/mcp/agents`)),
-    );
     writeFileSync(
       path.join(repoDir, "paseo.json"),
       JSON.stringify({ worktree: { setup: "node setup.cjs" } }),
@@ -805,16 +800,16 @@ const timer = setInterval(() => {
       workspaces.push(result.workspace);
       await waitForSetupStarted(result.workspace.id);
     }
-    const external = await mcp.callTool({
+    const external = await toolClient.callTool({
       name: "create_workspace",
-      arguments: { isolation: "worktree", path: repoDir, worktreeSlug: "noisy-mcp" },
+      arguments: { isolation: "worktree", path: repoDir, worktreeSlug: "noisy-tool" },
     });
     if (typeof external.structuredContent?.workspaceId !== "string")
-      throw new Error("Missing MCP workspace");
+      throw new Error("Missing tool-created workspace");
     const externalWorkspace = (await creator.fetchWorkspaces()).entries.find(
       (entry) => entry.id === external.structuredContent!.workspaceId,
     );
-    if (!externalWorkspace) throw new Error("Missing MCP directory entry");
+    if (!externalWorkspace) throw new Error("Missing tool-created directory entry");
     workspaces.unshift(externalWorkspace);
     await waitForSetupStarted(externalWorkspace.id);
     const workspace = workspaces[0]!;
@@ -979,7 +974,6 @@ const timer = setInterval(() => {
       writeFileSync(path.join(workspace.workspaceDirectory!, "finish.txt"), "stop");
     }
     for (const observation of observations) await observation.release();
-    await mcp.close();
     for (const client of clients) await client.close();
     await daemon.close();
     await rm(tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });

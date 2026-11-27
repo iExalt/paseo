@@ -390,6 +390,32 @@ export const PASEO_TOOL_CATALOG = {
     detail: { inputOrder: ["provider", "cwd", "settings"] },
   },
 
+  // Notifications
+  get_daemon_notification_rules: {
+    label: "Read daemon notification rules",
+    completedLabel: "Read daemon notification rules",
+    detail: { outputFields: ["replyRules"] },
+  },
+  set_daemon_notification_rules: {
+    label: "Set daemon notification rules",
+    completedLabel: "Set daemon notification rules",
+    detail: { inputOrder: ["replyRules"], outputFields: ["replyRules"] },
+  },
+  clear_daemon_notification_rules: {
+    label: "Clear daemon notification rules",
+    completedLabel: "Cleared daemon notification rules",
+    detail: { outputFields: ["replyRules"] },
+  },
+  set_workspace_notifications: {
+    label: "Set workspace notifications",
+    completedLabel: "Set workspace notifications",
+    context: field("workspaceId"),
+    detail: {
+      inputOrder: ["workspaceId", "notifications"],
+      outputFields: ["workspaceId", "notifications"],
+    },
+  },
+
   // Browser
   browser_list_hosts: browser("List browser hosts", "Listed browser hosts"),
   browser_list_tabs: browser("List browser tabs", "Listed browser tabs"),

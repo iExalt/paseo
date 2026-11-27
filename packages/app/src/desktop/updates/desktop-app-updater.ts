@@ -260,7 +260,7 @@ export function formatStatusText(input: {
     });
   }
 
-  if (status === "installed" || status === "waiting") {
+  if (["installed", "waiting"].includes(status)) {
     return installMessage ?? i18n.t("desktop.updates.status.installed");
   }
   if (status === "error") return i18n.t("desktop.updates.status.failed");
@@ -278,6 +278,25 @@ function preservesWaitingReason(
     result.hasUpdate &&
     result.latestVersion === state.availableUpdate?.latestVersion
   );
+}
+
+function resolveSuccessfulCheck(
+  state: InternalState,
+  result: DesktopAppUpdateCheckResult,
+  silent: boolean,
+  lastCheckedAt: number | null,
+): InternalState {
+  const outcome = resolveCheckOutcome(result);
+  const waiting = preservesWaitingReason(state, result, silent);
+  return {
+    ...state,
+    status: waiting ? "waiting" : outcome.status,
+    availableUpdate: outcome.availableUpdate,
+    downloadProgress: !waiting && outcome.status === "pending" ? state.downloadProgress : null,
+    installMessage: waiting ? state.installMessage : null,
+    errorMessage: null,
+    lastCheckedAt,
+  };
 }
 
 export function createDesktopAppUpdater(deps: DesktopAppUpdaterDeps): DesktopAppUpdater {
@@ -350,19 +369,7 @@ export function createDesktopAppUpdater(deps: DesktopAppUpdaterDeps): DesktopApp
         return result;
       }
 
-      const outcome = resolveCheckOutcome(result);
-
-      const updateState = preservesWaitingReason(state, result, silent)
-        ? { status: "waiting" as const, installMessage: state.installMessage }
-        : { status: outcome.status, installMessage: null };
-      commit({
-        ...state,
-        ...updateState,
-        availableUpdate: outcome.availableUpdate,
-        downloadProgress: outcome.status === "pending" ? state.downloadProgress : null,
-        errorMessage: null,
-        lastCheckedAt: nextLastCheckedAt,
-      });
+      commit(resolveSuccessfulCheck(state, result, silent, nextLastCheckedAt));
 
       return result;
     } catch (error) {

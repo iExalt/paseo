@@ -208,7 +208,7 @@ async function startRealWorkerManager(
     getTerminalActivityUrl?: () => string | null;
     requestTimeoutMs?: number;
     paseoHome?: string;
-    deferWorkerLaunch?: boolean;
+    eagerLaunch?: boolean;
   } = {},
 ): Promise<DaemonTerminalManager> {
   const { paseoHome = createTemporaryHome(), ...rest } = options;
@@ -1038,7 +1038,7 @@ it.skipIf(isPlatform("win32"))(
 
 it("defers the worker to the first terminal and then opens it there", async () => {
   const paseoHome = createTemporaryHome();
-  manager = await startRealWorkerManager({ paseoHome, deferWorkerLaunch: true });
+  manager = await startRealWorkerManager({ paseoHome, eagerLaunch: false });
   expect(await listTerminalWorkerRecords(paseoHome)).toEqual([]);
 
   const cwd = mkdtempSync(join(tmpdir(), "worker-terminal-manager-deferred-"));

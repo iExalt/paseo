@@ -1900,6 +1900,7 @@ test("replans one superseded catch-up from the current cursor and preserves retr
     replaceDemandedAgentIds: () => {},
     observe: () => ({ ready: Promise.resolve(), release: async () => {} }),
     readCursor: () => current,
+    isArchived: () => false,
     fetchPage: async (_id, request, ownsRequest) => {
       expect(ownsRequest()).toBe(true);
       requests.push(request);

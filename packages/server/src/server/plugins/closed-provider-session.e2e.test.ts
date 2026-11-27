@@ -4,7 +4,7 @@ import path from "node:path";
 import { expect, onTestFinished, test } from "vitest";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
-import { resolveDaemonVersion } from "../daemon-version.js";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 
 const PROVIDER_ID = "closing-provider";
 const PLUGIN_ID = "closing-provider-plugin";
@@ -25,7 +25,7 @@ async function createClosingProviderPlugin(root: string, mode: CloseMode): Promi
     path.join(directory, "paseo-plugin.json"),
     JSON.stringify({
       id: PLUGIN_ID,
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(

@@ -29,7 +29,9 @@ Before you write a contribution, read its section in the docs:
 | [Publishing](https://paseo.sh/docs/plugins/publishing.md)       | The listing page, npm, Git, and the plugin registry                                                              |
 | [Migration](https://paseo.sh/docs/plugins/migration.md)         | Plugins written before 0.8 runtime entries, and renamed APIs                                                     |
 
-For maintainer guidance in the Paseo repository, see `docs/upstream/plugins.md`.
+In the Paseo repository, use `public-docs/plugins/reference.md` for the checkout's API, including
+unreleased changes. Use `docs/upstream/plugins.md` for maintainer guidance. Complete contracts belong in the
+public docs; this skill indexes the references and examples.
 
 If the docs and this skill disagree, follow the docs.
 
@@ -122,7 +124,7 @@ Keep `requirements.paseo` correct each time you create or edit a plugin:
 - Add an upper bound when a later release breaks the plugin.
 - A missing `requirements.paseo` means `<0.8.0`. Finish the [migration](https://paseo.sh/docs/plugins/migration.md) before you add `>=0.8.0`.
 
-The daemon and each app check their plugin API version against the range. Make sure both satisfy it. See [requirements](https://paseo.sh/docs/plugins/reference#requirements).
+The daemon and each app check their plugin API version against the range. Make sure both satisfy it.
 
 Each runtime has its own entry. A plugin needs at least one entry.
 

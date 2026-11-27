@@ -1331,11 +1331,11 @@ export class ProviderSnapshotManager {
               context.signal,
               client.checkAvailability
                 ? client.checkAvailability(context.signal, catalogOptions)
-                : client.isAvailable(context.signal, catalogOptions).then(
-                    (available): AgentClientAvailability => ({
+                : client
+                    .isAvailable(context.signal, catalogOptions)
+                    .then((available): AgentClientAvailability => ({
                       status: available ? "available" : "unavailable",
-                    }),
-                  ),
+                    })),
             ),
           );
           if (availability.status === "unavailable") {

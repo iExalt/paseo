@@ -53,8 +53,9 @@ const trustOnlyRelease = [
   NIX_RELEASE_PUBLIC_KEY,
 ];
 const root = fileURLToPath(new URL("../../", import.meta.url));
-const run = (command, args) =>
-  execFileSync(command, args, { encoding: "utf8", timeout: 600_000, maxBuffer: 64 * 1024 ** 2 });
+const PACKAGE_PROBE_TIMEOUT_MS = 10_000;
+const run = (command, args, timeout = 600_000) =>
+  execFileSync(command, args, { encoding: "utf8", timeout, maxBuffer: 64 * 1024 ** 2 });
 
 // The release is not on GitHub before publish, so the partial path reads the
 // local assets: a Range request gets an exact 206, anything else the whole file.
@@ -390,10 +391,14 @@ async function main() {
 
   const app = join(outputPath, "Applications", "Paseo.app");
   assertPaseoSignature(app);
-  const cliVersion = run(join(app, "Contents/Resources/bin/paseo"), ["--version"]).trim();
+  const cliVersion = run(
+    join(app, "Contents/Resources/bin/paseo"),
+    ["--version"],
+    PACKAGE_PROBE_TIMEOUT_MS,
+  ).trim();
   assert.ok(cliVersion.split("\n").includes(version), `Bundled CLI reports ${cliVersion}`);
   assert.match(
-    run(join(outputPath, "bin/paseo-nix-update"), ["--help"]),
+    run(join(outputPath, "bin/paseo-nix-update"), ["--help"], PACKAGE_PROBE_TIMEOUT_MS),
     /^Usage: paseo-nix-update/,
   );
   // The updater applies deltas with the zstd its wrapper puts on PATH.

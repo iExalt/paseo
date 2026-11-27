@@ -1301,7 +1301,7 @@ test.each([
     running: true,
     canSteer: false,
     guidance:
-      'Queued, not delivered yet. The agent is working and reads your message when its current turn ends. If the message cannot wait, send a short follow-up with activeTurnBehavior "interrupt" (it stops the turn and starts a new one). This agent\'s provider cannot steer, so "steer" also stops the turn. The follow-up carries this message ahead of it, so do not send this message again.',
+      'Queued, not delivered yet. The agent is working and reads your message when its current turn ends. If the message cannot wait, send a short follow-up with activeTurnBehavior "interrupt" (it stops the turn and starts a new one). This agent\'s provider cannot steer, so "steer" waits for the turn to finish. The follow-up carries this message ahead of it, so do not send this message again.',
   },
   {
     behavior: "steer",
@@ -1315,7 +1315,7 @@ test.each([
     running: true,
     canSteer: false,
     guidance:
-      "This agent's provider cannot steer, so your message interrupts the running turn. A new turn starts with your message.",
+      "This agent's provider cannot steer. Your message waits for the running turn to finish.",
   },
   {
     behavior: "interrupt",
@@ -1574,6 +1574,74 @@ test("a person's prompt after Stop carries the held messages", async () => {
   await recipient.endTurn();
   expect(recipient.sent).toEqual([]);
   await recipient.delivery.close();
+});
+
+test("discarding a deferred direct steer preserves earlier queued reports after Stop", async () => {
+  const recipient = createRecipient();
+  recipient.send("queue", "earlier-report");
+  const held = Promise.withResolvers<"discarded">();
+  const deferred = await recipient.delivery.sendDirect(
+    { recipientId: "recipient", prompt: "later direct steer" },
+    async () => ({
+      disposition: "deferred",
+      held: held.promise,
+      withdrawHeld() {
+        held.resolve("discarded");
+        return true;
+      },
+    }),
+  );
+  await recipient.stop();
+  held.resolve("discarded");
+  await deferred.held;
+  const { prompt } = await recipient.person("continue", "after-stop");
+  expect(parseAgentMessages(String(prompt)).map((message) => message.id)).toEqual([
+    "earlier-report",
+    "after-stop",
+  ]);
+  await recipient.delivery.close();
+});
+
+test("an explicit interrupt carries the prefix of a deferred direct steer", async () => {
+  const recipient = createRecipient();
+  const first = recipient.send("queue", "earlier-report");
+  const held = Promise.withResolvers<"discarded">();
+  await recipient.delivery.sendDirect(
+    { recipientId: "recipient", prompt: "later direct steer" },
+    async () => ({
+      disposition: "deferred",
+      held: held.promise,
+      withdrawHeld() {
+        held.resolve("discarded");
+        return true;
+      },
+    }),
+  );
+  recipient.send("interrupt", "explicit-interrupt");
+  await recipient.settle();
+  expect(recipient.sent).toEqual([
+    { ids: [first, "explicit-interrupt"], behavior: "interrupt", idleOnly: false, mode: undefined },
+  ]);
+  await recipient.delivery.close();
+});
+
+test("shutdown drains the prefix of a direct steer that never reached the provider", async () => {
+  const recipient = createRecipient();
+  const first = recipient.send("queue", "earlier-report");
+  const held = Promise.withResolvers<"discarded">();
+  await recipient.delivery.sendDirect(
+    { recipientId: "recipient", prompt: "later direct steer" },
+    async () => ({
+      disposition: "deferred",
+      held: held.promise,
+      withdrawHeld() {
+        held.resolve("discarded");
+        return true;
+      },
+    }),
+  );
+  await recipient.delivery.close();
+  expect(recipient.ids()).toEqual([first]);
 });
 
 test("a turn that ends on its own still releases the queue", async () => {

@@ -51,7 +51,7 @@ async function main(): Promise<void> {
   const daemon = await createTestPaseoDaemon({
     agentClients: { mock: new RetryQuestionClient() },
     isDev: true,
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     corsAllowedOrigins: [webOrigin],
   });
   process.on("message", (message: unknown) => {

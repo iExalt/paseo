@@ -20,10 +20,12 @@ Add `--json` for structured results and context. Results report dialogs opened d
 
 Every row starts with `paseo browser`. Brackets denote optional arguments.
 
+When several hosts can open tabs, run `list-tabs --json` and use a host ID from `context.browserHosts` with `new-tab --browser-host <id>`. Desktop's **Copy browser host name** command shows the name agents see. If the host disconnects, list tabs again.
+
 | Command and arguments                                   | Purpose                                                                                        |
 | ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
 | `list-tabs`                                             | List tabs in the selected context.                                                             |
-| `new-tab [url]`                                         | Open a background tab and return its browser ID.                                               |
+| `new-tab [url] [--browser-host <id>]`                   | Open a background tab and return its browser ID.                                               |
 | `close-tab <browser-id>`                                | Close a tab and its webview.                                                                   |
 | `resize <browser-id> <width> <height>`                  | Resize the viewport in pixels.                                                                 |
 | `snapshot <browser-id>`                                 | Read the accessibility tree and fresh element refs.                                            |

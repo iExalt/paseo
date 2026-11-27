@@ -3326,6 +3326,7 @@ export const en = {
       },
       pairDevices: {
         rowTitle: "Pair a device",
+        rowHint: "Scan a QR code or copy a link to connect your phone to this host",
         keepAwake: {
           title: "Keep this Mac awake for the relay",
           hint: "Prevents sleep on AC power while the relay is on, so remote devices can reach this Mac. Uses more power and runs warmer while plugged in.",

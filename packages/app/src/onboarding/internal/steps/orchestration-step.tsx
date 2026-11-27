@@ -13,7 +13,9 @@ export function OrchestrationStep({ setup }: { setup: OrchestrationSetupControll
   const setCli = useCallback((on: boolean) => setChoice("cli", on), [setChoice]);
   return (
     <SettingsCard>
-      <PaseoToolsRow value={choices.tools} onValueChange={setTools} disabled={isApplying} />
+      {offered.tools ? (
+        <PaseoToolsRow value={choices.tools} onValueChange={setTools} disabled={isApplying} />
+      ) : null}
       {offered.skills ? (
         <AgentSkillsRow
           skills={setup.skills}

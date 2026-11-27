@@ -83,7 +83,6 @@ class ForegroundQuery {
   async applyFlagSettings(settings: Parameters<Query["applyFlagSettings"]>[0]) {
     this.flagSettings.push(settings);
   }
-
   reloadCount = 0;
   async reloadSkills() {
     this.reloadCount++;

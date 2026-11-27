@@ -2516,11 +2516,12 @@ test("push token registration can be revoked by the connected client", async () 
   ]);
 });
 
-test("push token registration forwards notification preferences to pushNotifications.renew", async () => {
-  const renewed: Array<{ token: string; preferences: unknown }> = [];
+test("push token registration forwards registration and preferences to pushNotifications.renew", async () => {
+  const renewed: Array<{ token: string; registrationId: unknown; preferences: unknown }> = [];
   const session = createSessionForTest({
     pushNotifications: asPushNotifications({
-      renew: (token: string, preferences?: unknown) => renewed.push({ token, preferences }),
+      renew: (token: string, registrationId?: unknown, preferences?: unknown) =>
+        renewed.push({ token, registrationId, preferences }),
     }),
   });
 
@@ -2542,12 +2543,14 @@ test("push token registration forwards notification preferences to pushNotificat
   await session.handleMessage({
     type: "register_push_token",
     token: "ExponentPushToken[prefs-device]",
+    androidLifecycleRegistrationId: "11111111-1111-4111-8111-111111111111",
     preferences,
   });
 
   expect(renewed).toEqual([
     {
       token: "ExponentPushToken[prefs-device]",
+      registrationId: "11111111-1111-4111-8111-111111111111",
       preferences,
     },
   ]);
@@ -7413,6 +7416,7 @@ test("deduplicates repeated command names in list_commands_response for live age
     agentManager: {
       getAgent: () => undefined,
       listDraftCommands: async () => duplicateCommands,
+      watchSkills: () => ({ ready: Promise.resolve(), close() {} }),
     },
     agentStorage: { get: async () => null },
   });

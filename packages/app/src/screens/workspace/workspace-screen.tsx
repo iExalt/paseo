@@ -3735,8 +3735,8 @@ function WorkspaceScreenContent({
         normalizedServerId={normalizedServerId}
         normalizedWorkspaceId={normalizedWorkspaceId}
         isWorkspaceFocused={isPaneRouteFocused}
-        isPaneFocused={explorerPane.id === focusedPaneId}
         paneFocusSuspended={effectivePaneFocusSuspended}
+        isPaneFocused={explorerPane.id === focusedPaneId}
         closingTabIds={closingTabIds}
         hoveredCloseTabKey={hoveredCloseTabKey}
         setHoveredCloseTabKey={setHoveredCloseTabKey}

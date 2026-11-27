@@ -17,6 +17,7 @@ Paseo ships an integration for each of these agents. Most appear in Paseo automa
 - [Antigravity](/docs/supported-providers/antigravity), runs through your installed `agy` CLI over ACP.
 - [Claude Code](/docs/supported-providers/claude-code), Anthropic's coding agent.
 - [Codex](/docs/supported-providers/codex), OpenAI's workspace agent.
+- [Cursor SDK](#cursor-sdk), Cursor’s opt-in local coding agent.
 - [fx](/docs/supported-providers/fx), Vercel Labs' coding agent (add from Settings).
 - [GitHub Copilot](/docs/supported-providers/github-copilot), GitHub's AI pair programmer.
 - [Hoplite](/docs/supported-providers/hoplite), cloud coding agent (add from Settings).
@@ -24,6 +25,51 @@ Paseo ships an integration for each of these agents. Most appear in Paseo automa
 - [Oh My Pi](/docs/supported-providers/omp), multi-provider coding agent (off by default).
 - [OpenCode](/docs/supported-providers/opencode), open-source coding assistant.
 - [Pi](/docs/supported-providers/pi), minimal terminal coding agent.
+
+## Cursor SDK
+
+Open **Settings → Hosts → your host → Providers**. Under **Add provider**, add **Cursor SDK**.
+Choose **Sign in with Cursor** and finish in your browser. The selected host keeps the attempt.
+If you reload Paseo or reconnect directly to that host, open **Cursor SDK** in its provider
+settings to reopen the sign-in page or cancel the attempt.
+
+The host saves the SDK login separately from your Cursor editor login. Sign in again when it
+expires. **Sign out of Cursor** clears the saved login on that host. New turns and queued turns
+that have yet to start require a current credential. A running turn can finish with the
+credential it already has. To revoke the minted key before it expires, use Cursor's API keys
+dashboard. Existing Cursor CLI chats still
+open with the **Cursor** provider.
+
+For a headless setup, set `agents.providers.cursor-sdk.enabled` to `true` in the daemon's
+`config.json` and supply `CURSOR_API_KEY` in the daemon environment or under
+`agents.providers.cursor-sdk.env`. Paseo uses the provider's configured key first, then the
+daemon environment key when the provider has no override. These settings take precedence over
+the saved login and must be changed on the host.
+
+In provider settings, check whether Cursor SDK is enabled before refreshing models. The model
+diagnostic distinguishes a missing native helper, a rejected key, a credential without catalog
+access, and an unreachable model catalog.
+
+**Unrestricted** is the only mode. Cursor runs tools as the daemon user, with access to the
+files and network that user can reach. General tool approvals and exact Hub MCP preapproval
+are unavailable. Inference requests go to Cursor.
+
+Cursor SDK can ask a structured question in the chat. A pending question remains available
+after you reconnect while its turn is still running. You can answer or dismiss it. Stopping
+the turn cancels the question.
+
+Paseo adds your global Codex instructions (`AGENTS.override.md` or `AGENTS.md` in
+`$CODEX_HOME`, by default `~/.codex`). For a trusted registered workspace, it also adds
+`AGENTS.md` from the workspace root through the agent's working directory, the root
+`.cursorrules` file, and top-level `.cursor/rules/*.mdc` rules marked `alwaysApply: true`.
+Like Codex, Paseo sends this text once per context window: with the first prompt, and again
+after Cursor summarizes the conversation or the text changes. Cursor keeps its built-in
+instructions. Ambient settings, hooks, Cursor plugins, custom subagent definitions,
+and file-configured MCP stay disabled. Paseo accepts MCP servers explicitly supplied to the
+agent.
+
+Resume uses the same native conversation and workspace. The daemon keeps its Cursor SDK
+state under `$PASEO_HOME/cursor-sdk`.
 
 ## More agents through ACP
 

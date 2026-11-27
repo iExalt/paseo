@@ -1,3 +1,4 @@
+import { enableFinishedNotifications } from "../support/helpers/notification-settings";
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { chromium, devices, expect, type Page } from "@playwright/test";
 import { execFileSync } from "node:child_process";
@@ -374,6 +375,7 @@ test.describe("configurable notifications journey", () => {
     let createdProjectId: string | undefined;
 
     try {
+      await enableFinishedNotifications(page);
       await page.addInitScript(installNotificationRecorder, notificationOsProof);
 
       attentionObservation = eventClient.observeEvents(["agent_attention_required"], {
@@ -467,7 +469,7 @@ test.describe("configurable notifications journey", () => {
       expect(externalOn).toEqual({ workspaceId, notifications: "on" });
       await expect(workspacePolicyItem).toContainText("Mute notifications");
 
-      await page.goto(buildSettingsHostSectionRoute(serverId, "agents"), { waitUntil: "commit" });
+      await page.goto(buildSettingsHostSectionRoute(serverId, "tools"), { waitUntil: "commit" });
       await expect(page.getByTestId("reply-rules-section")).toBeVisible();
       await expect(page.getByTestId("reply-rules-empty")).toBeVisible();
       await page.getByTestId("reply-rules-add").click();

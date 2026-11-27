@@ -172,7 +172,7 @@ test("bundled fx requires a config entry and lists models instead of its provide
   const daemon = await createTestPaseoDaemon({
     paseoHomeRoot: root,
     cleanup: false,
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     builtinPlugins: new BuiltinPluginLoader(undefined, ["fx-provider"]),
   });
   const client = new DaemonClient({
@@ -212,7 +212,7 @@ test("bundled Hoplite requires a config entry and removal survives restart", asy
   const options = {
     paseoHomeRoot: root,
     cleanup: false,
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     builtinPlugins: new BuiltinPluginLoader(undefined, [
       "hoplite-provider",
       "antigravity-provider",
@@ -347,7 +347,7 @@ test("provider installation reaches the client: version unchanged, Install link 
   });
   const daemon = await createTestPaseoDaemon({
     agentClients: { codex },
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     builtinPlugins: new BuiltinPluginLoader(undefined, ["muse-provider"]),
     providerOverrides: { muse: { command: ["paseo-e2e-missing-muse"] } },
   });
@@ -398,7 +398,7 @@ test("provider update checks reach the client: versions unchanged, failures inco
   });
   const daemon = await createTestPaseoDaemon({
     agentClients: { codex, claude },
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     builtinPlugins: new BuiltinPluginLoader(undefined, ["muse-provider"]),
     providerOverrides: { muse: { command: ["paseo-e2e-missing-muse"] } },
   });
@@ -453,7 +453,7 @@ test("a provider update outlives the client that started it and a new client rea
   });
   const daemon = await createTestPaseoDaemon({
     agentClients: { codex },
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     builtinPlugins: new BuiltinPluginLoader(undefined, []),
   });
   const first = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
@@ -525,7 +525,7 @@ test("bundled goose lists configured providers and switches models across provid
   const daemon = await createTestPaseoDaemon({
     paseoHomeRoot: root,
     cleanup: false,
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     builtinPlugins: new BuiltinPluginLoader(undefined, ["goose-provider"]),
   });
   const client = new DaemonClient({

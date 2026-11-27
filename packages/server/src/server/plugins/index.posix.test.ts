@@ -975,7 +975,7 @@ export default function contribute(server: PluginServerContext) {
         ["init", "-b", "main"],
         ["add", "."],
         ["-c", "user.name=Test", "-c", "user.email=test@example.test", "commit", "-m", "initial"],
-        ["tag", "v1"],
+        ["-c", "tag.gpgsign=false", "tag", "v1"],
       ])
         await runGitCommand(args, { cwd: repository });
       initial = (await runGitCommand(["rev-parse", "HEAD"], { cwd: repository })).stdout.trim();

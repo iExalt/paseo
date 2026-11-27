@@ -208,6 +208,28 @@ test("only capable Android devices switch delivery ownership, without falling ba
     const messages = JSON.parse(String(vi.mocked(fetch).mock.calls[0]![1]!.body));
     expect(messages[0].to).toBe("managed");
     expect(messages[0]).not.toHaveProperty("title");
+
+    // An opted-in Android error is an ordinary push. The app-owned protocol
+    // accepts finished/question alerts, even though errors also have a durable episode.
+    push.renew("managed", "11111111-1111-4111-8111-111111111111", DEFAULT_NOTIFICATION_PREFERENCES);
+    await push.send(
+      {
+        ...payload,
+        title: "Agent needs attention",
+        data: { ...payload.data, reason: "error" },
+        lifecycle: {
+          agentId: "agent",
+          lane: "attention",
+          episodeId: "33333333-3333-4333-8333-333333333333",
+          issuedAt,
+          expiresAt: issuedAt + 60000,
+        },
+      },
+      undefined,
+      { kind: "agent", reason: "error" },
+    );
+    expect(deliveries).toEqual([["legacy"], ["legacy"], ["managed"]]);
+    expect(fetch).toHaveBeenCalledTimes(1);
   } finally {
     vi.unstubAllGlobals();
     rmSync(home, { recursive: true, force: true });

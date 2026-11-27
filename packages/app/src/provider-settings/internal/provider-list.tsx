@@ -7,12 +7,18 @@ import { useProviderInstallation } from "@/components/provider-installation";
 import { SettingsAddRow, SettingsCard, SettingsSection } from "@/components/settings";
 import { Button } from "@/components/ui/button";
 import { SkeletonPulse, useSkeletonPulse } from "@/components/ui/skeleton";
+import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import { useHostFeature } from "@/runtime/host-features";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { settingsStyles } from "@/styles/settings";
 import { buildProviderDefinitions } from "@/utils/provider-definitions";
 import { AddProviderSheet } from "./add-provider-sheet";
-import { useProviderConfigActions, type ProviderEntry } from "./provider-config";
+import {
+  CURSOR_SDK_PROVIDER,
+  useProviderConfigActions,
+  type ProviderEntry,
+} from "./provider-config";
 import { ProviderGlyph } from "./provider-glyph";
 import { ProviderNotice } from "./provider-notice";
 import { ProviderRow } from "./provider-row";
@@ -32,6 +38,9 @@ export function ProviderList({ serverId, onOpenProvider, sheetFrame }: ProviderL
   const { t } = useTranslation();
   const isConnected = useHostRuntimeIsConnected(serverId) && serverId.length > 0;
   const { entries, isLoading } = useProvidersSnapshot(serverId);
+  const supportsCursorSdk = useHostFeature(serverId, "cursorSdkAuth");
+  const { config } = useDaemonConfig(serverId);
+  const cursorConfigured = Boolean(config?.providers?.[CURSOR_SDK_PROVIDER.id]);
   const { setEnabled, togglingProviderId } = useProviderConfigActions(serverId);
   const definitions = useMemo(() => buildProviderDefinitions(entries), [entries]);
   const [adding, setAdding] = useState(false);
@@ -72,6 +81,13 @@ export function ProviderList({ serverId, onOpenProvider, sheetFrame }: ProviderL
         {definitions.map((definition) => {
           const entry = entries?.find((candidate) => candidate.provider === definition.id);
           if (!entry) return null;
+          if (
+            entry.provider === CURSOR_SDK_PROVIDER.id &&
+            entry.enabled === false &&
+            supportsCursorSdk &&
+            !cursorConfigured
+          )
+            return null;
           return (
             <ListedProvider
               key={definition.id}

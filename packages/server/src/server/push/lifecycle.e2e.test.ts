@@ -5,16 +5,17 @@ import path from "node:path";
 import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import type { PushPayload } from "./index.js";
+import type { NotificationKind } from "@getpaseo/protocol/notification-preferences";
 
 test("actual daemon RPCs keep question and attention episodes independent across two clients", async () => {
   const home = await mkdtemp(path.join(tmpdir(), "paseo-lifecycle-rpc-"));
-  const sent: PushPayload[] = [];
+  const sent: Array<{ payload: PushPayload; kind?: NotificationKind }> = [];
   const fixture = await createTestPaseoDaemon({
     relayEnabled: false,
     paseoHomeRoot: path.join(home, "daemon"),
     pushNotificationSender: {
-      send: async (payload) => {
-        sent.push(payload);
+      send: async (payload, _signal, kind) => {
+        sent.push({ payload, kind });
       },
     },
   });
@@ -64,7 +65,9 @@ test("actual daemon RPCs keep question and attention episodes independent across
     await other.respondToPermission(question.id, requestId, { behavior: "deny", interrupt: true });
     await other.waitForFinish(question.id, 15000);
     expect(await device.syncNotificationLifecycle()).toEqual([b]);
-    await expect.poll(() => sent.some((payload) => payload.lifecycle?.episodeId === q)).toBe(true);
+    await expect
+      .poll(() => sent.some(({ payload }) => payload.lifecycle?.episodeId === q))
+      .toBe(true);
     const beforeError = sent.length;
     await other.sendMessage(agent.id, "Emit a turn failure");
     await other.waitForFinish(agent.id, 15000);
@@ -72,11 +75,22 @@ test("actual daemon RPCs keep question and attention episodes independent across
     expect(afterError).toHaveLength(1);
     expect(afterError[0]).toEqual(expect.any(String));
     expect(afterError).not.toContain(b);
-    expect(sent.length).toBe(beforeError);
+    await expect
+      .poll(() => sent.slice(beforeError))
+      .toEqual([
+        expect.objectContaining({
+          kind: { kind: "agent", reason: "error" },
+          payload: expect.objectContaining({
+            data: expect.objectContaining({ agentId: agent.id, reason: "error" }),
+            lifecycle: expect.objectContaining({ lane: "attention", episodeId: afterError[0] }),
+          }),
+        }),
+      ]);
     await other.clearAgentAttention(agent.id);
     expect(await device.syncNotificationLifecycle()).toEqual([]);
     expect(
       sent
+        .map(({ payload }) => payload)
         .filter((payload) => payload.data?.reason === "finished")
         .every((payload) => payload.lifecycle?.lane === "attention"),
     ).toBe(true);

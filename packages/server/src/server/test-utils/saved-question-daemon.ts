@@ -64,7 +64,7 @@ const daemon = await createTestPaseoDaemon({
   staticDir: join(root, "static"),
   cleanup: false,
   resumeOnStartup: false,
-  mcpEnabled: false,
+  agentToolsEnabled: false,
   agentClients: { codex: client },
 });
 process.send({ port: daemon.port });

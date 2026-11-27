@@ -3103,6 +3103,7 @@ export const ja: TranslationResources = {
       },
       pairDevices: {
         rowTitle: "デバイスをペアリング",
+        rowHint: "QRコードをスキャンするかリンクをコピーしてスマートフォンをこのホストに接続",
         keepAwake: {
           title: "リレーのためにこの Mac をスリープさせない",
           hint: "リレーが有効な間、電源接続中のスリープを防ぎ、リモートデバイスからこの Mac に接続できるようにします。電源接続中は消費電力と発熱が増えます。",

@@ -1,3 +1,8 @@
+import {
+  addModelVisibleStructuredContent,
+  serializePaseoToolInputParameters,
+} from "../agent/tools/paseo-tool-serialization.js";
+import type { PaseoToolCatalogFactory, PaseoToolResult } from "../agent/tools/types.js";
 import { BuiltinPluginLoader } from "../plugins/builtin/index.js";
 import os from "node:os";
 import path from "node:path";
@@ -72,6 +77,7 @@ export interface TestPaseoDaemon {
   port: number;
   paseoHome: string;
   staticDir: string;
+  nativeTools: (callerAgentId?: string) => NativeToolTestClient;
   close: () => Promise<void>;
 }
 
@@ -114,7 +120,11 @@ export async function createTestPaseoDaemon(
     const { config, paseoHomeRoot, paseoHome, staticDir, createdDirs } =
       await prepareTestDaemonConfig(options);
     const logger = options.logger ?? pino({ level: "silent" });
+    let createToolCatalog: PaseoToolCatalogFactory | undefined;
     const daemon = await createPaseoDaemon(config, logger, {
+      onAgentToolCatalog: (factory) => {
+        createToolCatalog = factory;
+      },
       getTailscaleNetwork: options.getTailscaleNetwork,
       builtinPlugins: options.builtinPlugins ?? new BuiltinPluginLoader(undefined, []),
       lazyTerminalWorker: options.lazyTerminalWorker ?? true,
@@ -145,6 +155,17 @@ export async function createTestPaseoDaemon(
         port: listenTarget.port,
         paseoHome,
         staticDir,
+        nativeTools: (callerAgentId) =>
+          createNativeToolTestClient(async () => {
+            if (!createToolCatalog) throw new Error("The daemon has no native tool catalog");
+            if (callerAgentId) await daemon.agentManager.refreshPluginTools(callerAgentId);
+            return createToolCatalog({
+              callerAgentId,
+              paseoToolPolicy: callerAgentId
+                ? daemon.agentManager.getPaseoToolPolicy(callerAgentId)
+                : undefined,
+            });
+          }),
         close,
       };
     } catch (error) {
@@ -263,4 +284,39 @@ function isStartupTimeoutError(error: unknown): boolean {
   }
   const record = error as { code?: string };
   return record.code === "TEST_DAEMON_START_TIMEOUT";
+}
+
+// Run the same catalog, input validation and handlers used by native providers
+// without starting an HTTP route or bypassing the existing host routing.
+type NativeToolTestClient = ReturnType<typeof createNativeToolTestClient>;
+
+function createNativeToolTestClient(resolveCatalog: () => ReturnType<PaseoToolCatalogFactory>) {
+  return {
+    async listTools() {
+      const catalog = await resolveCatalog();
+      return {
+        tools: Array.from(catalog.tools.values(), (tool) => ({
+          name: tool.name,
+          description: tool.description,
+          inputSchema: serializePaseoToolInputParameters(tool),
+        })),
+      };
+    },
+    async callTool(request: {
+      name: string;
+      arguments?: Record<string, unknown>;
+    }): Promise<PaseoToolResult & { structuredContent?: Record<string, unknown> }> {
+      const catalog = await resolveCatalog();
+      try {
+        return addModelVisibleStructuredContent(
+          await catalog.executeTool(request.name, request.arguments ?? {}),
+        ) as PaseoToolResult & { structuredContent?: Record<string, unknown> };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }],
+        };
+      }
+    },
+  };
 }

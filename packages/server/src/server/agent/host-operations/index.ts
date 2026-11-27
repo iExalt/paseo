@@ -313,11 +313,7 @@ export function createHostResolver(input: {
               status: agent.status,
               guidance:
                 (receipt.deliveryStatus === "queued"
-                  ? (
-                      // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove after
-                      // 2027-05-22 once connected-host floor >= v0.17.2. Older hosts return no guidance.
-                      receipt.guidance ?? "Queued for delivery after the current turn ends."
-                    )
+                  ? (receipt.guidance ?? "Queued for delivery after the current turn ends.")
                   : "Dispatch acknowledged.") +
                 (notification
                   ? " You will get notified when the prompted agent finishes, errors, or needs permission."

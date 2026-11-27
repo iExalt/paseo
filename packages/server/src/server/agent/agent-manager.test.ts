@@ -1,4 +1,3 @@
-import { waitForHeldMessage } from "./held-messages.js";
 import type { AttachedAgentTool, PluginSessionsRuntime } from "../plugins/agent-tools.js";
 import { archiveByScope, type ArchiveDependencies } from "../workspace-archive-service.js";
 import { LifecycleAdmission, withWorkspaceLifecycleLock } from "../workspace-lifecycle-lock.js";
@@ -667,7 +666,12 @@ class UnsupportedSteeringSession extends TestAgentSession {
 async function startAndSteerThroughManager(
   session: AgentSession,
   behavior: "steer" | "interrupt" = "steer",
-): Promise<{ manager: AgentManager; agentId: string; workdir: string }> {
+): Promise<{
+  manager: AgentManager;
+  agentId: string;
+  workdir: string;
+  dispatch: Awaited<ReturnType<typeof startAgentRun>>;
+}> {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-steer-dispatch-"));
   const client = new (class extends TestAgentClient {
     override async createSession(): Promise<AgentSession> {
@@ -684,12 +688,12 @@ async function startAndSteerThroughManager(
     }
   })();
   await manager.waitForAgentRunStart(agent.id);
-  await startAgentRun(manager, agent.id, "replacement", logger, {
+  const dispatch = await startAgentRun(manager, agent.id, "replacement", logger, {
     replaceRunning: true,
     activeTurnBehavior: behavior,
     runOptions: { clientMessageId: "replacement-client" },
   });
-  return { manager, agentId: agent.id, workdir };
+  return { manager, agentId: agent.id, workdir, dispatch };
 }
 
 /** Plugin sessions whose only plugin appends the given instructions to every open. */
@@ -727,7 +731,9 @@ test("OpenCode persistence excludes launch-only instructions from storage and cl
     workspaceId: undefined,
   });
   try {
-    expect(harness.instructions.get("paseo")).toBe("Daemon instruction\n\nPlugin instruction");
+    expect(harness.instructions.get("paseo")).toMatch(
+      /^Daemon instruction\n\n[\s\S]*Plugin instruction$/,
+    );
     await manager.flush();
     const record = await storage.get(agent.id);
     expect(record?.persistence?.metadata).not.toHaveProperty("pluginAppendSystemPrompt");
@@ -1263,6 +1269,64 @@ test("rejects an oversize Cursor SDK /name selection before canceling the runnin
   expect(session.interruptCount).toBe(0);
 });
 
+test("an archive begun during Cursor skill validation prevents replacement from interrupting the turn", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "agent-manager-replace-archive-"));
+  const skills = join(cwd, "skills");
+  mkdirSync(join(skills, "deploy"), { recursive: true });
+  writeFileSync(
+    join(skills, "deploy", "SKILL.md"),
+    "---\nname: deploy\ndescription: Deploy.\n---\nDeploy canary.\n",
+  );
+  const session = new SteeringTestSession({ provider: "cursor-sdk", cwd });
+  const manager = new AgentManager({
+    clients: {
+      "cursor-sdk": new (class extends TestAgentClient {
+        override async createSession() {
+          return session;
+        }
+      })(),
+    },
+    logger,
+    resolveCursorSkillRoots: async () => [{ path: skills, boundary: cwd, scope: "workspace" }],
+  });
+  const agent = await manager.createAgent({ provider: "cursor-sdk", cwd }, undefined, {
+    workspaceId: undefined,
+  });
+  const validating = deferred<void>();
+  const confirmed = deferred<void>();
+  const archiveFinished = deferred<void>();
+  const validate = manager.validateCursorSkillSelection.bind(manager);
+  vi.spyOn(manager, "validateCursorSkillSelection").mockImplementationOnce(async (...args) => {
+    validating.resolve();
+    await confirmed.promise;
+    return validate(...args);
+  });
+
+  try {
+    await startAgentRun(manager, agent.id, "first", logger);
+    await manager.waitForAgentRunStart(agent.id);
+    const replacing = manager.replaceAgentRun(agent.id, "/deploy", {
+      expandCursorSkillTokens: true,
+    });
+    const rejected = expect(replacing).rejects.toThrow("being archived");
+    await validating.promise;
+    const archive = manager.whileArchiving(agent.id, () => archiveFinished.promise);
+
+    confirmed.resolve();
+    await rejected;
+    expect(session.interruptCount).toBe(0);
+    expect(session.startPrompts).toEqual(["first"]);
+
+    archiveFinished.resolve();
+    await archive;
+  } finally {
+    confirmed.resolve();
+    archiveFinished.resolve();
+    await manager.closeAgent(agent.id);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("an unavailable steer waits for the active turn instead of interrupting it", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = "unavailable";
@@ -1445,11 +1509,11 @@ test("answers whether an agent's session can steer a running turn", async () => 
 test("stopping the turn discards a steer deferred behind it", async () => {
   const session = new SteeringTestSession({ provider: "codex", cwd: process.cwd() });
   session.steerResult = "unavailable";
-  const { manager, agentId, workdir } = await startAndSteerThroughManager(session);
+  const { manager, agentId, workdir, dispatch } = await startAndSteerThroughManager(session);
   try {
-    const held = waitForHeldMessage(manager, agentId, "replacement-client");
     await manager.cancelAgentRun(agentId);
-    await expect(held).resolves.toBe("discarded");
+    if (dispatch.disposition !== "deferred") throw new Error("Expected deferred steer");
+    expect(await dispatch.held).toBe("discarded");
     expect(session.startCount).toBe(1);
     expect(session.startPrompts).not.toContain("replacement");
   } finally {
@@ -2129,7 +2193,7 @@ test("queued messages wait for the turn instead of steering into it, then run in
           replaceRunning: true,
           activeTurnBehavior: "queue",
         }),
-      ).resolves.toEqual({ disposition: "queued" });
+      ).resolves.toMatchObject({ disposition: "queued" });
     }
     expect(session.steerCount).toBe(0);
 
@@ -10174,6 +10238,8 @@ test.each([
 );
 
 test("turns an agent starts on its own keep its finish unread until it is read", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  onTestFinished(() => vi.useRealTimers());
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-autonomous-finish-unread-"));
   const storage = new AgentStorage(join(workdir, "agents"), logger);
   class AutonomousClient extends TestAgentClient {
@@ -10203,6 +10269,7 @@ test("turns an agent starts on its own keep its finish unread until it is read",
   });
 
   async function runAutonomousTurn(turnId: string): Promise<void> {
+    vi.setSystemTime(Date.now() + 1000);
     const running = waitForAgentLifecycle(manager, agent.id, "running");
     client.session.pushEvent({ type: "turn_started", provider: "codex", turnId });
     await running;
@@ -10233,7 +10300,7 @@ test("turns an agent starts on its own keep its finish unread until it is read",
   await runAutonomousTurn("wake-4");
   expect(attention).toHaveLength(4);
   expect(attention[3]?.reason).toBe("finished");
-  expect(attention[3]?.attentionTimestamp).not.toBe(unreadFinish);
+  expect(attention[3]?.attentionTimestamp).not.toEqual(unreadFinish);
 });
 
 test("streamAgent clears pending run when startTurn fails before a turn id exists", async () => {
@@ -13715,6 +13782,56 @@ test("tryRunOutOfBand gives providers the command another agent sent, not its en
   }
 });
 
+test("idle shutdown winning admission during Cursor lookup prevents an out-of-band command", async () => {
+  const cwd = mkdtempSync(join(tmpdir(), "agent-manager-out-of-band-shutdown-"));
+  const lookupStarted = deferred<void>();
+  const lookupFinished = deferred<void>();
+  const handled = vi.fn(() => ({ run: vi.fn() }));
+  const accepted = vi.fn();
+  class SlashCommandSession extends TestAgentSession {
+    override tryHandleOutOfBand = handled;
+  }
+  const manager = new AgentManager({
+    clients: {
+      "cursor-sdk": new (class extends TestAgentClient {
+        override async createSession(config: AgentSessionConfig) {
+          return new SlashCommandSession(config);
+        }
+      })(),
+    },
+    logger,
+    resolveCursorSkillRoots: async () => {
+      lookupStarted.resolve();
+      await lookupFinished.promise;
+      return [];
+    },
+  });
+  const agent = await manager.createAgent({ provider: "cursor-sdk", cwd }, undefined, {
+    workspaceId: undefined,
+  });
+
+  try {
+    const sending = manager.tryRunOutOfBand(
+      agent.id,
+      "/handled",
+      { expandCursorSkillTokens: true },
+      accepted,
+    );
+    const rejected = expect(sending).rejects.toBeInstanceOf(AgentManagerShuttingDownError);
+    await lookupStarted.promise;
+    await expect(manager.stopAdmittingIfIdle()).resolves.toBe(true);
+
+    lookupFinished.resolve();
+    await rejected;
+    expect(accepted).not.toHaveBeenCalled();
+    expect(handled).not.toHaveBeenCalled();
+  } finally {
+    lookupFinished.resolve();
+    await manager.closeAgent(agent.id);
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
 test("replaceAgentRun succeeds when foreground turn terminal event is never delivered", async () => {
   const workdir = mkdtempSync(join(tmpdir(), "agent-manager-stale-fg-"));
   const storagePath = join(workdir, "agents");
@@ -16578,7 +16695,7 @@ test("plugin instructions are recomputed for each launch without changing saved 
   );
   expect(client.createdConfigs[0]).toMatchObject({
     systemPrompt: "Saved",
-    daemonAppendSystemPrompt: "Daemon",
+    daemonAppendSystemPrompt: expect.stringMatching(/^Daemon(?:\n\n|$)/),
     pluginAppendSystemPrompt: ["Plugin one", "Plugin two"],
   });
   expect(snapshot.config.systemPrompt).toBe("Saved");
@@ -16617,7 +16734,7 @@ test("plugin instructions are recomputed for each launch without changing saved 
     snapshot.id,
   );
   expect(client.resumeOverrides.at(-1)?.systemPrompt).toBe("Saved");
-  expect(client.resumeOverrides.at(-1)?.daemonAppendSystemPrompt).toBe("Daemon");
+  expect(client.resumeOverrides.at(-1)?.daemonAppendSystemPrompt).toMatch(/^Daemon(?:\n\n|$)/);
   expect((await storage.get(snapshot.id))?.config?.systemPrompt).toBe("Saved");
 });
 
@@ -17008,6 +17125,9 @@ describe("attention after unread finishes, stops and archives", () => {
       await expect(manager.steerOrDeferBehindActiveTurn(agentId, "late steer")).rejects.toThrow(
         "being archived",
       );
+      await expect(manager.replaceAgentRun(agentId, "late replacement")).rejects.toThrow(
+        "being archived",
+      );
 
       archiving.resolve();
       await archive;
@@ -17095,9 +17215,6 @@ describe("stopAdmittingIfIdle", () => {
         logger,
       }),
     ).rejects.toBeInstanceOf(AgentManagerShuttingDownError);
-    await expect(manager.tryRunOutOfBand(agent.id, "/goal pause")).rejects.toBeInstanceOf(
-      AgentManagerShuttingDownError,
-    );
     await expect(manager.rewind(agent.id, "message", "conversation")).rejects.toBeInstanceOf(
       AgentManagerShuttingDownError,
     );

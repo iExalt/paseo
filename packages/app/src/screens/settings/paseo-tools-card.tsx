@@ -1,7 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { SettingsRow } from "@/components/settings";
 import { Switch } from "@/components/ui/switch";
-
 /** The Paseo tools row on its own, for a caller that decides what the switch is bound to. */
 export function PaseoToolsRow({
   value,

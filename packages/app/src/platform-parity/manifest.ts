@@ -14,6 +14,22 @@ const PANE_DRAG_WEB_ONLY =
  */
 export const PARITY_MANIFEST: ParityManifest = {
   splitModules: {
+    "add-project-flow/focused-control": {
+      kind: "equivalent",
+      note: "Web checks whether the focused DOM control owns Enter. Native sends Enter to the sheet.",
+    },
+    "chat-rail/index": {
+      kind: "deliberate",
+      reason: "The chat outline is a web affordance. Native reserves no column rail inset.",
+    },
+    "components/model-browser-focus": {
+      kind: "equivalent",
+      note: "Web distinguishes DOM keyboard focus from pointer input. Native forwards keyboard or remote focus.",
+    },
+    "navigation/route-leave-guard/index": {
+      kind: "equivalent",
+      note: "Web guards browser history, while React Navigation owns native back and swipe gestures.",
+    },
     "components/ui/autocomplete-popover/internal/frame": {
       kind: "equivalent",
       note: "Native measures the anchor on the UI thread; web observes its DOM layout before paint",
@@ -174,7 +190,6 @@ export const PARITY_MANIFEST: ParityManifest = {
     "hooks/use-audio-recorder": equivalent,
     "hooks/use-color-scheme": equivalent,
     "hooks/use-dictation-audio-source": equivalent,
-    "hooks/use-keyboard-visibility": equivalent,
     "keyboard/shift/internal/translate": equivalent,
     "native/hardware-keyboard": {
       kind: "equivalent",
@@ -222,22 +237,15 @@ export const PARITY_MANIFEST: ParityManifest = {
     },
   },
   settingsSections: {
-    browser: {
+    notifications: {
       kind: "equivalent",
-      note: "Hidden only in a plain browser; native clears every in-app web view's data",
+      note: "Device preferences appear on native, Electron and browsers with the Notification API.",
     },
     shortcuts: {
       kind: "gap",
       chunk: "E1",
       reason: "Native lists bindings read-only; rebinding captures DOM key events (deferred)",
     },
-    integrations: { kind: "deliberate", reason: "Installs the CLI on the local machine" },
-    notifications: {
-      kind: "equivalent",
-      note: "Hidden only in a plain browser; native has its own section",
-    },
-    permissions: { kind: "equivalent", note: "Hidden only in a plain browser" },
-    editor: { kind: "deliberate", reason: FOLLOWS_UPSTREAM_WEB_ONLY },
   },
   runtimeGates: {
     "android/fork-updates/updater.ts": {

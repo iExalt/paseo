@@ -14,7 +14,12 @@ import { join } from "node:path";
 
 import { createTestLogger } from "../../test-utils/test-logger.js";
 import { AgentManager } from "./agent-manager.js";
-import { waitForAgentRunStartWithTimeout } from "./agent-prompt.js";
+import {
+  AgentTurnBusyError,
+  startAgentRun,
+  waitForAgentRunStartWithTimeout,
+  type AgentRunController,
+} from "./agent-prompt.js";
 import { ForegroundPromptStart } from "./agent-run-state.js";
 import type {
   AgentClient,
@@ -26,6 +31,34 @@ import type {
 test("isSystemInjectedEnvelope matches the envelope formatSystemNotificationPrompt produces", () => {
   expect(isSystemInjectedEnvelope(formatSystemNotificationPrompt("child finished"))).toBe(true);
   expect(isSystemInjectedEnvelope("hello world")).toBe(false);
+});
+
+test("a direct queue retries when a competing turn wins after the idle check", async () => {
+  const streamAgent = vi
+    .fn<AgentRunController["streamAgent"]>()
+    .mockImplementationOnce(() => {
+      throw new AgentTurnBusyError("another turn took the lane");
+    })
+    .mockImplementation(async function* () {});
+  const manager = {
+    getAgent: () => null,
+    tryRunOutOfBand: async () => false,
+    hasInFlightRun: () => false,
+    reloadStalePluginSession: async () => {},
+    replaceAgentRun: vi.fn(),
+    steerOrDeferBehindActiveTurn: vi.fn(async () => ({ status: "inactive" as const })),
+    streamAgent,
+    subscribe: vi.fn(),
+    waitForAgentRunStart: vi.fn(),
+    reloadAgentSession: vi.fn(),
+  } satisfies AgentRunController;
+
+  await expect(
+    startAgentRun(manager, "recipient", "queued prompt", createTestLogger(), {
+      activeTurnBehavior: "queue",
+    }),
+  ).resolves.toMatchObject({ disposition: "turn_started" });
+  expect(streamAgent).toHaveBeenCalledTimes(2);
 });
 
 // Independent of the production constant so shortening the budget breaks this test.

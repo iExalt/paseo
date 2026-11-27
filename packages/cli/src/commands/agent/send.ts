@@ -12,8 +12,8 @@ import {
 } from "@getpaseo/protocol/messages";
 import { collectMultiple } from "../../utils/command-options.js";
 import { connectToDaemon } from "../../utils/client.js";
-import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import type { AgentMessageReceipt } from "@getpaseo/client/internal/daemon-client";
+import { resolveCallerAgentId } from "../../utils/caller-agent.js";
 import type {
   CommandOptions,
   SingleResult,

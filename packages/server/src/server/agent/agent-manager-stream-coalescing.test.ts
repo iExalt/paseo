@@ -664,6 +664,7 @@ describe("target coalesced behavior", () => {
           agentId,
           provider: "codex",
           reason: "finished",
+          attentionTimestamp: expect.any(Date),
           completionSubject: {
             turnId: "turn-1",
             text: "original reply",
@@ -689,13 +690,14 @@ describe("target coalesced behavior", () => {
           agentId,
           provider: "codex",
           reason: "finished",
+          attentionTimestamp: expect.any(Date),
           completionSubject: {
             turnId: "turn-1",
             text: "original reply",
             completeness: "complete",
           },
         },
-        { agentId, provider: "codex", reason: "error" },
+        { agentId, provider: "codex", reason: "error", attentionTimestamp: expect.any(Date) },
       ]);
       expect(harness.attentions[1]).not.toHaveProperty("completionSubject");
       expect(originalSubject).toEqual({
@@ -741,17 +743,19 @@ describe("target coalesced behavior", () => {
           agentId,
           provider: "codex",
           reason: "finished",
+          attentionTimestamp: expect.any(Date),
           completionSubject: {
             turnId: "turn-1",
             text: "original reply",
             completeness: "complete",
           },
         },
-        { agentId, provider: "codex", reason: "error" },
+        { agentId, provider: "codex", reason: "error", attentionTimestamp: expect.any(Date) },
         {
           agentId,
           provider: "codex",
           reason: "finished",
+          attentionTimestamp: expect.any(Date),
           completionSubject: {
             turnId: "turn-4",
             text: "current reply",
@@ -790,6 +794,7 @@ describe("target coalesced behavior", () => {
           agentId,
           provider: "codex",
           reason: "finished",
+          attentionTimestamp: expect.any(Date),
           completionSubject: {
             turnId: "auto-1",
             text: "periodic reply",
@@ -809,6 +814,7 @@ describe("target coalesced behavior", () => {
         agentId,
         provider: "codex",
         reason: "finished",
+        attentionTimestamp: expect.any(Date),
         completionSubject: {
           turnId: "auto-2",
           text: "next reply",
@@ -832,7 +838,9 @@ describe("target coalesced behavior", () => {
       session.pushEvent(terminalEvent("turn_completed", "auto-new"));
       await waitForSessionEventQueue();
 
-      expect(harness.attentions).toEqual([{ agentId, provider: "codex", reason: "finished" }]);
+      expect(harness.attentions).toEqual([
+        { agentId, provider: "codex", reason: "finished", attentionTimestamp: expect.any(Date) },
+      ]);
     } finally {
       harness.cleanup();
     }

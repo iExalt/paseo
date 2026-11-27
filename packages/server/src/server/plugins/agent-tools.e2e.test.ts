@@ -4,14 +4,12 @@ import { mkdtemp, mkdir, readFile, readdir, rm, writeFile } from "node:fs/promis
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import {
   createTestAgentClient,
   type TestAgentClientOptions,
 } from "../test-utils/fake-agent-client.js";
-import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
+import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import { importSessionFromPersistence } from "../agent/provider-session-import.js";
 import { BuiltinPluginLoader } from "./builtin/index.js";
 import { serializePaseoToolInputParameters } from "../agent/tools/paseo-tool-serialization.js";
@@ -101,14 +99,13 @@ async function setup(
   const daemon = await createTestPaseoDaemon({
     daemonVersion: "0.14.0-beta.1",
     agentClients: { codex: recorder.provider },
-    mcpEnabled: true,
+    agentToolsEnabled: true,
     providerOverrides: { codex: { paseoTools: policy } },
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
     appVersion: "0.14.0-beta.1",
   });
-  const mcps: Client[] = [];
   async function install(id: string, code: string) {
     const pluginDirectory = path.join(directory, id);
     await mkdir(pluginDirectory);
@@ -143,21 +140,12 @@ async function setup(
         { labels, initialTitle: "Chosen title" },
       );
     },
-    async mcp(agentId?: string) {
-      const server = recorder.launches.at(-1)!.config.mcpServers?.paseo;
-      let url: string;
-      if (agentId) url = `http://127.0.0.1:${daemon.port}/mcp/agents?callerAgentId=${agentId}`;
-      else {
-        if (server?.type !== "http") throw new Error("Expected HTTP server");
-        url = server.url;
-      }
-      const mcp = new Client({ name: "plugin-tools-test", version: "1" });
-      mcps.push(mcp);
-      await mcp.connect(new StreamableHTTPClientTransport(new URL(url)));
-      return mcp;
+    nativeTools(agentId?: string) {
+      const callerAgentId = agentId ?? recorder.launches.at(-1)?.context?.agentId;
+      if (!callerAgentId) throw new Error("The fixture has no launched agent");
+      return daemon.nativeTools(callerAgentId);
     },
     async close() {
-      await Promise.all(mcps.map((mcp) => mcp.close()));
       await client.close();
       await daemon.close();
       await rm(directory, { recursive: true, force: true });
@@ -165,7 +153,7 @@ async function setup(
   };
 }
 
-test("session hooks attach tools only to matching agents over MCP, with validated input and caller context", async () => {
+test("session hooks attach tools only to matching agents through native tools, with validated input and caller context", async () => {
   const h = await setup();
   try {
     const a = await h.create({ x: "y" });
@@ -174,7 +162,7 @@ test("session hooks attach tools only to matching agents over MCP, with validate
       labels: { x: "y" },
       reason: "create",
     });
-    const mcpA = await h.mcp();
+    const mcpA = h.nativeTools();
     const listed = (await mcpA.listTools()).tools.find((tool) => tool.name === "plugin_echo");
     expect(listed).toMatchObject({
       name: "plugin_echo",
@@ -185,7 +173,7 @@ test("session hooks attach tools only to matching agents over MCP, with validate
       },
     });
     const b = await h.create();
-    const mcpB = await h.mcp();
+    const mcpB = h.nativeTools();
     expect((await mcpB.listTools()).tools.map((tool) => tool.name)).not.toContain("plugin_echo");
     const invalid = await mcpA.callTool({ name: "plugin_echo", arguments: { text: "" } });
     expect(invalid.isError).toBe(true);
@@ -223,7 +211,7 @@ test("native providers get the same attached schema and execution", async () => 
     const a = await h.create({ x: "y" });
     const catalog = h.launches.at(-1)!.context!.paseoTools!;
     expect(catalog.getTool("plugin_echo")?.description).toBe("Echo for the chosen agent");
-    const mcp = await h.mcp(a.id);
+    const mcp = h.nativeTools(a.id);
     const advertised = (await mcp.listTools()).tools.find((tool) => tool.name === "plugin_echo")!;
     expect(serializePaseoToolInputParameters(catalog.getTool("plugin_echo")!)).toEqual(
       advertised.inputSchema,
@@ -293,7 +281,7 @@ test.each([
       expect(h.launches).toHaveLength(0);
       await h.create();
       expect(h.launches).toHaveLength(1);
-      expect((await (await h.mcp()).listTools()).tools.map((tool) => tool.name)).not.toContain(
+      expect((await h.nativeTools().listTools()).tools.map((tool) => tool.name)).not.toContain(
         "plugin_echo",
       );
     } finally {
@@ -325,7 +313,7 @@ test("each plugin owns its tool array and callbacks can remove earlier attachmen
         ),
     );
     await h.create({ x: "y" });
-    const names = (await (await h.mcp()).listTools()).tools.map((tool) => tool.name);
+    const names = (await h.nativeTools().listTools()).tools.map((tool) => tool.name);
     expect(names).toContain("other_echo");
     expect(names).not.toContain("plugin_echo");
   } finally {
@@ -333,16 +321,16 @@ test("each plugin owns its tool array and callbacks can remove earlier attachmen
   }
 }, 60_000);
 
-test("disabled plugins remove tools from existing and new MCP catalogs", async () => {
+test("disabled plugins remove tools from existing and new tool catalogs", async () => {
   const h = await setup();
   try {
     await h.create({ x: "y" });
-    const mcp = await h.mcp();
+    const mcp = h.nativeTools();
     expect((await mcp.listTools()).tools.map((tool) => tool.name)).toContain("plugin_echo");
     await h.client.patchDaemonConfig({ pluginsEnabled: false });
     expect((await mcp.listTools()).tools.map((tool) => tool.name)).not.toContain("plugin_echo");
     await h.create({ x: "y" });
-    expect((await (await h.mcp()).listTools()).tools.map((tool) => tool.name)).not.toContain(
+    expect((await h.nativeTools().listTools()).tools.map((tool) => tool.name)).not.toContain(
       "plugin_echo",
     );
   } finally {
@@ -478,11 +466,11 @@ test("structured tool results get model-visible text when text is omitted", asyn
   }
 }, 60_000);
 
-test("reloading a plugin retires its old attachments, and both the agent MCP and the launch-time catalog reach the new instance", async () => {
+test("reloading a plugin retires its old attachments, and both the runtime and the launch-time catalog reach the new instance", async () => {
   const h = await setup(true);
   try {
     const a = await h.create({ x: "y" });
-    const mcp = await h.mcp(a.id);
+    const mcp = h.nativeTools(a.id);
     const launchCatalog = h.launches.at(-1)!.context!.paseoTools!;
     expect((await mcp.listTools()).tools.map((tool) => tool.name)).toContain("plugin_echo");
     expect((await launchCatalog.executeTool("plugin_echo", { text: "before" })).isError).not.toBe(
@@ -567,7 +555,7 @@ test("an idle agent reopens once before its next prompt after a session-hook plu
   const h = await setup();
   try {
     const b = await h.create();
-    const mcp = await h.mcp();
+    const mcp = h.nativeTools();
     expect((await mcp.listTools()).tools.map((tool) => tool.name)).not.toContain("plugin_echo");
     await writeFile(
       path.join(h.directory, "tools-test", "index.server.ts"),
@@ -680,7 +668,7 @@ export default function contribute(server) {
 }
 `;
 
-test("a busy agent's MCP lists and calls a restarted plugin's tools without reopening", async () => {
+test("a busy agent's tool catalog lists and calls a restarted plugin's tools without reopening", async () => {
   let release!: () => void;
   const blocked = new Promise<void>((resolve) => {
     release = resolve;
@@ -697,7 +685,7 @@ test("a busy agent's MCP lists and calls a restarted plugin's tools without reop
     await h.client.sendMessage(a.id, "message while busy", { activeTurnBehavior: "steer" });
     expect(h.daemon.daemon.agentManager.hasInFlightRun(a.id)).toBe(true);
 
-    const mcp = await h.mcp(a.id);
+    const mcp = h.nativeTools(a.id);
     const names = (await mcp.listTools()).tools.map((tool) => tool.name);
     expect(names).toContain("plugin_echo");
     expect(names).toContain("other_opens");
@@ -763,7 +751,7 @@ test("a restarted plugin that attaches the same tools keeps the agent's session,
     expect(h.launches).toHaveLength(1);
     expect(subagentStatuses(h, a.id)).toEqual(["running"]);
     // The restarted instance counts the one replayed open.
-    const mcp = await h.mcp(a.id);
+    const mcp = h.nativeTools(a.id);
     expect(await mcp.callTool({ name: "other_opens", arguments: {} })).toMatchObject({
       content: [{ type: "text", text: "1" }],
     });
@@ -778,7 +766,7 @@ test("reverting a plugin's tool edit lets the agent keep its session, with its s
     const a = await h.create();
     await sendAndFinish(h, a.id, "Emit a provider child");
     const description = async () =>
-      (await (await h.mcp(a.id)).listTools()).tools.find((tool) => tool.name === "other_opens")
+      (await h.nativeTools(a.id).listTools()).tools.find((tool) => tool.name === "other_opens")
         ?.description;
     await writePluginSource(
       h,
@@ -828,7 +816,7 @@ test("a reopen that a broken plugin fails keeps the running session's plugin too
     const manager = h.daemon.daemon.agentManager;
     await expect(manager.reloadStalePluginSession(a.id)).rejects.toThrow("broken edit");
     expect(h.launches).toHaveLength(1);
-    const broken = await h.mcp(a.id);
+    const broken = h.nativeTools(a.id);
     expect(await listedToolNames(broken)).not.toContain("breakable_ping");
     expect(await broken.callTool({ name: "other_opens", arguments: {} })).toMatchObject({
       content: [{ type: "text", text: "2" }],
@@ -836,7 +824,7 @@ test("a reopen that a broken plugin fails keeps the running session's plugin too
 
     await rm(arm);
     await h.client.reloadPlugin("breakable");
-    const fixed = await h.mcp(a.id);
+    const fixed = h.nativeTools(a.id);
     expect(await fixed.callTool({ name: "breakable_ping", arguments: {} })).toMatchObject({
       content: [{ type: "text", text: "pong" }],
     });
@@ -866,7 +854,7 @@ test("a reopen that a plugin's Paseo tool name fails is retried, keeps the runni
     await expect(manager.reloadStalePluginSession(a.id)).rejects.toThrow(collision);
     await expect(manager.reloadStalePluginSession(a.id)).rejects.toThrow(collision);
     expect(h.launches).toHaveLength(1);
-    const broken = await h.mcp(a.id);
+    const broken = h.nativeTools(a.id);
     expect(await listedToolNames(broken)).not.toContain("other_opens");
     expect(await broken.callTool({ name: "breakable_ping", arguments: {} })).toMatchObject({
       content: [{ type: "text", text: "pong" }],
@@ -875,7 +863,7 @@ test("a reopen that a plugin's Paseo tool name fails is retried, keeps the runni
     await writePluginSource(h, "tools-test", openCounterSource);
     await h.client.reloadPlugin("tools-test");
     expect(
-      await (await h.mcp(a.id)).callTool({ name: "other_opens", arguments: {} }),
+      await h.nativeTools(a.id).callTool({ name: "other_opens", arguments: {} }),
     ).toMatchObject({ content: [{ type: "text", text: "1" }] });
     await manager.reloadStalePluginSession(a.id);
     expect(h.launches).toHaveLength(1);
@@ -910,7 +898,7 @@ test("after a rejected reopen, a tool name stays with the plugin that had it, ev
       /other_opens from plugin tools-test collides with plugin a-claimant/,
     );
     expect(h.launches).toHaveLength(1);
-    const result = await (await h.mcp(a.id)).callTool({ name: "other_opens", arguments: {} });
+    const result = await h.nativeTools(a.id).callTool({ name: "other_opens", arguments: {} });
     expect(result.content).not.toEqual([{ type: "text", text: "clash" }]);
     expect(manager.getPluginTools(a.id).map((tool) => tool.pluginId)).toEqual(["tools-test"]);
   } finally {
@@ -928,10 +916,10 @@ test("a plugin reload reruns its callback with the agent's current metadata", as
   try {
     const manager = h.daemon.daemon.agentManager;
     const a = await h.create();
-    expect(await listedToolNames(await h.mcp(a.id))).not.toContain("other_opens");
+    expect(await listedToolNames(h.nativeTools(a.id))).not.toContain("other_opens");
     await manager.setMetadata(a.id, { tools: "on" });
     await h.client.reloadPlugin("tools-test");
-    expect(await listedToolNames(await h.mcp(a.id))).toContain("other_opens");
+    expect(await listedToolNames(h.nativeTools(a.id))).toContain("other_opens");
     // The session launched without the tool, so it reopens at the next idle prompt.
     await sendAndFinish(h, a.id, "after metadata");
     expect(h.launches).toHaveLength(2);
@@ -965,9 +953,9 @@ test("a plugin reruns when an earlier plugin changes what it receives, and the s
     expect(h.launches.at(-1)!.context!.env).toMatchObject({ X: "yes" });
     await h.client.disablePlugin("a-sets-x");
     await h.install("b-needs-x", needsXSource);
-    await listedToolNames(await h.mcp(a.id));
+    await listedToolNames(h.nativeTools(a.id));
     await h.client.enablePlugin("a-sets-x");
-    await listedToolNames(await h.mcp(a.id));
+    await listedToolNames(h.nativeTools(a.id));
     // b-needs-x now sees X and adds Y, which the running session never launched with.
     await sendAndFinish(h, a.id, "after re-enable");
     expect(h.launches).toHaveLength(2);
@@ -1010,7 +998,7 @@ test("a later plugin rerun by an earlier plugin's edit keeps its own tool, and t
     await writePluginSource(h, "a-hint", hintSource("green"));
     await h.client.reloadPlugin("a-hint");
     expect(
-      await (await h.mcp(a.id)).callTool({ name: "read_tool_hint", arguments: {} }),
+      await h.nativeTools(a.id).callTool({ name: "read_tool_hint", arguments: {} }),
     ).toMatchObject({ content: [{ type: "text", text: "green" }] });
     // b-hint-reader removes the hint, so the launch is unchanged.
     await sendAndFinish(h, a.id, "after hint change");
@@ -1054,12 +1042,12 @@ test("a refresh that reruns a plugin lets that plugin's running tool call finish
     await h.install("a-hint", hintSource("red"));
     await h.install("b-hint-reader", slowHintReaderSource(entered, gate));
     const a = await h.create();
-    const running = (await h.mcp(a.id)).callTool({ name: "read_tool_hint", arguments: {} });
+    const running = h.nativeTools(a.id).callTool({ name: "read_tool_hint", arguments: {} });
     await expect.poll(() => existsSync(entered)).toBe(true);
     await writePluginSource(h, "a-hint", hintSource("green"));
     await h.client.reloadPlugin("a-hint");
     expect(
-      await (await h.mcp(a.id)).callTool({ name: "read_tool_hint", arguments: {} }),
+      await h.nativeTools(a.id).callTool({ name: "read_tool_hint", arguments: {} }),
     ).toMatchObject({ content: [{ type: "text", text: "green" }] });
     await writeFile(gate, "");
     expect(await running).toMatchObject({ content: [{ type: "text", text: "red" }] });
@@ -1103,7 +1091,7 @@ test("an idle prompt during a plugin restart keeps the agent's session, with its
     expect(h.launches).toHaveLength(1);
     expect(subagentStatuses(h, a.id)).toEqual(["running"]);
     expect(
-      await (await h.mcp(a.id)).callTool({ name: "other_opens", arguments: {} }),
+      await h.nativeTools(a.id).callTool({ name: "other_opens", arguments: {} }),
     ).toMatchObject({ content: [{ type: "text", text: "1" }] });
   } finally {
     await h.close();
@@ -1145,18 +1133,18 @@ async function writePluginSource(h: Awaited<ReturnType<typeof setup>>, id: strin
   await writeFile(path.join(h.directory, id, "index.server.ts"), code);
 }
 
-async function listedToolNames(mcp: Client) {
+async function listedToolNames(mcp: ReturnType<TestPaseoDaemon["nativeTools"]>) {
   return (await mcp.listTools()).tools.map((tool) => tool.name);
 }
 
-test("an agent MCP request while a plugin is stopped keeps its tools eligible for the restart", async () => {
+test("a native tool request while a plugin is stopped keeps its tools eligible for the restart", async () => {
   const h = await setup();
   try {
     const a = await h.create({ x: "y" });
     await h.client.disablePlugin("tools-test");
-    expect(await listedToolNames(await h.mcp(a.id))).not.toContain("plugin_echo");
+    expect(await listedToolNames(h.nativeTools(a.id))).not.toContain("plugin_echo");
     await h.client.enablePlugin("tools-test");
-    expect(await listedToolNames(await h.mcp(a.id))).toContain("plugin_echo");
+    expect(await listedToolNames(h.nativeTools(a.id))).toContain("plugin_echo");
     expect(h.launches).toHaveLength(1);
   } finally {
     await h.close();
@@ -1199,24 +1187,23 @@ test("a reopen during a tool replay keeps the reopen's tool definitions in the p
     await writeFile(arm, "");
     await h.client.reloadPlugin("gated");
     // The restarted process counts from zero, so its first open is the replay. Hold it at the gate.
-    const replaying = h.mcp(a.id);
+    const replaying = h.nativeTools(a.id).listTools();
     await expect.poll(() => existsSync(entered)).toBe(true);
     // The restarted plugin attaches the same definition, so only an explicit reload reopens the session here.
     const reopening = h.daemon.daemon.agentManager.reloadAgentSession(a.id);
     // Room for an unguarded reopen to reach the plugin first. A guarded one waits, so this cannot change the result.
     await new Promise((resolve) => setTimeout(resolve, 500));
     await writeFile(gate, "");
-    const mcp = await replaying;
+    await replaying;
     await reopening;
     expect(h.launches).toHaveLength(2);
-    const mcpAfter = await h.mcp(a.id);
+    const mcpAfter = h.nativeTools(a.id);
     expect((await mcpAfter.listTools()).tools.find((t) => t.name === "which_open")).toMatchObject({
       description: "open 2",
     });
     expect(await mcpAfter.callTool({ name: "which_open", arguments: {} })).toMatchObject({
       content: [{ type: "text", text: "open 2" }],
     });
-    await mcp.close();
   } finally {
     await h.close();
   }
@@ -1246,16 +1233,15 @@ test("a failed tool replay is not repeated for the same plugin instance, and the
     expect(await openCount()).toBe(1);
     await writeFile(arm, "");
     await h.client.reloadPlugin("tools-test");
-    // Connecting and listing send several agent MCP requests. Only the first one replays the open.
-    const mcp = await h.mcp(a.id);
+    // Repeated catalog requests only replay the open once.
+    const mcp = h.nativeTools(a.id);
     expect(await listedToolNames(mcp)).toContain("list_agents");
     expect(await listedToolNames(mcp)).not.toContain("plugin_echo");
     expect(await openCount()).toBe(2);
-    await mcp.close();
 
     await rm(arm);
     await h.client.reloadPlugin("tools-test");
-    expect(await listedToolNames(await h.mcp(a.id))).toContain("plugin_echo");
+    expect(await listedToolNames(h.nativeTools(a.id))).toContain("plugin_echo");
     expect(await openCount()).toBe(3);
     expect(h.launches).toHaveLength(1);
   } finally {
@@ -1281,7 +1267,7 @@ test("a tool replay reaches the restarted plugin with reason refresh", async () 
   try {
     const a = await h.create();
     await h.client.reloadPlugin("tools-test");
-    const mcp = await h.mcp(a.id);
+    const mcp = h.nativeTools(a.id);
     expect((await mcp.listTools()).tools.find((t) => t.name === "open_reason")).toMatchObject({
       description: "refresh",
     });
@@ -1310,7 +1296,7 @@ test.each([
       const a = await h.create({ x: "y" });
       await writePluginSource(h, "tools-test", nameClashSource(name));
       await h.client.reloadPlugin("tools-test");
-      const mcp = await h.mcp(a.id);
+      const mcp = h.nativeTools(a.id);
       const names = await listedToolNames(mcp);
       expect(names).toContain("other_opens");
       expect(names.includes("list_agents")).toBe(policy === undefined);
@@ -1442,7 +1428,7 @@ test("the agent-tools example appends notes only for labeled agents", async () =
       fileURLToPath(new URL("../../../../../plugin-examples/agent-tools", import.meta.url)),
     );
     const a = await h.create({ "notes/enabled": "true" });
-    const mcpA = await h.mcp(a.id);
+    const mcpA = h.nativeTools(a.id);
     expect((await mcpA.listTools()).tools.map((tool) => tool.name)).toContain(
       "append_workspace_note",
     );
@@ -1468,7 +1454,7 @@ test("the agent-tools example appends notes only for labeled agents", async () =
       "Run the targeted tests before committing.\nKeep existing notes.\n",
     );
     await h.create();
-    const mcpB = await h.mcp();
+    const mcpB = h.nativeTools();
     expect((await mcpB.listTools()).tools.map((tool) => tool.name)).not.toContain(
       "append_workspace_note",
     );
@@ -1489,12 +1475,9 @@ export default function contribute(server) {
 }
 `;
 
-test.each([
-  { native: false, serverNames: ["paseo", "company"] },
-  { native: true, serverNames: ["company"] },
-])(
-  "session-open MCP servers reach launch but never saved configuration (native=$native)",
-  async ({ native, serverNames }) => {
+test.each([false, true])(
+  "session-open MCP servers reach launch but never saved configuration (native=%s)",
+  async (native) => {
     const h = await setup(native, mcpSource);
     try {
       const a = await h.create();
@@ -1504,7 +1487,7 @@ test.each([
       expect(snapshot.id).toBe(a.id);
       expect(JSON.stringify(snapshot)).not.toContain("tools.example.com");
       expect(h.launches.at(-1)!.context!.env!.OPEN_REASON).toBe("create");
-      expect(Object.keys(h.launches.at(-1)!.config.mcpServers!)).toEqual(serverNames);
+      expect(Object.keys(h.launches.at(-1)!.config.mcpServers!)).toEqual(["company"]);
       await h.daemon.daemon.agentManager.closeAgent(a.id);
       const agentFiles = await readdir(path.join(h.daemon.paseoHome, "agents"), {
         recursive: true,
@@ -1760,7 +1743,7 @@ test("a reopen that fails the MCP check is retried, and the running session keep
     await expect(manager.reloadStalePluginSession(a.id)).rejects.toThrow(/does not support MCP/);
     expect(h.launches).toHaveLength(1);
     expect(
-      await (await h.mcp(a.id)).callTool({ name: "breakable_ping", arguments: {} }),
+      await h.nativeTools(a.id).callTool({ name: "breakable_ping", arguments: {} }),
     ).toMatchObject({ content: [{ type: "text", text: "pong" }] });
   } finally {
     await h.close();
@@ -1795,7 +1778,7 @@ test("a reopen whose plugin MCP server takes a saved server name is retried, and
 
     await writePluginSource(h, "tools-test", openCounterSource);
     await h.client.reloadPlugin("tools-test");
-    expect(await listedToolNames(await h.mcp(a.id))).toContain("other_opens");
+    expect(await listedToolNames(h.nativeTools(a.id))).toContain("other_opens");
     await manager.reloadStalePluginSession(a.id);
     expect(h.launches).toHaveLength(1);
   } finally {

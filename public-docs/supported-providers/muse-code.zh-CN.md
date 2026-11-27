@@ -62,7 +62,7 @@ Muse Code 内置于 Paseo 且默认启用。请使用 Muse 1.3.0 或更高版本
 
 ## Muse 1.4.1 中的限制 {#limitations-in-muse-141}
 
-- Paseo MCP 工具不可用，因为 Muse 在匹配 MCP 调用前会丢弃返回的工具命名空间。此上游问题必须先在 Muse 中修复，Muse Agent 才能使用 Paseo 工具。
+- **Paseo 操作使用 CLI。** 在支持 shell 的会话中使用 daemon 提供的 `PASEO_CLI`。
 - 上下文压缩需要模型的上下文上限。如果你的端点不报告上限，请在 Muse 中为所选模型配置 `context_compaction.provider_context_limit_tokens`。
 - 只有 Muse 报告用量窗口时才会显示。`usage/read` 返回空响应时，订阅用量不可用。
 - 如果缺少原生子 Agent 工具，请在 Provider 环境中设置 `MUSE_EXPERIMENTAL_SDK_ENABLED=on`。只有当 Muse 提供 `childSessionId` 时，关联的子会话才会出现。

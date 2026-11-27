@@ -86,16 +86,14 @@ function buildTabOptions(
   lockedTo: AddProjectTab | null,
 ): SegmentedControlOption<AddProjectTab>[] {
   const os = isMac ? "mac" : "non-mac";
-  return TABS.map(
-    (tab): SegmentedControlOption<AddProjectTab> => ({
-      value: tab.value,
-      label: tab.label,
-      icon: withIcons ? tab.icon : undefined,
-      tooltip: formatShortcut(["mod", tab.key], os),
-      testID: `add-project-flow-tab-${tab.value}`,
-      disabled: lockedTo !== null && tab.value !== lockedTo,
-    }),
-  );
+  return TABS.map((tab): SegmentedControlOption<AddProjectTab> => ({
+    value: tab.value,
+    label: tab.label,
+    icon: withIcons ? tab.icon : undefined,
+    tooltip: formatShortcut(["mod", tab.key], os),
+    testID: `add-project-flow-tab-${tab.value}`,
+    disabled: lockedTo !== null && tab.value !== lockedTo,
+  }));
 }
 
 interface AddProjectFlowProps {

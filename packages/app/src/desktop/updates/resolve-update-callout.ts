@@ -117,7 +117,7 @@ export function resolveUpdateCalloutDescriptor(
     input.availableUpdate?.latestVersion ?? input.downloadProgress?.version ?? null;
   const dismissalKey = `desktop-update:${input.status}:${latestVersion ?? "unknown"}`;
 
-  const { title, body } = isWaiting && !isInstalling
+  const { title, body } = isWaiting
     ? {
         title: i18n.t("desktop.updates.callout.availableTitle"),
         body: {
@@ -126,13 +126,13 @@ export function resolveUpdateCalloutDescriptor(
         },
       }
     : resolveCalloutPresentation({
-    isError,
-    isInstalling,
-    readyToInstall,
-    latestVersion,
-    downloadProgress: input.downloadProgress,
-    errorMessage: input.errorMessage,
-  });
+        isError,
+        isInstalling,
+        readyToInstall,
+        latestVersion,
+        downloadProgress: input.downloadProgress,
+        errorMessage: input.errorMessage,
+      });
 
   const actions: UpdateCalloutActionDescriptor[] = [
     { role: "changelog", label: i18n.t("desktop.updates.callout.whatsNew") },
@@ -142,7 +142,7 @@ export function resolveUpdateCalloutDescriptor(
   } else {
     actions.push({
       role: "install",
-      label: isWaiting && !isInstalling
+      label: isWaiting
         ? i18n.t("common.actions.retry")
         : resolveInstallActionLabel({ isDownloading, isInstalling, readyToInstall }),
       variant: "primary",

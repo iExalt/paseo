@@ -361,7 +361,7 @@ async function main() {
 
   const daemonDependencies: PaseoDaemonDependencies = {};
   if (process.env.PASEO_DEFER_TERMINAL_WORKER_LAUNCH === "1") {
-    daemonDependencies.deferTerminalWorkerLaunch = true;
+    daemonDependencies.lazyTerminalWorker = true;
   }
   if (process.env.PASEO_DISABLE_BUILTIN_PLUGINS === "1") {
     daemonDependencies.builtinPlugins = new BuiltinPluginLoader(undefined, []);

@@ -59,6 +59,13 @@ paseo project ls
 paseo workspace create --isolation worktree --mode branch-off --new-branch fix-x --base origin/main
 paseo workspace create --isolation worktree --mode checkout-branch --branch existing-work
 paseo workspace create --isolation worktree --mode checkout-pr --pr-number 42
+paseo run --provider codex/gpt-5.4 --mode full-access --workspace <workspace-id> "<prompt>"
+paseo run --provider codex/gpt-5.4 --mode full-access --new-workspace worktree --worktree-mode branch-off --new-branch fix-x --base origin/main "<prompt>"
+paseo send <agent-id> "<follow-up>"
+paseo send <agent-id> --behavior steer "<follow-up that cannot wait>"
+paseo ls
+paseo schedule create --cron "*/15 * * * *" "ping main build"
+paseo heartbeat create --cron "*/15 * * * *" "check the build"
 paseo workspace ls --background
 paseo workspace rename <workspace-id> "Review"
 paseo run --workspace <workspace-id> --provider <provider> --no-wait "Review the change"

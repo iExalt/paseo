@@ -38,7 +38,7 @@ Use personal Google sign-in (`oauth-personal`) for interactive sessions. For una
 ## Sessions and tools
 
 - Paseo can import CLI sessions and restore conversation history when it reopens a chat.
-- Antigravity publishes slash commands and skills, accepts image attachments, and receives the MCP servers configured for the agent.
+- Antigravity publishes slash commands and skills, accepts image attachments, and receives the MCP servers configured for the agent. Use the daemon-provided `PASEO_CLI` for Paseo operations.
 - Send a follow-up after the current turn finishes, or interrupt the turn to change direction.
 
 After an upgrade, an older Hub trigger can report that its Antigravity model is unavailable. Open the trigger in Hub and select the model and thinking level again.

@@ -19,7 +19,7 @@ test.each(["agent", "workspace"] as const)(
         paseoHomeRoot: root,
         staticDir: cwd,
         cleanup: false,
-        mcpEnabled: false,
+        agentToolsEnabled: false,
       });
       const parent = await ctx.client.createAgent({ provider: "claude", cwd, background: true });
       await ctx.client.sendMessage(parent.id, "Reply DONE.");
@@ -30,7 +30,7 @@ test.each(["agent", "workspace"] as const)(
         paseoHomeRoot: root,
         staticDir: cwd,
         cleanup: false,
-        mcpEnabled: false,
+        agentToolsEnabled: false,
       });
       expect(ctx.daemon.daemon.agentManager.getAgent(parent.id)).toBeNull();
       expect(
@@ -75,7 +75,7 @@ test("creation still rejects a caller removed by workspace archive", async () =>
     paseoHomeRoot: root,
     staticDir: cwd,
     cleanup: false,
-    mcpEnabled: false,
+    agentToolsEnabled: false,
   });
   try {
     const parent = await ctx.client.createAgent({ provider: "claude", cwd });

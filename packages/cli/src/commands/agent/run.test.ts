@@ -348,7 +348,9 @@ describe("structured run output", () => {
       error: null,
       lastMessage: response,
     });
-    const sendMessage = vi.spyOn(client, "sendMessage").mockResolvedValue();
+    const sendMessage = vi
+      .spyOn(client, "sendMessage")
+      .mockResolvedValue({ agentId: "structured-agent" });
     const close = vi.spyOn(client, "close").mockResolvedValue();
     vi.mocked(connectToDaemon).mockResolvedValueOnce(client);
     const run = () =>

@@ -633,8 +633,8 @@ export function readStoredAgentUsage(record: StoredAgentRecord): AgentUsage | un
   );
 }
 
-export function storedUsage(record: StoredAgentRecord | null): { lastUsage?: AgentUsage } {
-  const lastUsage = record ? readStoredAgentUsage(record) : undefined;
+function storedUsage(record: StoredAgentRecord): { lastUsage?: AgentUsage } {
+  const lastUsage = readStoredAgentUsage(record);
   return lastUsage ? { lastUsage } : {};
 }
 

@@ -27,7 +27,6 @@ export interface ScheduleUpdateOptions extends ScheduleCommandOptions {
   thinking?: string;
   clearThinking?: boolean;
   isolation?: "local" | "worktree";
-  archiveOnFinish?: boolean;
   cwd?: string;
   archiveOnFinish?: boolean;
   maxRuns?: string | false;
@@ -59,7 +58,6 @@ export async function runUpdateCommand(
         ? options.archiveOnFinish
         : undefined,
     cwd: options.cwd,
-    archiveOnFinish: options.archiveOnFinish,
     maxRuns: options.maxRuns === false ? undefined : options.maxRuns,
     expiresIn: options.expiresIn === false ? undefined : options.expiresIn,
     clearMaxRuns: options.maxRuns === false,

@@ -1,8 +1,6 @@
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { experimental_createMCPClient } from "ai";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import pino from "pino";
 import { beforeAll, beforeEach, describe, expect, test, vi } from "vitest";
 import { z } from "zod";
@@ -10,26 +8,23 @@ import { z } from "zod";
 import { parseAgentMessage } from "../agent/agent-messages/index.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
-import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
+import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import { canRunRealProvider, createRealProviderClients } from "./real-provider-test-config.js";
 
 const CallToolResultSchema = z.object({
   structuredContent: z.object({ agentId: z.string() }),
 });
 
-async function createAgentAs(port: number, callerAgentId: string, args: Record<string, unknown>) {
-  const url = new URL(`http://127.0.0.1:${port}/mcp/agents`);
-  url.searchParams.set("callerAgentId", callerAgentId);
-  const mcp = await experimental_createMCPClient({
-    transport: new StreamableHTTPClientTransport(url),
+async function createAgentAs(
+  daemon: TestPaseoDaemon,
+  callerAgentId: string,
+  args: Record<string, unknown>,
+) {
+  const result = await daemon.nativeTools(callerAgentId).callTool({
+    name: "create_agent",
+    arguments: args,
   });
-  try {
-    const callTool = Reflect.get(mcp, "callTool").bind(mcp);
-    const result = await callTool({ name: "create_agent", args });
-    return CallToolResultSchema.parse(result).structuredContent.agentId;
-  } finally {
-    await mcp.close();
-  }
+  return CallToolResultSchema.parse(result).structuredContent.agentId;
 }
 
 describe("daemon E2E (real claude) - finish notification across a background wake-up", () => {
@@ -70,7 +65,7 @@ describe("daemon E2E (real claude) - finish notification across a background wak
         title: "Finish caller",
         modeId: "full-access",
       });
-      const childId = await createAgentAs(daemon.port, caller.id, {
+      const childId = await createAgentAs(daemon, caller.id, {
         relationship: { kind: "subagent" },
         workspace: { kind: "current" },
         provider: "claude/haiku",

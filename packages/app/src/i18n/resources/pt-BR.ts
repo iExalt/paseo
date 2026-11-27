@@ -3122,6 +3122,7 @@ export const ptBR: TranslationResources = {
       },
       pairDevices: {
         rowTitle: "Parear um dispositivo",
+        rowHint: "Escaneie um QR code ou copie um link para conectar seu celular a este host",
         keepAwake: {
           title: "Manter este Mac acordado para o relay",
           hint: "Impede a suspensão na tomada enquanto o relay está ativado, para que dispositivos remotos alcancem este Mac. Consome mais energia e esquenta mais enquanto está na tomada.",

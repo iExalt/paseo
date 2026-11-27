@@ -15,6 +15,7 @@ Paseo 为以下每个 Agent 都提供了集成。大多数 Agent 在你安装并
 - [Antigravity](/docs/supported-providers/antigravity)：通过你已安装的 `agy` CLI 经由 ACP 运行。
 - [Claude Code](/docs/supported-providers/claude-code)：Anthropic 的编程 Agent。
 - [Codex](/docs/supported-providers/codex)：OpenAI 的工作区 Agent。
+- [Cursor SDK](#cursor-sdk)：使用 Cursor TypeScript SDK 的本地编程 Agent，需手动添加。
 - [fx](/docs/supported-providers/fx)：Vercel Labs 的编程 Agent（从设置中添加）。
 - [GitHub Copilot](/docs/supported-providers/github-copilot)：GitHub 的 AI 结对编程助手。
 - [Hoplite](/docs/supported-providers/hoplite)：云端编程 Agent（从设置中添加）。
@@ -22,6 +23,12 @@ Paseo 为以下每个 Agent 都提供了集成。大多数 Agent 在你安装并
 - [Oh My Pi](/docs/supported-providers/omp)：支持多家 Provider 的编程 Agent（默认关闭）。
 - [OpenCode](/docs/supported-providers/opencode)：开源编程助手。
 - [Pi](/docs/supported-providers/pi)：极简的终端编程 Agent。
+
+## Cursor SDK {#cursor-sdk}
+
+在 **设置 → 主机 → Providers** 中添加 **Cursor SDK**，然后选择 **Sign in with Cursor**。登录状态保存在所选主机上，与 Cursor 编辑器的登录状态独立。无浏览器设置可在 daemon 中启用 `agents.providers.cursor-sdk.enabled`，并通过 daemon 环境或 provider 的 `env` 提供 `CURSOR_API_KEY`。
+
+**Unrestricted** 是唯一可用的模式。Cursor 工具使用 daemon 用户的文件和网络权限。推理请求发送给 Cursor。
 
 ## 通过 ACP 运行的更多 Agent {#more-agents-through-acp}
 

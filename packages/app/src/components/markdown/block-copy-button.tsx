@@ -1,5 +1,5 @@
 import { memo, useCallback, useEffect, useRef, useState } from "react";
-import { View } from "react-native";
+import { View, type StyleProp, type ViewStyle } from "react-native";
 import { Check, Copy } from "lucide-react-native";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -27,6 +27,8 @@ interface BlockCopyButtonProps {
   /** The block's own reveal state. Keyboard focus shows the button regardless. */
   visible: boolean;
   label: string;
+  iconSize?: number;
+  cornerStyle?: StyleProp<ViewStyle>;
 }
 
 /**
@@ -37,6 +39,8 @@ export const BlockCopyButton = memo(function BlockCopyButton({
   onCopy,
   visible,
   label,
+  iconSize,
+  cornerStyle,
 }: BlockCopyButtonProps) {
   const { t } = useTranslation();
   const toast = useToast();
@@ -76,7 +80,7 @@ export const BlockCopyButton = memo(function BlockCopyButton({
   const shown = visible || focused;
   const Glyph = copied ? ThemedCheck : ThemedCopy;
   return (
-    <View style={styles.corner(compact)} dataSet={markdownCopyDataSet.ignore}>
+    <View style={[styles.corner(compact), cornerStyle]} dataSet={markdownCopyDataSet.ignore}>
       <ToolbarButton
         compact={compact}
         label={copied ? t("message.actions.copied") : label}
@@ -85,7 +89,7 @@ export const BlockCopyButton = memo(function BlockCopyButton({
         onBlur={blur}
         style={shown ? styles.shown : styles.hidden}
       >
-        <Glyph size={paneContentToolbarIconSize(compact)} />
+        <Glyph size={iconSize ?? paneContentToolbarIconSize(compact)} />
       </ToolbarButton>
     </View>
   );

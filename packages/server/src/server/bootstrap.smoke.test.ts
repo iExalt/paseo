@@ -1,4 +1,4 @@
-import { resolveDaemonVersion } from "./daemon-version.js";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import os from "node:os";
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
@@ -1047,7 +1047,7 @@ describe("paseo daemon bootstrap", () => {
         path.join(pluginDirectory, "paseo-plugin.json"),
         JSON.stringify({
           id: "startup-rollback",
-          requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+          requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
         }),
       );
       await writeFile(
@@ -1723,7 +1723,7 @@ process.on("SIGTERM", () => {
     path.join(pluginDirectory, "paseo-plugin.json"),
     JSON.stringify({
       id: pluginId,
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(
@@ -1751,6 +1751,29 @@ export default function contribute(server: { registerProvider(p: ProviderRegistr
   const storage = new AgentStorage(path.join(paseoHome, "agents"), logger);
   const agentId = randomUUID();
   const persistence = { version: 1, data: { sessionId: "persisted-acp-session" } };
+  const registryDir = path.join(paseoHome, "projects");
+  const timestamp = "2025-01-01T00:00:00.000Z";
+  await new FileBackedProjectRegistry(path.join(registryDir, "projects.json"), logger).upsert(
+    createPersistedProjectRecord({
+      projectId: "project-1",
+      rootPath: workspace,
+      kind: "non_git",
+      displayName: "Replay project",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }),
+  );
+  await new FileBackedWorkspaceRegistry(path.join(registryDir, "workspaces.json"), logger).upsert(
+    createPersistedWorkspaceRecord({
+      workspaceId: "workspace-1",
+      projectId: "project-1",
+      cwd: workspace,
+      kind: "directory",
+      displayName: "Replay workspace",
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    }),
+  );
   await storage.upsert({
     id: agentId,
     workspaceId: "workspace-1",
@@ -1788,11 +1811,18 @@ export default function contribute(server: { registerProvider(p: ProviderRegistr
   let childPid: number | null = null;
   try {
     await client.connect();
+    expect(handle.daemon.agentManager.getRegisteredProviderIds()).toContain(providerId);
     const timelineRequest = client
       .fetchAgentTimeline(agentId, { direction: "tail", limit: 20 })
-      .catch(() => "rejected");
+      .then(
+        (timeline) => ({ status: "completed", error: timeline.error }),
+        (error: unknown) => ({
+          status: "rejected",
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      );
 
-    await expect
+    const replayStarted = expect
       .poll(
         async () => {
           try {
@@ -1809,7 +1839,9 @@ export default function contribute(server: { registerProvider(p: ProviderRegistr
         },
         { timeout: 10_000 },
       )
-      .not.toBeNull();
+      .not.toBeNull()
+      .then(() => "replaying");
+    expect(await Promise.race([timelineRequest, replayStarted])).toBe("replaying");
 
     const outcome = await Promise.race([
       handle.daemon.stop().then(() => {
@@ -1819,7 +1851,7 @@ export default function contribute(server: { registerProvider(p: ProviderRegistr
       new Promise<string>((resolve) => setTimeout(() => resolve("timed_out"), 12_000)),
     ]);
     expect(outcome).toBe("stopped");
-    await expect(timelineRequest).resolves.toBe("rejected");
+    await expect(timelineRequest).resolves.toMatchObject({ status: "rejected" });
     // The ACP child process must be terminated when provider shutdown cancels replay.
     await expect
       .poll(

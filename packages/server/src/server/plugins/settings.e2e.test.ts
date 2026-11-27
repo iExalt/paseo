@@ -1,4 +1,4 @@
-import { resolveDaemonVersion } from "../daemon-version.js";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -18,7 +18,7 @@ test("server reads saved settings after daemon restart before any client connect
     path.join(directory, "paseo-plugin.json"),
     JSON.stringify({
       id: "settings-startup",
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(
@@ -105,7 +105,7 @@ test("two clients share settings, observe changes, and preserve values through p
       path.join(directory, "paseo-plugin.json"),
       JSON.stringify({
         id: "settings-test",
-        requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+        requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
       }),
     );
     await writeFile(

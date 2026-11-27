@@ -56,14 +56,12 @@ export function LocationField({
   }, [location, query, recommendedPaths, search.items]);
   const options = useMemo<ComboboxOption[]>(
     () =>
-      pickerOptions.map(
-        (option): ComboboxOption => ({
-          id: option.path,
-          label: shortenPath(option.path),
-          description: option.kind === "path" ? "Use this folder" : undefined,
-          kind: "directory",
-        }),
-      ),
+      pickerOptions.map((option): ComboboxOption => ({
+        id: option.path,
+        label: shortenPath(option.path),
+        description: option.kind === "path" ? "Use this folder" : undefined,
+        kind: "directory",
+      })),
     [pickerOptions],
   );
   // Like the Existing tab: while a new search runs, only a typed path is picked for Enter.

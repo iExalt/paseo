@@ -72,9 +72,10 @@ describe("paseo brand assets", () => {
 
   it("ships a multi-size favicon.ico with 48, 32, and 16px entries", () => {
     const ico = readFileSync(path.join(WEBSITE_PUBLIC, "favicon.ico"));
-    expect(ico.readUInt16LE(0)).toBe(0);
-    expect(ico.readUInt16LE(2)).toBe(1);
-    const count = ico.readUInt16LE(4);
+    const header = new DataView(ico.buffer, ico.byteOffset, ico.byteLength);
+    expect(header.getUint16(0, true)).toBe(0);
+    expect(header.getUint16(2, true)).toBe(1);
+    const count = header.getUint16(4, true);
     const sizes: number[] = [];
     for (let i = 0; i < count; i += 1) {
       sizes.push(ico[6 + i * 16] || 256);

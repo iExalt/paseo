@@ -54,7 +54,8 @@ import { cursorSkillReferences, renderPromptAttachmentAsText } from "../prompt-a
 import { importSessionFromPersistence } from "../provider-session-import.js";
 import type { ProviderRuntimeSettings } from "../provider-launch-config.js";
 import { runProviderRefreshActivity } from "../provider-refresh-deadline.js";
-import { composeSystemPromptParts } from "../system-prompt.js";
+import { LaunchWrapUnsupportedError } from "../provider-options.js";
+import { composeAgentSystemPrompt, composeSystemPromptParts } from "../system-prompt.js";
 
 import {
   CURSOR_SDK_PROVIDER as PROVIDER,
@@ -446,6 +447,7 @@ export class CursorSdkAgentClient implements AgentClient {
     nativeId?: string,
   ): Promise<AgentSession> {
     assertNoInheritedAgentIdentity();
+    if (launchContext?.wrap) throw new LaunchWrapUnsupportedError(PROVIDER);
     assertMode(config.modeId);
     if (config.toolPolicy)
       throw new Error("Cursor SDK cannot preapprove exact MCP tools for unattended execution.");
@@ -498,7 +500,7 @@ export class CursorSdkAgentClient implements AgentClient {
       controls,
       cursorOptionsPatch(config.providerOptions ?? {}, providerOptions),
       (id, key) => this.resolveModel(id, key),
-      composeSystemPromptParts(config.systemPrompt, config.daemonAppendSystemPrompt),
+      composeAgentSystemPrompt(config),
       sdk,
       binding,
       new CursorTurnJournal(this.storePath, agent.agentId),

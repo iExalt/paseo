@@ -2314,7 +2314,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
                 style={styles.leftButtonContent}
                 onLayout={isFullscreen ? undefined : onContentLayout}
               >
-                {!isFullscreen && (
+                {!isFullscreen ? (
                   <AttachmentDropdown
                     visible={mode.showAttachments}
                     isConnected={isConnected}
@@ -2324,7 +2324,7 @@ export const MessageInput = forwardRef<MessageInputRef, MessageInputProps>(
                     attachmentMenuItems={attachmentMenuItems}
                     addAttachmentLabel={t("composer.input.addAttachment")}
                   />
-                )}
+                ) : null}
                 {leftContent}
               </View>
             </View>

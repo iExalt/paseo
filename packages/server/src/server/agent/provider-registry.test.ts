@@ -687,6 +687,7 @@ test("launch-wrap support comes from the provider contract and follows extends",
   );
   expect(support).toEqual({
     claude: true,
+    "cursor-sdk": false,
     codex: true,
     copilot: true,
     opencode: true,

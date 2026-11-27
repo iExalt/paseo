@@ -15,7 +15,6 @@ import {
   normalizeBrowserIndexState,
   normalizeBrowserUrl,
   removeBrowserFromIndex,
-  resolveBrowserRoutingMode,
   sanitizeBrowsersForPersist,
   trimNonEmpty,
 } from "./state";

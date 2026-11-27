@@ -745,9 +745,9 @@ async function createWindow(
       preload: getPreloadPath(),
       additionalArguments: [
         windowChromeModeArgument(DESKTOP_WINDOW_CHROME_MODE),
+        installationModeArgument(DESKTOP_INSTALLATION.mode),
         `--paseo-browser-host-label=${browserHostLabel}`,
         `--paseo-browser-host-instance-id=${randomUUID()}`,
-        installationModeArgument(DESKTOP_INSTALLATION.mode),
       ],
       contextIsolation: true,
       nodeIntegration: false,

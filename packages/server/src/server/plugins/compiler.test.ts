@@ -2,7 +2,7 @@ import { once } from "node:events";
 import { realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { Worker } from "node:worker_threads";
+import { fork } from "node:child_process";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import * as zod from "zod";
@@ -13,6 +13,8 @@ import {
   resolveExistingAsarUnpackedEsbuildBinary,
   unpackedEsbuildBinaryFromPackageDir,
 } from "./compiler.js";
+
+vi.mock("node:child_process", { spy: true });
 
 const asarEsbuildDir = path.join("Resources", "app.asar", "node_modules", "esbuild");
 const temporaryDirectories: string[] = [];
@@ -142,33 +144,26 @@ async function createRootAlias(directory: string): Promise<string> {
   return rootAlias;
 }
 
-describe("plugin compiler worker", () => {
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+describe("plugin compiler process", () => {
+  it("lets the idle compiler exit after IPC disconnect and starts a fresh child", async () => {
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      vi.mocked(fork).mockClear();
+      const entries = await createSplitPlugin();
+      await compilePlugin(entries);
+      const child = vi.mocked(fork).mock.results.at(-1)?.value;
+      expect(child).toBeDefined();
+      const exit = once(child!, "exit");
 
-  // Terminating the isolate leaves esbuild's service child unreaped (a zombie per batch), so an
-  // idle worker must stop esbuild and exit on its own. Proven against real ps output in the PR;
-  // under vitest, tsx's own esbuild in the worker would mask that signal.
-  it("lets the idle worker exit on its own instead of terminating it", async () => {
-    const terminate = vi.spyOn(Worker.prototype, "terminate");
-    const shutDown: Worker[] = [];
-    const postMessage = Worker.prototype.postMessage;
-    vi.spyOn(Worker.prototype, "postMessage").mockImplementation(function (
-      this: Worker,
-      message: unknown,
-      transferList?: readonly Transferable[],
-    ) {
-      if ((message as { kind?: string } | null)?.kind === "shutdown") shutDown.push(this);
-      return postMessage.call(this, message, transferList);
-    });
+      await vi.advanceTimersByTimeAsync(1000);
+      await expect(exit).resolves.toEqual([0, null]);
 
-    await compilePlugin(await createSplitPlugin());
-    await vi.waitFor(() => expect(shutDown).toHaveLength(1), { timeout: 5_000 });
-    const [exitCode] = (await once(shutDown[0]!, "exit")) as [number];
-
-    expect(exitCode).toBe(0);
-    expect(terminate).not.toHaveBeenCalled();
+      await compilePlugin(entries);
+      expect(vi.mocked(fork).mock.results.at(-1)?.value).not.toBe(child);
+    } finally {
+      await vi.advanceTimersByTimeAsync(1000);
+      vi.useRealTimers();
+    }
   }, 20_000);
 });
 

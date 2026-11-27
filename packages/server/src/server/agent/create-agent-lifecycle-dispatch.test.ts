@@ -7,6 +7,7 @@ import { afterEach, expect, test, vi } from "vitest";
 
 import type { ForgeService } from "../../services/forge-service.js";
 import { createWorktree } from "../../utils/worktree.js";
+import { archiveByScope, type ArchiveDependencies } from "../workspace-archive-service.js";
 import { WorkspaceAutomationBlockedError } from "../workspace-automation-gate.js";
 import type { WorkspaceGitService } from "../workspace-git-service.js";
 import type { PersistedWorkspaceRecord } from "../workspace-registry.js";
@@ -112,7 +113,8 @@ async function createUntrustedWorktreeFixture(slug: string, markerName: string) 
     archiveAgent: vi.fn(async () => ({ archivedAt: new Date().toISOString() })),
     archiveSnapshot: vi.fn(async () => ({})),
   } as unknown as AgentManager;
-  const dispatch = new CreateAgentLifecycleDispatch({
+  const logger = pino({ level: "silent" });
+  const archiveDeps: ArchiveDependencies = {
     paseoHome,
     getWorkspace: async (id) => (id === workspace.workspaceId ? workspace : null),
     assertWorkspaceAutomationAllowed,
@@ -124,20 +126,31 @@ async function createUntrustedWorktreeFixture(slug: string, markerName: string) 
       getSnapshot: vi.fn(async () => null),
       invalidateWorktrees: () => {},
     } as unknown as WorkspaceGitService,
-    createPaseoWorktreeWorkflow: vi.fn(),
-    archiveAgentForClose: vi.fn(async () => undefined),
     findWorkspaceIdForCwd: async () => workspace.workspaceId,
     listActiveWorkspaces: async () => activeWorkspaces.filter((w) => !archived.has(w.workspaceId)),
     archiveWorkspaceRecord: async (id) => {
       archived.add(id);
     },
-    emit: vi.fn(),
-    emitAgentRemove: vi.fn(async () => undefined),
     emitWorkspaceUpdatesForWorkspaceIds: vi.fn(async () => undefined),
     markWorkspaceArchiving: vi.fn(),
     clearWorkspaceArchiving: vi.fn(),
     killTerminalsForWorkspace: vi.fn(async () => undefined),
-    logger: pino({ level: "silent" }),
+    sessionLogger: logger,
+  };
+  const dispatch = new CreateAgentLifecycleDispatch({
+    ...archiveDeps,
+    createPaseoWorktreeWorkflow: vi.fn(),
+    archiveAgentForClose: async () => {
+      // The fixture has no other agent. Exercise the daemon's last-agent archive path.
+      await archiveByScope(archiveDeps, {
+        scope: { kind: "workspace", workspaceId: workspace.workspaceId },
+        requestId: "auto-archive-fixture",
+        onlyIfEmpty: true,
+      });
+    },
+    emit: vi.fn(),
+    emitAgentRemove: vi.fn(async () => undefined),
+    logger,
   });
 
   return {

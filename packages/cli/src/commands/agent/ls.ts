@@ -47,9 +47,9 @@ export interface AgentListItem {
   attentionReason: AgentSnapshotPayload["attentionReason"] | null;
   attentionTimestamp: string | null;
   labels: AgentSnapshotPayload["labels"];
-  workspaceId: string | null;
   lastError: string | null;
   updatedAt: string;
+  workspaceId: string | null;
 }
 
 /** Helper to get relative time string */
@@ -137,9 +137,9 @@ function toListItem(agent: AgentSnapshotPayload): AgentListItem {
     attentionReason: agent.attentionReason ?? null,
     attentionTimestamp: agent.attentionTimestamp ?? null,
     labels: agent.labels,
-    workspaceId: agent.workspaceId ?? null,
     lastError: agent.lastError ?? null,
     updatedAt: agent.updatedAt,
+    workspaceId: agent.workspaceId ?? null,
   };
 }
 

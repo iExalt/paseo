@@ -36,7 +36,7 @@ Paseo 连接到 `agy acp`，并显示 CLI 提供的权限模式。**Full access*
 ## 会话和工具 {#sessions-and-tools}
 
 - Paseo 可以导入 CLI 会话，并在重新打开聊天时恢复对话历史。
-- Antigravity 提供斜杠命令和技能、接收图片附件，也会使用为 Agent 配置的 MCP 服务器。
+- Antigravity 提供斜杠命令和技能、接收图片附件，也会使用为 Agent 配置的 MCP 服务器。Paseo 操作使用 daemon 提供的 `PASEO_CLI`。
 - 你可以在当前轮次结束后发送后续消息，也可以中断当前轮次来改变方向。
 
 升级 Paseo 后，较早的 Hub 触发器可能会提示其 Antigravity 模型不可用。请在 Hub 中打开该触发器，并重新选择模型和思考级别。

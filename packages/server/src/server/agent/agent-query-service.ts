@@ -5,15 +5,14 @@ import type {
   AgentListItemPayload,
 } from "@getpaseo/protocol/messages";
 import type { Logger } from "pino";
-import { expandUserPath, isSameOrDescendantPath } from "../path-utils.js";
+import { expandUserPath } from "../path-utils.js";
 import { AgentDirectory } from "./directory.js";
 import { ensureAgentLoaded } from "./agent-loading.js";
 import type { AgentManager, ManagedAgent } from "./agent-manager.js";
 import type { AgentStorage } from "./agent-storage.js";
 import type { ProviderSnapshotManager } from "./provider-snapshot-manager.js";
-import { buildStoredAgentPayload, toAgentListItemPayload } from "./agent-projections.js";
-import { curateAgentActivity } from "./activity-curator.js";
-import { selectItemsByProjectedLimit } from "./timeline-projection.js";
+import { buildStoredAgentPayload, selectAgentListItems } from "./agent-projections.js";
+import { summarizeAgentActivity } from "./activity-curator.js";
 import { isStoredAgentProviderAvailable } from "../persistence-hooks.js";
 import { serializeSnapshotWithMetadata } from "./mcp-shared.js";
 import type { WorkspaceRegistry } from "../workspace-registry.js";
@@ -51,38 +50,14 @@ export interface AgentActivityServiceInput extends AgentStatusServiceInput {
   limit?: number;
 }
 
-function timestamp(value: string | null | undefined): number {
-  if (!value) return 0;
-  const parsed = Date.parse(value);
-  return Number.isNaN(parsed) ? 0 : parsed;
-}
-
-function resolveActivityTime(agent: AgentListItemPayload): number {
-  return Math.max(
-    timestamp(agent.updatedAt),
-    timestamp(agent.lastUserMessageAt),
-    timestamp(agent.attentionTimestamp),
-    timestamp(agent.archivedAt),
-    timestamp(agent.createdAt),
+async function projectLiveAgent(dependencies: AgentQueryServiceDependencies, agent: ManagedAgent) {
+  const snapshot = await serializeSnapshotWithMetadata(
+    dependencies.agentStorage,
+    agent,
+    dependencies.logger,
   );
-}
-
-function compareAgentListItems(left: AgentListItemPayload, right: AgentListItemPayload): number {
-  const attentionDelta =
-    Number(right.requiresAttention ?? false) - Number(left.requiresAttention ?? false);
-  if (attentionDelta !== 0) return attentionDelta;
-
-  const statusOrder = {
-    running: 0,
-    initializing: 1,
-    idle: 2,
-    error: 3,
-    closed: 4,
-  } as const;
-  const statusDelta = statusOrder[left.status] - statusOrder[right.status];
-  if (statusDelta !== 0) return statusDelta;
-
-  return resolveActivityTime(right) - resolveActivityTime(left);
+  const backgroundWork = dependencies.agentManager.getAgentBackgroundWorkSummary(agent.id);
+  return backgroundWork ? { ...snapshot, backgroundWork } : snapshot;
 }
 
 export async function queryAgentDirectory(
@@ -101,8 +76,6 @@ export async function queryAgentDirectory(
   }
 
   const requestedCwd = query.cwd?.trim() ? expandUserPath(query.cwd) : (caller?.cwd ?? undefined);
-  const statusFilter = query.statuses?.length ? new Set(query.statuses) : null;
-  const sinceMs = Date.now() - (query.sinceHours ?? 48) * 60 * 60 * 1000;
   const registeredProviders = new Set(
     dependencies.providerSnapshotManager.listRegisteredProviderIds(),
   );
@@ -110,29 +83,29 @@ export async function queryAgentDirectory(
     manager: dependencies.agentManager,
     storage: dependencies.agentStorage,
     workspaces: dependencies.workspaceRegistry,
-    projectLive: (snapshot: ManagedAgent) =>
-      serializeSnapshotWithMetadata(dependencies.agentStorage, snapshot, dependencies.logger),
+    projectLive: (snapshot) => projectLiveAgent(dependencies, snapshot),
     projectStored: (record) =>
-      buildStoredAgentPayload(record, registeredProviders, (provider, own) =>
-        dependencies.agentManager.effectiveOptionsFor(provider, own),
+      buildStoredAgentPayload(
+        record,
+        registeredProviders,
+        (provider, own) => dependencies.agentManager.effectiveOptionsFor(provider, own),
+        dependencies.agentManager.getAgentBackgroundWorkSummary(record.id),
       ),
     isProviderVisible: () => true,
     isStoredProviderAvailable: (record) =>
       isStoredAgentProviderAvailable(record, registeredProviders),
   });
 
-  return (
-    await directory.list({
-      includeBackground: query.includeBackground ?? false,
-      includeArchived: query.includeArchived ?? false,
-    })
-  )
-    .map(toAgentListItemPayload)
-    .filter((agent) => !requestedCwd || isSameOrDescendantPath(requestedCwd, agent.cwd))
-    .filter((agent) => !statusFilter || statusFilter.has(agent.status))
-    .filter((agent) => !agent.archivedAt || resolveActivityTime(agent) >= sinceMs)
-    .sort(compareAgentListItems)
-    .slice(0, query.limit ?? 50);
+  const agents = await directory.list({
+    includeBackground: query.includeBackground ?? false,
+    includeArchived: query.includeArchived ?? false,
+  });
+  return selectAgentListItems(agents, {
+    cwd: requestedCwd,
+    statuses: query.statuses,
+    sinceHours: query.sinceHours ?? 48,
+    limit: query.limit ?? 50,
+  });
 }
 
 export async function getAgentStatus(input: AgentStatusServiceInput): Promise<AgentStatusResult> {
@@ -141,11 +114,7 @@ export async function getAgentStatus(input: AgentStatusServiceInput): Promise<Ag
   if (liveSnapshot) {
     return {
       status: liveSnapshot.lifecycle,
-      snapshot: await serializeSnapshotWithMetadata(
-        dependencies.agentStorage,
-        liveSnapshot,
-        dependencies.logger,
-      ),
+      snapshot: await projectLiveAgent(dependencies, liveSnapshot),
     };
   }
 
@@ -158,6 +127,7 @@ export async function getAgentStatus(input: AgentStatusServiceInput): Promise<Ag
     record,
     new Set(dependencies.providerSnapshotManager.listRegisteredProviderIds()),
     (provider, own) => dependencies.agentManager.effectiveOptionsFor(provider, own),
+    dependencies.agentManager.getAgentBackgroundWorkSummary(record.id),
   );
   return { status: snapshot.status, snapshot };
 }
@@ -173,23 +143,9 @@ export async function getAgentActivity(
   });
   const timeline = dependencies.agentManager.getTimeline(agentId);
   const snapshot = dependencies.agentManager.getAgent(agentId);
-  const selection = selectItemsByProjectedLimit({
-    items: timeline,
-    direction: "tail",
-    limit: limit ?? 0,
-  });
-  const content = curateAgentActivity(selection.items);
-  const { totalProjected, shownProjected } = selection;
-  const noun = totalProjected === 1 ? "activity" : "activities";
-  const countHeader =
-    limit && shownProjected < totalProjected
-      ? `Showing ${shownProjected} of ${totalProjected} ${noun} (limited to ${limit})`
-      : `Showing all ${totalProjected} ${noun}`;
-
   return {
     agentId,
-    updateCount: timeline.length,
     currentModeId: snapshot?.currentModeId ?? null,
-    content: `${countHeader}\n\n${content}`,
+    ...summarizeAgentActivity(timeline, limit),
   };
 }

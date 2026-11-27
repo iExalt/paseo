@@ -52,7 +52,7 @@ reload cannot update it.
 To check the first Android composer tap after pinch-to-zoom, install the rebuilt
 APK and connect it to a chat whose latest assistant message contains a visible
 Markdown image. For example, put `picture.png` in the agent workspace and have
-the assistant reply with `![Test image](picture.png)`. Set `CHAT_URL` to the
+the assistant reply with a Markdown image pointing to that file. Set `CHAT_URL` to the
 chat's Paseo deep link and run from the repository root:
 
 ```bash

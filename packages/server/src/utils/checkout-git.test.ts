@@ -1148,7 +1148,7 @@ const x = 1;
       execFileSync("git", ["checkout", "-b", "release"], { cwd: repoDir });
       execFileSync("git", ["config", "branch.release.pushRemote", "fork"], { cwd: repoDir });
       commitFile(repoDir, "release.txt", "release\n", "release commit");
-      execFileSync("git", ["tag", "release"], { cwd: repoDir });
+      execFileSync("git", ["-c", "tag.gpgsign=false", "tag", "release"], { cwd: repoDir });
 
       const status = await getCheckoutStatus(repoDir);
       await expect(pushCurrentBranch(repoDir)).rejects.toThrow(
@@ -1167,7 +1167,7 @@ const x = 1;
       execFileSync("git", ["checkout", "-b", "release"], { cwd: repoDir });
       commitFile(repoDir, "release.txt", "release\n", "release commit");
       execFileSync("git", ["push", "-u", "origin", "release"], { cwd: repoDir });
-      execFileSync("git", ["tag", "release"], { cwd: repoDir });
+      execFileSync("git", ["-c", "tag.gpgsign=false", "tag", "release"], { cwd: repoDir });
       execFileSync("git", ["push", "origin", "--delete", "refs/heads/release"], { cwd: repoDir });
       execFileSync("git", ["fetch", "--prune", "origin"], { cwd: repoDir });
 
@@ -1184,7 +1184,7 @@ const x = 1;
       execFileSync("git", ["checkout", "-b", "release"], { cwd: repoDir });
       commitFile(repoDir, "release.txt", "release\n", "release commit");
       execFileSync("git", ["push", "-u", "fork", "release"], { cwd: repoDir });
-      execFileSync("git", ["tag", "release"], { cwd: repoDir });
+      execFileSync("git", ["-c", "tag.gpgsign=false", "tag", "release"], { cwd: repoDir });
       commitFile(repoDir, "release.txt", "release two\n", "second release commit");
 
       await pushCurrentBranch(repoDir);
@@ -3204,7 +3204,7 @@ const x = 1;
   it("does not resolve tags as branch checkout targets", async () => {
     execFileSync("git", ["checkout", "-b", "feature/a"], { cwd: repoDir });
     execFileSync("git", ["checkout", "main"], { cwd: repoDir });
-    execFileSync("git", ["tag", "v1"], { cwd: repoDir });
+    execFileSync("git", ["-c", "tag.gpgsign=false", "tag", "v1"], { cwd: repoDir });
 
     await expect(resolveBranchCheckout(repoDir, "v1")).resolves.toEqual({
       kind: "not-found",

@@ -2597,8 +2597,8 @@ async function resolveBranchOffWorktreeSourcePlan(
   cwd: string,
   source: Extract<WorktreeSource, { kind: "branch-off" }>,
   desiredSlug: string,
-  preparedBranchOff?: PreparedWorktreeBranchOff,
-  remoteBaseRefreshTimeoutMs?: number,
+  preparedBranchOff: PreparedWorktreeBranchOff | undefined,
+  remoteBaseRefreshTimeoutMs: number | undefined,
 ): Promise<WorktreeSourcePlan> {
   const branchName = source.branchName;
   await validateGitBranchName(cwd, branchName);

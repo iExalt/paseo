@@ -11,6 +11,8 @@ import {
   CHAT_OUTLINE_GUTTER_INSET,
   CHAT_OUTLINE_MIN_PANEL_WIDTH,
 } from "@/agent-stream/chat-outline/geometry";
+import { chatOutlineAvailable } from "@/agent-stream/chat-outline/model";
+import { useIsCompactFormFactor } from "@/constants/layout";
 import { resolveContentMaxWidth, useSettings } from "@/hooks/use-settings";
 import { useSessionStore } from "@/stores/session-store";
 import { CHAT_COLUMN_BASE_GUTTER, resolveChatColumnGutters } from "./gutters";
@@ -69,6 +71,7 @@ function cssLength(value: number | string): string {
 export function ChatColumnRailSurface({ serverId, children }: ChatColumnRailSurfaceProps) {
   const surfaceRef = useRef<HTMLDivElement | null>(null);
   const [isBelow, setIsBelow] = useState(true);
+  const isCompact = useIsCompactFormFactor();
   const chatOutlineEnabled = useSettings((settings) => settings.chatOutlineEnabled);
   const contentMaxWidth = useSettings(resolveContentMaxWidth);
   const supportsChatOutline = useSessionStore(
@@ -95,7 +98,11 @@ export function ChatColumnRailSurface({ serverId, children }: ChatColumnRailSurf
     return () => observer.disconnect();
   }, []);
 
-  const enabled = supportsChatOutline && chatOutlineEnabled;
+  const enabled = chatOutlineAvailable({
+    supported: supportsChatOutline,
+    enabled: chatOutlineEnabled,
+    isCompact,
+  });
   const inset = enabled && !isBelow ? CHAT_OUTLINE_GUTTER_INSET : 0;
 
   useLayoutEffect(() => {

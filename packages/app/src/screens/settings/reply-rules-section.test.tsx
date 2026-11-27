@@ -55,12 +55,16 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 
-vi.mock("react-native", () => ({
-  Text: ({ children, testID }: { children?: React.ReactNode; testID?: string }) =>
-    React.createElement("span", { "data-testid": testID }, children),
-  View: ({ children, testID }: { children?: React.ReactNode; testID?: string }) =>
-    React.createElement("div", { "data-testid": testID }, children),
-}));
+vi.mock("react-native", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("react-native")>();
+  return {
+    ...actual,
+    Text: ({ children, testID }: { children?: React.ReactNode; testID?: string }) =>
+      React.createElement("span", { "data-testid": testID }, children),
+    View: ({ children, testID }: { children?: React.ReactNode; testID?: string }) =>
+      React.createElement("div", { "data-testid": testID }, children),
+  };
+});
 
 vi.mock("react-native-unistyles", () => ({
   StyleSheet: {

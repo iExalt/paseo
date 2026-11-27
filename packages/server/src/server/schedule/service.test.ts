@@ -40,7 +40,6 @@ import {
   type ScheduleServiceOptions,
 } from "./service.js";
 import { ScheduleStore } from "./store.js";
-import { ForegroundPromptStart } from "../agent/agent-run-state.js";
 import type {
   CreateScheduleInput,
   ScheduleExecutionResult,
@@ -967,7 +966,6 @@ describe("ScheduleService", () => {
       agent.id,
       expect.stringContaining(`Schedule fired (id=${schedule.id}, run=`),
       undefined,
-      expect.any(ForegroundPromptStart),
     ]);
   });
 

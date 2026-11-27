@@ -161,6 +161,26 @@ test("a head that meets another busy turn keeps its place ahead of later message
   expect(delivered).toEqual(["a"]);
 });
 
+test.each(["busy", "settled"] as const)(
+  "withdraw during dispatch gives the provider the last word (%s)",
+  async (resolution) => {
+    const manager = new FakeManager();
+    const attempted = Promise.withResolvers<HeldDispatchResult>();
+    const held = holdMessage(
+      manager.controller,
+      AGENT_ID,
+      { kind: "deferred", turnId: "turn-1", dispatch: () => attempted.promise },
+      createTestLogger(),
+    );
+    manager.endTurn("turn_completed");
+    expect(held.withdraw()).toBe(false);
+    attempted.resolve(
+      resolution === "busy" ? { kind: "busy", turnId: "next" } : { kind: "settled" },
+    );
+    await expect(held.outcome).resolves.toBe(resolution === "busy" ? "discarded" : "dispatched");
+  },
+);
+
 test("canceling a turn discards the steers deferred behind it but keeps queued messages", async () => {
   const manager = new FakeManager();
   const delivered: string[] = [];

@@ -99,8 +99,8 @@ import {
 import { buildArchivedAgentRecord, type ArchivedStoredAgentRecord } from "./agent-archive.js";
 import type { JsonValue, ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { readStoredAgentUsage, toStoredAgentRecord } from "./agent-projections.js";
-import { sanitizeAgentMetrics, withModelMetric } from "./agent-metrics.js";
 import { optionsForCursorControls } from "./providers/cursor-sdk-model.js";
+import { sanitizeAgentMetrics, withModelMetric } from "./agent-metrics.js";
 import {
   applyProviderOptionsPatch,
   exposeFeatureValuesToHook,
@@ -811,16 +811,24 @@ function attachManagedTurnIdentity(
     }
     case "usage_updated":
     case "timeline": {
-      // A notice with no open run is a display turn of its own.
-      const turnId =
-        agent.activeForegroundTurnId ??
-        agent.activeTurnId ??
-        (event.item.type === "notification" ? randomUUID() : undefined);
+      const turnId = recoverManagedTurnId(agent, event);
       return turnId ? { event: { ...event, turnId }, turnId } : { event, turnId };
     }
     default:
       return { event, turnId: undefined };
   }
+}
+
+function recoverManagedTurnId(
+  agent: ActiveManagedAgent,
+  event: Extract<AgentStreamEvent, { type: "usage_updated" | "timeline" }>,
+): string | undefined {
+  // A notice with no open run is a display turn of its own.
+  return (
+    agent.activeForegroundTurnId ??
+    agent.activeTurnId ??
+    (event.type === "timeline" && event.item.type === "notification" ? randomUUID() : undefined)
+  );
 }
 
 function limitAgentStreamEventContent(event: AgentStreamEvent): AgentStreamEvent {
@@ -2287,6 +2295,15 @@ export class AgentManager {
     );
   }
 
+  private restoreHistoricalControls(
+    purpose: "interactive" | "history",
+    config: AgentSessionConfig,
+    record: StoredAgentRecord | null,
+  ): AgentOptionControl[] | undefined {
+    if (purpose !== "history" || this.adapterOf(config.provider) !== "cursor-sdk") return undefined;
+    return record?.controls;
+  }
+
   private async resumeAgentSession(
     handle: AgentPersistenceHandle,
     overrides?: Partial<AgentSessionConfig>,
@@ -2359,7 +2376,13 @@ export class AgentManager {
     if (purpose === "history") this.historySessions.add(session);
     await this.requireExternalMcpSupport(session, providerLaunchConfig, launchContext);
     const restored = restoredProviderState(client, record, purpose);
-    const nativeUsage = await this.readResumedUsage(session, resolvedAgentId);
+    const nativeUsage = await session.readLastUsage?.().catch((error: unknown) => {
+      this.logger.warn(
+        { err: error, agentId: resolvedAgentId },
+        "Could not restore provider usage",
+      );
+      return undefined;
+    });
     return this.registerSession(session, storedConfig, resolvedAgentId, {
       launchedOptions: optionsForCursorControls(launchedOptions, historicalControls),
       historicalControls,
@@ -2384,26 +2407,6 @@ export class AgentManager {
       ...restored,
       lastUsage: mergeResumedUsage(nativeUsage, restored.lastUsage, purpose),
     });
-  }
-
-  private readResumedUsage(
-    session: AgentSession,
-    agentId: string,
-  ): Promise<AgentUsage | undefined> | undefined {
-    return session.readLastUsage?.().catch((error: unknown) => {
-      this.logger.warn({ err: error, agentId }, "Could not restore provider usage");
-      return undefined;
-    });
-  }
-
-  private restoreHistoricalControls(
-    purpose: AgentResumePurpose,
-    config: AgentSessionConfig,
-    record: StoredAgentRecord | null,
-  ): AgentOptionControl[] | undefined {
-    return purpose === "history" && this.adapterOf(config.provider) === "cursor-sdk"
-      ? record?.controls
-      : undefined;
   }
 
   private async preparePersistedResume(
@@ -3887,11 +3890,11 @@ export class AgentManager {
     this.assertAdmittingTurns();
     const agent = await this.findOutOfBandRecipient(agentId);
     if (!agent) return false;
-    this.assertAdmittingTurns();
     const blocks = typeof prompt === "string" ? undefined : prompt;
     assertCursorSkillTarget(blocks, agent.provider);
     const selected = this.cursorSkillTurnReferences(agent, prompt, options);
     if ((Array.isArray(selected) ? selected : await selected).length) return false;
+    this.assertAdmittingTurns();
     // Providers parse slash commands from the raw text, so a command another agent sent
     // must reach them without its sender envelope.
     const agentMessage = typeof prompt === "string" ? parseAgentMessage(prompt) : null;
@@ -3997,7 +4000,7 @@ export class AgentManager {
     });
   }
 
-  private withCursorWorkspaceInstructions(
+  private withCursorTurnInstructions(
     agent: ActiveManagedAgent,
     options: AgentRunOptions | undefined,
   ): AgentRunOptions | undefined {
@@ -4005,11 +4008,7 @@ export class AgentManager {
     return {
       ...options,
       resolveCursorWorkspaceInstructions: async () => {
-        const target = {
-          cwd: agent.config.cwd,
-          workspaceId: agent.workspaceId,
-          projectOnly: true,
-        };
+        const target = { cwd: agent.config.cwd, workspaceId: agent.workspaceId, projectOnly: true };
         const roots = target.workspaceId ? await this.resolveCursorSkillRoots(target) : [];
         return readCursorWorkspaceInstructions(target.cwd, roots);
       },
@@ -4047,7 +4046,7 @@ export class AgentManager {
         }
         runOptions = { ...options, resolveCursorSkills: resolveSelectedSkills };
       }
-      runOptions = this.withCursorWorkspaceInstructions(agent, runOptions);
+      runOptions = this.withCursorTurnInstructions(agent, runOptions);
       const result = await agent.session.startTurn(prompt, runOptions);
       if (pendingRun.settled) {
         throw new Error(`Agent ${agentId} run was canceled before its turn started`);
@@ -4677,6 +4676,7 @@ export class AgentManager {
       const admission = await this.runForegroundMutation(agentId, async () => {
         // Resolve the agent inside the lane: a reload while this send waited replaces it.
         const agent = this.requireSessionAgent(agentId);
+        this.assertNotArchiving(agent.id);
         // A run that is still starting has no turn to interrupt yet. Canceling it would drop
         // its prompt, so wait for it outside the lane, where Stop can still reach it. A start
         // that outlasts the rescue timeout is canceled like any other run.
@@ -4684,7 +4684,6 @@ export class AgentManager {
         if (starting && starting.start.status !== "started" && starting !== stalledStart) {
           return { status: "starting" as const, run: starting };
         }
-        this.assertNotArchiving(agent.id);
         const blocks = typeof prompt === "string" ? undefined : prompt;
         assertCursorSkillTarget(blocks, agent.provider);
         if (!this.hasInFlightRun(agent.id)) {
@@ -4701,8 +4700,8 @@ export class AgentManager {
             { cwd: agent.config.cwd, workspaceId: agent.workspaceId },
             skillReferences,
           );
-          this.assertNotArchiving(agent.id);
         }
+        this.assertNotArchiving(agent.id);
         agent.pendingReplacement = true;
         agent.lifecycle = "running";
         this.touchUpdatedAt(agent);
@@ -5472,7 +5471,7 @@ export class AgentManager {
       const initialPersistedTitle = await this.resolveInitialPersistedTitle(
         resolvedAgentId,
         config,
-        options.initialTitle ?? null,
+        options?.initialTitle ?? null,
       );
 
       const now = new Date();
@@ -5493,14 +5492,15 @@ export class AgentManager {
         }),
         now,
         durableTimelineHasRows,
-        background: options.background === true,
+        background: options?.background === true,
         options,
       });
 
       // Read history before publishing the agent: a provider failure must leave the
       // session unregistered so the registration catch closes it.
       const startupHistory: AgentStreamEvent[] = [];
-      if (session.initialTimeline?.length && !managed.historyPrimed) {
+      const initialTimeline = session.initialTimeline ?? [];
+      if (initialTimeline.length && !managed.historyPrimed) {
         for await (const event of session.streamHistory()) {
           startupHistory.push(limitAgentStreamEventContent(event));
         }
@@ -5514,12 +5514,12 @@ export class AgentManager {
       this.pluginSessions?.sessionLaunched(resolvedAgentId);
       // Initialize previousStatus to track transitions
       this.previousStatuses.set(resolvedAgentId, managed.lifecycle);
-      if (session.initialTimeline?.length) {
+      if (initialTimeline.length) {
         if (!managed.historyPrimed) {
           // Legacy/imported chats need their existing history before startup rows.
           await this.primeTimelineFromLegacyProviderHistory(managed, false, startupHistory);
         } else {
-          for (const entry of buildImportedTimelineRows(session.initialTimeline)) {
+          for (const entry of buildImportedTimelineRows(initialTimeline)) {
             this.recordTimeline(managed.id, entry.item, { timestamp: entry.timestamp });
           }
         }
@@ -5531,7 +5531,7 @@ export class AgentManager {
         title: initialPersistedTitle,
       });
       this.assertAgentRegistrationActive(managed);
-      if (!options.publishWhenReady) {
+      if (!options?.publishWhenReady) {
         this.emitState(managed, { persist: false });
       }
 
@@ -5541,7 +5541,7 @@ export class AgentManager {
       // Stamping now over a restored timestamp rewrote the workspace's "last used" in the
       // sidebar every time a chat was reopened, because workspace `statusEnteredAt` is
       // re-derived from persisted agent `updatedAt` on every daemon start.
-      if (!options.restoring) {
+      if (!options?.restoring) {
         this.touchUpdatedAt(managed);
       }
       await this.persistSnapshot(managed);
@@ -6430,9 +6430,8 @@ export class AgentManager {
     event: AgentStreamEvent,
     options?: HandleStreamEventOptions,
   ): Promise<boolean> {
-    const fromHistory = options?.fromHistory === true;
     event = limitAgentStreamEventContent(event);
-    const identified = attachManagedTurnIdentity(agent, event, fromHistory);
+    const identified = attachManagedTurnIdentity(agent, event, options?.fromHistory === true);
     event = identified.event;
     const eventTurnId = identified.turnId;
     const activeTurnIdBeforeEvent = agent.activeTurnId;
@@ -6448,7 +6447,7 @@ export class AgentManager {
     }
 
     // Only update timestamp for live events, not history replay
-    if (!fromHistory) {
+    if (!options?.fromHistory) {
       this.touchUpdatedAt(agent);
       this.observeCompletionSubjectFromEvent(agent.id, eventTurnId, event);
       if (this.agentStreamCoalescer.handle(agent.id, event)) {
@@ -6461,13 +6460,17 @@ export class AgentManager {
     let terminalDisposition: ActiveTurnTerminalDisposition = "untracked";
     let completionSubject: CompletionSubject | undefined;
     if (isTurnTerminalEvent(event)) {
-      terminalDisposition = this.applyActiveTurnTerminal(agent, eventTurnId, fromHistory);
+      terminalDisposition = this.applyActiveTurnTerminal(
+        agent,
+        eventTurnId,
+        options?.fromHistory === true,
+      );
       completionSubject = this.resolveCompletionSubjectForTerminal({
         agentId: agent.id,
         event,
         turnId: eventTurnId,
         disposition: terminalDisposition,
-        fromHistory,
+        fromHistory: options?.fromHistory === true,
       });
     }
 
@@ -6483,23 +6486,23 @@ export class AgentManager {
       eventTurnId,
       terminalDisposition,
       activeTurnIdBeforeEvent,
-      fromHistory,
+      fromHistory: options?.fromHistory === true,
       flags,
     });
     if (dispatchPromise) {
       await dispatchPromise;
     }
 
-    if (!fromHistory) {
+    if (!options?.fromHistory) {
       if (isTurnTerminalEvent(event)) {
-        this.runs.settleTerminalRun(agent.id, eventTurnId);
-        const turnCanceled = event.type === "turn_canceled";
-        if (isForegroundEvent) {
-          this.finalizeForegroundTurn(agent, eventTurnId, completionSubject, { turnCanceled });
-        } else if (terminalDisposition !== "stale" && !agent.activeForegroundTurnId) {
-          // Publish autonomous readiness only after the tracked run has settled.
-          this.emitState(agent, { completionSubject, turnCanceled });
-        }
+        this.publishTerminalRun({
+          agent,
+          eventTurnId,
+          terminalDisposition,
+          isForegroundEvent,
+          completionSubject,
+          turnCanceled: event.type === "turn_canceled",
+        });
       }
 
       if (flags.shouldDispatchEvent) {
@@ -6510,6 +6513,30 @@ export class AgentManager {
     this.traceHandleStreamEventEnd(agent, event, eventTurnId, flags);
 
     return flags.shouldNotifyWaiters;
+  }
+
+  private publishTerminalRun({
+    agent,
+    eventTurnId,
+    terminalDisposition,
+    isForegroundEvent,
+    completionSubject,
+    turnCanceled,
+  }: {
+    agent: ActiveManagedAgent;
+    eventTurnId: string | undefined;
+    terminalDisposition: ActiveTurnTerminalDisposition;
+    isForegroundEvent: boolean;
+    completionSubject: CompletionSubject | undefined;
+    turnCanceled: boolean;
+  }): void {
+    this.runs.settleTerminalRun(agent.id, eventTurnId);
+    if (isForegroundEvent) {
+      this.finalizeForegroundTurn(agent, eventTurnId, completionSubject, { turnCanceled });
+    } else if (terminalDisposition !== "stale" && !agent.activeForegroundTurnId) {
+      // Publish autonomous readiness only after the tracked run has settled.
+      this.emitState(agent, { completionSubject, turnCanceled });
+    }
   }
 
   private traceHandleStreamEventStart(
@@ -6836,7 +6863,7 @@ export class AgentManager {
     );
     if (terminalDisposition === "stale") return;
     if (!fromHistory) this.recordSpend(agent, event.usage ?? {}, eventTurnId, true);
-    if (event.usage) {
+    if (event.usage && !fromHistory) {
       agent.lastUsage = mergeUsage(event.usage, agent.lastUsage, eventTurnId);
     }
     // If no usage on turn_completed, keep lastUsage as-is so context window
@@ -7287,9 +7314,10 @@ export class AgentManager {
           attentionTimestamp: new Date(),
         };
       }
-      // Repeated finishes are the same unread episode. The notifier can retry an unseen
-      // episode without sending a duplicate notification to a client that received it.
+      // Repeated finishes belong to the same unread episode. Notify again only
+      // if the first finish never reached the user.
       this.broadcastAgentAttention(agent, "finished", completionSubject);
+      return;
     }
   }
 

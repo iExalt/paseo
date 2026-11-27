@@ -837,8 +837,7 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
   }, []);
 
   const durationLabel = useMemo(
-    () =>
-      durationMs !== undefined && durationMs !== null ? getTurnDurationLabel(durationMs, t) : "",
+    () => (durationMs == null ? "" : getTurnDurationLabel(durationMs, t)),
     [durationMs, t],
   );
   const timestampLabel = useMemo(
@@ -869,23 +868,13 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
     },
     [onFork],
   );
-  const canFork = Boolean(onFork);
-  const hasMetrics = metrics !== undefined && metrics.length > 0;
-
   return (
     <View style={assistantTurnFooterStylesheet.container}>
-      {getContent || canFork || hasMetrics ? (
-        <View style={assistantTurnFooterStylesheet.actions}>
-          {getContent ? (
-            <TurnCopyButton
-              getContent={getContent}
-              containerStyle={assistantTurnFooterStylesheet.copyButton}
-            />
-          ) : null}
-          {canFork ? <AssistantForkMenu onFork={handleFork} /> : null}
-          {hasMetrics ? <TurnMetricsButton metrics={metrics} /> : null}
-        </View>
-      ) : null}
+      <AssistantTurnActions
+        getContent={getContent}
+        onFork={onFork ? handleFork : undefined}
+        metrics={metrics}
+      />
       {isNative && getContent ? (
         <TurnSelectTextButton
           getContent={getContent}
@@ -931,6 +920,26 @@ export const AssistantTurnFooter = memo(function AssistantTurnFooter({
     </View>
   );
 });
+
+function AssistantTurnActions({
+  getContent,
+  onFork,
+  metrics,
+}: Pick<AssistantTurnFooterProps, "getContent" | "onFork" | "metrics">) {
+  if (!getContent && !onFork && !metrics?.length) return null;
+  return (
+    <View style={assistantTurnFooterStylesheet.actions}>
+      {getContent ? (
+        <TurnCopyButton
+          getContent={getContent}
+          containerStyle={assistantTurnFooterStylesheet.copyButton}
+        />
+      ) : null}
+      {onFork ? <AssistantForkMenu onFork={onFork} /> : null}
+      {metrics?.length ? <TurnMetricsButton metrics={metrics} /> : null}
+    </View>
+  );
+}
 
 interface LiveElapsedProps {
   startedAt: Date;

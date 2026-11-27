@@ -31,7 +31,11 @@
     "packages/app/*config.{cjs,js,ts}",
     "packages/app/package.json"
   ],
-  "app": ["packages/app/**", "packages/expo-two-way-audio/**"],
+  "app": [
+    "packages/app/**",
+    "packages/expo-two-way-audio/**",
+    "packages/react-native-enriched-markdown/**"
+  ],
   "sdk": [
     "packages/plugin/**",
     "plugin-examples/**",
@@ -60,7 +64,8 @@
     "packages/app/public/**",
     "packages/app/index.ts",
     "packages/app/*config.{cjs,js,ts}",
-    "packages/app/package.json"
+    "packages/app/package.json",
+    "packages/react-native-enriched-markdown/**"
   ],
   "relay": ["packages/relay/**"],
   "cli": ["packages/cli/**"]

@@ -161,19 +161,17 @@ function buildContributions(
 
 function buildProfileGroup(source: AgentControlContributionSource): CommandCenterChoiceGroup {
   const profiles = source.profiles;
-  const choices = (profiles?.rows ?? []).map(
-    (profile): CommandCenterChoice => ({
-      id: profile.id,
-      path: [profile.name],
-      keywords: [profile.summary],
-      icon: source.icons.profile(profile),
-      // Applying a profile writes its values and leaves nothing bound to it,
-      // so no profile is ever the current choice.
-      selected: false,
-      testId: `command-center-profile-${source.serverId}:${source.ownerKey}:${profile.id}`,
-      select: () => profiles?.apply(profile.id),
-    }),
-  );
+  const choices = (profiles?.rows ?? []).map((profile): CommandCenterChoice => ({
+    id: profile.id,
+    path: [profile.name],
+    keywords: [profile.summary],
+    icon: source.icons.profile(profile),
+    // Applying a profile writes its values and leaves nothing bound to it,
+    // so no profile is ever the current choice.
+    selected: false,
+    testId: `command-center-profile-${source.serverId}:${source.ownerKey}:${profile.id}`,
+    select: () => profiles?.apply(profile.id),
+  }));
   return {
     id: "profiles",
     rank: GROUP_RANK.profiles,
