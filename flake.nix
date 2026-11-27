@@ -43,6 +43,7 @@
           paseo = paseo;
           desktop = pkgs.callPackage ./nix/desktop-package.nix {
             inherit paseo;
+            zstd = pkgs.paseoUpdateZstd;
             buildVersion = desktopBuildVersion;
           };
         }

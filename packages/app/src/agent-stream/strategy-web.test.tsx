@@ -205,6 +205,9 @@ describe("createWebStreamStrategy", () => {
   );
 
   it("mounts virtualized history without recursive row measurement updates", () => {
+    // jsdom has no layout. Supply the viewport dimensions the virtualizer reads.
+    vi.spyOn(Element.prototype, "clientWidth", "get").mockReturnValue(360);
+    vi.spyOn(Element.prototype, "clientHeight", "get").mockReturnValue(24);
     const rowRenderCount = vi.fn();
     const strategy = createWebStreamStrategy({ isMobileBreakpoint: true });
     const viewportRef = React.createRef<StreamViewportHandle>();

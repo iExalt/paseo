@@ -5,7 +5,7 @@ import { createInterface } from "node:readline";
 import { setTimeout as delay } from "node:timers/promises";
 import { z } from "zod";
 import { MuseError, classifyExit } from "./errors.js";
-import { frameSchema, initializedSchema, fingerprint } from "./wire.js";
+import { frameSchema, initializedSchema, fingerprint, supportedFingerprints } from "./wire.js";
 
 export function commandId(): string {
   const bytes = randomBytes(16);
@@ -100,7 +100,7 @@ export class MspConnection {
       initializedSchema,
       this.options.startupTimeoutMs ?? 30000,
     );
-    if (response.schema.fingerprint !== fingerprint) {
+    if (!supportedFingerprints.has(response.schema.fingerprint)) {
       process.stderr.write(
         `Muse MSP fingerprint mismatch: expected ${fingerprint}, received ${response.schema.fingerprint}\n`,
       );

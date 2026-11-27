@@ -113,6 +113,7 @@ interface CreateTerminalHostInput {
   height: number;
   scrollback?: number;
   isMac?: boolean;
+  useBrowserClipboard?: boolean;
 }
 
 /** Text typed into xterm's textarea, as the browser reports a typed character. */
@@ -159,7 +160,7 @@ function createTerminalHost(input: CreateTerminalHostInput): MountedTerminal {
   const filePastes: Promise<TerminalFile | null>[] = [];
   const runtime = new TerminalEmulatorRuntime(
     input.isMac === undefined ? undefined : { isMac: input.isMac },
-    clipboard,
+    input.useBrowserClipboard ? undefined : clipboard,
   );
   runtime.setCallbacks({
     callbacks: {
@@ -473,6 +474,46 @@ describe("terminal emulator runtime in a real browser", () => {
 
     await waitFor({ predicate: () => mounted.inputs.length > 0 });
     expect(mounted.inputs).toEqual(["legacy renderer paste"]);
+  });
+
+  it("uses only the system clipboard selector for OSC 52", async () => {
+    const clipboardText = "漢👩🏽‍💻";
+    const clipboardBase64 = btoa(String.fromCharCode(...new TextEncoder().encode(clipboardText)));
+    const read = vi.spyOn(navigator.clipboard, "readText").mockResolvedValue(clipboardText);
+    const write = vi.spyOn(navigator.clipboard, "writeText").mockResolvedValue(undefined);
+    const mounted = createTerminalHost({ width: 720, height: 360, useBrowserClipboard: true });
+
+    await new Promise<void>((resolve) =>
+      mounted.runtime.write({
+        data: terminalOutput(
+          `\x1b]52;c;${clipboardBase64}\x07\x1b]52;p;${clipboardBase64}\x07\x1b]52;c;?\x07\x1b]52;p;?\x07`,
+        ),
+        onCommitted: resolve,
+      }),
+    );
+
+    expect(write).toHaveBeenCalledExactlyOnceWith(clipboardText);
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(mounted.inputs).toEqual([`\x1b]52;c;${clipboardBase64}\x07`, "\x1b]52;p;\x07"]);
+  });
+
+  it("keeps parsing after the browser denies OSC 52 clipboard access", async () => {
+    const denied = new DOMException("Permission denied", "NotAllowedError");
+    vi.spyOn(navigator.clipboard, "readText").mockRejectedValue(denied);
+    vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(denied);
+    const mounted = createTerminalHost({ width: 720, height: 360, useBrowserClipboard: true });
+
+    await new Promise<void>((resolve) =>
+      mounted.runtime.write({
+        data: terminalOutput("\x1b]52;c;aGVsbG8=\x07\x1b]52;c;?\x07continued output"),
+        onCommitted: resolve,
+      }),
+    );
+
+    expect(mounted.inputs).toEqual(["\x1b]52;c;\x07"]);
+    expect(window.__paseoTerminal?.buffer.active.getLine(0)?.translateToString(true)).toBe(
+      "continued output",
+    );
   });
 
   it("pastes clipboard text on Ctrl+V without reading the clipboard image", async () => {

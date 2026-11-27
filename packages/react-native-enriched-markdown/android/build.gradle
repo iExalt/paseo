@@ -9,7 +9,7 @@ buildscript {
   }
 
   dependencies {
-    classpath "com.android.tools.build:gradle:8.7.2"
+    classpath "com.android.tools.build:gradle:9.5.3"
     // noinspection DifferentKotlinGradleVersion
     classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${getExtOrDefault('kotlinVersion')}"
   }
@@ -289,7 +289,7 @@ dependencies {
   // autolinks this module (e.g. apps/react-native-example/android). Mirrors the
   // standalone @enriched-markdown/android test stack.
   testImplementation "junit:junit:4.13.2"
-  testImplementation "org.robolectric:robolectric:4.14.1"
+  testImplementation "org.robolectric:robolectric:4.18.1"
   implementation "com.facebook.react:react-android"
   implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
   // Baseline Profile installer for AOT compilation hints
@@ -300,8 +300,8 @@ dependencies {
   }
   // Video playback (optional — set "enriched-markdown".enableVideo = false in package.json to exclude)
   if (enableVideo) {
-    implementation("androidx.media3:media3-exoplayer:1.9.4")
-    implementation("androidx.media3:media3-ui:1.9.4")
+    implementation("androidx.media3:media3-exoplayer:1.11.1")
+    implementation("androidx.media3:media3-ui:1.11.1")
   }
 }
 

@@ -82,7 +82,7 @@ test("keeps the inspected bottom viewport fixed when output arrives", async () =
   runtime.find.search("needle");
   const term = window.__paseoTerminal!;
   const scrollbar = root.querySelector<HTMLElement>(
-    ".xterm-scrollable-element > .scrollbar.vertical",
+    ".xterm-scrollable-element > .xterm-scrollbar.xterm-vertical",
   );
   const screen = root.querySelector<HTMLElement>(".xterm-screen");
   expect(scrollbar).not.toBeNull();

@@ -39,10 +39,10 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
         with:
-          version: "2026.10.3"
-          install_args: node@26.13.0 actionlint@1.7.12
+          version: "2026.11.14"
+          install_args: node@26.13.1 actionlint@1.7.12
           cache: false
 
       - name: Rebase captured dev on captured upstream and import known resolutions
@@ -117,7 +117,7 @@ jobs:
           actionlint: "true"
       - name: Configure pinned npm installation
         run: |
-          test "$(node --version)" = v26.13.0
+          test "$(node --version)" = v26.13.1
           test "$(npm --version)" = 11.20.0
           echo "npm_config_cache=$RUNNER_TEMP/npm-cache" >> "$GITHUB_ENV"
           echo "NODE_COMPILE_CACHE=$RUNNER_TEMP/node-compile-cache" >> "$GITHUB_ENV"
@@ -128,7 +128,7 @@ jobs:
           echo "key=$key" >> "$GITHUB_OUTPUT"
       - name: Restore installed dependencies from dev
         id: restore-modules
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         timeout-minutes: 3
         with:
           key: ${{ steps.modules.outputs.key }}

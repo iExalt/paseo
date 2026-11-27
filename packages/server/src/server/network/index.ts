@@ -87,6 +87,8 @@ export function initializeEnvironmentProxy(
       httpProxy: environment.httpProxy,
       httpsProxy: environment.httpsProxy,
       noProxy: bypassList(environment.noProxy),
+      // Keep proxy credentials on CONNECT for both HTTP and HTTPS destinations.
+      proxyTunnel: true,
       clientFactory: proxyClient,
     }),
   );

@@ -16,7 +16,7 @@
     },
     "production": {
       "ios": {
-        "image": "macos-tahoe-26.6-xcode-27.1"
+        "image": "macos-tahoe-26.6-xcode-27.2"
       },
       "env": {
         "APP_VARIANT": "production"

@@ -31,3 +31,12 @@ index 0287e1c..af4e1a5 100644
      }
  
      @Override
+diff --git a/node_modules/react-native-webview/index.d.ts b/node_modules/react-native-webview/index.d.ts
+--- a/node_modules/react-native-webview/index.d.ts
++++ b/node_modules/react-native-webview/index.d.ts
+@@ -8,4 +8,4 @@ export type WebViewProps = IOSWebViewProps & AndroidWebViewProps & WindowsWebViewProps;
+-declare class WebView<P = undefined> extends Component<WebViewProps & P> {
++declare class WebView<P = unknown> extends Component<WebViewProps & P> {
+   /**
+    * Go back one page in the webview's history.
+    */

@@ -9,7 +9,7 @@ runs:
   steps:
     - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
       with:
-        node-version: "26.13.0"
+        node-version: "26.13.1"
         architecture: x64
         package-manager-cache: false
     - name: Verify hosted runtime
@@ -18,13 +18,13 @@ runs:
       run: |
         test "$(uname -s)" = Linux
         test "$(uname -m)" = x86_64
-        test "$(node --version)" = v26.13.0
+        test "$(node --version)" = v26.13.1
         test "$(npm --version)" = 11.20.0
         node_root="$(dirname "$(dirname "$(readlink -f "$(command -v node)")")")"
         echo "root=$node_root" >> "$GITHUB_OUTPUT"
-    - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+    - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78 # v5.3.0
       with:
-        version: "2026.10.3"
+        version: "2026.11.14"
         install: false
         cache: false
     - name: Activate exact mise runtime
@@ -32,10 +32,10 @@ runs:
       env:
         NODE_ROOT: ${{ steps.runtime.outputs.root }}
       run: |
-        mise link node@26.13.0 "$NODE_ROOT"
+        mise link node@26.13.1 "$NODE_ROOT"
         test "$(readlink -f "$(mise which node)")" = "$NODE_ROOT/bin/node"
-        test "$(mise exec node@26.13.0 -- node --version)" = v26.13.0
-        test "$(mise exec node@26.13.0 -- npm --version)" = 11.20.0
+        test "$(mise exec node@26.13.1 -- node --version)" = v26.13.1
+        test "$(mise exec node@26.13.1 -- npm --version)" = 11.20.0
     - name: Install pinned workflow linter
       if: inputs.actionlint == 'true'
       shell: bash

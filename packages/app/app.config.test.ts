@@ -117,6 +117,7 @@ describe("hardware keyboard scene integration", () => {
 const {
   configureGradleWrapper,
   configureAndroidBuildGradle,
+  configureCompileSdk,
   configureAndroidAppBuildGradle,
   configureHermesCommand,
 } = require("./plugins/with-android-gradle");
@@ -169,12 +170,24 @@ describe("withAndroidGradle", () => {
     expect(configureHermesCommand(configured)).toBe(configured);
     expect(() => configureHermesCommand("react {}\n")).toThrow("hermesCommand");
   });
+  it("compiles against API 37.2 while preserving the target SDK setting", () => {
+    const configured = configureCompileSdk(
+      "android {\n    compileSdk rootProject.ext.compileSdkVersion\n    targetSdkVersion rootProject.ext.targetSdkVersion\n}\n",
+    );
+    expect(configured).toContain(
+      "compileSdk { version = release(rootProject.ext.compileSdkVersion) { minorApiLevel = 2 } }",
+    );
+    expect(configured).toContain("targetSdkVersion rootProject.ext.targetSdkVersion");
+    expect(configureCompileSdk(configured)).toBe(configured);
+    expect(() => configureCompileSdk("android {}\n")).toThrow("compile SDK");
+  });
+
   it("pins AGP 9 without changing other build dependencies", () => {
     const configured = configureAndroidBuildGradle(
       "classpath('com.android.tools.build:gradle')\nclasspath('com.facebook.react:react-native-gradle-plugin')\n",
     );
     expect(configured).toBe(
-      "classpath('com.android.tools.build:gradle:9.2.1')\nclasspath('com.facebook.react:react-native-gradle-plugin')\n",
+      "classpath('com.android.tools.build:gradle:9.5.3')\nclasspath('com.facebook.react:react-native-gradle-plugin')\n",
     );
     expect(configureAndroidBuildGradle(configured)).toBe(configured);
     expect(() => configureAndroidBuildGradle("dependencies {}\n")).toThrow("plugin dependency");
@@ -184,10 +197,10 @@ describe("withAndroidGradle", () => {
       "distributionBase=GRADLE_USER_HOME\ndistributionUrl=https\\://services.gradle.org/distributions/gradle-9.3.1-bin.zip\nnetworkTimeout=10000\ndistributionSha256Sum=old\n",
     );
     expect(configured).toContain(
-      "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.8.2-bin.zip\n",
+      "distributionUrl=https\\://services.gradle.org/distributions/gradle-9.9.3-bin.zip\n",
     );
     expect(configured).toContain(
-      "distributionSha256Sum=21bd5da2de49b642904077f38c0efdc7778e92b3ed0889392dca61b97e389607\n",
+      "distributionSha256Sum=4f2135b741f272acc88c168a52202a0a63fceee0cd61ee753da79694cd2b1e4b\n",
     );
     expect(configured).toContain("distributionBase=GRADLE_USER_HOME\n");
     expect(configured).toContain("networkTimeout=10000\n");

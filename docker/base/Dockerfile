@@ -1,11 +1,19 @@
 # syntax=docker/dockerfile:1
 
-ARG NODE_IMAGE=node:26.10.0-trixie-slim@sha256:899ac4c751888623eda5a4f367cee435d5a3ca277ce866d101fa99b80562d420
+ARG NODE_IMAGE=node:26.13.1-trixie-slim@sha256:abe7e5a82b61a8ef67b315b85497c9e65173387ccf2f4a029248184b8e020be5
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS source-pack
 
 ARG PASEO_VERSION
 
 ENV ONNXRUNTIME_NODE_INSTALL=skip
+
+# node-pty publishes Linux x64 prebuilds but needs node-gyp on arm64.
+RUN set -eux; \
+    if [ "$(dpkg --print-architecture)" = arm64 ]; then \
+      apt-get update; \
+      apt-get install -y --no-install-recommends g++ make python3; \
+      rm -rf /var/lib/apt/lists/*; \
+    fi
 
 WORKDIR /tmp/paseo-src
 COPY . .
@@ -15,7 +23,7 @@ RUN set -eux; \
       test "$(node -p "require('./package.json').version")" = "${PASEO_VERSION}"; \
     fi; \
     node -e 'const fs=require("node:fs"); const pkg=JSON.parse(fs.readFileSync("package.json","utf8")); delete pkg.scripts.prepare; fs.writeFileSync("package.json", `${JSON.stringify(pkg)}\n`);'; \
-    npm ci
+    npm_config_nodedir=/usr/local npm ci
 
 RUN set -eux; \
     mkdir -p /tmp/paseo-packs; \
@@ -24,7 +32,7 @@ RUN set -eux; \
     npm pack --workspace=@getpaseo/protocol --pack-destination /tmp/paseo-packs; \
     npm pack --workspace=@getpaseo/client --pack-destination /tmp/paseo-packs; \
     npm pack --workspace=@getpaseo/plugin --pack-destination /tmp/paseo-packs; \
-    npm pack --workspace=@getpaseo/server --pack-destination /tmp/paseo-packs; \
+    NODE_OPTIONS=--max-old-space-size=4096 npm pack --workspace=@getpaseo/server --pack-destination /tmp/paseo-packs; \
     npm pack --workspace=@getpaseo/cli --pack-destination /tmp/paseo-packs
 
 FROM ${NODE_IMAGE}
@@ -59,7 +67,15 @@ RUN set -eux; \
 
 COPY --from=source-pack /tmp/paseo-packs /tmp/paseo-packs
 RUN set -eux; \
-	npm install -g /tmp/paseo-packs/*.tgz; \
+    if [ "$(dpkg --print-architecture)" = arm64 ]; then \
+      apt-get update; \
+      apt-get install -y --no-install-recommends g++ make python3; \
+    fi; \
+    npm_config_nodedir=/usr/local npm install -g /tmp/paseo-packs/*.tgz; \
+    if [ "$(dpkg --print-architecture)" = arm64 ]; then \
+      apt-get purge -y --auto-remove g++ make python3; \
+      rm -rf /var/lib/apt/lists/*; \
+    fi; \
     rm -rf /tmp/paseo-packs; \
     npm cache clean --force; \
     server_entry="$(npm root -g)/@getpaseo/server/dist/scripts/supervisor-entrypoint.js"; \
@@ -91,8 +107,7 @@ RUN set -eux; \
       "$XDG_CACHE_HOME"; \
     chown -R paseo:paseo /home/paseo /workspace
 
-COPY docker/base/rootfs/ /
-RUN chmod +x /usr/local/bin/paseo-docker-entrypoint
+COPY --chmod=0755 docker/base/rootfs/usr/local/bin/paseo-docker-entrypoint /usr/local/bin/paseo-docker-entrypoint
 
 WORKDIR /workspace
 

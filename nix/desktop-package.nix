@@ -62,6 +62,7 @@ buildNpmPackage {
 
   nodejs = nodejs_26;
   inherit (paseo) npmDeps;
+  passthru.updaterZstd = lib.getBin zstd;
 
   # Prevent onnxruntime-node's install script from running during automatic
   # npm rebuild. We manually rebuild only node-pty in buildPhase.

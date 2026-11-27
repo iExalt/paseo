@@ -19,6 +19,8 @@ async function renderWebProbe(contents: string) {
     conditions: ["browser"],
     resolveExtensions: [".web.tsx", ".web.ts", ".web.js", ".tsx", ".ts", ".js", ".json"],
     alias: { "react-native": "react-native-web", "@": path.resolve(import.meta.dirname, "..") },
+    // The shared SVG touch handler requires this native module only on Android.
+    external: ["../fabric/NativeSvgSoundModule"],
     jsx: "automatic",
     define: { __DEV__: "true", "process.env.NODE_ENV": '"development"' },
   });

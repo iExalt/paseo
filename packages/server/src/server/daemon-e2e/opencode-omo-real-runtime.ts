@@ -12,7 +12,7 @@ import { terminateWithTreeKill } from "../../utils/tree-kill.js";
 import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 
-const PINNED_OPENCODE_VERSION = "1.18.9";
+const PINNED_OPENCODE_VERSION = "1.19.6";
 const PINNED_OMO_VERSION = "4.19.3";
 const DEFAULT_OPENROUTER_MODEL = "openrouter/google/gemini-2.5-flash";
 const NO_AUTH_MODEL = "opencode/big-pickle";

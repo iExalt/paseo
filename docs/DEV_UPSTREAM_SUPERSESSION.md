@@ -142,7 +142,7 @@ The carry-forward checks each ledger identity against the published chain.
 The partial receipts record source decisions. Platform and device proof
 remains scoped to the checks that ran.
 
-Later replay uses Git >=2.55 and the merge-backend procedure in [the rebase guide](upstream/rebase-dev.md). Validation runs `mise run --skip-tools ci:routine` against the exact candidate; the workflow pins Node 26.13.0 / npm 11.20.0. That guide owns execution and diagnostics; this document records the source inventory and performance baseline.
+Later replay uses Git >=2.55 and the merge-backend procedure in [the rebase guide](upstream/rebase-dev.md). Validation runs `mise run --skip-tools ci:routine` against the exact candidate; the workflow specifies the Node and npm versions. That guide owns execution and diagnostics; this document records the source inventory and performance baseline.
 
 The routine budget is under 300 seconds excluding initial queue and including
 job scheduling; it is separate from the rebase job's hard limit. The existing [captured-dev baseline](https://github.com/iExalt/paseo/actions/runs/43602539783)

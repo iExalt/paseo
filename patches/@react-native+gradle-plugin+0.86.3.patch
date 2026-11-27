@@ -4,7 +4,7 @@ diff --git a/node_modules/@react-native/gradle-plugin/gradle/libs.versions.toml 
 @@ -1,10 +1,10 @@
  [versions]
 -agp = "8.12.0"
-+agp = "9.2.1"
++agp = "9.5.3"
  gson = "2.8.9"
  guava = "31.0.1-jre"
  javapoet = "1.13.0"
@@ -54,18 +54,31 @@ index 2fbeafd50..870844cb2 100644
      jvmTarget.set(JvmTarget.JVM_11)
      allWarningsAsErrors.set(
 diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
-index 85dadeba0..c4f92db2e 100644
 --- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
 +++ b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/build.gradle.kts
-@@ -64,7 +64,7 @@ kotlin { jvmToolchain(17) }
- 
+@@ -55,18 +55,15 @@
+   testImplementation(project(":shared-testutil"))
+ }
+
+-// We intentionally don't build for Java 17 as users will see a cryptic bytecode version
+-// error first. Instead we produce a Java 11-compatible Gradle Plugin, so that AGP can print their
+-// nice message showing that JDK 11 (or 17) is required first
+-java { targetCompatibility = JavaVersion.VERSION_11 }
++// This Gradle plugin consumes AGP Java 17 variants.
++java { targetCompatibility = JavaVersion.VERSION_17 }
+
+ kotlin { jvmToolchain(17) }
+
  tasks.withType<KotlinCompile>().configureEach {
    compilerOptions {
 -    apiVersion.set(KotlinVersion.KOTLIN_1_8)
+-    // See comment above on JDK 11 support
+-    jvmTarget.set(JvmTarget.JVM_11)
 +    apiVersion.set(KotlinVersion.KOTLIN_2_0)
-     // See comment above on JDK 11 support
-     jvmTarget.set(JvmTarget.JVM_11)
++    jvmTarget.set(JvmTarget.JVM_17)
      allWarningsAsErrors.set(
+         project.properties["enableWarningsAsErrors"]?.toString()?.toBoolean() ?: false
+     )
 diff --git a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt b/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt
 index e7859ff6a..55ea56069 100644
 --- a/node_modules/@react-native/gradle-plugin/react-native-gradle-plugin/src/main/kotlin/com/facebook/react/ReactPlugin.kt

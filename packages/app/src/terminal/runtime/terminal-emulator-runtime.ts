@@ -134,7 +134,6 @@ interface TerminalEmulatorRuntimeDisposables {
   removeFontListeners: () => void;
   removeFilePasteListener: () => void;
   removeUserInputListeners: () => void;
-  removeScrollbarStyle: () => void;
   restoreDocumentStyles: () => void;
   restoreViewportStyles: () => void;
   disposeFitAddon: () => void;
@@ -584,13 +583,9 @@ export class TerminalEmulatorRuntime {
       minimumContrastRatio: 1,
       rescaleOverlappingGlyphs: true,
       scrollback: input.scrollback,
+      scrollbar: { width: 8 },
       theme: withOverviewRulerBorderHidden(input.theme),
     });
-    input.root.dataset.paseoTerminalScrollbar = "";
-    const scrollbarStyle = document.createElement("style");
-    scrollbarStyle.textContent =
-      "[data-paseo-terminal-scrollbar] .xterm .xterm-scrollable-element > .scrollbar { width: 8px !important; }";
-    input.root.append(scrollbarStyle);
     const fitAddon = new FitAddon();
     let webglAddon: WebglAddon | null = null;
     let imageAddon: ImageAddon | null = null;
@@ -623,7 +618,17 @@ export class TerminalEmulatorRuntime {
     terminal.onScroll(() => {
       if (this.findQuery) this.emitFindResult();
     });
-    terminal.loadAddon(new ClipboardAddon());
+    // Browser clipboard access is only for OSC 52's system clipboard selector.
+    // Clipboard permission failures must let xterm finish parsing the write.
+    terminal.loadAddon(
+      new ClipboardAddon(undefined, {
+        readText: (selection) =>
+          selection === "c" ? this.clipboard.readText().catch(() => "") : "",
+        writeText: (selection, text) => {
+          if (selection === "c") return this.clipboard.writeText(text).catch(() => undefined);
+        },
+      }),
+    );
     try {
       terminal.loadAddon(new LigaturesAddon());
     } catch {
@@ -879,10 +884,6 @@ export class TerminalEmulatorRuntime {
         }
         this.userInputEvent = null;
       },
-      removeScrollbarStyle: () => {
-        scrollbarStyle.remove();
-        delete input.root.dataset.paseoTerminalScrollbar;
-      },
       restoreDocumentStyles,
       restoreViewportStyles,
       disposeFitAddon: () => {
@@ -913,7 +914,6 @@ export class TerminalEmulatorRuntime {
       disposables.removeFontListeners();
       disposables.removeFilePasteListener();
       disposables.removeUserInputListeners();
-      disposables.removeScrollbarStyle();
       disposables.disposeFitAddon();
       disposables.disposeWebglAddon();
       disposables.disposeTerminal();
