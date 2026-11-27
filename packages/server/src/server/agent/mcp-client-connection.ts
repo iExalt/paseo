@@ -40,6 +40,7 @@ export interface ConnectMcpServerInput {
   /** Start a stdio server as `[...wrap, command, ...args]`. */
   wrap?: LaunchWrap;
   clientName: string;
+  serverTimeoutMs?: number;
 }
 
 export async function connectMcpServer(input: ConnectMcpServerInput): Promise<McpClientConnection> {
@@ -51,6 +52,7 @@ async function openClient(
   input: ConnectMcpServerInput,
 ): Promise<{ client: Client; tools: McpClientTool[] }> {
   const client = new Client({ name: input.clientName, version: "1.0.0" });
+  const serverTimeoutMs = input.serverTimeoutMs ?? SERVER_TIMEOUT_MS;
   try {
     // The SDK times out only the `initialize` request, not the `initialized` notification after it.
     return await withDeadline(
@@ -59,8 +61,8 @@ async function openClient(
         const listed = await client.listTools();
         return { client, tools: listed.tools };
       })(),
-      SERVER_TIMEOUT_MS,
-      () => new Error(`MCP server did not connect within ${SERVER_TIMEOUT_MS / 1000} seconds`),
+      serverTimeoutMs,
+      () => new Error(`MCP server did not connect within ${serverTimeoutMs / 1000} seconds`),
     );
   } catch (error) {
     // Closing the client also aborts its pending requests.

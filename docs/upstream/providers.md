@@ -17,8 +17,8 @@ executable resolution and applies `agents.providers.<provider-id>.command` and `
 connecting. Register the provider's icon with the plugin rather than adding it to the app's
 provider icon map. You do not need a core manifest entry or provider factory.
 
-| Provider    | Transport                                  | Setup and limitations                                            |
-| ----------- | ------------------------------------------ | ---------------------------------------------------------------- |
+| Provider    | Transport                                  | Setup and limitations                                               |
+| ----------- | ------------------------------------------ | ------------------------------------------------------------------- |
 | Antigravity | ACP over the installed `agy acp` CLI       | [Antigravity](../../public-docs/supported-providers/antigravity.md) |
 | Muse Code   | MSP over one `muse serve` host per session | [Muse Code](../../public-docs/supported-providers/muse-code.md)     |
 
@@ -245,7 +245,7 @@ finish subprocess, server, or session cleanup before rejecting. Timeout errors l
 that were still active when the deadline expired. A plugin provider's connection is shared with its
 running sessions, so the bridge cannot close it at the deadline; it sends `request.cancel` for the
 abandoned request instead, and the provider stops that request's work
-([provider guide](../public-docs/plugins/providers.md#stop-a-request-paseo-cancels)).
+([provider guide](../../public-docs/plugins/providers.md#stop-a-request-paseo-cancels)).
 
 Catalogue results stay cached by identity until a refresh or a change to that provider's configuration.
 Providers change their model lists on the server without a CLI update, so the daemon refreshes

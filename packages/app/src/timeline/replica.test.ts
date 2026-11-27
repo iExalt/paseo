@@ -2281,6 +2281,8 @@ describe("archived timeline lifetime", () => {
 
     expect(timelineStatus(ARCHIVED)).toBe("cold");
     expect(residentAgentIds()).toEqual([]);
+  });
+});
 
 describe("timeline gap pages", () => {
   it("merges the rows after a jump window into one range without detaching the tail", () => {

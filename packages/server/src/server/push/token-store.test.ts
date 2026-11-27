@@ -132,12 +132,12 @@ describe("PushTokenStore persistence", () => {
           agentFinished: false,
         },
       };
-      store.renewToken("ExponentPushToken[device-1]", initialPrefs);
+      store.renewToken("ExponentPushToken[device-1]", undefined, initialPrefs);
       expect(writeCount).toBe(1);
 
       // Same preferences within the half-lease window are throttled.
       now += 1_000;
-      store.renewToken("ExponentPushToken[device-1]", initialPrefs);
+      store.renewToken("ExponentPushToken[device-1]", undefined, initialPrefs);
       expect(writeCount).toBe(1);
 
       // Heartbeat renewal without preferences preserves existing preferences and is throttled.
@@ -159,12 +159,12 @@ describe("PushTokenStore persistence", () => {
       };
       now += 1_000;
       const lastPersistedNow = now;
-      store.renewToken("ExponentPushToken[device-1]", updatedPrefs);
+      store.renewToken("ExponentPushToken[device-1]", undefined, updatedPrefs);
       expect(writeCount).toBe(2);
 
       // Reordered muted plugin IDs normalize to the same canonical order and do not rewrite disk.
       now += 1_000;
-      store.renewToken("ExponentPushToken[device-1]", {
+      store.renewToken("ExponentPushToken[device-1]", undefined, {
         ...updatedPrefs,
         plugins: {
           enabled: true,
@@ -197,9 +197,11 @@ test("Android lifecycle capability survives heartbeat/restart and explicit legac
     store.renewToken("token", id);
     store.renewToken("token");
     const recovered = new PushTokenStore(createLogger(), file, () => 1000, 100000);
-    expect(recovered.getActiveSubscriptions()).toEqual([{ token: "token", registrationId: id }]);
+    expect(recovered.getActiveSubscriptions()).toEqual([
+      { token: "token", expiresAt: 101000, registrationId: id },
+    ]);
     recovered.renewToken("token", null);
-    expect(recovered.getActiveSubscriptions()).toEqual([{ token: "token" }]);
+    expect(recovered.getActiveSubscriptions()).toEqual([{ token: "token", expiresAt: 101000 }]);
   } finally {
     rmSync(home, { recursive: true, force: true });
   }

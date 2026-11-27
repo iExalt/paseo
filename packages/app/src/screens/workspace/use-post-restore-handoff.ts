@@ -56,6 +56,7 @@ export function canSyncVisibleAgents(
     case "unreachable":
     case "missing":
     case "needsHostUpgrade":
+    case "recoveryUnsupported":
     case "recoveryUnavailable":
     case "recoveryInspectionFailed":
       return false;

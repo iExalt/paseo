@@ -1,6 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Pressable,
   ScrollView,
   View,
   Text,
@@ -14,7 +13,6 @@ import {
   type ViewStyle,
 } from "react-native";
 import { StyleSheet } from "react-native-unistyles";
-import { Check, Copy } from "lucide-react-native";
 import * as Clipboard from "expo-clipboard";
 import { useTranslation } from "react-i18next";
 import type { HighlightToken } from "@getpaseo/highlight";
@@ -175,7 +173,7 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
       onPointerEnter={handlePointerEnter}
       onPointerLeave={handlePointerLeave}
     >
-      {frame ? <NativeBlockHeader frame={frame} language={language} getCode={getCode} /> : null}
+      {frame ? <NativeBlockHeader frame={frame} language={language} onCopy={copyCode} /> : null}
       {scroller ? (
         <View>
           <ScrollView
@@ -194,13 +192,13 @@ export const HighlightedCodeBlock = React.memo(function HighlightedCodeBlock({
       ) : (
         text
       )}
-      {!frame ? (
+      {frame ? null : (
         <BlockCopyButton
           onCopy={copyCode}
           visible={controlsVisible}
           label={t("message.actions.copyCode")}
         />
-      ) : null}
+      )}
     </View>
   );
 });
@@ -378,97 +376,6 @@ function splitFenceStyle(inheritedStyles: TextStyle, textStyle: TextStyle): Spli
   };
 }
 
-interface CopyButtonProps {
-  getCode: () => string;
-  visible: boolean;
-  iconSize?: number;
-  style?: StyleProp<ViewStyle>;
-}
-
-const COPIED_RESET_MS = 1500;
-
-const CopyButton = React.memo(function CopyButton({
-  getCode,
-  visible,
-  iconSize = 14,
-  style,
-}: CopyButtonProps) {
-  const { t } = useTranslation();
-  const [copied, setCopied] = useState(false);
-  const resetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(
-    () => () => {
-      if (resetRef.current) clearTimeout(resetRef.current);
-    },
-    [],
-  );
-
-  const handlePress = useCallback(async () => {
-    const content = getCode();
-    if (!content) return;
-    await Clipboard.setStringAsync(content);
-    setCopied(true);
-    if (resetRef.current) clearTimeout(resetRef.current);
-    resetRef.current = setTimeout(() => {
-      setCopied(false);
-      resetRef.current = null;
-    }, COPIED_RESET_MS);
-  }, [getCode]);
-
-  const visibilityStyle = visible
-    ? copyButtonStyles.containerVisible
-    : copyButtonStyles.containerHidden;
-  const wrapperStyle = useMemo(
-    () => [copyButtonStyles.container, visibilityStyle, style],
-    [style, visibilityStyle],
-  );
-
-  return (
-    <Pressable
-      onPress={handlePress}
-      style={wrapperStyle}
-      pointerEvents={visible ? "auto" : "none"}
-      accessibilityRole="button"
-      accessibilityLabel={copied ? t("message.actions.copied") : t("message.actions.copyCode")}
-      hitSlop={8}
-      dataSet={markdownCopyDataSet.ignore}
-    >
-      {({ hovered }) => {
-        const iconColor = hovered
-          ? copyButtonStyles.iconHoveredColor.color
-          : copyButtonStyles.iconColor.color;
-        return copied ? (
-          <Check size={iconSize} color={iconColor} />
-        ) : (
-          <Copy size={iconSize} color={iconColor} />
-        );
-      }}
-    </Pressable>
-  );
-});
-
-const copyButtonStyles = StyleSheet.create((theme) => ({
-  container: {
-    position: "absolute",
-    top: theme.spacing[2],
-    right: theme.spacing[2],
-    padding: theme.spacing[1],
-  },
-  containerVisible: {
-    opacity: 1,
-  },
-  containerHidden: {
-    opacity: 0,
-  },
-  iconColor: {
-    color: theme.colors.foregroundMuted,
-  },
-  iconHoveredColor: {
-    color: theme.colors.foreground,
-  },
-}));
-
 /**
  * react-native-enriched-markdown's code block header metrics (CodeBlockContainerView.kt,
  * ENRMCodeBlockContainerView.m). The header is the content inset plus one label line, with
@@ -499,10 +406,11 @@ function nativeBlockFrame(inheritedStyles: TextStyle, textStyle: TextStyle): Nat
 interface NativeBlockHeaderProps {
   frame: NativeBlockFrame;
   language: string | null | undefined;
-  getCode: () => string;
+  onCopy: () => Promise<boolean>;
 }
 
-function NativeBlockHeader({ frame, language, getCode }: NativeBlockHeaderProps) {
+function NativeBlockHeader({ frame, language, onCopy }: NativeBlockHeaderProps) {
+  const { t } = useTranslation();
   const { inset, borderWidth } = frame;
   // The border is drawn outside this view, so it comes off the top padding. A
   // non-breaking space keeps the label's line height when there is no language.
@@ -534,7 +442,13 @@ function NativeBlockHeader({ frame, language, getCode }: NativeBlockHeaderProps)
       <Text style={labelStyle} numberOfLines={1}>
         {codeBlockLanguageName(language) || "\u00a0"}
       </Text>
-      <CopyButton getCode={getCode} visible iconSize={frame.iconSize} style={buttonStyle} />
+      <BlockCopyButton
+        onCopy={onCopy}
+        visible
+        iconSize={frame.iconSize}
+        cornerStyle={buttonStyle}
+        label={t("message.actions.copyCode")}
+      />
     </View>
   );
 }

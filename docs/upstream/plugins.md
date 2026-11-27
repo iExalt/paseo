@@ -527,7 +527,7 @@ cannot adopt a pre-existing directory as Paseo-owned, verifies Git worktree post
 and skips first-agent branch auto-rename. Removal saves `refs/paseo/kept-commits/<sha>` before
 calling the owning plugin's `remove`, and `create`, `remove`, and `restore` carry `untrusted` for fork
 change requests; `remove` and `restore` fall back to built-in Git when the plugin declines or is disabled. See the
-[worktree managers reference](../public-docs/plugins/reference.md#worktree-managers) and
+[worktree managers reference](../../public-docs/plugins/reference.md#worktree-managers) and
 `plugin-examples/worktrunk`.
 
 `terminal.create.before` runs in `withTerminalCreateHook`, which wraps the daemon's one terminal manager, so every creation path is covered and adopted terminals are not; callers pass an `origin` to name the source. `command.run.before` runs inside the setup and teardown runners through `commandRunHook`. Setup and archive dependencies take `lifecycle` as a required field so a new caller cannot skip the hook by omission; pass `null` only where no plugins run.
@@ -566,7 +566,7 @@ rate-limit state.
 publishes `plugin.notification` to sessions subscribed to that event category. Clients gate their
 `"plugin.notification"` subscription on `server_info.features.pluginNotifications` (`COMPAT(pluginNotifications)`).
 See [notifications.md](notifications.md) for tap routing and cold-launch catalog readiness, and the
-[public notifications reference](../public-docs/plugins/reference.md#notifications) for the author
+[public notifications reference](../../public-docs/plugins/reference.md#notifications) for the author
 contract.
 
 ## Contribute a provider
@@ -610,7 +610,7 @@ through `provider.installation.report`. When the daemon stops waiting on any of 
 sends `provider.installation.cancel`, which aborts the callback's `signal`.
 The rules shared with built-ins are in [providers.md](providers.md#installation-and-updates); the
 author contract is in the
-[public provider guide](../public-docs/plugins/providers.md#report-installation-and-updates).
+[public provider guide](../../public-docs/plugins/providers.md#report-installation-and-updates).
 
 A same-ID config entry without `extends` overrides the plugin's `enabled`, `command`, `env`, label,
 description, and model configuration through the normal provider registry. `enabled: false` disables

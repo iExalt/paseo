@@ -4,9 +4,9 @@ import validRange from "semver/ranges/valid.js";
 import satisfies from "semver/functions/satisfies.js";
 
 // Plugin requirements describe the retained upstream API, not fork release
-// ordering. Baseline: upstream a4f696620b5d248598a882b1a78d82ec5038c74b (0.14.0).
+// ordering. Baseline: upstream 518e58cd639f01f63da35544bce3eff5123b10ee (0.18.0).
 // Change deliberately when the supported API changes, never on a release bump.
-export const PASEO_PLUGIN_API_VERSION = "0.14.0";
+export const PASEO_PLUGIN_API_VERSION = "0.18.0";
 
 export function validatePluginRequirements(requirements: PluginRequirements | undefined): void {
   const range = requirements?.paseo;

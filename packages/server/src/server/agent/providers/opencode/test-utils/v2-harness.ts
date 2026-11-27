@@ -172,7 +172,7 @@ export class V2Harness {
     provider: { list: unexpected("list") },
     command: { list: unexpected("list") },
     skill: { list: unexpected("list") },
-    // Paseo hosts session MCP servers itself; location-wide MCP is never used.
+    // Paseo hosts session MCP servers itself; OpenCode's location-wide MCP is never used.
     mcp: { add: unexpected("mcp.add"), list: unexpected("mcp.list") },
     message: {
       list: async (input) => {

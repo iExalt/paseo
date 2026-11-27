@@ -55,7 +55,7 @@ test.each(["React Native", "native"])(
         TextDecoder,
       },
     );
-    const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+    const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
     const client = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` });
     const api = sdk.createPaseoApi(client);
     try {
@@ -214,7 +214,7 @@ test("password-protected config reload preserves startup auth and session constr
     {
       ...config,
       listen: "127.0.0.1:0",
-      mcpEnabled: false,
+      agentToolsEnabled: false,
       agentClients: createTestAgentClients(),
       staticDir: home,
     },

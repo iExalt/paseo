@@ -7,8 +7,8 @@ import { useDaemonStatus } from "@/desktop/hooks/use-daemon-status";
 import { daemonUpgradeForHost } from "@/desktop/daemon/daemon-upgrade-status";
 import type { ComponentType, ReactNode } from "react";
 import { Alert, Pressable, ScrollView, View, type PressableStateCallbackType } from "react-native";
-import { useFocusEffect, useNavigation, useRouter } from "expo-router";
-import { usePreventRemove } from "expo-router/react-navigation";
+import { useNavigation, useRouter } from "expo-router";
+import { useFocusEffect, usePreventRemove } from "expo-router/react-navigation";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StyleSheet, useUnistyles } from "react-native-unistyles";
 import { useTranslation } from "react-i18next";
@@ -67,23 +67,23 @@ import { PageLayout } from "@/components/page-layout";
 import { KeyboardShortcutsSection } from "@/screens/settings/keyboard-shortcuts-section";
 import { EditorSection } from "@/screens/settings/editor-section";
 import { FilesSection } from "@/screens/settings/files-section";
-import { Button } from "@/components/ui/button";
 import { SegmentedControl } from "@/components/ui/segmented-control";
+import { Button } from "@/components/ui/button";
 import { CommunityLinks } from "@/components/community-links";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { DesktopPermissionsSection } from "@/desktop/components/desktop-permissions-section";
 import { NotificationsSection } from "@/components/settings/notifications-section";
-import { NotificationsSection as PlatformNotificationsSection } from "@/screens/settings/notifications/notifications-section";
 import { BrowserDataSection } from "@/desktop/browser/settings/browser-data-section";
 import { IntegrationsSection } from "@/desktop/components/integrations-section";
 import { isElectronRuntime } from "@/desktop/host";
 import { useDesktopSettings, type DesktopUpdateMode } from "@/desktop/settings/desktop-settings";
 import { NixDesktopAppUpdateRow } from "@/desktop/updates/nix-desktop-app-update-row";
+import { isNixManagedDesktopInstallation } from "@/desktop/updates/desktop-updates";
 import { useDesktopAppUpdater } from "@/desktop/updates/use-desktop-app-updater";
 import { ForkAndroidUpdateRow } from "@/android/fork-updates/about-row";
 import { preferencesMigrationMode } from "@/android/preferences-migration/mode";
 import { PreferencesTransferRow } from "@/android/preferences-migration/preferences-transfer-row";
-import { formatVersionWithPrefix, isNixManagedDesktopInstallation } from "@/desktop/updates/desktop-updates";
+import { formatVersionWithPrefix } from "@/desktop/updates/desktop-updates";
 import { resolveAppVersion } from "@/utils/app-version";
 import { openChangelog } from "@/changelog";
 import { useAppDiagnosticStore } from "@/diagnostics/store";
@@ -195,7 +195,12 @@ function isSectionAvailable(
   keyboardShortcutsAvailable: boolean,
 ): boolean {
   if (item.id === "shortcuts") return keyboardShortcutsAvailable;
-  return isSettingsSectionAvailable(item.id, { isDesktopApp, isWeb, keyboardShortcutsAvailable });
+  return isSettingsSectionAvailable(item.id, {
+    isDesktopApp,
+    isWeb,
+    keyboardShortcutsAvailable,
+    browserNotificationsAvailable: isWeb && typeof globalThis.Notification === "function",
+  });
 }
 
 interface HostSectionItem {
@@ -424,13 +429,13 @@ function DiagnosticsSection({
 }
 
 interface AboutSectionProps {
-  appVersion: string | null;
   appVersionText: string;
   isDesktopApp: boolean;
+  appVersion: string | null;
+  diagnostics: DiagnosticsSectionProps;
   isNixManagedApp: boolean;
   preferencesTransferMode: "bridge" | "receiver" | null;
   daemonIds: readonly string[];
-  diagnostics: DiagnosticsSectionProps;
 }
 
 function renderAboutDesktopUpdateRow(
@@ -595,6 +600,7 @@ function HostVersionRow({ host, showBorder }: { host: HostProfile; showBorder: b
 function getUpdateButtonLabel(
   t: TFunction,
   input: {
+    isWaiting: boolean;
     isInstalling: boolean;
     isDownloading: boolean;
     isActionable: boolean;
@@ -602,6 +608,7 @@ function getUpdateButtonLabel(
     latestVersion: string | null | undefined;
   },
 ): string {
+  if (input.isWaiting) return t("common.actions.retry");
   if (input.isInstalling) {
     return input.isDownloading
       ? t("settings.about.updates.downloading")
@@ -644,6 +651,10 @@ function getUpdateConfirmDialogCopy(t: TFunction, isUpdateReady: boolean) {
     confirmLabel: t("settings.about.updates.downloadConfirm"),
     cancelLabel: t("common.actions.cancel"),
   };
+}
+
+function getDesktopUpdateDownloadPercent(progress: { percent: number } | null): number | null {
+  return progress ? Math.max(0, Math.min(100, Math.round(progress.percent))) : null;
 }
 
 function DesktopUpdateProgressBar({ percent }: { percent: number }) {
@@ -719,14 +730,13 @@ function DesktopAppUpdateRow() {
   );
 
   const isUpdateReady = availableUpdate?.readyToInstall === true;
-  const isUpdateActionable = (status === "available" || status === "waiting") && availableUpdate?.hasUpdate === true;
+  const isUpdateActionable =
+    (status === "available" || status === "waiting") && availableUpdate?.hasUpdate === true;
   const readyUpdateVersion = isUpdateReady ? availableUpdate?.latestVersion : null;
   const actionableVersion = isUpdateActionable ? availableUpdate?.latestVersion : null;
-  const downloadPercent =
-    (isInstalling || status === "pending") && downloadProgress
-      ? Math.max(0, Math.min(100, Math.round(downloadProgress.percent)))
-      : null;
-
+  const downloadPercent = getDesktopUpdateDownloadPercent(
+    isInstalling || status === "pending" ? downloadProgress : null,
+  );
   const handleInstallUpdate = useCallback(() => {
     if (!isDesktopApp) {
       return;
@@ -794,7 +804,8 @@ function DesktopAppUpdateRow() {
             onPress={handleInstallUpdate}
             disabled={isChecking || isInstalling || !isUpdateActionable}
           >
-            {status === "waiting" ? t("common.actions.retry") : getUpdateButtonLabel(t, {
+            {getUpdateButtonLabel(t, {
+              isWaiting: status === "waiting",
               isInstalling,
               isDownloading: isInstalling && downloadProgress != null,
               isActionable: isUpdateActionable,
@@ -853,7 +864,6 @@ function SidebarSectionButton({
       onPress={handlePress}
       testID={`settings-section-${itemId}`}
       style={isSelected ? selectedSidebarItemStyle : sidebarItemStyle}
-      testID={`settings-section-${itemId}`}
     >
       <IconComponent
         size={densityIconSize(rt, "md")}
@@ -1558,6 +1568,7 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
     [handlePlaybackTest, isPlaybackTestRunning, playbackTestResult, voiceAudioEngine],
   );
 
+  const browserDataAvailable = isDesktopApp || !isWeb;
   const content: ReactNode = (() => {
     if (pluginPage)
       return (
@@ -1626,27 +1637,26 @@ export default function SettingsScreen({ view }: SettingsScreenProps) {
               {isWeb ? <EditorSection /> : null}
               <TerminalSection />
               <FilesSection />
-              {isDesktopApp || !isWeb ? <BrowserDataSection /> : null}
+              {browserDataAvailable ? <BrowserDataSection /> : null}
             </>
           );
         case "notifications":
           return (
             <>
               <NotificationsSection />
-              {!isWeb ? <PlatformNotificationsSection /> : null}
               {isDesktopApp ? <DesktopPermissionsSection /> : null}
             </>
           );
         case "about":
           return (
             <AboutSection
-              appVersion={appVersion}
               appVersionText={appVersionText}
               isDesktopApp={isDesktopApp}
+              appVersion={appVersion}
+              diagnostics={aboutDiagnostics}
               isNixManagedApp={isNixManagedApp}
               preferencesTransferMode={preferencesTransferMode}
               daemonIds={hosts.map((host) => host.serverId)}
-              diagnostics={aboutDiagnostics}
             />
           );
         default:

@@ -5,6 +5,8 @@ import type { SettingsDeps } from "@/hooks/use-settings/storage";
 
 export type PushNotificationClient = Pick<
   DaemonClient,
+  | "subscribe"
+  | "syncNotificationLifecycle"
   | "isConnected"
   | "registerPushToken"
   | "unregisterPushToken"

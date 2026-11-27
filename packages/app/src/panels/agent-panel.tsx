@@ -1156,7 +1156,8 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
     },
     [focusRestoredComposer, streamViewRef],
   );
-  const hasAgentComposer = showsComposer && hasActiveComposer && !draft;
+  const showAgentTracks = hasActiveComposer && !draft;
+  const hasAgentComposer = showsComposer && showAgentTracks;
   const parentAgentId = useParentAgentId(serverId, agentId);
   // With a composer the parent is a pill above it; without one, the box takes the composer's place.
   const parentPillAgentId = showsComposer ? parentAgentId : null;
@@ -1271,7 +1272,7 @@ const ChatAgentReadyContent = memo(function ChatAgentReadyContent({
           onOpenWorkspaceFile={onOpenWorkspaceFile}
         />
       </RenderProfile>
-      {hasActiveComposer && !draft ? (
+      {showAgentTracks ? (
         <AgentTracks
           serverId={serverId}
           workspaceId={workspaceId}

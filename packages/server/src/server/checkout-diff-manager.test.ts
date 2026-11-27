@@ -224,7 +224,7 @@ async function waitForSubscriberCount(manager: CheckoutDiffManager, count: numbe
 
 test("moving a tag refreshes binary file metadata even though binary files have no bodies", async () => {
   await withCheckout(async ({ cwd, manager, git }) => {
-    git("tag", "v1");
+    git("-c", "tag.gpgsign=false", "tag", "v1");
     await writeFile(join(cwd, "image.bin"), Buffer.from([0, 1]));
     git("add", ".");
     git("-c", "commit.gpgsign=false", "commit", "-m", "binary");

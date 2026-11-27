@@ -24,6 +24,7 @@ Read the entries relevant to your task before non-trivial work. Fork notes live 
 - [upstream/unistyles.md](upstream/unistyles.md): Unistyles gotchas — `useUnistyles()` is forbidden, alternatives in order
 - [upstream/floating-panels.md](upstream/floating-panels.md): Anchored popovers — Portal/Modal escape for Android, lifecycle gates, keyboard-shared-value, status-bar offset, the flash
 - [upstream/menus.md](upstream/menus.md): The menu engine — popover vs sheet, submenu pages, hover intent, when a decision earns a submenu
+- [upstream/drag-reorder.md](upstream/drag-reorder.md): Draggable lists, native scroll ownership, and handle placement
 - [upstream/expo-router.md](upstream/expo-router.md): Expo Router route ownership, startup restore, and native blank-screen gotchas
 - [upstream/notifications.md](upstream/notifications.md): Notification tap ownership, native replay and acknowledgement, startup handoff, and payload QA
 - [upstream/file-icons.md](upstream/file-icons.md): Material icon theme integration for the file explorer

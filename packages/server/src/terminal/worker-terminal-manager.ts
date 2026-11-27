@@ -1002,12 +1002,6 @@ export interface StartWorkerTerminalManagerOptions {
    * is created (existing workers are still adopted). Production leaves this true.
    */
   eagerLaunch?: boolean;
-  /** Defer the worker until first use when eagerLaunch is unspecified. */
-  deferWorkerLaunch?: boolean;
-}
-
-function shouldLaunchTerminalWorkerAtStartup(options: StartWorkerTerminalManagerOptions): boolean {
-  return options.eagerLaunch ?? !options.deferWorkerLaunch;
 }
 
 // The current worker plus one draining a previous protocol. Every live worker counts,
@@ -1280,7 +1274,7 @@ export async function startWorkerTerminalManager(
   };
 
   await prune();
-  if (!current && shouldLaunchTerminalWorkerAtStartup(options)) {
+  if (!current && options.eagerLaunch !== false) {
     try {
       current = await startCurrent();
     } catch (error) {

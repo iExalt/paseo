@@ -22,7 +22,7 @@ class RecordingPushNotificationSender implements PushNotificationSender {
   readonly sent: PushPayload[] = [];
   readonly sentWithKind: Array<{ payload: PushPayload; kind?: NotificationKind }> = [];
 
-  async send(payload: PushPayload, kind?: NotificationKind): Promise<void> {
+  async send(payload: PushPayload, _signal?: AbortSignal, kind?: NotificationKind): Promise<void> {
     this.sent.push(payload);
     this.sentWithKind.push({ payload, kind });
   }

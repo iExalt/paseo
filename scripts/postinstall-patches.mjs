@@ -148,8 +148,7 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
   },
-  // Backport of https://github.com/mermaid-js/mermaid/pull/8459 (lexer half): a flowchart label
-  // with an "@" parses. The patch header has the details. Remove when the app uses mermaid 12.
+  // The Mermaid 12.1 lexer still reads labels containing "@" as edge IDs.
   {
     nodeModulesPath: "node_modules/mermaid",
     patchPrefix: "mermaid+",

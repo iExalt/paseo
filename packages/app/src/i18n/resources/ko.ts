@@ -3087,6 +3087,7 @@ export const ko: TranslationResources = {
       },
       pairDevices: {
         rowTitle: "기기 페어링",
+        rowHint: "QR 코드를 스캔하거나 링크를 복사하여 휴대폰을 이 호스트에 연결하세요",
         keepAwake: {
           title: "릴레이를 위해 이 Mac 깨어 있게 하기",
           hint: "릴레이가 켜져 있는 동안 전원 연결 시 잠자기를 막아 원격 기기가 이 Mac에 연결할 수 있게 합니다. 전원 연결 중에는 전력 사용과 발열이 늘어납니다.",

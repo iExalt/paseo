@@ -40,7 +40,7 @@ export function initializeBackgroundLifecycle(): void {
 }
 
 export async function prepareLifecycle(
-  client: DaemonClient,
+  client: Pick<DaemonClient, "getLastServerInfoMessage">,
   serverId: string,
 ): Promise<string | undefined> {
   if (
@@ -59,7 +59,14 @@ export async function removeLifecycleHost(serverId: string): Promise<void> {
 }
 
 export function watchLifecycle(
-  client: DaemonClient,
+  client: Pick<
+    DaemonClient,
+    | "isConnected"
+    | "getLastServerInfoMessage"
+    | "subscribe"
+    | "subscribeConnectionStatus"
+    | "syncNotificationLifecycle"
+  >,
   serverId: string,
   registrationId: string,
 ): () => void {

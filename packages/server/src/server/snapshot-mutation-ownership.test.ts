@@ -157,9 +157,6 @@ describe("snapshot mutation ownership boundary", () => {
           archive: async () => {},
           remove: async () => {},
         }),
-        createAgentMcpTransport: async () => {
-          throw new Error("not used");
-        },
         stt: null,
         tts: null,
         providerSnapshotManager: createProviderSnapshotManagerStub().manager,

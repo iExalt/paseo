@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { buildWorkspaceSource, runCreateCommand } from "./create.js";
+import { buildWorkspaceSource } from "./create.js";
 
 const createWorkspace = vi.fn(async () => ({
   workspace: {
@@ -25,6 +25,8 @@ vi.mock("../../utils/client.js", () => ({
 vi.mock("../../utils/caller-agent.js", () => ({
   resolveCallerAgentId: vi.fn(async () => undefined),
 }));
+
+import { runCreateCommand } from "./create.js";
 
 describe("workspace create source", () => {
   it("passes the notification policy in the workspace creation request and result", async () => {

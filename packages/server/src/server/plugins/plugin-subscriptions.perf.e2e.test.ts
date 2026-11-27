@@ -1,3 +1,4 @@
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -46,11 +47,11 @@ test(`a plugin streams ${TOTAL_BYTES / 1024 / 1024} MiB in ${PUSH_BYTES / 1024} 
     path.join(pluginDirectory, "paseo-plugin.json"),
     JSON.stringify({
       id: "stream",
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(path.join(pluginDirectory, "index.server.ts"), SERVER_ENTRY);
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
     clientId: `clid_plugin_stream_${Date.now()}`,

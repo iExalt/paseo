@@ -1,14 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
-import { useTranslation } from "react-i18next";
 import {
   areSkillsInstalled,
   hasSelectedSkills,
   useAgentSkills,
   type AgentSkillsController,
 } from "@/agent-skills";
-import { useToast } from "@/contexts/toast-context";
 import { useCliInstall } from "@/desktop/hooks/use-install-status";
-import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import { useAgentToolsSetting } from "@/hooks/use-agent-tools-setting";
 
 export type OrchestrationChoice = "tools" | "skills" | "cli";
 type Choices = Record<OrchestrationChoice, boolean>;
@@ -35,12 +33,11 @@ export interface OrchestrationSetupController {
  * computer until Continue applies them, the way checked projects are added.
  */
 export function useOrchestrationSetup(serverId: string): OrchestrationSetupController {
-  const { t } = useTranslation();
-  const toast = useToast();
   const skills = useAgentSkills(serverId);
   const cli = useCliInstall();
-  const { config, patchConfig } = useDaemonConfig(serverId);
+  const { enabled: toolsOn, setEnabled: setTools } = useAgentToolsSetting(serverId);
   const [chosen, setChosen] = useState<Choices>(ALL_ON);
+  const [choseTools, setChoseTools] = useState(false);
   // With nothing picked there is nothing to install, so skills read as off, as they do in Settings.
   const skillsSelected = skills.status === null || hasSelectedSkills(skills.status);
   const choices = useMemo<Choices>(
@@ -49,35 +46,26 @@ export function useOrchestrationSetup(serverId: string): OrchestrationSetupContr
   );
   const [isApplying, setIsApplying] = useState(false);
   const offered: Choices = {
-    tools: true,
+    tools: toolsOn !== null,
     skills: skills.connected && skills.supported,
     cli: cli.available,
   };
 
   const setChoice = useCallback((choice: OrchestrationChoice, on: boolean) => {
     setChosen((current) => ({ ...current, [choice]: on }));
+    if (choice === "tools") setChoseTools(true);
   }, []);
 
   // What the host and this computer have now, or null while it is still being read. A choice is
-  // skipped only when it is known to match; an unknown state is always written.
-  const toolsOn = config ? config.mcp?.injectIntoAgents !== false : null;
+  // skipped when it is unavailable or already current.
   const skillsInstalled = skills.status ? areSkillsInstalled(skills.status) : null;
   const cliInstalled = cli.status ? cli.status.installed : null;
   const { reconcile, uninstall } = skills;
   const { setInstalled: setCliInstalled } = cli;
+  const skipTools = !choseTools && !offered.tools;
   const offersSkills = offered.skills;
   const offersCli = offered.cli;
 
-  const setTools = useCallback(
-    (on: boolean) =>
-      patchConfig({ mcp: { injectIntoAgents: on } })
-        .then(Boolean, () => false)
-        .then((done) => {
-          if (!done) toast.error(t("settings.host.orchestration.enableTools.updateFailed"));
-          return done;
-        }),
-    [patchConfig, t, toast],
-  );
   const setSkillsInstalled = useCallback(
     (on: boolean) => (on ? reconcile() : uninstall()),
     [reconcile, uninstall],
@@ -87,7 +75,7 @@ export function useOrchestrationSetup(serverId: string): OrchestrationSetupContr
     setIsApplying(true);
     try {
       const results = await Promise.all([
-        choices.tools === toolsOn ? true : setTools(choices.tools),
+        skipTools || choices.tools === toolsOn ? true : setTools(choices.tools),
         !offersSkills || choices.skills === skillsInstalled
           ? true
           : setSkillsInstalled(choices.skills),
@@ -100,6 +88,7 @@ export function useOrchestrationSetup(serverId: string): OrchestrationSetupContr
   }, [
     choices,
     toolsOn,
+    skipTools,
     setTools,
     offersSkills,
     skillsInstalled,

@@ -20,6 +20,6 @@ Paseo 通过你已安装的 `hoplite` CLI 提供的 Agent Client Protocol（`hop
 
 ## 项目和云端工作区 {#projects-and-the-cloud-workspace}
 
-Hoplite 在云端工作区中运行 Agent。你的本地文件和 Paseo 的回环 MCP 工具在那里不可用。
+Hoplite 在云端工作区中运行 Agent。你的本地文件和 Paseo 的本地 CLI在那里不可用。
 
 请打开一个关联了 Hoplite 项目的仓库，或者设置 `agents.providers.hoplite.env.HOPLITE_PROJECT_ID`，在所有地方使用同一个项目。如果既没有关联的仓库也没有固定的项目，发现过程会报告 `No Hoplite project`。

@@ -63,6 +63,7 @@ export interface DesktopRuntimeConfig {
   downloadProgressSteps?: number[];
   manualUpdateBypassesRollout?: boolean;
   slowInstall?: boolean;
+  waitForIdleOnFirstInstall?: boolean;
   /** Initial PID reported by desktop_daemon_status. Defaults to null. */
   daemonPid?: number | null;
   daemonHome?: string;
@@ -234,7 +235,16 @@ export async function installDesktopRuntime(
       return buildAppUpdateCheckResult(manualUpdateAdmitted, manualUpdateAdmitted, false);
     }
 
+    let appInstallAttempts = 0;
     async function installAppUpdate() {
+      appInstallAttempts += 1;
+      if (cfg.waitForIdleOnFirstInstall && appInstallAttempts === 1) {
+        return {
+          installed: false,
+          version: cfg.latestVersion ?? "1.2.3",
+          message: "Fork update is waiting for active agents to finish.",
+        };
+      }
       if (cfg.downloadProgressSteps?.length) {
         for (const percent of cfg.downloadProgressSteps) {
           emitDesktopEvent("app-update-download-progress", {

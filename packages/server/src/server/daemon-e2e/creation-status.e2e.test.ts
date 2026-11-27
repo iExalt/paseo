@@ -6,7 +6,7 @@ import type { AgentSnapshotPayload } from "../messages.js";
 test("creation never regresses a running subscription to the pre-prompt idle snapshot", async () => {
   const ctx = await createDaemonTestContext({
     agentClients: { mock: new MockLoadTestAgentClient() },
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     isDev: true,
   });
   try {

@@ -134,14 +134,9 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
   let token: string | null = null;
   const queryClient = input.queryClient ?? appQueryClient;
   const initialCached = readCachedPreferences(queryClient);
-  let preferences = initialCached ?? DEFAULT_NOTIFICATION_PREFERENCES;
+  let preferences: NotificationPreferences = initialCached ?? DEFAULT_NOTIFICATION_PREFERENCES;
   let preferencesReady = initialCached !== null;
   let lastRegisteredSignature: string | null = null;
-  const testResolveToken = input.resolveToken;
-  const resolveSubscriptionToken = testResolveToken
-    ? async (id: string): Promise<ResolvedToken> => resolved(await testResolveToken(id))
-    : resolveToken;
-
   let registrationId: string | undefined;
   let stopLifecycle: (() => void) | undefined;
   let preparing: Promise<void> | null = null;
@@ -154,14 +149,12 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
     if (features?.pushNotificationPreferences && !preferencesReady) return;
     const supportedPreferences = features?.pushNotificationPreferences ? preferences : undefined;
     const signature = JSON.stringify([token, lifecycleId, supportedPreferences]);
-    if (signature !== lastRegisteredSignature) {
-      lastRegisteredSignature = signature;
-      if (lifecycleId && supportedPreferences)
-        input.client.registerPushToken(token, lifecycleId, supportedPreferences);
-      else if (lifecycleId) input.client.registerPushToken(token, lifecycleId);
-      else if (supportedPreferences) input.client.registerPushToken(token, supportedPreferences);
-      else input.client.registerPushToken(token);
-    }
+    if (signature === lastRegisteredSignature) return;
+    lastRegisteredSignature = signature;
+    if (supportedPreferences)
+      input.client.registerPushToken(token, lifecycleId, supportedPreferences);
+    else if (lifecycleId) input.client.registerPushToken(token, lifecycleId);
+    else input.client.registerPushToken(token);
     setPushRegistrationStatus(serverId, "sent");
   };
   const register = () => {
@@ -209,11 +202,13 @@ export function startSubscription(input: StartPushNotificationsInput): () => voi
         }
       });
   };
-
+  const resolveSubscriptionToken = input.resolveToken
+    ? async (id: string): Promise<ResolvedToken> => resolved(await input.resolveToken!(id))
+    : resolveToken;
   const resolve = ({ prompt }: { prompt: boolean }) => {
     setPushRegistrationStatus(serverId, "pending");
     void resolveSubscriptionToken(serverId, prompt)
-      .then((result) => {
+      .then(async (result) => {
         if (stopped) return undefined;
         token = result.token;
         if (result.token === null) setPushRegistrationStatus(serverId, result.reason);

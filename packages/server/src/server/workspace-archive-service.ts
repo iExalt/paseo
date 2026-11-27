@@ -225,86 +225,91 @@ async function archiveByScopeWithPriority(
   };
 
   checkpoint();
-  const targetWorkspaceIds = target.workspaceIds;
-  if (request.onlyIfEmpty) {
-    if (targetWorkspaceIds.length === 0) {
-      return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
-    }
-    for (const workspaceId of targetWorkspaceIds) {
-      const records = await dependencies.agentStorage.listByWorkspace(workspaceId);
-      const archivedIds = new Set(
-        records.filter((record) => record.archivedAt).map((record) => record.id),
-      );
-      const hasChat =
-        records.some((record) => !record.archivedAt) ||
-        dependencies.agentManager
-          .listAgents({ includeInternal: true })
-          .some((agent) => agent.workspaceId === workspaceId && !archivedIds.has(agent.id));
-      if (hasChat)
+  const runArchive = async (): Promise<ArchiveResult> => {
+    checkpoint();
+    const targetWorkspaceIds = target.workspaceIds;
+    if (request.onlyIfEmpty) {
+      if (targetWorkspaceIds.length === 0) {
         return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
-    }
-  }
-
-  await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
-  checkpoint();
-
-  if (targetWorkspaceIds.length > 0) {
-    dependencies.markWorkspaceArchiving(targetWorkspaceIds, archivedAt);
-  }
-
-  let removedDirectory = false;
-  let directoryLeftBehind: ArchiveResult["directoryLeftBehind"];
-
-  try {
-    if (targetWorkspaceIds.length > 0) {
-      await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
-    }
-    checkpoint();
-
-    const { archivedAgents, archivedWorkspaceIds } = await archiveTargetRecords(
-      dependencies,
-      targetWorkspaceIds,
-      { requestId: request.requestId, checkpoint, archivedAt },
-    );
-    checkpoint();
-
-    if (target.backing?.mainRepoRoot) {
-      try {
-        await dependencies.workspaceGitService.getSnapshot(target.backing.mainRepoRoot, {
-          force: true,
-          reason: "archive-worktree",
-        });
-      } catch (error) {
-        dependencies.sessionLogger?.warn(
-          { err: error, cwd: target.backing.mainRepoRoot, requestId: request.requestId },
-          "Failed to force-refresh workspace git snapshot after archiving",
+      }
+      for (const workspaceId of targetWorkspaceIds) {
+        const records = await dependencies.agentStorage.listByWorkspace(workspaceId);
+        const archivedIds = new Set(
+          records.filter((record) => record.archivedAt).map((record) => record.id),
         );
+        const hasChat =
+          records.some((record) => !record.archivedAt) ||
+          dependencies.agentManager
+            .listAgents({ includeInternal: true })
+            .some((agent) => agent.workspaceId === workspaceId && !archivedIds.has(agent.id));
+        if (hasChat)
+          return { archivedAgentIds: [], archivedWorkspaceIds: [], removedDirectory: false };
       }
     }
 
-    if (target.backing !== null) {
-      const removal = await maybeRemoveDirectory(
-        dependencies,
-        { requestId: request.requestId, checkpoint, onlyIfEmpty: request.onlyIfEmpty },
-        target,
-        archivedWorkspaceIds,
-      );
-      removedDirectory = removal.removedDirectory;
-      directoryLeftBehind = removal.directoryLeftBehind;
+    await stopWorkspaceSetups(dependencies, target.setupWorkspaceIds, request.requestId);
+    checkpoint();
+
+    if (targetWorkspaceIds.length > 0) {
+      dependencies.markWorkspaceArchiving(targetWorkspaceIds, archivedAt);
     }
 
-    return {
-      archivedAgentIds: Array.from(archivedAgents),
-      archivedWorkspaceIds,
-      removedDirectory,
-      ...(directoryLeftBehind ? { directoryLeftBehind } : {}),
-    };
-  } finally {
-    if (targetWorkspaceIds.length > 0) {
-      dependencies.clearWorkspaceArchiving(targetWorkspaceIds);
-      await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
+    let removedDirectory = false;
+    let directoryLeftBehind: ArchiveResult["directoryLeftBehind"];
+
+    try {
+      if (targetWorkspaceIds.length > 0) {
+        await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
+      }
+      checkpoint();
+
+      const { archivedAgents, archivedWorkspaceIds } = await archiveTargetRecords(
+        dependencies,
+        targetWorkspaceIds,
+        { requestId: request.requestId, checkpoint, archivedAt },
+      );
+      checkpoint();
+
+      if (target.backing?.mainRepoRoot) {
+        try {
+          await dependencies.workspaceGitService.getSnapshot(target.backing.mainRepoRoot, {
+            force: true,
+            reason: "archive-worktree",
+          });
+        } catch (error) {
+          dependencies.sessionLogger?.warn(
+            { err: error, cwd: target.backing.mainRepoRoot, requestId: request.requestId },
+            "Failed to force-refresh workspace git snapshot after archiving",
+          );
+        }
+      }
+
+      if (target.backing !== null) {
+        const removal = await maybeRemoveDirectory(
+          dependencies,
+          { requestId: request.requestId, checkpoint, onlyIfEmpty: request.onlyIfEmpty },
+          target,
+          archivedWorkspaceIds,
+        );
+        removedDirectory = removal.removedDirectory;
+        directoryLeftBehind = removal.directoryLeftBehind;
+      }
+
+      return {
+        archivedAgentIds: Array.from(archivedAgents),
+        archivedWorkspaceIds,
+        removedDirectory,
+        ...(directoryLeftBehind ? { directoryLeftBehind } : {}),
+      };
+    } finally {
+      if (targetWorkspaceIds.length > 0) {
+        dependencies.clearWorkspaceArchiving(targetWorkspaceIds);
+        await dependencies.emitWorkspaceUpdatesForWorkspaceIds(targetWorkspaceIds);
+      }
     }
-  }
+  };
+
+  return runArchive();
 }
 
 async function resolveArchiveCheckoutPath(
@@ -640,7 +645,7 @@ async function maybeRemoveDirectory(
     teardownTargets,
     target.checkoutWorkspaceIds,
   );
-  const untrustedBacking =
+  let untrustedBacking =
     teardownPlan.untrustedBacking || Boolean(await dependencies.isCheckoutUntrusted(backing.path));
   try {
     for (const teardownTarget of uniqueTeardownTargets(teardownPlan.allowedTargets)) {
@@ -667,8 +672,8 @@ async function maybeRemoveDirectory(
     throw error;
   }
 
-  // Hold the path from the final reference check through deletion, excluding concurrent
-  // workspace registration for this checkout and its subdirectories.
+  // From the "unreferenced?" check through the delete: a workspace created on this directory
+  // meanwhile would otherwise be left active on a deleted path.
   return withWorktreePathLock(backing.path, async () => {
     const remainingActive = await dependencies.listActiveWorkspaces();
     if (

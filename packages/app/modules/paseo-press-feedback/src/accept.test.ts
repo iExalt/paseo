@@ -85,7 +85,7 @@ it.each([
     native: false,
     accepted: true,
   },
-] as const)("uses the panel state for $name", ({ accepted, name: _, ...state }) => {
+] as const)("uses the panel state for $name", ({ accepted, ...state }) => {
   const { press, visible } = rowPress(state);
   expect(acceptWorkspaceRowPress(press)).toBe(accepted);
   expect(visible).toEqual(accepted ? ["row", "workspace"] : []);

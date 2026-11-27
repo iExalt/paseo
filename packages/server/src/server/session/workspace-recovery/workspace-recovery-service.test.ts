@@ -404,7 +404,7 @@ test("archives a workspace whose worktree Git administration is missing", async 
 
 test("restores a branch that shares its name with a tag", async () => {
   const fixture = await createBaseRecoveryFixture("main");
-  execFileSync("git", ["tag", "feature"], { cwd: fixture.repoDir });
+  execFileSync("git", ["-c", "tag.gpgsign=false", "tag", "feature"], { cwd: fixture.repoDir });
   await fixture.archiveAndRemove();
   expect((await fixture.registry.get(fixture.workspace.workspaceId))?.head).toBe(
     "refs/heads/feature",

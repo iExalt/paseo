@@ -28,6 +28,7 @@
     "test:e2e:lifecycle": "npx tsx tests/e2e/agent-lifecycle.test.ts"
   },
   "dependencies": {
+    "@clack/core": "1.5.1",
     "@clack/prompts": "^1.8.1",
     "@getpaseo/client": "0.38.4",
     "@getpaseo/protocol": "0.38.4",
@@ -35,10 +36,10 @@
     "chalk": "^6.0.1",
     "commander": "^15.0.0",
     "mime-types": "^3.0.2",
+    "tree-kill": "^1.2.2",
     "ws": "^8.22.0",
     "yaml": "^2.9.1",
-    "zod": "^4.6.5",
-    "@clack/core": "1.5.1"
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "@types/mime-types": "^3.0.1",

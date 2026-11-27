@@ -22,6 +22,6 @@ See [Hoplite's ACP guide](https://hoplite.sh/docs/cli/acp) for authentication an
 
 ## Projects and the cloud workspace
 
-Hoplite runs the agent in a cloud workspace. Your local files and Paseo's loopback MCP tools are not available there.
+Hoplite runs the agent in a cloud workspace. Your local files and Paseo's local CLI are not available there.
 
 Open a repository that is linked to a Hoplite project, or set `agents.providers.hoplite.env.HOPLITE_PROJECT_ID` to use one project everywhere. Without a linked repository or a pinned project, discovery reports `No Hoplite project`.

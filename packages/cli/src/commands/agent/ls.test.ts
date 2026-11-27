@@ -21,11 +21,10 @@ function createPagingClient(usage?: AgentSnapshotPayload["lastUsage"], attention
     cwd: "/tmp/project",
     createdAt: `2026-10-0${n}T00:00:00.000Z`,
     updatedAt: `2026-10-0${n}T00:00:00.000Z`,
-    labels: attention
-      ? { [PARENT_AGENT_ID_LABEL]: "parent-id", team: "cli" }
-      : n === 3
-        ? { bot: "worker", issue: "42" }
-        : {},
+    labels: {
+      ...(attention ? { [PARENT_AGENT_ID_LABEL]: "parent-id", team: "cli" } : {}),
+      ...(n === 3 ? { bot: "worker", issue: "42" } : {}),
+    },
     workspaceId: n === 3 ? "workspace-3" : undefined,
     requiresAttention: attention && n === 2,
     attentionReason: attention && n === 2 ? "finished" : null,

@@ -405,7 +405,7 @@ it("compares tag-based worktrees in status, history and legacy diff modes", asyn
   const repoDir = join(worktreesRoot, "repo-hash", "tag-feature");
   mkdirSync(join(worktreesRoot, "repo-hash"), { recursive: true });
   const context = { worktreesRoot };
-  git(["tag", "v1"], mainRepoDir);
+  git(["-c", "tag.gpgsign=false", "tag", "v1"], mainRepoDir);
   git(["worktree", "add", "-b", "tag-feature", repoDir, "v1"], mainRepoDir);
   await writePaseoWorktreeMetadata(repoDir, { baseRefName: "refs/tags/v1" });
   commitFile(repoDir, "tag.txt", "committed\n", "tag feature");

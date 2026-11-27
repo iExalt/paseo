@@ -13,6 +13,13 @@ import { selectHostFeature, useHostFeature } from "@/runtime/host-features";
 import { useSessionStore } from "@/stores/session-store";
 import { confirmDialog } from "@/utils/confirm-dialog";
 
+export const CURSOR_SDK_PROVIDER = {
+  id: "cursor-sdk",
+  title: "Cursor SDK",
+} as const;
+
+export type ProviderCatalogItem = AcpProviderCatalogItem | typeof CURSOR_SDK_PROVIDER;
+
 export type ProviderEntry = NonNullable<ReturnType<typeof useProvidersSnapshot>["entries"]>[number];
 
 export interface ProviderConfigActions {
@@ -32,7 +39,7 @@ export interface ProviderConfigActions {
   /** The catalog provider being written to config. */
   addingProviderId: string | null;
   /** Writes a catalog provider to config and probes it; resolves true once it is listed. */
-  add: (entry: AcpProviderCatalogItem) => Promise<boolean>;
+  add: (entry: ProviderCatalogItem) => Promise<boolean>;
 }
 
 /** Writes a provider's Enabled flag, adds catalog providers and removes config-owned ones. */
@@ -69,7 +76,9 @@ export function useProviderConfigActions(serverId: string): ProviderConfigAction
   const canRemove = useCallback(
     (entry: ProviderEntry) => {
       const providerConfig = config?.providers?.[entry.provider];
-      if (!supportsProviderRemoval || entry.source !== "custom" || !providerConfig) return false;
+      if (!supportsProviderRemoval || !providerConfig) return false;
+      if (entry.provider === CURSOR_SDK_PROVIDER.id) return true;
+      if (entry.source !== "custom") return false;
       return Boolean(
         providerConfig.extends ||
         getAcpProviderCatalog().some(
@@ -116,15 +125,17 @@ export function useProviderConfigActions(serverId: string): ProviderConfigAction
   }
 
   const add = useCallback(
-    async (entry: AcpProviderCatalogItem) => {
+    async (entry: ProviderCatalogItem) => {
       if (addingRef.current) return false;
       addingRef.current = entry.id;
       setAddingProviderId(entry.id);
       try {
         await patchConfig(
-          buildAcpProviderConfigPatch(entry, (feature) =>
-            selectHostFeature(useSessionStore.getState(), serverId, feature),
-          ),
+          "command" in entry
+            ? buildAcpProviderConfigPatch(entry, (feature) =>
+                selectHostFeature(useSessionStore.getState(), serverId, feature),
+              )
+            : { providers: { [entry.id]: { enabled: true } } },
         );
         await refresh([entry.id]);
         return true;

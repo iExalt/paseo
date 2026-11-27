@@ -1,16 +1,13 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { expect, test } from "vitest";
 import { createDaemonTestContext } from "../test-utils/index.js";
 
-test("an attended MCP caller can discover and supply a cross-provider child mode", async () => {
+test("an attended agent tool caller can discover and supply a cross-provider child mode", async () => {
   const artifacts = path.join(process.cwd(), ".artifacts");
   await mkdir(artifacts, { recursive: true });
   const root = await mkdtemp(path.join(artifacts, "create-agent-mode-"));
-  const ctx = await createDaemonTestContext({ paseoHomeRoot: root, mcpEnabled: true });
-  const mcp = new Client({ name: "mode-contract-test", version: "1" });
+  const ctx = await createDaemonTestContext({ paseoHomeRoot: root, agentToolsEnabled: true });
   try {
     const parent = await ctx.client.createAgent({
       provider: "claude",
@@ -18,12 +15,8 @@ test("an attended MCP caller can discover and supply a cross-provider child mode
       modeId: "default",
       title: "Attended parent",
     });
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${ctx.daemon.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
-    const { tools } = await mcp.listTools();
+    const toolsClient = ctx.daemon.nativeTools(parent.id);
+    const { tools } = await toolsClient.listTools();
     const create = tools.find((tool) => tool.name === "create_agent");
     expect.soft(create?.description).toContain("settings.modeId");
 
@@ -32,7 +25,7 @@ test("an attended MCP caller can discover and supply a cross-provider child mode
       title: "Cross-provider child",
       initialPrompt: "Reply with OK",
     };
-    const refused = await mcp.callTool({ name: "create_agent", arguments: args });
+    const refused = await toolsClient.callTool({ name: "create_agent", arguments: args });
     expect(refused.isError).toBe(true);
     expect.soft(refused.content).toEqual([
       expect.objectContaining({
@@ -42,7 +35,7 @@ test("an attended MCP caller can discover and supply a cross-provider child mode
     ]);
     expect((await ctx.client.fetchAgents({ subscribe: {} })).entries).toHaveLength(1);
 
-    const inspected = await mcp.callTool({
+    const inspected = await toolsClient.callTool({
       name: "inspect_provider",
       arguments: { provider: "codex" },
     });
@@ -50,7 +43,7 @@ test("an attended MCP caller can discover and supply a cross-provider child mode
     expect(inspected.structuredContent).toMatchObject({
       modes: expect.arrayContaining([expect.objectContaining({ id: "auto" })]),
     });
-    const created = await mcp.callTool({
+    const created = await toolsClient.callTool({
       name: "create_agent",
       arguments: { ...args, settings: { modeId: "auto" } },
     });
@@ -60,7 +53,6 @@ test("an attended MCP caller can discover and supply a cross-provider child mode
     expect((await ctx.client.fetchAgent(childId))?.agent.currentModeId).toBe("auto");
     expect((await ctx.client.waitForFinish(childId, 5000)).status).toBe("idle");
   } finally {
-    await mcp.close();
     await ctx.cleanup();
     await rm(root, { recursive: true, force: true });
   }

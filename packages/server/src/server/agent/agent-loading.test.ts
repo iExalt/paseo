@@ -512,16 +512,21 @@ test("offline history opens without provider availability and preserves turn IDs
     clients: { codex: client },
     registry: storage,
     logger,
-    pluginLifecycle: {
-      wait: async () => {},
-      emit: () => {},
-      before: async (name, request) => {
-        if (name === "agent.open.before" && "purpose" in request) {
-          hookPurposes.push(request.purpose);
-          if (request.purpose === "history" && denyHistory)
-            throw new Error("history denied by plugin");
+    pluginSessions: {
+      openSession: async (request) => {
+        hookPurposes.push(request.purpose);
+        if (request.purpose === "history" && denyHistory) {
+          throw new Error("history denied by plugin");
         }
-        return request;
+        return { env: request.env };
+      },
+      sessionLaunched: () => {},
+      sessionLaunchFailed: () => {},
+      refreshSession: async () => ({ stale: false }),
+      sessionTools: () => [],
+      closeSession: () => {},
+      callTool: async () => {
+        throw new Error("No plugin tool was attached");
       },
     },
   });

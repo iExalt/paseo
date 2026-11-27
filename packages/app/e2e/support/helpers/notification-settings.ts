@@ -16,6 +16,24 @@ type NotificationSwitchName =
   | "Terminal finished"
   | "Plugin notifications";
 
+/** Allow the daemon policy and notification lifecycle journeys to exercise finished delivery. */
+export async function enableFinishedNotifications(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const key = "@paseo:app-settings";
+    const current = JSON.parse(localStorage.getItem(key) ?? '{"chatDisplay":"full"}');
+    localStorage.setItem(
+      key,
+      JSON.stringify({
+        ...current,
+        notifications: {
+          ...current.notifications,
+          events: { ...current.notifications?.events, agentFinished: true },
+        },
+      }),
+    );
+  });
+}
+
 export async function installBrowserNotificationRecorder(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const recorded: RecordedBrowserNotification[] = [];

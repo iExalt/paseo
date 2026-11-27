@@ -64,7 +64,7 @@ You can also pass per-agent `providerOptions` when you create an agent. The daem
 
 ## Limitations in Muse 1.4.1
 
-- Paseo MCP tools are unavailable because Muse drops the returned tool namespace before matching an MCP call. This upstream issue must be fixed in Muse before Muse agents can use Paseo tools.
+- **Paseo operations use the CLI.** In a shell-capable session, use the daemon-provided `PASEO_CLI`.
 - Compaction needs a model context limit. If your endpoint does not report one, configure `context_compaction.provider_context_limit_tokens` in Muse for the selected model.
 - Usage windows appear only when Muse reports them. An empty `usage/read` response leaves subscription usage unavailable.
 - If native subagent tools are missing, set `MUSE_EXPERIMENTAL_SDK_ENABLED=on` in the provider environment. Linked child sessions appear only when Muse supplies `childSessionId`.

@@ -496,6 +496,11 @@ export async function stopDesktopDaemon(
   return resolveDesktopDaemonStatus();
 }
 
+/** An app update or a version mismatch replaces the daemon with the one this Desktop bundles. */
+function isReplacement(reason: DesktopDaemonStopReason): boolean {
+  return reason === "app_update";
+}
+
 /**
  * While Desktop manages the built-in daemon, a replacement applies to every daemon Desktop
  * launched, which `paseo.pid` records as `desktopManaged`. That includes one an earlier Desktop
@@ -505,7 +510,7 @@ async function replacesDesktopDaemon(
   reason: DesktopDaemonStopReason,
   instance: DaemonInstance | null,
 ): Promise<boolean> {
-  if (reason !== "app_update" || instance?.desktopManaged !== true) return false;
+  if (!isReplacement(reason) || instance?.desktopManaged !== true) return false;
   return (await getDesktopSettingsStore().get()).daemon.manageBuiltInDaemon;
 }
 

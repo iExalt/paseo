@@ -2,23 +2,23 @@ import { useCallback } from "react";
 import { useTranslation } from "react-i18next";
 import { Text, View } from "react-native";
 import { Switch } from "@/components/ui/switch";
-import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import { useAgentToolsSetting } from "@/hooks/use-agent-tools-setting";
 import { useHostRuntimeIsConnected } from "@/runtime/host-runtime";
 import { settingsStyles } from "@/styles/settings";
 
 export function AgentToolsCard({ serverId }: { serverId: string }) {
   const { t } = useTranslation();
   const isConnected = useHostRuntimeIsConnected(serverId);
-  const { config, patchConfig } = useDaemonConfig(serverId);
+  const { enabled, setEnabled } = useAgentToolsSetting(serverId);
 
   const handleValueChange = useCallback(
     (next: boolean) => {
-      void patchConfig({ agentTools: { enabled: next } });
+      void setEnabled(next);
     },
-    [patchConfig],
+    [setEnabled],
   );
 
-  if (!isConnected) return null;
+  if (!isConnected || enabled === null) return null;
 
   return (
     <View style={settingsStyles.card} testID="host-page-agent-tools-card">
@@ -32,7 +32,7 @@ export function AgentToolsCard({ serverId }: { serverId: string }) {
           </Text>
         </View>
         <Switch
-          value={config?.agentTools.enabled !== false}
+          value={enabled}
           onValueChange={handleValueChange}
           accessibilityLabel={t("settings.host.orchestration.enableTools.accessibilityLabel")}
           testID="host-page-agent-tools-switch"

@@ -193,6 +193,10 @@ const ContextWindowRing = withUnistyles(function ContextWindowRing({
   );
 });
 
+function formatMeterCost(cost: number | null, wholeDollars: boolean, formattedCost: string | null) {
+  return wholeDollars && cost !== null ? formatWholeDollars(cost) : formattedCost;
+}
+
 export function ContextWindowMeter({
   serverId,
   agentId,
@@ -233,8 +237,8 @@ export function ContextWindowMeter({
     }),
     [percentage],
   );
-  const formattedSessionCost =
-    typeof totalCostUsd === "number" ? formatSessionCost(totalCostUsd) : null;
+  const cost = totalCostUsd ?? null;
+  const formattedSessionCost = cost === null ? null : formatSessionCost(cost);
   // The cost sits left of the ring inside the same trigger, so pressing it opens the details too.
   const showsCost = formattedSessionCost !== null && !showPercentage;
   const { wholeDollars, onCostLayout } = useCostLabelPrecision(showsCost);
@@ -256,9 +260,7 @@ export function ContextWindowMeter({
   const ring = showsCost ? <View style={styles.container}>{ringGlyph}</View> : ringGlyph;
   const costLabel = showsCost ? (
     <Text style={styles.costLabel} testID="context-window-cost" onLayout={onCostLayout}>
-      {wholeDollars && typeof totalCostUsd === "number"
-        ? formatWholeDollars(totalCostUsd)
-        : formattedSessionCost}
+      {formatMeterCost(cost, wholeDollars, formattedSessionCost)}
     </Text>
   ) : null;
   const percentageLabel =

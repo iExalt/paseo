@@ -13,7 +13,9 @@ import { resolvePromptInput } from "../../utils/prompt-input.js";
 const daemonTarget = { kind: "endpoint" as const, host: "daemon.test:12345" };
 
 vi.mock("../../utils/client.js", () => ({ connectToDaemon: vi.fn() }));
-vi.mock("../../utils/caller-agent.js", () => ({ resolveCallerAgentId: vi.fn(async () => null) }));
+vi.mock("../../utils/caller-agent.js", () => ({
+  resolveCallerAgentId: vi.fn(async () => undefined),
+}));
 
 function createClient(resolvedAgentId = "agent-1") {
   const client = new DaemonClient({
@@ -51,7 +53,7 @@ describe("agent send --if-running", () => {
     vi.clearAllMocks();
   });
 
-  it("plans only explicit valid behavior flags before resolving caller context", () => {
+  it("forwards only explicitly requested behavior and rejects unknown values", () => {
     expect(parseSend(["agent-1", "hello"]).ifRunning).toBeUndefined();
     expect(parseSend(["agent-1", "hello", "--if-running", "interrupt"]).ifRunning).toBe(
       "interrupt",

@@ -1,5 +1,10 @@
 import { withWorkspaceLifecycleLock } from "./workspace-lifecycle-lock.js";
 import { createWorkspaceRecoveryService } from "./session/workspace-recovery/workspace-recovery-service.js";
+import {
+  createPersistedWorkspaceRecord,
+  createPersistedProjectRecord,
+  FileBackedWorkspaceRegistry,
+} from "./workspace-registry.js";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,11 +41,6 @@ import {
   isCheckoutUntrusted,
   WorkspaceAutomationBlockedError,
 } from "./workspace-automation-gate.js";
-import {
-  createPersistedProjectRecord,
-  createPersistedWorkspaceRecord,
-  FileBackedWorkspaceRegistry,
-} from "./workspace-registry.js";
 
 const cleanupPaths: string[] = [];
 

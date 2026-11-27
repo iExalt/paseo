@@ -74,7 +74,7 @@ it("does not store a checkpoint for rows that another tab evicted", async () => 
     hasOlder: false,
   });
   await evictingTab.flush();
-  expect((await openTab(databaseName).readDirectory(SERVER_ID)).checkpoint).toBeUndefined();
+  expect((await openTab(databaseName).readDirectory(SERVER_ID))?.checkpoint).toBeUndefined();
 
   syncingTab.commitDirectoryMutations(
     SERVER_ID,
@@ -85,6 +85,6 @@ it("does not store a checkpoint for rows that another tab evicted", async () => 
 
   // The second tab wrote over a directory it never saw evicted, so the store rejected the write.
   const newTab = await openTab(databaseName).readDirectory(SERVER_ID);
-  expect(newTab.projects.size).toBe(0);
-  expect(newTab.checkpoint).toBeUndefined();
+  expect(newTab?.projects.size).toBe(0);
+  expect(newTab?.checkpoint).toBeUndefined();
 });

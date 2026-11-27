@@ -15,7 +15,7 @@ import {
 import { Alert } from "@/components/ui/alert";
 import { Switch } from "@/components/ui/switch";
 import { isNative } from "@/constants/platform";
-import { DesktopNotificationsSection } from "@/desktop/components/desktop-notifications-section";
+import { NotificationsSection as PlatformNotificationsSection } from "@/screens/settings/notifications/notifications-section";
 import { useAppSettings } from "@/hooks/use-settings";
 import { useConfiguredPluginsAcrossHosts } from "@/plugins/plugin-list";
 import { useInstalledPlugins } from "@/plugins/registry";
@@ -299,7 +299,7 @@ export function NotificationsSection() {
         </View>
       </SettingsSection>
 
-      <DesktopNotificationsSection />
+      <PlatformNotificationsSection />
     </View>
   );
 }

@@ -1,8 +1,6 @@
 import { z } from "zod";
 import pino from "pino";
 import { createTestAgentClients } from "../test-utils/fake-agent-client.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, expect, test } from "vitest";
 import { createPaseoApi } from "@getpaseo/client";
 import { createHostClient, createHostChannelTransport } from "@getpaseo/client/node";
@@ -462,7 +460,7 @@ class RoutePeer {
 import { mkdir, writeFile, readFile, chmod, stat, mkdtemp, rm, readdir } from "node:fs/promises";
 import { join, dirname, basename } from "node:path";
 import { tmpdir, userInfo } from "node:os";
-import { resolveDaemonVersion } from "../daemon-version.js";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 
 test("identity discovery failures remain inspectable and changing a pinned destination requires explicit replacement", async () => {
   const a = await daemon();
@@ -537,7 +535,7 @@ test("server plugins use ordinary remote SDK operations and retain qualified sou
     join(directory, "paseo-plugin.json"),
     JSON.stringify({
       id: "connected-host-test",
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(
@@ -1571,13 +1569,7 @@ test(
       config: { provider: "claude/claude-test" },
       title: "Fleet parent",
     });
-    const mcp = new Client({ name: "fleet-delegation", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = a.nativeTools(parent.id);
     const result = await mcp.callTool({ name: "list_hosts", arguments: {} });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({
@@ -1756,13 +1748,7 @@ test(
       title: "Background parent",
       background: true,
     });
-    const mcp = new Client({ name: "background-delegation", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = a.nativeTools(parent.id);
     const call = async (name: string, args: Record<string, unknown>) => {
       const response = await mcp.callTool({ name, arguments: args });
       expect(response.isError, JSON.stringify(response)).not.toBe(true);
@@ -1858,19 +1844,9 @@ test(
       title: "Batch child",
       labels: { "paseo.parent-agent-id": parent.id, "paseo.parent-server-id": aId },
     });
-    const caller = async (host: TestPaseoDaemon, agentId: string) => {
-      const mcp = new Client({ name: "batching-agent", version: "1" });
-      await mcp.connect(
-        new StreamableHTTPClientTransport(
-          new URL(`http://127.0.0.1:${host.port}/mcp/agents?callerAgentId=${agentId}`),
-        ),
-      );
-      cleanup.push(() => mcp.close());
-      return mcp;
-    };
-    const parentMcp = await caller(a, parent.id);
-    const childMcp = await caller(b, child.id);
-    const task = await parentMcp.callTool({
+    const parentTools = a.nativeTools(parent.id);
+    const childTools = b.nativeTools(child.id);
+    const task = await parentTools.callTool({
       name: "send_agent_prompt",
       arguments: { serverId: bId, agentId: child.id, prompt: "Do the delegated task" },
     });
@@ -1889,7 +1865,7 @@ test(
     // An idle recipient must not report old idle as completion of its queued task.
     expect((await destination.client.waitForFinish(child.id, 50)).status).toBe("timeout");
     await childStarted.promise;
-    const report = await childMcp.callTool({
+    const report = await childTools.callTool({
       name: "send_agent_prompt",
       arguments: {
         serverId: aId,
@@ -1970,7 +1946,10 @@ test(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Human recipient",
     });
-    expect(await origin.client.sendAgentMessage(human.id, "HUMAN_PROMPT")).toEqual({});
+    expect(await origin.client.sendAgentMessage(human.id, "HUMAN_PROMPT")).toMatchObject({
+      agentId: human.id,
+      disposition: "turn_started",
+    });
     expect(
       (await origin.client.fetchAgentTimeline(human.id)).entries.some(
         (row) => row.item.type === "user_message" && row.item.text === "HUMAN_PROMPT",
@@ -1997,11 +1976,7 @@ test(
       config: { provider: "claude/claude-test", modeId: "default" },
       title: "Human mode recipient",
     });
-    const mcp = new Client({ name: "human-mode-send", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(new URL(`http://127.0.0.1:${a.port}/mcp/agents`)),
-    );
+    const mcp = a.nativeTools();
     const response = await mcp.callTool({
       name: "send_agent_prompt",
       arguments: { serverId, agentId: agent.id, prompt: "Human task", sessionMode: "full-access" },
@@ -2057,7 +2032,7 @@ test(
       paseoHomeRoot: root,
       cleanup: false,
       agentClients: clients(),
-      mcpEnabled: true,
+      agentToolsEnabled: true,
     });
     const origin = await api(a);
     const destination = await api(b);
@@ -2074,13 +2049,7 @@ test(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Remote parent",
     });
-    const mcp = new Client({ name: "durable-remote-parent", version: "1" });
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
-    cleanup.push(() => mcp.close());
+    const mcp = a.nativeTools(parent.id);
     const response = await mcp.callTool({
       name: "create_agent",
       arguments: {
@@ -2102,13 +2071,12 @@ test(
     await origin.paseo.hosts.update(saved.registrationId, { enabled: false });
     await origin.paseo.dispose();
     await origin.client.close();
-    await mcp.close();
     await a.close();
     const restarted = await daemon({
       paseoHomeRoot: root,
       cleanup: false,
       agentClients: clients(),
-      mcpEnabled: true,
+      agentToolsEnabled: true,
     });
     const recovered = await api(restarted);
     expect(await records(restarted.paseoHome)).toHaveLength(1);
@@ -2131,7 +2099,7 @@ test(
   "a remote child without a mode starts in its same-provider caller's mode",
   { timeout: 30000 },
   async () => {
-    const a = await daemon({ mcpEnabled: true });
+    const a = await daemon({ agentToolsEnabled: true });
     const b = await daemon();
     const origin = await api(a);
     const destination = await api(b);
@@ -2147,13 +2115,7 @@ test(
       config: { provider: "claude/claude-test", modeId: "bypassPermissions" },
       title: "Mode parent",
     });
-    const mcp = new Client({ name: "mode-parent", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = a.nativeTools(parent.id);
     const remoteMode = async (provider: string, settings?: { modeId: string }) => {
       const response = await mcp.callTool({
         name: "create_agent",
@@ -2188,7 +2150,7 @@ test(
       finish.resolve();
     });
     const a = await daemon({
-      mcpEnabled: true,
+      agentToolsEnabled: true,
       logger: completionLogger(),
       agentClients: createTestAgentClients({
         onStartTurn: (prompt) => {
@@ -2214,13 +2176,7 @@ test(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Permission parent",
     });
-    const mcp = new Client({ name: "permission-parent", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = a.nativeTools(parent.id);
     const response = await mcp.callTool({
       name: "create_agent",
       arguments: {
@@ -2270,7 +2226,7 @@ test(
   async () => {
     const parentPrompts: string[] = [];
     const a = await daemon({
-      mcpEnabled: true,
+      agentToolsEnabled: true,
       agentClients: createTestAgentClients({
         onStartTurn: (prompt) => {
           if (String(prompt).includes('kind="agent-notification"'))
@@ -2298,21 +2254,18 @@ test(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Idle child",
     });
-    const mcp = new Client({ name: "offline-parent", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = a.nativeTools(parent.id);
     await origin.paseo.hosts.update(saved.registrationId, { enabled: false });
     const response = await mcp.callTool({
       name: "send_agent_prompt",
-      arguments: { serverId, agentId: child.id, prompt: "Never sent" },
+      arguments: { serverId, agentId: child.id, prompt: "Never sent", notifyOnFinish: true },
     });
     expect(response.isError).toBe(true);
     const records = () =>
-      readFile(join(a.paseoHome, "finish-subscriptions.json"), "utf8").then(JSON.parse);
+      readFile(join(a.paseoHome, "finish-subscriptions.json"), "utf8").then(JSON.parse, (error) => {
+        if (error.code === "ENOENT") return [];
+        throw error;
+      });
     expect(await records()).toEqual([]);
     await origin.paseo.hosts.update(saved.registrationId, { enabled: true });
     await online(origin.paseo);
@@ -2330,7 +2283,7 @@ test.each(["removed", "disabled"] as const)(
     const finish = Promise.withResolvers<void>();
     cleanup.push(async () => finish.resolve());
     const a = await daemon({
-      mcpEnabled: true,
+      agentToolsEnabled: true,
       logger: completionLogger(),
       agentClients: createTestAgentClients({
         onStartTurn: (prompt) => {
@@ -2357,13 +2310,7 @@ test.each(["removed", "disabled"] as const)(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Parent",
     });
-    const mcp = new Client({ name: "removed-host-parent", version: "1" });
-    cleanup.push(() => mcp.close());
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
+    const mcp = a.nativeTools(parent.id);
     const response = await mcp.callTool({
       name: "create_agent",
       arguments: {
@@ -2687,19 +2634,23 @@ test.each([false, true])(
       config: { provider: "claude/claude-test", modeId: "full-access" },
       title: "Closed target",
     });
-    if (archived) await child.archive();
-    else await b.daemon.agentManager.closeAgent(child.id);
+    if (archived) {
+      // This journey reopens an archived chat in a workspace that still has a sibling.
+      await remoteWorkspace.agents.create({ config: { provider: "claude/claude-test" } });
+      await child.archive();
+    } else {
+      await b.daemon.agentManager.closeAgent(child.id);
+    }
     expect((await destination.client.fetchAgent(child.id))?.agent.status).toBe("closed");
-    const mcp = new Client({ name: "closed-target-caller", version: "1" });
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${a.port}/mcp/agents?callerAgentId=${parent.id}`),
-      ),
-    );
-    cleanup.push(() => mcp.close());
+    const mcp = a.nativeTools(parent.id);
     const result = await mcp.callTool({
       name: "send_agent_prompt",
-      arguments: { serverId: remoteId, agentId: child.id, prompt: "Finish the new task" },
+      arguments: {
+        serverId: remoteId,
+        agentId: child.id,
+        prompt: "Finish the new task",
+        notifyOnFinish: true,
+      },
     });
     expect(result.isError).not.toBe(true);
     expect(result.structuredContent).toMatchObject({ deliveryStatus: "queued", status: "closed" });

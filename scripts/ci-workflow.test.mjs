@@ -16,6 +16,7 @@ import { join, relative as relativePath } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { load } from "js-yaml";
+import { PUBLISH_WORKSPACES } from "./publish-release-packages.mjs";
 
 const repoRoot = new URL("../", import.meta.url);
 
@@ -116,8 +117,11 @@ function filesUnder(relativeDirectory, predicate) {
 
 test("published npm packages declare and ship the repository license", () => {
   const rootManifest = JSON.parse(readFileSync(new URL("package.json", repoRoot), "utf8"));
-  const workspaceArgs = rootManifest.scripts["release:publish"].match(/--workspace=\S+/g);
-  assert.notEqual(workspaceArgs, null, "release:publish must select public packages");
+  assert.equal(
+    rootManifest.scripts["release:publish"],
+    "node scripts/publish-release-packages.mjs",
+  );
+  const workspaceArgs = PUBLISH_WORKSPACES.map((name) => `--workspace=${name}`);
   const packed = JSON.parse(
     execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json", ...workspaceArgs], {
       cwd: repoRoot,
@@ -138,8 +142,8 @@ test("published npm packages declare and ship the repository license", () => {
   }));
   assert.deepEqual(
     licenses,
-    workspaceArgs.map((workspace) => ({
-      name: workspace.slice("--workspace=".length),
+    PUBLISH_WORKSPACES.map((name) => ({
+      name,
       license: "Apache-2.0",
       files: ["LICENSE"],
     })),
@@ -192,7 +196,11 @@ test("PR routing declares stable behavior ownership", () => {
       "packages/app/*config.{cjs,js,ts}",
       "packages/app/package.json",
     ],
-    app: ["packages/app/**", "packages/expo-two-way-audio/**"],
+    app: [
+      "packages/app/**",
+      "packages/expo-two-way-audio/**",
+      "packages/react-native-enriched-markdown/**",
+    ],
     sdk: [
       "packages/plugin/**",
       "plugin-examples/**",
@@ -222,6 +230,7 @@ test("PR routing declares stable behavior ownership", () => {
       "packages/app/index.ts",
       "packages/app/*config.{cjs,js,ts}",
       "packages/app/package.json",
+      "packages/react-native-enriched-markdown/**",
     ],
     relay: ["packages/relay/**"],
     cli: ["packages/cli/**"],
@@ -308,6 +317,7 @@ test("browser and desktop tests have exclusive, directory-owned suites", () => {
     "packages/app/index.ts",
     "packages/app/*config.{cjs,js,ts}",
     "packages/app/package.json",
+    "packages/react-native-enriched-markdown/**",
   ]);
 });
 

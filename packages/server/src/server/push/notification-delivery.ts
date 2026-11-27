@@ -1,4 +1,5 @@
 import type pino from "pino";
+import type { NotificationKind } from "@getpaseo/protocol/notification-preferences";
 import type { AgentStorage } from "../agent/agent-storage.js";
 import type { ManagedAgent } from "../agent/agent-manager.js";
 import type { PushNotifications, PushNotificationSender, PushPayload } from "./index.js";
@@ -46,11 +47,20 @@ export class NotificationDelivery {
     }
   }
 
-  sendAttention(input: { notification: PushPayload; agentId: string }): void {
+  sendAttention(input: {
+    notification: PushPayload;
+    agentId: string;
+    kind?: NotificationKind;
+  }): void {
     if (this.stopped) return;
-    const send = this.options.sender.send(input.notification, this.abort.signal).catch((err) => {
-      this.options.logger.warn({ err, agentId: input.agentId }, "Failed to send push notification");
-    });
+    const send = this.options.sender
+      .send(input.notification, this.abort.signal, input.kind)
+      .catch((err) => {
+        this.options.logger.warn(
+          { err, agentId: input.agentId },
+          "Failed to send push notification",
+        );
+      });
     this.sends.add(send);
     void send.finally(() => this.sends.delete(send));
   }

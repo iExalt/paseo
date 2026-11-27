@@ -51,6 +51,37 @@ describe("browser CLI command RPC schemas", () => {
     ).toMatchObject({ payload: { context: { agentId: "agent-1", browserId: BROWSER_ID } } });
   });
 
+  test("carries selected browser hosts and discovery from the daemon", () => {
+    const host = { browserHostId: "a".repeat(64), label: "Work · Window 2", canOpenTabs: true };
+    const request = {
+      type: "browser.command.execute.request",
+      requestId: "select-browser",
+      browserHosts: true,
+      browserHostId: host.browserHostId,
+      command: { command: "new_tab", args: { url: "https://example.test/" } },
+    };
+    expect(BrowserCommandExecuteRequestSchema.parse(request)).toEqual(request);
+    const response = {
+      type: "browser.command.execute.response",
+      payload: {
+        requestId: "select-browser",
+        result: {
+          requestId: "select-browser",
+          ok: false,
+          error: {
+            code: "browser_host_ambiguous",
+            message: "Choose a browser host",
+            retryable: false,
+            browserHosts: [host],
+          },
+        },
+        context: { browserHosts: [host] },
+      },
+    };
+    expect(BrowserCommandExecuteResponseSchema.parse(response)).toEqual(response);
+    expect(validateWSOutboundMessage({ type: "session", message: response }).success).toBe(true);
+  });
+
   test("correlates cancellation to a target request", () => {
     expect(
       BrowserCommandCancelRequestSchema.parse({

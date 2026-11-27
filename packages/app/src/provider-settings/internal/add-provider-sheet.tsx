@@ -1,3 +1,7 @@
+import { ACP_PROVIDER_ICON_SVGS } from "@/assets/acp-provider-icons";
+import { useDaemonConfig } from "@/hooks/use-daemon-config";
+import { useHostFeature } from "@/runtime/host-features";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { PackagePlus } from "lucide-react-native";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -8,14 +12,15 @@ import { AdaptiveModalSheet, type SheetHeader } from "@/components/adaptive-moda
 import { rankProviderCatalog } from "@/components/provider-catalog-search";
 import { SettingsCard, SettingsRow } from "@/components/settings";
 import { Button } from "@/components/ui/button";
-import {
-  useAcpProviderCatalog,
-  type AcpProviderCatalogItem,
-} from "@/hooks/use-acp-provider-catalog";
+import { useAcpProviderCatalog } from "@/hooks/use-acp-provider-catalog";
 import { useProvidersSnapshot } from "@/hooks/use-providers-snapshot";
 import { settingsStyles } from "@/styles/settings";
 import { ICON_SIZE, type Theme } from "@/styles/theme";
-import { useProviderConfigActions } from "./provider-config";
+import {
+  CURSOR_SDK_PROVIDER,
+  useProviderConfigActions,
+  type ProviderCatalogItem,
+} from "./provider-config";
 import { OVERLAY_SHEET_FRAME, type ProviderSheetFrame } from "./sheet-frame";
 
 const ThemedPackagePlus = withUnistyles(PackagePlus);
@@ -42,6 +47,9 @@ export function AddProviderSheet({
   const { t } = useTranslation();
   const { entries: catalog } = useAcpProviderCatalog();
   const { entries: providers } = useProvidersSnapshot(serverId);
+  const { config } = useDaemonConfig(serverId);
+  const supportsCursorSdk = useHostFeature(serverId, "cursorSdkAuth");
+  const cursorConfigured = Boolean(config?.providers?.[CURSOR_SDK_PROVIDER.id]);
   const { add, addingProviderId } = useProviderConfigActions(serverId);
   const [search, setSearch] = useState("");
   // Each opening starts from an empty search; the field clears when this changes.
@@ -60,14 +68,17 @@ export function AddProviderSheet({
 
   const available = useMemo(() => {
     const added = new Set(providers?.map((entry) => entry.provider) ?? []);
-    return rankProviderCatalog(
-      catalog.filter((entry) => !added.has(entry.id)),
-      search,
+    const candidates: ProviderCatalogItem[] = catalog.filter((entry) => !added.has(entry.id));
+    const cursorEnabled = providers?.some(
+      (entry) => entry.provider === CURSOR_SDK_PROVIDER.id && entry.enabled !== false,
     );
-  }, [catalog, providers, search]);
+    if (supportsCursorSdk && !cursorConfigured && !cursorEnabled)
+      candidates.push(CURSOR_SDK_PROVIDER);
+    return rankProviderCatalog(candidates, search);
+  }, [catalog, cursorConfigured, providers, search, supportsCursorSdk]);
 
   const handleAdd = useCallback(
-    (entry: AcpProviderCatalogItem) => {
+    (entry: ProviderCatalogItem) => {
       const startedIn = sessionRef.current;
       void add(entry).then((added) => {
         // Closed before the add finished: the provider is added, but the user has moved on.
@@ -137,18 +148,19 @@ function CatalogRow({
   disabled,
   onAdd,
 }: {
-  entry: AcpProviderCatalogItem;
+  entry: ProviderCatalogItem;
   adding: boolean;
   disabled: boolean;
-  onAdd: (entry: AcpProviderCatalogItem) => void;
+  onAdd: (entry: ProviderCatalogItem) => void;
 }) {
   const { t } = useTranslation();
   const handleAdd = useCallback(() => onAdd(entry), [entry, onAdd]);
+  const iconSvg = "iconSvg" in entry ? entry.iconSvg : ACP_PROVIDER_ICON_SVGS.cursor;
   const icon = useMemo(
     () =>
-      entry.iconSvg ? (
+      iconSvg ? (
         <ThemedSvgXml
-          xml={entry.iconSvg}
+          xml={iconSvg}
           width={ICON_SIZE.md}
           height={ICON_SIZE.md}
           uniProps={foregroundColorMapping}
@@ -156,15 +168,16 @@ function CatalogRow({
       ) : (
         <ThemedPackagePlus size={ICON_SIZE.md} uniProps={foregroundColorMapping} />
       ),
-    [entry.iconSvg],
+    [iconSvg],
   );
   return (
     <SettingsRow
       leading={icon}
       label={entry.title}
-      hint={entry.description}
+      hint={"description" in entry ? entry.description : undefined}
       testID={`provider-catalog-row-${entry.id}`}
     >
+      {"command" in entry ? null : <StatusBadge label="SDK" size="xs" />}
       <Button
         variant="outline"
         onPress={handleAdd}

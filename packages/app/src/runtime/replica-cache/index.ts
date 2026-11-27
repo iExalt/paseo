@@ -483,22 +483,28 @@ function serializeAgentToolCall(data: AgentToolCallData): StoredToolCall {
   }
 }
 
+function serializeUserMessage(
+  item: Extract<StreamItem, { kind: "user_message" }>,
+  base: ReturnType<typeof timelineBase>,
+): StoredTimelineItem {
+  const cursorSkills = item.attachments?.flatMap((attachment) =>
+    attachment.type === "cursor_skill" ? [attachment.reference] : [],
+  );
+  return {
+    ...base,
+    kind: item.kind,
+    ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
+    ...(item.messageId ? { messageId: item.messageId } : {}),
+    text: item.text,
+    ...(cursorSkills?.length ? { cursorSkills } : {}),
+  };
+}
+
 function serializeTimelineItem(item: StreamItem): StoredTimelineItem | null {
   const base = timelineBase(item);
   switch (item.kind) {
-    case "user_message": {
-      const cursorSkills = item.attachments?.flatMap((attachment) =>
-        attachment.type === "cursor_skill" ? [attachment.reference] : [],
-      );
-      return {
-        ...base,
-        kind: item.kind,
-        ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
-        ...(item.messageId ? { messageId: item.messageId } : {}),
-        text: item.text,
-        ...(cursorSkills?.length ? { cursorSkills } : {}),
-      };
-    }
+    case "user_message":
+      return serializeUserMessage(item, base);
     case "assistant_message":
       return {
         ...base,
@@ -576,6 +582,32 @@ function deserializeTimelineItem(item: StoredTimelineItem): StreamItem {
   return deserializeBuiltinTimelineItem(item);
 }
 
+function deserializeUserMessage(
+  item: Extract<StoredTimelineItem, { kind: "user_message" }>,
+  base: {
+    id: string;
+    timelineCursor?: StreamItem["timelineCursor"];
+    turnId?: string;
+    timestamp: Date;
+  },
+): StreamItem {
+  return {
+    ...base,
+    kind: item.kind,
+    ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
+    ...(item.messageId ? { messageId: item.messageId } : {}),
+    text: item.text,
+    ...(item.cursorSkills?.length
+      ? {
+          attachments: item.cursorSkills.map((reference) => ({
+            type: "cursor_skill" as const,
+            reference,
+          })),
+        }
+      : {}),
+  };
+}
+
 function deserializeBuiltinTimelineItem(
   item: Exclude<StoredTimelineItem, { kind: "plugin" }>,
 ): StreamItem {
@@ -587,21 +619,7 @@ function deserializeBuiltinTimelineItem(
   };
   switch (item.kind) {
     case "user_message":
-      return {
-        ...base,
-        kind: item.kind,
-        ...(item.clientMessageId ? { clientMessageId: item.clientMessageId } : {}),
-        ...(item.messageId ? { messageId: item.messageId } : {}),
-        text: item.text,
-        ...(item.cursorSkills?.length
-          ? {
-              attachments: item.cursorSkills.map((reference) => ({
-                type: "cursor_skill" as const,
-                reference,
-              })),
-            }
-          : {}),
-      };
+      return deserializeUserMessage(item, base);
     case "assistant_message":
       return {
         ...base,

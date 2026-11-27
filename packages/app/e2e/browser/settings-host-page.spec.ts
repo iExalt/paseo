@@ -25,7 +25,7 @@ import {
   clickEditHostLabel,
   expectHostLabelEditMode,
   expectHostConnectionsCard,
-  expectHostInjectMcpCard,
+  expectHostAgentToolsCard,
   expectHostActionCards,
   expectHostProvidersCard,
   expectHostNoDaemonLifecycleRow,
@@ -65,7 +65,7 @@ test.describe("Settings host page", () => {
     await test.step("tools section shows the inject MCP toggle", async () => {
       await openHostSection(page, serverId, "tools");
       await expectSettingsHeader(page, "Tools & prompts");
-      await expectHostInjectMcpCard(page);
+      await expectHostAgentToolsCard(page);
     });
     await test.step("providers section shows the providers card", async () => {
       await expectHostProvidersCard(page, serverId);

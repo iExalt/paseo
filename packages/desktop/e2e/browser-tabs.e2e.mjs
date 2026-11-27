@@ -379,7 +379,7 @@ async function verifyNetworkLogsReportStatus(client) {
 
 async function callPaseoCli(
   args,
-  { commandName = "browser", daemonPort, callerAgentId, workspaceId, env, label },
+  { commandName = "browser", daemonPort, callerAgentId, workspaceId, env, label, expectedError },
 ) {
   const command = spawn(
     process.execPath,
@@ -417,9 +417,13 @@ async function callPaseoCli(
       else resolve(code);
     });
   });
-  assert(exitCode === 0, `${label} CLI command failed (${exitCode}): ${stderr || stdout}`);
+  const expectedExitCode = expectedError ? 1 : 0;
+  assert(
+    exitCode === expectedExitCode,
+    `${label} CLI command exited ${exitCode}: ${stderr || stdout}`,
+  );
   try {
-    return JSON.parse(stdout);
+    return JSON.parse(expectedError ? stderr : stdout);
   } catch (error) {
     throw new Error(`${label} CLI command returned invalid JSON: ${stdout}`, { cause: error });
   }
@@ -437,7 +441,11 @@ const browserCliArgBuilders = {
   ],
   browser_close_tab: (_context, args) => ["close-tab", args.browserId],
   browser_list_tabs: () => ["list-tabs"],
-  browser_new_tab: (_context, args) => ["new-tab", ...(args.url ? [args.url] : [])],
+  browser_new_tab: (_context, args) => [
+    "new-tab",
+    ...(args.url ? [args.url] : []),
+    ...(args.browserHostId ? ["--browser-host", args.browserHostId] : []),
+  ],
   browser_snapshot: (_context, args) => ["snapshot", ...(args.browserId ? [args.browserId] : [])],
   browser_click: (_context, args) => [
     "click",
@@ -560,6 +568,82 @@ async function runBrowserCliJourney({ daemonPort, callerAgentId, browserId, arti
   return { browserId, snapshot: "passed", fill: "passed", screenshotPath };
 }
 
+async function openBrowserWorkspace(page, workspaceKey) {
+  await page.getByTestId(`sidebar-workspace-row-${workspaceKey}`).click({ timeout: timeoutMs });
+  await expect(page.getByTestId(`workspace-deck-entry-${workspaceKey}`)).toBeVisible();
+}
+
+async function openSecondDesktopWindow(page) {
+  const nextWindow = page.context().waitForEvent("page", { timeout: timeoutMs });
+  await page.evaluate(() => window.paseoDesktop.window.openNew());
+  return nextWindow;
+}
+
+async function listBrowserHosts(client) {
+  const reply = await callBrowserCli(["list-tabs"], { ...client, label: "list browser hosts" });
+  assert(Array.isArray(reply.context?.browserHosts), JSON.stringify(reply));
+  return reply.context.browserHosts;
+}
+
+async function expectBrowserHostNameInCommandCenter(page, name) {
+  await page.getByTestId("sidebar-search").click();
+  const search = page.getByTestId("command-center-input");
+  await search.fill("Copy browser host name");
+  const action = page.getByRole("button", { name: /Copy browser host name/ });
+  await expect(action).toContainText(name);
+  await action.click();
+  await expect(search).toBeHidden();
+  await expect(page.getByText("Copied", { exact: true })).toBeVisible();
+}
+
+async function verifyBrowserHostRouting({ page, client, targetUrl, workspaceKey }) {
+  await openBrowserWorkspace(page, workspaceKey);
+  await expect.poll(async () => (await listBrowserHosts(client)).length).toBe(1);
+  const [firstHost] = await listBrowserHosts(client);
+  await expectBrowserHostNameInCommandCenter(page, firstHost.label);
+  const secondWindow = await openSecondDesktopWindow(page);
+
+  try {
+    await openBrowserWorkspace(secondWindow, workspaceKey);
+    await expect.poll(async () => (await listBrowserHosts(client)).length).toBe(2);
+    const secondHost = (await listBrowserHosts(client)).find(
+      (host) => host.browserHostId !== firstHost.browserHostId,
+    );
+    assert(secondHost?.label && secondHost.label !== firstHost.label, "Windows share a host label");
+    await expectBrowserHostNameInCommandCenter(secondWindow, secondHost.label);
+
+    const ambiguous = await callBrowserCli(["new-tab", targetUrl], {
+      ...client,
+      label: "ambiguous browser host",
+      expectedError: true,
+    });
+    expect(ambiguous.error).toMatchObject({
+      code: "browser_host_ambiguous",
+      details: expect.stringContaining(firstHost.browserHostId),
+    });
+    expect(ambiguous.error.details).toContain(secondHost.browserHostId);
+    expect((await callBrowserTool(client, "browser_list_tabs")).tabs).toEqual([]);
+
+    const { browserId, browserHost } = await callBrowserTool(client, "browser_new_tab", {
+      url: targetUrl,
+      browserHostId: firstHost.browserHostId,
+    });
+    expect(browserHost).toEqual(firstHost);
+    // Only the tab's test ID carries the exact ID returned by the agent tool.
+    await expect(page.getByTestId(`workspace-tab-browser_${browserId}`)).toBeVisible();
+    await expect(secondWindow.getByTestId(`workspace-tab-browser_${browserId}`)).toHaveCount(0);
+    expect((await callBrowserTool(client, "browser_list_tabs")).tabs).toMatchObject([
+      { browserId, browserHost: firstHost, isActive: false },
+    ]);
+    await callBrowserTool(client, "browser_wait", { browserId, text: "Bridge target" });
+    await callBrowserTool(client, "browser_close_tab", { browserId });
+  } finally {
+    await secondWindow.close();
+  }
+
+  await expect.poll(() => listBrowserHosts(client)).toEqual([firstHost]);
+}
+
 async function waitForGuestSelector(client, browserId) {
   const deadline = Date.now() + 5_000;
   while (Date.now() < deadline) {
@@ -598,16 +682,14 @@ async function verifyExpiredWaitNamesItsCondition(client, targetUrl) {
   try {
     await callBrowserTool(client, "browser_wait", { browserId, text: "Bridge target" });
     // The page title is not body text, so this wait expires.
-    const response = await client.callTool({
-      name: "browser_wait",
-      args: { browserId, text: "Desktop browser target", timeoutMs: 1_000 },
-    });
-    const text = response.content?.[0]?.text;
-    assert(
-      response.structuredContent?.ok === false &&
-        text === "Timed out waiting for browser text: Desktop browser target",
-      `browser_wait did not name its expired condition: ${JSON.stringify(response.content)}`,
+    const response = await callBrowserCli(
+      ["wait", browserId, "--text", "Desktop browser target", "--timeout-ms", "1000"],
+      { ...client, label: "expired browser wait", expectedError: true },
     );
+    expect(response.error).toMatchObject({
+      code: "browser_timeout",
+      message: "Timed out waiting for browser text: Desktop browser target",
+    });
   } finally {
     await callBrowserTool(client, "browser_close_tab", { browserId });
   }
@@ -1742,12 +1824,23 @@ async function main() {
       env: commonEnv,
     });
     const pluginLinks = browserOnly ? undefined : await checkPluginLinks();
+    await verifyBrowserHostRouting({
+      page,
+      client: {
+        ...client,
+        callerAgentId: typingAgent.agentId,
+        workspaceId: typingAgent.workspaceId,
+      },
+      targetUrl: target.url,
+      workspaceKey: `${status.serverId}:${typingAgent.workspaceId}`,
+    });
     writeJson(path.join(artifactDir, "result.json"), {
       ...report,
       browserCli,
       ...(settings.settingsMemory ? { settingsMemory: settings.settingsMemory } : {}),
       ...(pluginLinks ? { pluginLinks } : {}),
       ...(settings.adaptiveTheme ? { adaptiveTheme: settings.adaptiveTheme } : {}),
+      browserHostRouting: "passed",
     });
     console.log(
       `Browser desktop browser E2E passed: WebContents ${report.originalWebContentsId} remained ${report.finalWebContentsId}; viewport, inactive capture, focus continuity, list, snapshot, click, local-page selectors passed.`,

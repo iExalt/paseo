@@ -171,11 +171,7 @@ class FakeAppUpdateRuntime implements AppUpdateRuntime {
 
   async prepareInstall(_version: string): Promise<void> {}
 
-  async quitAndInstall({
-    targetVersion,
-    isSilent,
-    isForceRunAfter,
-  }: AppUpdateInstallRequest): Promise<AppUpdateInstallLaunchResult> {
+  quitAndInstall({ targetVersion, isSilent, isForceRunAfter }: AppUpdateInstallRequest) {
     if (this.nextQuitAndInstallResult) {
       const outcome = this.nextQuitAndInstallResult;
       this.nextQuitAndInstallResult = null;

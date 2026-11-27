@@ -1,6 +1,6 @@
 import { APP_SETTINGS_KEY } from "@/hooks/use-settings/keys";
 import { Buffer } from "buffer";
-import { normalizeAppSettings } from "@/hooks/use-settings/storage";
+import { normalizeAppSettings, resolveContentMaxWidth } from "@/hooks/use-settings/storage";
 import {
   MAX_PREFERENCES_TRANSFER_BYTES,
   parsePreferencesTransfer,
@@ -233,7 +233,7 @@ function projectAppPreferences(rawApp: string | null, daemonIds: ReadonlySet<str
     uiBaseFontSize: normalized.uiBaseFontSize,
     contentFontSize: normalized.contentFontSize,
     codeFontSize: normalized.codeFontSize,
-    contentMaxWidth: normalized.contentMaxWidth,
+    contentMaxWidth: resolveContentMaxWidth(normalized) ?? null,
     syntaxTheme: normalized.syntaxTheme,
     workspaceTitleSource: normalized.workspaceTitleSource,
     sidebarWorkspaceTrailing: normalized.sidebarWorkspaceTrailing,

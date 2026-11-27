@@ -116,7 +116,7 @@ import {
   createPaseoAgentToolManifest,
   type PaseoToolHostDependencies,
 } from "./agent/tools/paseo-tools.js";
-import type { PaseoToolRuntimeContext } from "./agent/tools/types.js";
+import type { PaseoToolCatalogFactory, PaseoToolRuntimeContext } from "./agent/tools/types.js";
 import { createAgentProviderRuntime } from "./agent/provider-runtime.js";
 import { PROVIDER_BACKGROUND_REFRESH_INTERVAL_MS } from "./agent/provider-refresh-schedule.js";
 import { bootstrapWorkspaceRegistries } from "./workspace-registry-bootstrap.js";
@@ -439,6 +439,7 @@ export interface PaseoDaemon {
 
 export interface PaseoDaemonDependencies {
   builtinPlugins?: BuiltinPluginLoader;
+  onAgentToolCatalog?: (factory: PaseoToolCatalogFactory) => void;
   lazyTerminalWorker?: boolean;
   getTailscaleNetwork?: () => TailscaleNetwork;
   hubRelationshipRemote?: HubRelationshipRemote;
@@ -559,14 +560,14 @@ export async function createPaseoDaemon(
   rootLogger: Logger,
   dependencies: PaseoDaemonDependencies = {},
 ): Promise<PaseoDaemon> {
+  // Start hardware detection at the beginning of bootstrap so it overlaps with disk/registry init
+  // and does not hold up the listener when probes are slow.
+  const hostMachineKindReady = primeHostMachineKind();
   // The daemon has no caller. Managed agents receive their identity at session launch.
   delete process.env.PASEO_AGENT_ID;
   delete process.env.PASEO_AGENT_CWD;
   delete process.env.PASEO_WORKSPACE_ID;
 
-  // Start hardware detection at the beginning of bootstrap so it overlaps with disk/registry init
-  // and does not hold up the listener when probes are slow.
-  const hostMachineKindReady = primeHostMachineKind();
   configureGitProcessPolicy(config.git ?? resolveGitProcessPolicy({ env: process.env }));
   const logger = rootLogger.child({ module: "bootstrap" });
   const obsoleteTimelineDirectory = path.join(config.paseoHome, "agent-timelines");
@@ -1740,6 +1741,7 @@ export async function createPaseoDaemon(
     );
   };
   agentManager.setPaseoToolCatalogFactory(createAgentToolCatalog);
+  dependencies.onAgentToolCatalog?.(createAgentToolCatalog);
   agentManager.setAgentToolsEnabled(config.agentToolsEnabled !== false);
   setAgentProviderToolsEnabled(config.agentToolsEnabled !== false);
 
@@ -1980,8 +1982,8 @@ export async function createPaseoDaemon(
       await pluginRuntime.stopAllPlugins().catch(() => undefined);
       await serviceProxy.stopStandalone().catch(() => undefined);
       await agentProviderRuntime.shutdown().catch(() => undefined);
-      await keepAwake.stop();
       await listeners.stop();
+      await keepAwake.stop();
       if (mainStarted) {
         httpServer.closeAllConnections();
         await new Promise<void>((resolve) => httpServer.close(() => resolve()));

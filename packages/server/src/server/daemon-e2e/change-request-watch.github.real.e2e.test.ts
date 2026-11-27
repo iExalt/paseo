@@ -1,12 +1,11 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import path from "node:path";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { expect, test } from "vitest";
 import type { AgentPromptInput } from "../agent/agent-sdk-types.js";
 import type { PaseoToolCatalog } from "../agent/tools/types.js";
 import { createTestAgentClient } from "../test-utils/fake-agent-client.js";
 import { createDaemonTestContext } from "../test-utils/index.js";
+import type { TestPaseoDaemon } from "../test-utils/paseo-daemon.js";
 import { githubWatchFixture } from "./test-utils/github-watch-fixture.js";
 
 const subscribe = "subscribe_change_request";
@@ -62,7 +61,7 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
       paseoHomeRoot: root,
       staticDir: path.join(root, "static"),
       cleanup: false,
-      mcpEnabled: true,
+      agentToolsEnabled: true,
       resumeOnStartup: false,
       agentClients: {
         claude: {
@@ -81,7 +80,6 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
 
   let context: Awaited<ReturnType<typeof startDaemon>> | undefined;
   let github: Awaited<ReturnType<typeof githubWatchFixture>> | undefined;
-  const connections = new Set<Client>();
 
   const updates = (cwd: string) =>
     turns.filter(
@@ -93,21 +91,12 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
       .filter(({ cwd }) => cwd === busyDir)
       .map(({ text }) => text);
 
-  async function connectMcp(port: number, agentId: string) {
-    const mcp = new Client({ name: "change-request-watch-test", version: "1" });
-    connections.add(mcp);
-    await mcp.connect(
-      new StreamableHTTPClientTransport(
-        new URL(`http://127.0.0.1:${port}/mcp/agents?callerAgentId=${agentId}`),
-      ),
-    );
-    return mcp;
-  }
-
-  async function call(mcp: Client, name: string, url: string) {
-    const result = await mcp.callTool({ name, arguments: { url } }, undefined, {
-      timeout: 120_000,
-    });
+  async function call(
+    tools: ReturnType<TestPaseoDaemon["nativeTools"]>,
+    name: string,
+    url: string,
+  ) {
+    const result = await tools.callTool({ name, arguments: { url } });
     expect(result.isError, JSON.stringify(result.content)).not.toBe(true);
     return result.structuredContent;
   }
@@ -124,11 +113,7 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
   onTestFinished(async () => {
     holdForDelivery.resolve();
     holdForUnsubscribe.resolve();
-    const cleanup = await Promise.allSettled([
-      ...Array.from(connections, (mcp) => mcp.close()),
-      context?.cleanup(),
-      github?.close(),
-    ]);
+    const cleanup = await Promise.allSettled([context?.cleanup(), github?.close()]);
     await rm(root, { recursive: true, force: true });
     for (const result of cleanup) {
       if (result.status === "rejected") throw result.reason;
@@ -145,7 +130,7 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
     cwd: idleDir,
     modeId: "full-access",
   });
-  const mcp = await connectMcp(daemon.port, idle.id);
+  const mcp = daemon.nativeTools(idle.id);
   const { tools } = await mcp.listTools();
   expect(tools.map(({ name }) => name)).toEqual(expect.arrayContaining([subscribe, unsubscribe]));
 
@@ -247,7 +232,7 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
     source: { kind: "directory", path: childDir },
   });
   if (!childWorkspace.workspace) throw new Error("The child workspace was not created");
-  const busyMcp = await connectMcp(daemon.port, busy.id);
+  const busyMcp = daemon.nativeTools(busy.id);
   const child = await busyMcp.callTool({
     name: "create_agent",
     arguments: {
@@ -265,7 +250,7 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
     created && typeof created === "object" && "agentId" in created ? created.agentId : undefined;
   if (typeof childId !== "string") throw new Error("The daemon did not return the child agent ID");
   expect((await client.waitForFinish(childId)).status).toBe("idle");
-  const childMcp = await connectMcp(daemon.port, childId);
+  const childMcp = daemon.nativeTools(childId);
 
   async function sendFromChild(prompt: string) {
     const result = await childMcp.callTool({
@@ -308,7 +293,7 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
     cwd: lateDir,
     modeId: "full-access",
   });
-  const lateMcp = await connectMcp(daemon.port, late.id);
+  const lateMcp = daemon.nativeTools(late.id);
   expect(await call(lateMcp, subscribe, url)).toMatchObject({
     headSha: failed.head.sha,
     checksState: "failed",
@@ -406,8 +391,6 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
   expect(beforeRestart).toMatchObject({ kind: "monitor", description: description(primary) });
   expect(await backgroundWorkCount(client, idle.id)).toBe(1);
   const deliveredBeforeRestart = turns.length;
-  await Promise.all(Array.from(connections, (connection) => connection.close()));
-  connections.clear();
   await context.cleanup();
   context = undefined;
 
@@ -430,7 +413,7 @@ test("GitHub PR watches batch with child messages and survive restart", async ({
   expect(turns.at(-1)?.text).not.toContain(page101);
   expect(turns.at(-1)?.text).not.toContain(review.inline);
 
-  const restored = await connectMcp(context.daemon.port, idle.id);
+  const restored = context.daemon.nativeTools(idle.id);
   await fixture.closePull(primary);
   await expect
     .poll(() => updates(idleDir).at(-1)?.text, waitForGitHub)

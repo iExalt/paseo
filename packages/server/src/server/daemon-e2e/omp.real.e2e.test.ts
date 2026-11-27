@@ -8,8 +8,6 @@ import { promisify } from "node:util";
 
 import pino from "pino";
 import semver from "semver";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, beforeAll, describe, expect, test } from "vitest";
 
 import type { AgentTimelineItem } from "../agent/agent-sdk-types.js";
@@ -405,29 +403,26 @@ describe("daemon E2E (real OMP)", () => {
     "an agent-sent idle follow-up starts a turn and notifies its parent",
     async () => {
       const harness = await createHarness();
-      const mcp = new Client({ name: "idle-follow-up-test", version: "1.0.0" });
       try {
         const parent = await createAgent(harness, "follow-up-parent");
         const child = await createAgent(harness, "follow-up-child");
-        await mcp.connect(
-          new StreamableHTTPClientTransport(
-            new URL(
-              `http://127.0.0.1:${harness.daemon.port}/mcp/agents?callerAgentId=${parent.id}`,
-            ),
-          ),
-        );
-        const response = await mcp.callTool({
+        const tools = harness.daemon.nativeTools(parent.id);
+        const response = await tools.callTool({
           name: "send_agent_prompt",
-          arguments: { agentId: child.id, prompt: "/follow-up Reply exactly MCP_IDLE_FOLLOWUP_OK" },
+          arguments: {
+            agentId: child.id,
+            prompt: "/follow-up Reply exactly OMP_IDLE_FOLLOWUP_OK",
+            notifyOnFinish: true,
+          },
         });
         expect(response.isError).not.toBe(true);
         expect(response.structuredContent).toMatchObject({
           success: true,
-          disposition: "out_of_band",
+          deliveryStatus: "queued",
         });
         await expect
           .poll(() => readAssistantText(harness, child.id), { timeout: 30_000 })
-          .toContain("MCP_IDLE_FOLLOWUP_OK");
+          .toContain("OMP_IDLE_FOLLOWUP_OK");
         await expect
           .poll(
             async () => {
@@ -447,7 +442,6 @@ describe("daemon E2E (real OMP)", () => {
           )
           .toBe(1);
       } finally {
-        await mcp.close();
         await closeHarness(harness);
       }
     },

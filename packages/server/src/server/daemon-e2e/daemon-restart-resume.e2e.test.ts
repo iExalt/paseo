@@ -72,9 +72,8 @@ import { fork, type ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import { readFile, mkdtemp, rm } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
+import type { PaseoToolResult } from "../agent/tools/types.js";
 
 async function restartFixture(
   root: string,
@@ -106,6 +105,27 @@ async function restartFixture(
   ]);
   return { child, ...ready };
 }
+async function callFixtureTool(
+  child: ChildProcess,
+  callerAgentId: string,
+  tool: { name: string; arguments?: Record<string, unknown> },
+): Promise<PaseoToolResult> {
+  const controller = new AbortController();
+  try {
+    const result = once(child, "message", { signal: controller.signal });
+    const earlyExit = once(child, "exit", { signal: controller.signal });
+    child.send({ kind: "call-tool", callerAgentId, tool });
+    return await Promise.race([
+      result.then(([message]) => message as PaseoToolResult),
+      earlyExit.then(([code]) => {
+        throw new Error(`Fixture exited ${code} before replying to ${tool.name}`);
+      }),
+    ]);
+  } finally {
+    controller.abort();
+  }
+}
+
 async function stopFixture(child: ChildProcess, abrupt: boolean) {
   if (child.exitCode !== null || child.signalCode !== null) return;
   const exited = once(child, "exit");
@@ -132,7 +152,6 @@ test.each([false, true])(
     const root = await mkdtemp(path.join(tmpdir(), "durable-finish-process-"));
     const processes: ChildProcess[] = [];
     let client: DaemonClient | undefined;
-    let mcp: Client | undefined;
     try {
       const first = await restartFixture(root, { resumeOnStartup: true });
       processes.push(first.child);
@@ -145,13 +164,7 @@ test.each([false, true])(
         title: "Durable parent",
         modeId: "full-access",
       });
-      mcp = new Client({ name: "durable-parent", version: "1" });
-      await mcp.connect(
-        new StreamableHTTPClientTransport(
-          new URL(`http://127.0.0.1:${first.port}/mcp/agents?callerAgentId=${parent.id}`),
-        ),
-      );
-      const result = await mcp.callTool({
+      const result = await callFixtureTool(first.child, parent.id, {
         name: "create_agent",
         arguments: {
           provider: "claude/claude-test",
@@ -177,8 +190,6 @@ test.each([false, true])(
       expect(
         JSON.parse(await readFile(path.join(first.paseoHome, "finish-subscriptions.json"), "utf8")),
       ).toHaveLength(1);
-      await mcp.close();
-      mcp = undefined;
       await client.close();
       client = undefined;
       await stopFixture(first.child, abrupt);
@@ -234,7 +245,6 @@ test.each([false, true])(
       );
       throw error;
     } finally {
-      await mcp?.close();
       await client?.close();
       for (const child of processes.toReversed()) await stopFixture(child, true);
       await rm(root, { recursive: true, force: true });

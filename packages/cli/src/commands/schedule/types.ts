@@ -33,7 +33,6 @@ export type ScheduleTarget =
         providerOptions?: Record<string, unknown>;
         featureValues?: Record<string, unknown>;
         isolation?: "local" | "worktree";
-        archiveOnFinish?: boolean;
         systemPrompt?: string;
         mcpServers?: Record<string, unknown>;
       };
@@ -165,7 +164,6 @@ export interface ScheduleRunOncePayload {
 export interface UpdateScheduleNewAgentConfig {
   thinkingOptionId?: string | null;
   isolation?: "local" | "worktree";
-  archiveOnFinish?: boolean;
   provider?: string;
   model?: string | null;
   modeId?: string | null;

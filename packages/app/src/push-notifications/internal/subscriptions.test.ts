@@ -14,7 +14,6 @@ import {
   type AppSettings,
   type SettingsDeps,
 } from "@/hooks/use-settings/storage";
-import { prepareLifecycle, watchLifecycle } from "../background-lifecycle.native";
 import { startSubscription } from "./subscriptions";
 import type { PushNotificationClient } from "./types";
 
@@ -49,16 +48,18 @@ function createFakePushClient(options?: {
     get isConnected() {
       return connected;
     },
+    subscribe: () => () => undefined,
+    syncNotificationLifecycle: async () => [],
     registerPushToken(
       token: string,
-      registrationIdOrPreferences?: string | NotificationPreferences,
-      notificationPreferences?: NotificationPreferences,
+      _registrationId?: string,
+      preferences?: NotificationPreferences,
     ) {
-      const preferences =
-        typeof registrationIdOrPreferences === "string"
-          ? notificationPreferences
-          : (registrationIdOrPreferences ?? notificationPreferences);
-      registrations.push({ token, preferencesProvided: preferences !== undefined, preferences });
+      registrations.push({
+        token,
+        preferencesProvided: arguments.length >= 2 && preferences !== undefined,
+        preferences,
+      });
     },
     async unregisterPushToken() {},
     getLastServerInfoMessage() {
@@ -342,6 +343,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
 }));
 
 import { reregisterPushToken, usePushRegistrationStore } from "../registration";
+import { prepareLifecycle, watchLifecycle } from "../background-lifecycle.native";
 
 function fakeClient(connected: boolean) {
   const listeners = new Set<(state: { status: string }) => void>();

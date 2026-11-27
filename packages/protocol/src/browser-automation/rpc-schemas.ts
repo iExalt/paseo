@@ -3,6 +3,7 @@ import { z } from "zod";
 export const BrowserAutomationErrorCodeSchema = z.enum([
   "browser_disabled",
   "browser_no_host",
+  "browser_host_ambiguous",
   "browser_tab_not_found",
   "browser_tab_closed",
   "browser_timeout",
@@ -256,7 +257,16 @@ export const BrowserAutomationCommandSchema = z.discriminatedUnion("command", [
   BrowserAutomationCloseTabCommandSchema,
 ]);
 
+export const BrowserHostIdSchema = z.string().min(1).max(128);
+
+export const BrowserHostTargetSchema = z.object({
+  browserHostId: BrowserHostIdSchema,
+  label: z.string().min(1),
+  canOpenTabs: z.boolean(),
+});
+
 export const BrowserAutomationTabInfoSchema = z.object({
+  browserHost: BrowserHostTargetSchema.optional(),
   browserId: BrowserAutomationBrowserIdSchema,
   workspaceId: z.string().min(1).optional(),
   url: z.string(),
@@ -274,6 +284,7 @@ export const BrowserAutomationListTabsResultSchema = z.object({
 
 export const BrowserAutomationNewTabResultSchema = z.object({
   command: z.literal("new_tab"),
+  browserHost: BrowserHostTargetSchema.optional(),
   browserId: BrowserAutomationBrowserIdSchema,
   workspaceId: z.string().min(1),
   url: z.string().min(1),
@@ -484,6 +495,7 @@ export const BrowserAutomationErrorSchema = z.object({
   code: BrowserAutomationErrorCodeSchema,
   message: z.string().min(1),
   retryable: z.boolean().default(false),
+  browserHosts: z.array(BrowserHostTargetSchema).optional(),
 });
 
 export const BrowserAutomationDialogEventSchema = z.object({
@@ -533,6 +545,8 @@ export const BrowserCommandExecuteRequestSchema = z
   .object({
     type: z.literal("browser.command.execute.request"),
     requestId: z.string().min(1),
+    browserHostId: BrowserHostIdSchema.optional(),
+    browserHosts: z.boolean().optional(),
     agentId: z.string().min(1).optional(),
     workspaceId: z.string().min(1).optional(),
     command: BrowserAutomationCommandSchema,
@@ -549,6 +563,7 @@ export const BrowserCommandExecuteResponseSchema = z.object({
       cwd: z.string().min(1).optional(),
       workspaceId: z.string().min(1).optional(),
       browserId: BrowserAutomationBrowserIdSchema.optional(),
+      browserHosts: z.array(BrowserHostTargetSchema).optional(),
     }),
   }),
 });

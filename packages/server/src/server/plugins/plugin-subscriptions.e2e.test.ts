@@ -1,3 +1,4 @@
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -125,7 +126,7 @@ async function writePlugin(id: string, serverEntry: string): Promise<string> {
   roots.push(pluginDirectory);
   await writeFile(
     path.join(pluginDirectory, "paseo-plugin.json"),
-    JSON.stringify({ id, requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` } }),
+    JSON.stringify({ id, requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` } }),
   );
   await writeFile(path.join(pluginDirectory, "index.server.ts"), serverEntry);
   return pluginDirectory;
@@ -133,7 +134,7 @@ async function writePlugin(id: string, serverEntry: string): Promise<string> {
 
 async function startHarness(): Promise<Harness> {
   const pluginDirectory = await writePlugin(PLUGIN_ID, SERVER_ENTRY);
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
   const sockets: WebSocket[] = [];
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,

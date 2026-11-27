@@ -521,9 +521,9 @@ export interface DaemonClientTrace {
 /** A queued agent message carries the applied behavior and what happens next. */
 export interface AgentMessageReceipt {
   deliveryStatus?: "queued";
-  disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
   activeTurnBehavior?: AgentActiveTurnBehavior;
   guidance?: string;
+  disposition?: "out_of_band" | "steered" | "turn_started" | "queued";
 }
 
 export interface SendMessageOptions {
@@ -1369,6 +1369,25 @@ function assertTransportFrameFits(frame: string | Uint8Array | ArrayBuffer): voi
     throw messageTooLargeError(size, MAX_WEBSOCKET_MESSAGE_BYTES);
 }
 
+function readAgentToolsConfigField(message: unknown): "agentTools" | "mcp" | null {
+  // The caller has validated the envelope. Read the same raw config before defaulting.
+  const { config } = (
+    message as {
+      message: {
+        payload: {
+          config: {
+            agentTools?: { enabled?: unknown };
+            mcp?: { injectIntoAgents?: unknown };
+          };
+        };
+      };
+    }
+  ).message.payload;
+  if (typeof config.agentTools?.enabled === "boolean") return "agentTools";
+  if (typeof config.mcp?.injectIntoAgents === "boolean") return "mcp";
+  return null;
+}
+
 function describeInboundTransportFrame(frame: unknown): Record<string, string> {
   if (typeof frame === "string") {
     return { kind: "text", size: String(frame.length), sizeUnit: "utf16-code-units" };
@@ -1664,6 +1683,7 @@ export class DaemonClient {
   private readonly logClientIdHash: string;
   private readonly logGeneration: number | null;
   private lastServerInfoMessage: ServerInfoStatusPayload | null = null;
+  private agentToolsConfigField: "agentTools" | "mcp" | null = null;
   private runtimeMetricsInterval: ReturnType<typeof setInterval> | null = null;
   private runtimeMetrics: DaemonClientRuntimeMetrics | null = null;
   private pingProbe: PingProbe | null = null;
@@ -1824,6 +1844,7 @@ export class DaemonClient {
         onActivity: () => this.recordTransportActivity(),
       });
       this.lastServerInfoMessage = null;
+      this.agentToolsConfigField = null;
       this.authFailureReasonValue = null;
 
       this.updateConnectionState(
@@ -2000,6 +2021,7 @@ export class DaemonClient {
     this.rejectPongWaiters(new Error("Daemon client closed"));
     this.terminalStreams.clearSlots();
     this.lastServerInfoMessage = null;
+    this.agentToolsConfigField = null;
     if (this.runtimeMetricsInterval) {
       clearInterval(this.runtimeMetricsInterval);
       this.runtimeMetricsInterval = null;
@@ -3100,7 +3122,12 @@ export class DaemonClient {
   }
 
   async executeBrowserCommand(
-    input: { command: BrowserAutomationCommand; agentId?: string; workspaceId?: string },
+    input: {
+      command: BrowserAutomationCommand;
+      agentId?: string;
+      workspaceId?: string;
+      browserHostId?: string;
+    },
     options?: { signal?: AbortSignal; timeout?: number },
   ): Promise<BrowserCommandExecuteResponse["payload"]> {
     const signal = options?.signal;
@@ -3109,6 +3136,19 @@ export class DaemonClient {
         ? signal.reason
         : new DOMException("Browser command aborted", "AbortError");
     }
+
+    const supportsHostSelection =
+      this.lastServerInfoMessage?.features?.browserCommandHostSelection === true;
+    if (input.browserHostId && !supportsHostSelection) {
+      throw new DaemonConnectionError(
+        "Update the Paseo host to select a browser host.",
+        "DAEMON_UPDATE_REQUIRED",
+      );
+    }
+    // COMPAT(browserCommandHostSelection): older daemons reject extra fields on browser commands.
+    const includeBrowserHosts =
+      supportsHostSelection &&
+      (input.command.command === "new_tab" || input.command.command === "list_tabs");
 
     const requestId = this.createRequestId();
     const cancelBrowserCommand = () => {
@@ -3129,6 +3169,7 @@ export class DaemonClient {
         message: {
           type: "browser.command.execute.request",
           ...input,
+          ...(includeBrowserHosts ? { browserHosts: true } : {}),
         },
         responseType: "browser.command.execute.response",
         timeout: options?.timeout,
@@ -4714,6 +4755,7 @@ export class DaemonClient {
     const requested = options.activeTurnBehavior;
     const features = this.lastServerInfoMessage?.features;
     if (features?.agentActiveTurnBehaviors !== true && features?.agentSendQueue === true) {
+      // COMPAT(agentSendQueue): older fork hosts accept queue for sourced and ordinary sends.
       return requested;
     }
 
@@ -4744,7 +4786,7 @@ export class DaemonClient {
     agentId: string,
     text: string,
     options?: SendMessageOptions,
-  ): Promise<AgentMessageReceipt> {
+  ): Promise<AgentMessageReceipt & { agentId: string }> {
     return this.sendAgentMessage(agentId, text, options);
   }
 
@@ -6638,6 +6680,11 @@ export class DaemonClient {
     );
   }
 
+  /** The tools setting the host actually returned, before old config is normalized. */
+  getAgentToolsConfigField(): "agentTools" | "mcp" | null {
+    return this.isConnected ? this.agentToolsConfigField : null;
+  }
+
   async getDaemonConfig(
     requestId?: string,
   ): Promise<{ requestId: string; config: MutableDaemonConfig }> {
@@ -8392,6 +8439,15 @@ export class DaemonClient {
     }
   }
 
+  private captureAgentToolsConfigField(
+    type: SessionOutboundMessage["type"],
+    message: unknown,
+  ): void {
+    if (type === "get_daemon_config_response" || type === "set_daemon_config_response") {
+      this.agentToolsConfigField = readAgentToolsConfigField(message);
+    }
+  }
+
   private handleJsonPayload(payload: string, rawBytesLength: number | undefined): void {
     const bytes = rawBytesLength ?? payload.length;
     const startMs = perfNow();
@@ -8462,6 +8518,8 @@ export class DaemonClient {
         parsed.data.reason === "incompatible_protocol" ? null : parsed.data.reason;
       return;
     }
+
+    this.captureAgentToolsConfigField(parsed.data.message.type, parsedJson);
 
     const dispatchTrace = this.beginSessionDispatchTrace(parsed.data.message);
     try {

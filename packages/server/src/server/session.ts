@@ -557,7 +557,6 @@ const nodeSessionFileSystem: SessionFileSystem = {
 };
 
 // Stub types for features under development (modules not yet available)
-type AgentMcpTransportFactory = () => Promise<unknown>;
 
 export interface SessionOptions {
   connectedHosts?: ConnectedHosts;
@@ -602,7 +601,6 @@ export interface SessionOptions {
   scheduleService: ScheduleService;
   checkoutDiffManager: CheckoutDiffManager;
   github?: ForgeService;
-  createAgentMcpTransport?: AgentMcpTransportFactory;
   // Injected so tests can substitute the git branch rename without module mocks;
   // defaults to the real checkout-git implementation.
   renameCurrentBranch?: typeof renameCurrentBranchDefault;
@@ -3111,13 +3109,23 @@ export class Session {
 
       try {
         const context = await this.resolveBrowserCommandContext(request);
-        const result = await executeBrowserAutomationCommand({
+        let result = await executeBrowserAutomationCommand({
           broker: this.browserToolsBroker,
           command: request.command,
+          browserHostId: request.browserHostId,
           ...context,
           requestId: request.requestId,
           signal: controller.signal,
         });
+        const supportsBrowserHosts =
+          request.browserHosts === true || request.browserHostId !== undefined;
+        if (!supportsBrowserHosts && !result.ok && result.error.code === "browser_host_ambiguous") {
+          result = browserToolsFailure({
+            requestId: request.requestId,
+            code: "browser_no_host",
+            message: result.error.message,
+          });
+        }
         if (!controller.signal.aborted) {
           const browserId =
             request.command.command === "list_tabs" || request.command.command === "new_tab"
@@ -3126,6 +3134,9 @@ export class Session {
           this.emitBrowserCommandResult(request.requestId, result, source, {
             ...context,
             ...(browserId ? { browserId } : {}),
+            ...(supportsBrowserHosts && request.command.command === "list_tabs"
+              ? { browserHosts: this.browserToolsBroker.listBrowserHosts() }
+              : {}),
           });
         }
       } catch (error) {
@@ -3182,7 +3193,13 @@ export class Session {
       | ReturnType<typeof browserToolsFailure>
       | Awaited<ReturnType<typeof executeBrowserAutomationCommand>>,
     source?: object,
-    context: { agentId?: string; cwd?: string; workspaceId?: string; browserId?: string } = {},
+    context: {
+      agentId?: string;
+      cwd?: string;
+      workspaceId?: string;
+      browserId?: string;
+      browserHosts?: ReturnType<BrowserToolsBroker["listBrowserHosts"]>;
+    } = {},
   ): void {
     this.emitForSource(
       { type: "browser.command.execute.response", payload: { requestId, result, context } },
@@ -3887,6 +3904,14 @@ export class Session {
     source?: object,
   ): Promise<void> | undefined {
     if (isAgentConfigUpdateMessage(msg)) return this.dispatchAgentConfigUpdateMessage(msg);
+
+    if (
+      msg.type === "daemon.notifications.rules.get.request" ||
+      msg.type === "daemon.notifications.rules.set.request"
+    ) {
+      return this.dispatchDaemonNotificationRulesMessage(msg);
+    }
+
     switch (msg.type) {
       case "get_daemon_config_request":
         this.emit({
@@ -3951,9 +3976,6 @@ export class Session {
         return this.daemonSession.handleGetPairingOfferRequest(msg);
       case "daemon.config.reload.request":
         return this.daemonSession.handleConfigReloadRequest(msg);
-      case "daemon.notifications.rules.get.request":
-      case "daemon.notifications.rules.set.request":
-        return this.dispatchDaemonNotificationRulesMessage(msg);
       case "hub.management.daemon.connect.request":
       case "hub.management.daemon.get_status.request":
       case "hub.management.daemon.disconnect.request":
@@ -6608,7 +6630,7 @@ export class Session {
    */
   private handleRegisterPushToken(
     token: string,
-    registrationId: string | null,
+    registrationId?: string | null,
     preferences?: Parameters<PushNotifications["renew"]>[2],
   ): void {
     this.currentClientMetadata().pushToken = token;
@@ -10243,15 +10265,22 @@ export class Session {
     }
   }
 
-  /** An agent sender's message waits for the running turn to end unless it asks otherwise. */
-  private agentSenderBehavior(
+  private resolveSendBehavior(
     requested: AgentActiveTurnBehavior | undefined,
+    sourceAgentId: string | undefined,
   ): AgentMessageBehavior {
+    const supportsBehaviors = this.supports(CLIENT_CAPS.agentActiveTurnBehaviors);
+    if (!sourceAgentId) {
+      // Older fork clients offered queue for direct human sends.
+      if (supportsBehaviors && requested === "queue") {
+        throw new Error('activeTurnBehavior "queue" needs an agent sender');
+      }
+      return requested ?? "interrupt";
+    }
     // COMPAT(agentActiveTurnBehaviors): added in v0.17.2, remove after 2027-05-22 once client
     // floor >= v0.17.2. Older CLIs and connected hosts send steer for every default agent send,
     // meaning wait for the turn to end, so only their interrupt stays an interrupt.
-    if (!this.supports(CLIENT_CAPS.agentActiveTurnBehaviors))
-      return requested === "interrupt" ? "interrupt" : "queue";
+    if (!supportsBehaviors) return requested === "interrupt" ? "interrupt" : "queue";
     return requested ?? "queue";
   }
 
@@ -10311,9 +10340,10 @@ export class Session {
       const admitted = new Promise<void>((acceptAdmission) => {
         queued = acceptAdmission;
       });
-      const requested = msg.activeTurnBehavior;
-      if (!msg.sourceAgentId && requested === "queue")
-        throw new Error('activeTurnBehavior "queue" needs an agent sender');
+      const activeTurnBehavior = this.resolveSendBehavior(
+        msg.activeTurnBehavior,
+        msg.sourceAgentId,
+      );
       let deliveryStatus: "queued" | undefined;
       let queuedReceipt: { activeTurnBehavior: AgentMessageBehavior; guidance: string } | undefined;
       let disposition: PromptDispatchDisposition | undefined;
@@ -10357,7 +10387,7 @@ export class Session {
                   ? (this.agentManager.getAgent(msg.sourceAgentId)?.config.title ?? undefined)
                   : undefined,
               },
-              activeTurnBehavior: this.agentSenderBehavior(requested),
+              activeTurnBehavior,
               sessionMode: msg.sessionMode,
               clearPendingPermissions: false,
               onDispatch: (nextDisposition, held) => {
@@ -10391,7 +10421,7 @@ export class Session {
           agentId,
           prompt,
           messageId: msg.messageId,
-          activeTurnBehavior: requested === "steer" ? "steer" : "interrupt",
+          activeTurnBehavior,
           sessionMode: msg.sessionMode,
           clearPendingPermissions: true,
           runOptions: { expandCursorSkillTokens: true },
@@ -10417,9 +10447,7 @@ export class Session {
               sourceAgentId: msg.sourceAgentId,
               sourceAgentServerId: msg.sourceAgentServerId,
               sessionMode: msg.sessionMode,
-              activeTurnBehavior: msg.sourceAgentId
-                ? this.agentSenderBehavior(requested)
-                : (requested ?? "interrupt"),
+              activeTurnBehavior,
               notifyOnFinish: msg.notifyOnFinish,
             },
             send: async (beforeDispatch) => {

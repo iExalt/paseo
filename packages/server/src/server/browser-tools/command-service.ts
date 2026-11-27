@@ -1,11 +1,8 @@
 import { randomUUID } from "node:crypto";
-import type {
-  BrowserAutomationCommand,
-  BrowserAutomationExecutePayload,
-} from "@getpaseo/protocol/browser-automation/rpc-schemas";
+import type { BrowserAutomationCommand } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import { normalizeBrowserHttpUrlInput } from "@getpaseo/protocol/browser-automation/url";
 import type { BrowserToolsBroker } from "./broker.js";
-import { browserToolsFailure } from "./errors.js";
+import { browserToolsFailure, type BrowserToolsResponsePayload } from "./errors.js";
 
 export interface ExecuteBrowserCommandParams {
   broker: Pick<BrowserToolsBroker, "execute">;
@@ -13,6 +10,7 @@ export interface ExecuteBrowserCommandParams {
   agentId?: string;
   cwd?: string;
   workspaceId?: string;
+  browserHostId?: string;
   signal?: AbortSignal;
   requestId?: string;
   timeoutMs?: number;
@@ -42,10 +40,11 @@ export async function executeBrowserCommand({
   agentId,
   cwd,
   workspaceId,
+  browserHostId,
   signal,
   requestId = randomUUID(),
   timeoutMs,
-}: ExecuteBrowserCommandParams): Promise<BrowserAutomationExecutePayload> {
+}: ExecuteBrowserCommandParams): Promise<BrowserToolsResponsePayload> {
   const normalizedCommand = normalizeBrowserCommandUrl(command);
   if (!normalizedCommand) {
     return browserToolsFailure({
@@ -73,6 +72,7 @@ export async function executeBrowserCommand({
     agentId,
     cwd,
     workspaceId,
+    browserHostId,
     command: normalizedCommand,
     requestId,
     ...(brokerTimeoutMs !== undefined ? { timeoutMs: brokerTimeoutMs } : {}),

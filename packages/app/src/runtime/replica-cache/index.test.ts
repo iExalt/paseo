@@ -380,9 +380,9 @@ describe("ReplicaCache", () => {
     commitDirectory(writer, SERVER_ID, baseline);
     await writer.flush();
     const reader = createCache(storage);
-    const restored = await readCachedDirectory(reader);
-    expect(restored.checkpoint).toEqual(baseline.checkpoint);
-    expect(restored.workspaces.get(workspace.id)?.parentWorkspaceId).toBe("parent");
+    const restored = await reader.readDirectory(SERVER_ID);
+    expect(restored?.checkpoint).toEqual(baseline.checkpoint);
+    expect(restored?.workspaces.get(workspace.id)?.parentWorkspaceId).toBe("parent");
     expect((await reader.readWorkspace(SERVER_ID, workspace.id))?.workspace.parentWorkspaceId).toBe(
       "parent",
     );
@@ -398,7 +398,7 @@ describe("ReplicaCache", () => {
     commitDirectory(writer, SERVER_ID, baseline);
     await writer.flush();
 
-    const restored = await readCachedDirectory(createCache(storage));
+    const restored = await createCache(storage).readDirectory(SERVER_ID);
 
     expect(restored?.workspaces.get(workspace.id)?.forgeWeb).toEqual(forgeWeb);
   });
@@ -498,17 +498,18 @@ describe("ReplicaCache", () => {
       });
 
       const reader = createCache(storage);
-      const restored = await readCachedDirectory(reader);
-      expect(restored.checkpoint).toBeUndefined();
-      expect([...restored.workspaces.keys()]).toEqual([...baseline.workspaces.keys()]);
-      expect([...restored.projects.keys()]).toEqual([...baseline.projects.keys()]);
-      expect([...restored.agents.keys()]).toEqual([...baseline.agents.keys()]);
+      const restored = await reader.readDirectory(SERVER_ID);
+      expect(restored).toBeDefined();
+      expect(restored?.checkpoint).toBeUndefined();
+      expect([...restored!.workspaces.keys()]).toEqual([...baseline.workspaces.keys()]);
+      expect([...restored!.projects.keys()]).toEqual([...baseline.projects.keys()]);
+      expect([...restored!.agents.keys()]).toEqual([...baseline.agents.keys()]);
       expect(await reader.readTimeline(SERVER_ID, "agent-1")).toEqual(timeline());
       expect(await storage.read(SERVER_ID, ["checkpoint"])).toEqual([]);
 
       reader.replaceDirectoryBaseline(SERVER_ID, baseline);
       await reader.flush();
-      expect((await readCachedDirectory(createCache(storage))).checkpoint).toEqual(
+      expect((await createCache(storage).readDirectory(SERVER_ID))?.checkpoint).toEqual(
         baseline.checkpoint,
       );
     },
@@ -615,7 +616,7 @@ describe("ReplicaCache", () => {
     ]);
     await writer.flush();
 
-    const restored = await readCachedDirectory(createCache(storage));
+    const restored = await createCache(storage).readDirectory(SERVER_ID);
 
     expect(restored?.agents.get("helper")?.background).toBe(true);
     expect(restored?.agents.get("visible")?.background).toBe(false);
@@ -1381,9 +1382,9 @@ describe("ReplicaCache", () => {
       await eviction;
       await cache.flush();
 
-      const restored = await readCachedDirectory(createCache(storage));
-      expect(restored.agents.size).toBe(0);
-      expect(restored.checkpoint).toBeUndefined();
+      const restored = await createCache(storage).readDirectory(SERVER_ID);
+      expect(restored?.agents.size).toBe(0);
+      expect(restored?.checkpoint).toBeUndefined();
     },
   );
 
@@ -1401,9 +1402,9 @@ describe("ReplicaCache", () => {
     expect(await reader.readWorkspace(SERVER_ID, "workspace-1")).toBeUndefined();
     await reader.flush();
 
-    const restored = await readCachedDirectory(createCache(storage));
-    expect(restored.projects.size).toBe(0);
-    expect(restored.checkpoint).toBeUndefined();
+    const restored = await createCache(storage).readDirectory(SERVER_ID);
+    expect(restored?.projects.size).toBe(0);
+    expect(restored?.checkpoint).toBeUndefined();
   });
 
   it("repairs a malformed row's cursor when the overlapping eviction fails", async () => {
@@ -1425,9 +1426,9 @@ describe("ReplicaCache", () => {
     reader.commitTimeline(SERVER_ID, "agent-1", timeline());
     await reader.flush();
 
-    const restored = await readCachedDirectory(createCache(storage));
-    expect(restored.workspaces.size).toBe(0);
-    expect(restored.checkpoint).toEqual({
+    const restored = await createCache(storage).readDirectory(SERVER_ID);
+    expect(restored?.workspaces.size).toBe(0);
+    expect(restored?.checkpoint).toEqual({
       agents: { generation: "g", afterSeq: 12 },
       projects: { generation: "g", afterSeq: 4 },
     });
@@ -1442,7 +1443,7 @@ describe("ReplicaCache", () => {
     await cache.flush();
     cache.replaceDirectoryBaseline("other-host", baseline);
     await cache.flush();
-    expect((await readCachedDirectory(cache)).agents.size).toBe(0);
+    expect((await cache.readDirectory(SERVER_ID))?.agents.size).toBe(0);
 
     const renamed = { ...agent(), title: "Renamed agent" };
     cache.replaceDirectoryBaseline(SERVER_ID, baseline);
@@ -1455,9 +1456,9 @@ describe("ReplicaCache", () => {
     cache.commitDirectoryMutations(SERVER_ID, [], { agents: { generation: "g", afterSeq: 14 } });
     await cache.flush();
 
-    const restored = await readCachedDirectory(createCache(storage));
-    expect(restored.checkpoint).toEqual({ agents: { generation: "g", afterSeq: 14 } });
-    expect(restored.agents.get(renamed.id)?.title).toBe("Renamed agent");
+    const restored = await createCache(storage).readDirectory(SERVER_ID);
+    expect(restored?.checkpoint).toEqual({ agents: { generation: "g", afterSeq: 14 } });
+    expect(restored?.agents.get(renamed.id)?.title).toBe("Renamed agent");
   });
 
   it("runs legacy cleanup once when storage is first used", async () => {

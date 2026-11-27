@@ -96,7 +96,7 @@ test("session-open entrypoint contributions are optional and rederived for exist
   const daemon = await createTestPaseoDaemon({
     daemonVersion: "0.14.0-beta.2",
     agentClients: { claude: recordingProvider("claude"), codex: recordingProvider("codex") },
-    mcpEnabled: false,
+    agentToolsEnabled: false,
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,
@@ -146,7 +146,7 @@ test("a create hook reads launch-wrap support for a plugin provider that never c
   const daemon = await createTestPaseoDaemon({
     daemonVersion: "0.14.0-beta.2",
     agentClients: { codex: createTestAgentClient("codex") },
-    mcpEnabled: false,
+    agentToolsEnabled: false,
   });
   const client = new DaemonClient({
     url: `ws://127.0.0.1:${daemon.port}/ws`,

@@ -5,7 +5,9 @@ import { z } from "zod";
 import {
   BrowserAutomationCommandSchema,
   BrowserAutomationResultSchema,
+  BrowserHostIdSchema,
   type BrowserAutomationCommand,
+  type BrowserCommandExecuteResponse,
 } from "@getpaseo/protocol/browser-automation/rpc-schemas";
 import { normalizeBrowserHttpUrlInput } from "@getpaseo/protocol/browser-automation/url";
 import { addJsonAndDaemonHostOptions, collectMultiple } from "../../utils/command-options.js";
@@ -47,7 +49,7 @@ export function createBrowserCommand(): Command {
   addBrowserAction(browser, "list-tabs", "List open browser tabs", "list_tabs", []);
   addBrowserAction(browser, "new-tab", "Open a background browser tab", "new_tab", [
     { name: "[url]", description: "Optional HTTP(S) URL (scheme-less hosts use HTTP)" },
-  ]);
+  ]).option("--browser-host <id>", "Browser host ID from list-tabs");
   addBrowserAction(
     browser,
     "snapshot",
@@ -175,6 +177,7 @@ function createBrowserAction(
     const parsedCommand = buildBrowserCommand(operation, positionalArgs, options);
     const requestedAgentId = getOptionString(options, "agent");
     const workspaceId = getOptionString(options, "workspace");
+    const browserHostId = readBrowserHostId(options);
     if (requestedAgentId !== undefined && !requestedAgentId.trim()) {
       throw invalidBrowserCommand("--agent cannot be empty.");
     }
@@ -207,16 +210,11 @@ function createBrowserAction(
           command: parsedCommand,
           ...(agentId ? { agentId } : {}),
           ...(workspaceId ? { workspaceId: workspaceId.trim() } : {}),
+          ...(browserHostId ? { browserHostId } : {}),
         },
         { signal: abortController.signal },
       );
-      if (!response.result.ok) {
-        throw {
-          code: response.result.error.code,
-          message: response.result.error.message,
-          details: response.result.error.retryable ? "The operation may be retried." : undefined,
-        } satisfies CommandError;
-      }
+      if (!response.result.ok) throw formatBrowserCommandError(response.result);
 
       const result = await prepareBrowserResult(response.result.result, outputPath);
       const data = BrowserResultSchema.parse({
@@ -232,6 +230,21 @@ function createBrowserAction(
       await client.close().catch(() => undefined);
     }
   };
+}
+
+function readBrowserHostId(options: Record<string, unknown>): string | undefined {
+  const hostId = getOptionString(options, "browserHost")?.trim();
+  if (hostId === undefined || BrowserHostIdSchema.safeParse(hostId).success) return hostId;
+  throw invalidBrowserCommand("--browser-host must be a browser host ID from list-tabs.");
+}
+
+function formatBrowserCommandError(
+  result: Extract<BrowserCommandExecuteResponse["payload"]["result"], { ok: false }>,
+): CommandError {
+  const { code, message, retryable, browserHosts } = result.error;
+  const candidates = browserHosts?.map(({ label, browserHostId }) => `${label} (${browserHostId})`);
+  const retryHint = retryable ? "The operation may be retried." : undefined;
+  return { code, message, details: candidates?.join("\n") || retryHint };
 }
 
 // Each command has an explicit positional and option mapping to the shared protocol schema.

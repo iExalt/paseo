@@ -1,6 +1,8 @@
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { View } from "react-native";
+import { CursorSdkAccount } from "@/components/cursor-sdk-account";
+import { useHostFeature } from "@/runtime/host-features";
 import { ProviderInstallationSection } from "@/components/provider-installation-section";
 import { useProviderInstallation } from "@/components/provider-installation";
 import {
@@ -94,6 +96,7 @@ export function ProviderDetail({
   detail: ProviderDetailState;
 }) {
   const { provider, presence, label } = detail;
+  const showCursorAccount = useHostFeature(serverId, "cursorSdkAuth") && provider === "cursor-sdk";
   const { refresh, isRefreshing } = useProvidersSnapshot(serverId);
   const installation = useProviderInstallation({ serverId, provider, visible: true });
   const refreshInstallation = installation.refresh;
@@ -111,6 +114,8 @@ export function ProviderDetail({
   });
   const sections = readDetailSections(entry, shownInstallation);
   const listsModels = sections.models === "all";
+  const accountHandlesMissingCredentials =
+    showCursorAccount && entry.errorCode === "missing_credentials";
   const providerRefresh: ProviderRefresh = {
     checkedAt: entry.fetchedAt,
     // The probe running again is a refresh too, whoever asked for it.
@@ -120,8 +125,11 @@ export function ProviderDetail({
 
   return (
     <View testID="provider-detail">
-      {sections.error !== null ? <ProviderErrorAlert label={label} error={sections.error} /> : null}
+      {sections.error !== null && !accountHandlesMissingCredentials ? (
+        <ProviderErrorAlert label={label} error={sections.error} />
+      ) : null}
       <EnabledCard serverId={serverId} entry={entry} />
+      {showCursorAccount ? <CursorSdkAccount serverId={serverId} visible /> : null}
       <ProviderInstallationSection
         state={shownInstallation}
         updates={installation.updates}
@@ -131,6 +139,7 @@ export function ProviderDetail({
         <ProviderModels
           serverId={serverId}
           entry={entry}
+          hideWhenEmpty={accountHandlesMissingCredentials}
           refresh={listsModels ? providerRefresh : null}
         />
       ) : null}

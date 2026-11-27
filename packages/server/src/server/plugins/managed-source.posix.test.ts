@@ -31,7 +31,7 @@ async function createRepository(): Promise<string> {
 
 async function commitAll(repository: string, message: string): Promise<string> {
   await runGitCommand(["add", "-A"], { cwd: repository });
-  await runGitCommand(["commit", "-m", message], { cwd: repository });
+  await runGitCommand(["-c", "commit.gpgsign=false", "commit", "-m", message], { cwd: repository });
   const { stdout } = await runGitCommand(["rev-parse", "HEAD"], { cwd: repository });
   return stdout.trim();
 }
@@ -194,7 +194,7 @@ describe("managed Git plugin sources", () => {
       remote,
     });
 
-    await runGitCommand(["tag", "v1", initial], { cwd: repository });
+    await runGitCommand(["-c", "tag.gpgsign=false", "tag", "v1", initial], { cwd: repository });
     let tagged = await sources.prepareInstall({ source: remote, ref: "v1" });
     tagged = await sources.place("tagged-example", tagged);
     sources.commit("tagged-example", tagged.record);
@@ -210,7 +210,7 @@ describe("managed Git plugin sources", () => {
     roots.push(home);
     const remote = pathToFileURL(repository).href;
     const initial = (await runGitCommand(["rev-parse", "HEAD"], { cwd: repository })).stdout.trim();
-    await runGitCommand(["tag", "v1"], { cwd: repository });
+    await runGitCommand(["-c", "tag.gpgsign=false", "tag", "v1"], { cwd: repository });
     const sources = new ManagedPluginSources(home);
     const installations = [];
     for (const [index, ref] of [undefined, "main", "v1", initial].entries()) {

@@ -82,6 +82,7 @@ interface AgentAttentionNotificationInput {
   serverId: string;
   workspaceId: string | undefined;
   agentId: string;
+  agentTitle?: string | null;
   assistantMessage: string | null;
   permissionRequest: NotificationPermissionRequest | null;
 }
@@ -100,6 +101,7 @@ export function resolveAgentAttentionNotification(
     serverId: input.serverId,
     workspaceId: input.workspaceId,
     agentId: input.agentId,
+    agentTitle: input.agentTitle,
     assistantMessage: input.reason === "finished" ? input.assistantMessage : null,
     permissionRequest: input.reason === "permission" ? input.permissionRequest : null,
   });
@@ -149,14 +151,15 @@ export function deliverAgentAttentionOsNotification(input: {
   const assistantMessage =
     findLatestAssistantMessageText(head) ?? findLatestAssistantMessageText(tail);
   const permissionRequest = getLatestPermissionRequest(input.session, input.params.agentId);
-  const workspaceId = input.session?.agents?.get(input.params.agentId)?.workspaceId;
+  const agent = input.session?.agents?.get(input.params.agentId);
 
   const notification = resolveAgentAttentionNotification({
     notification: input.params.notification,
     reason: input.params.reason,
     serverId: input.serverId,
-    workspaceId,
+    workspaceId: agent?.workspaceId,
     agentId: input.params.agentId,
+    agentTitle: agent?.title,
     assistantMessage,
     permissionRequest,
   });

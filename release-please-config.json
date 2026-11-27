@@ -47,6 +47,16 @@
         },
         {
           "type": "json",
+          "path": "packages/react-native-enriched-markdown/package.json",
+          "jsonpath": "$[\"version\"]"
+        },
+        {
+          "type": "json",
+          "path": "package-lock.json",
+          "jsonpath": "$[\"packages\"][\"packages/react-native-enriched-markdown\"][\"version\"]"
+        },
+        {
+          "type": "json",
           "path": "packages/highlight/package.json",
           "jsonpath": "$[\"version\"]"
         },

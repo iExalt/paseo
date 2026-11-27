@@ -18,7 +18,7 @@ const daemon = await createTestPaseoDaemon({
   staticDir: join(root, "static"),
   logger: pino({ level: "warn" }, pino.destination(join(root, "fixture.log"))),
   cleanup: false,
-  mcpEnabled: true,
+  agentToolsEnabled: true,
   agentClients: createTestAgentClients({
     onStartTurn: (prompt, config) => {
       void appendFile(join(root, "all-prompts.jsonl"), `${JSON.stringify({ prompt, config })}\n`);
@@ -33,6 +33,26 @@ const daemon = await createTestPaseoDaemon({
 });
 process.send({ port: daemon.port, paseoHome: daemon.paseoHome, cwd: daemon.staticDir });
 process.on("message", (message) => {
+  if (
+    typeof message === "object" &&
+    message !== null &&
+    "kind" in message &&
+    message.kind === "call-tool"
+  ) {
+    const { callerAgentId, tool } = message as {
+      callerAgentId: string;
+      tool: { name: string; arguments?: Record<string, unknown> };
+    };
+    void daemon
+      .nativeTools(callerAgentId)
+      .callTool(tool)
+      .then(
+        (result) => process.send?.(result),
+        (error: unknown) =>
+          process.send?.({ content: [{ type: "text", text: String(error) }], isError: true }),
+      );
+    return;
+  }
   if (message === "finish") held.resolve();
   if (message === "release-resume") resumeReleased.resolve();
   if (message === "stop") {

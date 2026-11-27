@@ -42,7 +42,10 @@ interface ProviderCatalogDaemonClient {
   close(): Promise<void>;
   getDaemonConfig(): Promise<{ config: { providers?: Record<string, unknown> } }>;
   getProvidersSnapshot(): Promise<{ entries: Array<{ provider: string }> }>;
-  patchDaemonConfig(config: { removeProviders?: string[] }): Promise<unknown>;
+  patchDaemonConfig(config: {
+    removeProviders?: string[];
+    providers?: Record<string, { additionalModels: Array<{ id: string; label: string }> }>;
+  }): Promise<unknown>;
 }
 
 test.describe("ACP provider catalog", () => {
@@ -437,6 +440,20 @@ async function exerciseCursorSignIn(page: Page, testInfo: TestInfo, recovery: bo
       enabled: true,
     });
     await expect(tile).toHaveCount(0);
+
+    if (recovery) {
+      const models = page.getByTestId("provider-models");
+      await expect(models).toHaveCount(0);
+      const customModel = { id: "cursor-custom", label: "Cursor custom model" };
+      await client.patchDaemonConfig({
+        providers: { [provider]: { additionalModels: [customModel] } },
+      });
+      await expect(
+        models.getByRole("switch", { name: "Show Cursor custom model in model pickers" }),
+      ).toBeVisible();
+      await client.patchDaemonConfig({ providers: { [provider]: { additionalModels: [] } } });
+      await expect(models).toHaveCount(0);
+    }
 
     await signIn.click();
     const openPage = account.getByRole("button", { name: "Open sign-in page", exact: true });

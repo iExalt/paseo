@@ -1,3 +1,4 @@
+import { enableFinishedNotifications } from "../support/helpers/notification-settings";
 import { expect, type Page } from "@playwright/test";
 import { test } from "../support/fixtures";
 import { gotoWorkspace } from "../support/helpers/launcher";
@@ -75,6 +76,7 @@ test.describe("Notification dismissal", () => {
   test("closes a thread's notification once it is read, answered or archived", async ({ page }) => {
     test.setTimeout(180_000);
     await page.clock.install();
+    await enableFinishedNotifications(page);
     await page.addInitScript(installNotificationRecorder);
     const seeded = await seedWorkspace({ repoPrefix: "notification-dismissal-" });
     try {

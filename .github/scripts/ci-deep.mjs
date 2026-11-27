@@ -147,6 +147,15 @@ export function deepCommands(lane) {
     return [
       ["npm", ["run", "build:server"]],
       [
+        "node",
+        [
+          "--import",
+          "tsx",
+          "packages/cli/tests/23-daemon-sigint-supervisor.test.ts",
+          "--dev-watch",
+        ],
+      ],
+      [
         "npm",
         [
           "exec",
@@ -250,7 +259,7 @@ export function deepCommands(lane) {
   ];
 }
 
-export function runDeep(commands, run = spawnSync) {
+export function runDeep(commands, run = spawnSync, checkCleanup = verifyDeepCleanup) {
   for (const [command, args] of commands) {
     const owner = randomUUID();
     const started = performance.now();
@@ -262,7 +271,7 @@ export function runDeep(commands, run = spawnSync) {
         env: { ...process.env, CI_DEEP_OWNER: owner },
       });
     } finally {
-      verifyDeepCleanup(owner);
+      checkCleanup(owner);
     }
     console.log(
       `[deep] ${command} ${args.join(" ")}: ${((performance.now() - started) / 1000).toFixed(2)}s`,

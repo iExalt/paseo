@@ -53,6 +53,10 @@ test("routing includes dependent contracts and fails toward full checks for unkn
     "app",
     "desktop",
   ]);
+  assert.deepEqual(
+    selectChecks(["packages/react-native-enriched-markdown/android/View.kt"], filters).domains,
+    ["app", "desktop"],
+  );
   assert.equal(selectChecks(["docs/guide.md"], filters).code, false);
   assert.equal(selectChecks(["public-docs/plugins/guide.md"], filters).code, true);
   assert.equal(selectChecks(["scripts/prompt.md"], filters).code, true);

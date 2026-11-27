@@ -65,6 +65,31 @@ test.describe("Desktop updates", () => {
     await expectInstallInProgress(page);
   });
 
+  test("About offers Retry when the fork update is waiting for idle", async ({ page }) => {
+    await installDesktopRuntime(page, {
+      serverId: getServerId(),
+      updateAvailable: true,
+      latestVersion: "1.2.3",
+      updateMode: "notify",
+      confirmShouldAccept: true,
+      waitForIdleOnFirstInstall: true,
+    });
+    await gotoAppShell(page);
+    await openDesktopAboutSettings(page);
+
+    const detail = page.getByTestId("settings-detail-scroll-body");
+    await detail.getByRole("button", { name: "Download v1.2.3", exact: true }).click();
+    await expect(
+      detail.getByText("Fork update is waiting for active agents to finish.", { exact: true }),
+    ).toBeVisible();
+    const retry = detail.getByRole("button", { name: "Retry", exact: true });
+    await expect(retry).toBeEnabled();
+    await retry.click();
+    await expect(
+      detail.getByText("App update installed. Restart required.", { exact: true }),
+    ).toBeVisible();
+  });
+
   test("manual check reports a found update while it downloads", async ({ page }) => {
     await installDesktopRuntime(page, {
       serverId: getServerId(),

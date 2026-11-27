@@ -1,4 +1,5 @@
 import { getDesktopHost } from "@/desktop/host";
+import { getHostRuntimeStore } from "@/runtime/host-runtime";
 
 export const BROWSER_DATA_DESCRIPTION_KEY = "settings.general.browserData.description";
 
@@ -8,5 +9,8 @@ export async function clearBrowserData(browserIds: string[]): Promise<void> {
   if (!clearProfile) {
     throw new Error("Electron browser profile bridge is unavailable");
   }
-  await clearProfile(browserIds);
+  const hostIds = getHostRuntimeStore()
+    .getHosts()
+    .map((host) => host.serverId);
+  await clearProfile(browserIds, hostIds);
 }

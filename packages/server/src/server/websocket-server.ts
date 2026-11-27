@@ -2209,6 +2209,7 @@ export class VoiceAssistantWebSocketServer {
         agentOrchestrationParity: true,
         // COMPAT(browserCommandCli): added in v0.11.2; remove gate after 2027-04-10 once daemon floor >= v0.11.2.
         browserCommandCli: true,
+        browserCommandHostSelection: true,
         // COMPAT(voiceSpeakCli): added in v0.11.2; remove gate after 2027-04-10 once daemon floor >= v0.11.2.
         voiceSpeakCli: true,
         // COMPAT(providersSnapshotCwd): added in v0.3.2, remove gate after 2027-02-10.
@@ -3233,7 +3234,7 @@ export class VoiceAssistantWebSocketServer {
     provider: AgentProvider;
     reason: "finished" | "error" | "permission";
     completionSubject?: CompletionSubject;
-    attentionTimestamp: Date | null;
+    attentionTimestamp?: Date | null;
   }): Promise<void> {
     if (this.notificationDelivery.stopped) return;
     const agent = this.agentManager.getAgent(params.agentId);
@@ -3269,20 +3270,22 @@ export class VoiceAssistantWebSocketServer {
         : {}),
     });
 
-    const plannedDelivery = await decideNotificationDelivery(this.notificationPolicySources(), {
-      target: {
-        kind: "agent",
-        agentId: params.agentId,
-        reason: params.reason,
-        completionSubject: params.completionSubject,
-      },
-      workspaceId,
-      recipients: notificationEntries.map(({ ws, state }) => ({ recipient: ws, state })),
-      nowMs,
-    });
+    const delivery = this.planOncePerUnreadFinish(
+      params,
+      await decideNotificationDelivery(this.notificationPolicySources(), {
+        target: {
+          kind: "agent",
+          agentId: params.agentId,
+          reason: params.reason,
+          completionSubject: params.completionSubject,
+        },
+        workspaceId,
+        recipients: notificationEntries.map(({ ws, state }) => ({ recipient: ws, state })),
+        nowMs,
+      }),
+    );
 
     if (this.notificationDelivery.stopped) return;
-    const delivery = this.planOncePerUnreadFinish(params, plannedDelivery);
     if (delivery.push) {
       this.notificationDelivery.sendAttention({
         notification: { ...notification, ...(lifecycle ? { lifecycle } : {}) },
@@ -3336,20 +3339,20 @@ export class VoiceAssistantWebSocketServer {
   // reacts to each event of a background task. The user hears about an unread finish once.
   // A finish that was not delivered, because the user had the agent on screen, does not count.
   private planOncePerUnreadFinish(
-    params: { agentId: string; reason: string; attentionTimestamp: Date | null },
-    delivery: { push: boolean; inAppRecipient: WebSocketLike | null },
+    params: { agentId: string; reason: string; attentionTimestamp?: Date | null },
+    plan: { push: boolean; inAppRecipient: WebSocketLike | null },
   ): { push: boolean; inAppRecipient: WebSocketLike | null } {
-    if (params.reason !== "finished" || params.attentionTimestamp === null) {
-      return delivery;
+    if (params.reason !== "finished" || !params.attentionTimestamp) {
+      return plan;
     }
     const unreadFinishAt = params.attentionTimestamp.getTime();
     if (this.notifiedUnreadFinishAt.get(params.agentId) === unreadFinishAt) {
-      return { push: false, inAppRecipient: null };
+      return { inAppRecipient: null, push: false };
     }
-    if (delivery.push || delivery.inAppRecipient !== null) {
+    if (plan.push || plan.inAppRecipient !== null) {
       this.notifiedUnreadFinishAt.set(params.agentId, unreadFinishAt);
     }
-    return delivery;
+    return plan;
   }
 
   private async broadcastTerminalAttention(params: {

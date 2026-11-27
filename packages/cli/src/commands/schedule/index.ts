@@ -40,9 +40,9 @@ export function createScheduleCommand(): Command {
         ]),
       )
       .option("--cwd <path>", "Working directory (default: current; required with --host)")
+      .option("--run-now", "Fire one immediate run on creation")
       .option("--archive-on-finish", "Archive each run's workspace when the run ends (default)")
       .option("--no-archive-on-finish", "Keep each run's workspace and agent active")
-      .option("--run-now", "Fire one immediate run on creation")
       .option("--replace", "Replace an existing named schedule with the same target")
       .option("--max-runs <n>", "Maximum number of runs")
       .option("--expires-in <duration>", "Time to live for the schedule"),

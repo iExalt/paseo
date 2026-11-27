@@ -9,7 +9,7 @@ import {
 } from "@getpaseo/protocol/notification-preferences";
 import type { SessionOutboundMessage } from "@getpaseo/protocol/messages";
 import { PRESENCE_THRESHOLD_MS } from "../agent-attention-policy.js";
-import { resolveDaemonVersion } from "../daemon-version.js";
+import { PASEO_PLUGIN_API_VERSION } from "@getpaseo/protocol/plugin-requirements";
 import { createPushNotifications, type PushPayload } from "../push/index.js";
 import { DaemonClient } from "../test-utils/daemon-client.js";
 import { createTestPaseoDaemon } from "../test-utils/paseo-daemon.js";
@@ -27,7 +27,7 @@ async function writeNotificationPlugin(pluginId: string): Promise<string> {
     path.join(dir, "paseo-plugin.json"),
     JSON.stringify({
       id: pluginId,
-      requirements: { paseo: `>=${resolveDaemonVersion(import.meta.url)}` },
+      requirements: { paseo: `>=${PASEO_PLUGIN_API_VERSION}` },
     }),
   );
   await writeFile(

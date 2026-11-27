@@ -254,7 +254,7 @@ test.each([
 ])(
   "$state agent deletion reaches directory observers across logical sessions without broadcasting its reply",
   async ({ prepare }) => {
-    const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+    const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
     const admin = new DaemonClient({
       url: `ws://127.0.0.1:${daemon.port}/ws`,
       appVersion: "0.8.0",
@@ -989,7 +989,7 @@ test("config changes require their own event demand and cannot escape to an idle
 });
 
 test("a config change push carries profiles with the legacy featureValues the unchanged app reads", async () => {
-  const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+  const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
   const admin = new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws`, appVersion: "0.8.0" });
   let observer: SubscriptionPeer | undefined;
   try {
@@ -1650,7 +1650,7 @@ test("request outcomes for import and attention reach only their requesting sock
 
 test("clearing a closed agent's attention does not resume its provider session", async () => {
   const daemon = await createTestPaseoDaemon({
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     isDev: true,
     agentClients: { mock: new MockLoadTestAgentClient() },
   });
@@ -1683,7 +1683,7 @@ class SessionGoneAgentClient extends MockLoadTestAgentClient {
 test("clearing a closed agent's attention succeeds when its provider session is gone", async () => {
   const agentClient = new SessionGoneAgentClient();
   const daemon = await createTestPaseoDaemon({
-    mcpEnabled: false,
+    agentToolsEnabled: false,
     isDev: true,
     agentClients: { mock: agentClient },
   });
@@ -2058,7 +2058,7 @@ test.each([
 ])(
   "clearing workspace attention reaches independent subscribers (closed=$closed, batch=$batch)",
   async ({ closed, batch }) => {
-    const daemon = await createTestPaseoDaemon({ mcpEnabled: false });
+    const daemon = await createTestPaseoDaemon({ agentToolsEnabled: false });
     const clients = Array.from(
       { length: 4 },
       () => new DaemonClient({ url: `ws://127.0.0.1:${daemon.port}/ws` }),

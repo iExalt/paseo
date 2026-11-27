@@ -4820,6 +4820,9 @@ describe("turn metrics", () => {
     });
 
     expect(repeated.tail).toBe(first.tail);
+  });
+});
+
 describe("createSessionAgentStreamReducerQueue", () => {
   const serverId = "server-commit";
   const agentId = "agent-commit";
