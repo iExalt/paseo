@@ -166,11 +166,15 @@ export default defineConfig({
         {
           name: "expo-global-types",
           transform(source, id) {
+            const file = id.replaceAll("\\", "/");
             if (
-              !id.replaceAll("\\", "/").endsWith("/expo-modules-core/src/ts-declarations/global.ts")
-            )
+              !file.endsWith("/expo-modules-core/src/ts-declarations/global.ts") &&
+              !file.endsWith("/expo-modules-core/build/ts-declarations/global.js")
+            ) {
               return;
-            // Oxc preserves imports used only by Expo's ambient namespace; esbuild erases them.
+            }
+            // Expo SDK 58 leaves type-only imports in the emitted JS. Strip the unused
+            // bindings from both entries before Rolldown resolves their runtime exports.
             return { code: transformTypeScript(source, { loader: "ts" }).code, map: null };
           },
         },
@@ -207,6 +211,10 @@ export default defineConfig({
       "react/jsx-dev-runtime",
       "react-native-gesture-handler > hoist-non-react-statics",
       "react-native-gesture-handler > invariant",
+      // Imports use both the package name and the explicit ESM entry from the test adapter.
+      // Prebundle both specifiers so the same real module graph gets CommonJS interop.
+      "react-native-web",
+      "react-native-web/dist/index.js",
       // Loaded by the reanimated-web-style-helpers plugin, which the dependency scan does not see.
       "react-native-web/dist/exports/StyleSheet/compiler/createReactDOMStyle",
       "react-native-web/dist/exports/StyleSheet/preprocess",
