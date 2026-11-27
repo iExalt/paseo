@@ -151,7 +151,7 @@ const patchedPackages = [
     nodeModulesPath: "node_modules/@mattermost/react-native-paste-input",
     patchPrefix: "@mattermost+react-native-paste-input+",
   },
-  // The Mermaid 12.1 lexer still reads labels containing "@" as edge IDs.
+  // Mermaid 12.4 fixed this for flowcharts but the agentflow lexer still needs the backport.
   {
     nodeModulesPath: "node_modules/mermaid",
     patchPrefix: "mermaid+",

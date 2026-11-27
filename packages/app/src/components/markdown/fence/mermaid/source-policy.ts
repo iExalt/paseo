@@ -2,7 +2,7 @@
 // (`A@{ img: "url" }`) construct an Image and await decode before any output
 // sanitization runs, and CSS can pull url()/@import — so a prompt-injected
 // diagram could exfiltrate data in a request URL. securityLevel "strict" does
-// not prevent this (mermaid-js/mermaid#7645). Mermaid 11.16 parses the shape
+// not prevent this (mermaid-js/mermaid#7645). Mermaid parses the shape
 // metadata object with yaml.JSON_SCHEMA semantics, including aliases and
 // explicit keys; matching those keys safely would require a real parser. We
 // therefore reject any `@{ ... }` shape-data construct up front and fall back
