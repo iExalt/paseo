@@ -30,7 +30,10 @@ assert.ok(
 );
 const require = createRequire(join(root, "packages/server/package.json"));
 const sdkPackage = join(dirname(require.resolve("@cursor/sdk")), "../../package.json");
-assert.equal(JSON.parse(await readFile(sdkPackage, "utf8")).version, sdkVersion);
+assert.equal(
+  JSON.parse(await readFile(sdkPackage, "utf8")).version,
+  mode === "baseline" ? "1.4.2" : sdkVersion,
+);
 
 const tmp = await mkdtemp(join(tmpdir(), "paseo-cursor-parity-"));
 const workspace = join(tmp, "workspace");

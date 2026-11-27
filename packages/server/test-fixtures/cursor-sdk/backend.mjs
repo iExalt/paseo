@@ -3,7 +3,7 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { selectP5Turn } from "./interactions.mjs";
 
-export const sdkVersion = "1.4.2";
+export const sdkVersion = "1.5.2";
 export const model = "paseo-loopback";
 export const apiKey = "cursor-fixture-key";
 export const assistantText = "PASEO_FIXTURE_DONE";
