@@ -1,9 +1,8 @@
 #pragma once
+#include "ENRMReactHeaders.h"
 #include "EnrichedMarkdownTextInputState.h"
-#include <ReactNativeEnrichedMarkdown/EventEmitters.h>
-#include <ReactNativeEnrichedMarkdown/Props.h>
-#include <react/renderer/components/view/ConcreteViewShadowNode.h>
-#include <react/renderer/core/LayoutConstraints.h>
+#include <EnrichedMarkdownTextSpec/EventEmitters.h>
+#include <EnrichedMarkdownTextSpec/Props.h>
 
 namespace facebook::react {
 

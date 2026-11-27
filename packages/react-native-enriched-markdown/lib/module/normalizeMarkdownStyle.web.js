@@ -14,7 +14,7 @@ const baseHeader = {
   marginBottom: 8,
   textAlign: 'auto'
 };
-const DEFAULT_NORMALIZED_STYLE = Object.freeze({
+export const DEFAULT_NORMALIZED_STYLE = Object.freeze({
   paragraph: {
     fontSize: 16,
     fontFamily: SYSTEM_FONT,

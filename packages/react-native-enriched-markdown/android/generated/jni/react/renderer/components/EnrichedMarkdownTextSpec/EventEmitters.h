@@ -13,13 +13,20 @@
 
 
 namespace facebook::react {
+class EnrichedMarkdownBlockSlotEventEmitter : public ViewEventEmitter {
+ public:
+  using ViewEventEmitter::ViewEventEmitter;
+
+  
+  
+};
 class EnrichedMarkdownEventEmitter : public ViewEventEmitter {
  public:
   using ViewEventEmitter::ViewEventEmitter;
 
   struct OnLinkPress {
       std::string url;
-      std::string sourceType;
+    std::string sourceType;
     };
 
   struct OnLinkLongPress {
@@ -29,6 +36,11 @@ class EnrichedMarkdownEventEmitter : public ViewEventEmitter {
   struct OnImagePress {
       std::string url;
     std::string altText;
+    };
+
+  struct OnTextPress {
+      int index;
+    std::string text;
     };
 
   struct OnTaskListItemPress {
@@ -65,11 +77,20 @@ class EnrichedMarkdownEventEmitter : public ViewEventEmitter {
     int selectionStart;
     int selectionEnd;
     };
+
+  struct OnSelectionCopy {
+      std::string text;
+    std::string format;
+    int selectionStart;
+    int selectionEnd;
+    };
   void onLinkPress(OnLinkPress value) const;
 
   void onLinkLongPress(OnLinkLongPress value) const;
 
   void onImagePress(OnImagePress value) const;
+
+  void onTextPress(OnTextPress value) const;
 
   void onTaskListItemPress(OnTaskListItemPress value) const;
 
@@ -82,6 +103,8 @@ class EnrichedMarkdownEventEmitter : public ViewEventEmitter {
   void onLinkContextMenuItemPress(OnLinkContextMenuItemPress value) const;
 
   void onContextMenuItemPress(OnContextMenuItemPress value) const;
+
+  void onSelectionCopy(OnSelectionCopy value) const;
 };
 class EnrichedMarkdownTextInputEventEmitter : public ViewEventEmitter {
  public:
@@ -263,6 +286,11 @@ class EnrichedMarkdownTextInputEventEmitter : public ViewEventEmitter {
   struct OnEndMention {
       std::string indicator;
     };
+
+  struct OnChangeHistoryState {
+      bool canUndo;
+    bool canRedo;
+    };
   void onChangeText(OnChangeText value) const;
 
   void onChangeMarkdown(OnChangeMarkdown value) const;
@@ -292,6 +320,8 @@ class EnrichedMarkdownTextInputEventEmitter : public ViewEventEmitter {
   void onChangeMention(OnChangeMention value) const;
 
   void onEndMention(OnEndMention value) const;
+
+  void onChangeHistoryState(OnChangeHistoryState value) const;
 };
 class EnrichedMarkdownTextEventEmitter : public ViewEventEmitter {
  public:
@@ -299,7 +329,7 @@ class EnrichedMarkdownTextEventEmitter : public ViewEventEmitter {
 
   struct OnLinkPress {
       std::string url;
-      std::string sourceType;
+    std::string sourceType;
     };
 
   struct OnLinkLongPress {
@@ -309,6 +339,11 @@ class EnrichedMarkdownTextEventEmitter : public ViewEventEmitter {
   struct OnImagePress {
       std::string url;
     std::string altText;
+    };
+
+  struct OnTextPress {
+      int index;
+    std::string text;
     };
 
   struct OnTaskListItemPress {
@@ -345,11 +380,20 @@ class EnrichedMarkdownTextEventEmitter : public ViewEventEmitter {
     int selectionStart;
     int selectionEnd;
     };
+
+  struct OnSelectionCopy {
+      std::string text;
+    std::string format;
+    int selectionStart;
+    int selectionEnd;
+    };
   void onLinkPress(OnLinkPress value) const;
 
   void onLinkLongPress(OnLinkLongPress value) const;
 
   void onImagePress(OnImagePress value) const;
+
+  void onTextPress(OnTextPress value) const;
 
   void onTaskListItemPress(OnTaskListItemPress value) const;
 
@@ -362,5 +406,7 @@ class EnrichedMarkdownTextEventEmitter : public ViewEventEmitter {
   void onLinkContextMenuItemPress(OnLinkContextMenuItemPress value) const;
 
   void onContextMenuItemPress(OnContextMenuItemPress value) const;
+
+  void onSelectionCopy(OnSelectionCopy value) const;
 };
 } // namespace facebook::react

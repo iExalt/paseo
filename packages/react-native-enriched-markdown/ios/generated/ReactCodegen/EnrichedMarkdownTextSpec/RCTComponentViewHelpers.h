@@ -13,6 +13,10 @@
 
 NS_ASSUME_NONNULL_BEGIN
 
+@protocol RCTEnrichedMarkdownBlockSlotViewProtocol <NSObject>
+
+@end
+
 @protocol RCTEnrichedMarkdownViewProtocol <NSObject>
 
 @end
@@ -39,6 +43,8 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)startMention:(NSString *)indicator;
 - (void)removeLink;
 - (void)copyToClipboard;
+- (void)undo;
+- (void)redo;
 - (void)requestMarkdown:(NSInteger)requestId;
 - (void)requestCaretRect:(NSInteger)requestId;
 @end
@@ -411,6 +417,34 @@ if ([commandName isEqualToString:@"copyToClipboard"]) {
   
 
   [componentView copyToClipboard];
+  return;
+}
+
+if ([commandName isEqualToString:@"undo"]) {
+#if RCT_DEBUG
+  if ([args count] != 0) {
+    RCTLogError(@"%@ command %@ received %d arguments, expected %d.", @"EnrichedMarkdownTextInput", commandName, (int)[args count], 0);
+    return;
+  }
+#endif
+
+  
+
+  [componentView undo];
+  return;
+}
+
+if ([commandName isEqualToString:@"redo"]) {
+#if RCT_DEBUG
+  if ([args count] != 0) {
+    RCTLogError(@"%@ command %@ received %d arguments, expected %d.", @"EnrichedMarkdownTextInput", commandName, (int)[args count], 0);
+    return;
+  }
+#endif
+
+  
+
+  [componentView redo];
   return;
 }
 

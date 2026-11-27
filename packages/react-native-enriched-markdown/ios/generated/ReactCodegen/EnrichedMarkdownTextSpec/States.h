@@ -15,6 +15,6 @@
 
 namespace facebook::react {
 
-
+using EnrichedMarkdownBlockSlotState = StateData;
 
 } // namespace facebook::react

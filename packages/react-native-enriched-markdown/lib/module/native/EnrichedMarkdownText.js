@@ -1,13 +1,17 @@
 "use strict";
 
 import { useMemo, useCallback, useRef, useEffect } from 'react';
-import EnrichedMarkdownTextNativeComponent from '../EnrichedMarkdownTextNativeComponent';
-import EnrichedMarkdownNativeComponent from '../EnrichedMarkdownNativeComponent';
+import EnrichedMarkdownTextNativeComponent from "../EnrichedMarkdownTextNativeComponent.js";
+import EnrichedMarkdownNativeComponent from "../EnrichedMarkdownNativeComponent.js";
 import { isLinkRecognitionEqual, toNativeLinkRecognition } from "../utils/regexParser.js";
 import { normalizeMarkdownStyle } from '../normalizeMarkdownStyle';
 import { isLinkPillContentEqual, normalizeLinkPillContent } from "../linkVariantUtils.js";
 import { dispatchLinkContextMenuItem, isLinkContextMenuItemsEqual, normalizeLinkContextMenuItems } from "../linkContextMenuUtils.js";
 import { resolveAccessibilityLabels } from "../accessibilityLabelDefaults.js";
+import { NOT_COLLECTED, useBlockSlots, useCollectedMarkdown } from "./useBlockSlots.js";
+import { hasRenderers } from "../blockRenderers.js";
+import { useImageSources } from "./useImageSources.js";
+import { useLinksChange } from "../linkOccurrences.js";
 import { normalizeMenuItem, normalizeLegacyBooleanMenuItem } from "../normalizeMenuItem.js";
 import { jsx as _jsx } from "react/jsx-runtime";
 // Default English labels for the built-in selection menu actions. Defaults are
@@ -59,10 +63,12 @@ const buildPluralTemplates = (pluralLabels, singularLabel) => {
   }
   return templates;
 };
+const NO_BLOCKS = [];
 const defaultMd4cFlags = {
   underline: false,
   superscript: false,
   subscript: false,
+  strikethrough: false,
   latexMath: true,
   highlight: false,
   hardSoftBreaks: false,
@@ -76,11 +82,13 @@ export const EnrichedMarkdownText = ({
   onLinkPress,
   onLinkLongPress,
   onImagePress,
+  onTextPress,
   onTaskListItemPress,
   enableTaskListItemToggle = true,
   onCopyPress,
   onLatexError,
   onCodeBlockPress,
+  enableCodeBlockWrapToggle = true,
   enableBlockContextMenu = true,
   enableLinkPreview,
   selectable = true,
@@ -95,9 +103,13 @@ export const EnrichedMarkdownText = ({
   contextMenuItems,
   linkContextMenuItems,
   imageRequestHeaders,
+  renderers,
+  resolveImageSource,
+  onLinksChange,
   linkPillContent,
   linkRecognition,
   selectionMenuConfig,
+  onSelectionCopy,
   accessibilityLabels,
   selectionColor,
   selectionHandleColor,
@@ -127,18 +139,33 @@ export const EnrichedMarkdownText = ({
     normalizedStyleRef.current = normalized;
   }
   const normalizedStyle = normalizedStyleRef.current;
+
+  // Keyed on the flag values, not the object, so an inline `md4cFlags` literal
+  // neither re-sends the prop nor re-parses for `renderers` on every render.
+  const underline = md4cFlags.underline ?? false;
+  const superscript = md4cFlags.superscript ?? false;
+  const subscript = md4cFlags.subscript ?? false;
+  const latexMath = md4cFlags.latexMath ?? true;
+  const highlight = md4cFlags.highlight ?? false;
+  const hardSoftBreaks = md4cFlags.hardSoftBreaks ?? false;
+  const preserveBlankLines = md4cFlags.preserveBlankLines ?? false;
+  // Admonitions are a GitHub-flavor feature; force them off in commonmark so
+  // `> [!NOTE]` renders as a plain blockquote.
+  const admonitions = flavor === 'github' ? md4cFlags.admonitions ?? true : false;
+  // GitHub flavor always parses strikethrough, so the flag cannot change the
+  // result there; force it off so toggling it does not invalidate anything.
+  const strikethrough = flavor === 'github' ? false : md4cFlags.strikethrough ?? false;
   const normalizedMd4cFlags = useMemo(() => ({
-    underline: md4cFlags.underline ?? false,
-    superscript: md4cFlags.superscript ?? false,
-    subscript: md4cFlags.subscript ?? false,
-    latexMath: md4cFlags.latexMath ?? true,
-    highlight: md4cFlags.highlight ?? false,
-    hardSoftBreaks: md4cFlags.hardSoftBreaks ?? false,
-    preserveBlankLines: md4cFlags.preserveBlankLines ?? false,
-    // Admonitions are a GitHub-flavor feature; force them off in commonmark so
-    // `> [!NOTE]` renders as a plain blockquote.
-    admonitions: flavor === 'github' ? md4cFlags.admonitions ?? true : false
-  }), [md4cFlags, flavor]);
+    underline,
+    superscript,
+    subscript,
+    strikethrough,
+    latexMath,
+    highlight,
+    hardSoftBreaks,
+    preserveBlankLines,
+    admonitions
+  }), [underline, superscript, subscript, strikethrough, latexMath, highlight, hardSoftBreaks, preserveBlankLines, admonitions]);
   const contextMenuCallbacksRef = useRef(new Map());
   useEffect(() => {
     const callbacksMap = new Map();
@@ -232,6 +259,16 @@ export const EnrichedMarkdownText = ({
       altText
     });
   }, [onImagePress]);
+  const handleTextPress = useCallback(e => {
+    const {
+      index,
+      text
+    } = e.nativeEvent;
+    onTextPress?.({
+      index,
+      text
+    });
+  }, [onTextPress]);
   const handleTaskListItemPress = useCallback(e => {
     const {
       index,
@@ -276,12 +313,30 @@ export const EnrichedMarkdownText = ({
       language
     });
   }, [onCodeBlockPress]);
+  const handleSelectionCopy = useCallback(e => {
+    const {
+      text,
+      format,
+      selectionStart,
+      selectionEnd
+    } = e.nativeEvent;
+    onSelectionCopy?.({
+      text,
+      format: format,
+      selection: {
+        start: selectionStart,
+        end: selectionEnd
+      }
+    });
+  }, [onSelectionCopy]);
   const tableMode = streamingConfig?.tableMode ?? 'progressive';
   const codeBlockMode = streamingConfig?.codeBlockMode ?? 'progressive';
+  const mediaMode = streamingConfig?.mediaMode ?? 'progressive';
   const normalizedStreamingConfig = useMemo(() => ({
     tableMode,
-    codeBlockMode
-  }), [tableMode, codeBlockMode]);
+    codeBlockMode,
+    mediaMode
+  }), [tableMode, codeBlockMode, mediaMode]);
   const normalizedSelectionMenuConfig = useMemo(() => {
     // The boolean acceptance is confined to this wrapper boundary via a single
     // `as unknown` cast; the public type only exposes the object shape.
@@ -301,6 +356,22 @@ export const EnrichedMarkdownText = ({
     };
   }, [selectionMenuConfig]);
   const resolvedAccessibilityLabels = useMemo(() => resolveAccessibilityLabels(accessibilityLabels), [accessibilityLabels]);
+
+  // One parse on the JS thread serves both: the slot children land in the same
+  // commit as the markdown they describe, the image sources before it is drawn.
+  const isGFM = flavor === 'github';
+  const renderersEnabled = hasRenderers(renderers);
+  const collectEnabled = renderersEnabled || resolveImageSource != null || onLinksChange != null;
+  const collectStreaming = useMemo(() => ({
+    enabled: streamingAnimation,
+    tableMode,
+    codeBlockMode,
+    mediaMode
+  }), [streamingAnimation, tableMode, codeBlockMode, mediaMode]);
+  const collected = useCollectedMarkdown(markdown, normalizedMd4cFlags, isGFM, collectEnabled, collectStreaming);
+  const slotChildren = useBlockSlots(renderersEnabled ? collected.blocks : NO_BLOCKS, renderers);
+  const imageSources = useImageSources(collected.images, resolveImageSource, resolveImageSource != null && isGFM);
+  useLinksChange(collected.links, onLinksChange, collected !== NOT_COLLECTED);
   const sharedProps = {
     markdown,
     linkRecognition: nativeLinkRecognition,
@@ -309,6 +380,8 @@ export const EnrichedMarkdownText = ({
     onLinkLongPress: handleLinkLongPress,
     onImagePress: handleImagePress,
     enableImagePress: onImagePress != null,
+    onTextPress: handleTextPress,
+    enableTextPress: onTextPress != null,
     onTaskListItemPress: handleTaskListItemPress,
     enableTaskListItemToggle,
     onCopyPress: handleCopyPress,
@@ -319,7 +392,7 @@ export const EnrichedMarkdownText = ({
     enableLinkPreview: onLinkLongPress == null && (enableLinkPreview ?? true),
     selectable,
     md4cFlags: normalizedMd4cFlags,
-    isGFM: flavor === 'github',
+    isGFM,
     allowFontScaling,
     maxFontSizeMultiplier,
     allowTrailingMargin,
@@ -335,6 +408,7 @@ export const EnrichedMarkdownText = ({
     selectionMenuConfig: normalizedSelectionMenuConfig,
     accessibilityLabels: resolvedAccessibilityLabels,
     onContextMenuItemPress: handleContextMenuItemPress,
+    onSelectionCopy: handleSelectionCopy,
     selectionColor,
     selectionHandleColor,
     textBreakStrategy,
@@ -344,9 +418,12 @@ export const EnrichedMarkdownText = ({
     ellipsizeMode,
     ...rest
   };
-  if (flavor === 'github') {
+  if (isGFM) {
     return /*#__PURE__*/_jsx(EnrichedMarkdownNativeComponent, {
-      ...sharedProps
+      ...sharedProps,
+      enableCodeBlockWrapToggle: enableCodeBlockWrapToggle,
+      imageSources: imageSources,
+      children: slotChildren
     });
   }
   return /*#__PURE__*/_jsx(EnrichedMarkdownTextNativeComponent, {

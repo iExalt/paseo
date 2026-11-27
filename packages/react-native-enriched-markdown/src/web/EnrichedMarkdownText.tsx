@@ -2,8 +2,9 @@ import {
   useState,
   useEffect,
   useMemo,
-  useRef,
+  useSyncExternalStore,
   type CSSProperties,
+  type ReactNode,
 } from 'react';
 import type { EnrichedMarkdownTextProps } from '../types/MarkdownTextProps.web';
 import { normalizeMarkdownStyle } from '../normalizeMarkdownStyle.web';
@@ -12,27 +13,52 @@ import {
   parseErrorFallbackStyle,
   buildStyles,
 } from './styles';
-import { parseMarkdown, parseMarkdownSync } from './parseMarkdown';
+import {
+  isParserReady,
+  loadParser,
+  parseMarkdownSync,
+  subscribeParserReady,
+} from './parseMarkdown';
 import { recognizeTextLinks } from './recognizeTextLinks';
 import { RenderNode } from './renderers';
 import type { ASTNode, RendererCallbacks, RenderCapabilities } from './types';
 import { indexTaskItems, markInlineImages } from './utils';
+import { collectBlocks, type CollectedBlocks } from './blockSlots';
+import { useResolvedImageSources } from '../imageSources';
+import { useLinksChange } from '../linkOccurrences';
+import { hasRenderers, useRenderedBlocks } from '../blockRenderers';
+import type { MarkdownImageOccurrence } from '../types/markdownBlocks';
 import { loadKaTeX } from './katex';
-import type { KaTeXInstance } from './katex';
 import { ENRM_TEXT_CLASS, ENRM_SELECTION_BG_VAR } from './globalStyles';
 import { filterNativeOnlyProps } from './nativeProps';
+import { isDev } from '../utils/isDev';
+
+const EMPTY: CollectedBlocks = { blocks: [], images: [], links: [] };
+
+// `ast` is null when the parse threw; `error` is what it threw.
+interface ParseResult {
+  ast: ASTNode | null;
+  collected: CollectedBlocks;
+  error: unknown;
+}
+
+// The server never loads the WASM, so hydration starts from "not ready" too.
+const isParserReadyOnServer = () => false;
 
 export const EnrichedMarkdownText = ({
   markdown,
   markdownStyle = {},
   md4cFlags = {},
   linkRecognition,
-  renderers,
   onLinkPress,
   onLinkLongPress,
   onImagePress,
   onTaskListItemPress,
   onCodeBlockPress,
+  renderers,
+  webRenderers,
+  resolveImageSource,
+  onLinksChange,
   enableTaskListItemToggle = true,
   allowTrailingMargin = false,
   containerStyle,
@@ -47,12 +73,11 @@ export const EnrichedMarkdownText = ({
     [markdownStyle]
   );
 
-  const [parsed, setParsed] = useState<{
-    ast: ASTNode;
-    markdown: string;
-  } | null>(null);
-  const [katex, setKatex] = useState<KaTeXInstance | null>(null);
-  const [parseError, setParseError] = useState<boolean>(false);
+  const renderersEnabled = hasRenderers(renderers);
+  // Collecting hashes every image and link: only when something reads it.
+  const collectEnabled =
+    renderersEnabled || resolveImageSource != null || onLinksChange != null;
+  const [loadFailed, setLoadFailed] = useState(false);
 
   const {
     underline = false,
@@ -66,14 +91,38 @@ export const EnrichedMarkdownText = ({
   } = md4cFlags;
 
   // A regex literal in JSX is a new object every render; re-parse only when its text changes.
-  const linkRecognitionRef = useRef(linkRecognition);
-  linkRecognitionRef.current = linkRecognition;
-  const textLinkKey = linkRecognition?.text?.toString() ?? null;
-  const inlineCodeLinkKey = linkRecognition?.inlineCode?.toString() ?? null;
+  const textLinkRegex = linkRecognition?.text;
+  const inlineCodeLinkRegex = linkRecognition?.inlineCode;
+  const textLinkKey = textLinkRegex?.toString() ?? null;
+  const inlineCodeLinkKey = inlineCodeLinkRegex?.toString() ?? null;
 
-  // Once WASM is ready, new/virtualized rows must have their text on the first
-  // commit. An effect-only parse briefly measures an empty row and moves readers.
-  const immediate = useMemo(() => {
+  const parserReady = useSyncExternalStore(
+    subscribeParserReady,
+    isParserReady,
+    isParserReadyOnServer
+  );
+
+  // Only the first load waits; once the WASM is up, every render parses the
+  // markdown it was given, so no commit shows empty or previous content.
+  useEffect(() => {
+    if (parserReady) return;
+    let cancelled = false;
+    // A load that succeeds flips `parserReady`, which supersedes `loadFailed`.
+    loadParser().catch((error) => {
+      if (cancelled) return;
+      if (isDev) {
+        console.error('[EnrichedMarkdownText] Parser failed to load:', error);
+      }
+      setLoadFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // A new markdown retries a load that failed, as each parse used to.
+  }, [parserReady, markdown]);
+
+  const parsed = useMemo<ParseResult | null>(() => {
+    if (!parserReady) return null;
     try {
       const result = parseMarkdownSync(markdown, {
         underline,
@@ -85,23 +134,20 @@ export const EnrichedMarkdownText = ({
         preserveBlankLines,
         admonitions,
       });
-      if (!result) return null;
       indexTaskItems(result);
       markInlineImages(result);
       return {
-        markdown,
-        ast: recognizeTextLinks(
-          result,
-          linkRecognitionRef.current?.text,
-          linkRecognitionRef.current?.inlineCode
-        ),
+        collected: collectEnabled ? collectBlocks(result) : EMPTY,
+        ast: recognizeTextLinks(result, textLinkRegex, inlineCodeLinkRegex),
+        error: null,
       };
-    } catch {
-      return { markdown, ast: null };
+    } catch (error) {
+      return { ast: null, collected: EMPTY, error };
     }
-    // Regex keys track ref changes; parsed wakes this memo after WASM initialization.
+    // The regexes are keyed by their text, see above.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    parserReady,
     markdown,
     underline,
     latexMath,
@@ -113,75 +159,18 @@ export const EnrichedMarkdownText = ({
     admonitions,
     textLinkKey,
     inlineCodeLinkKey,
-    parsed,
+    collectEnabled,
   ]);
 
   useEffect(() => {
-    if (immediate && (!latexMath || katex)) return;
-    let cancelled = false;
+    if (parsed && !parsed.ast && isDev) {
+      console.error('[EnrichedMarkdownText] Parse failed:', parsed.error);
+    }
+  }, [parsed]);
 
-    const katexPromise = latexMath ? loadKaTeX() : Promise.resolve(null);
-
-    Promise.all([
-      parseMarkdown(markdown, {
-        underline,
-        latexMath,
-        superscript,
-        subscript,
-        highlight,
-        hardSoftBreaks,
-        preserveBlankLines,
-        admonitions,
-      }),
-      katexPromise,
-    ])
-      .then(([result, katexInstance]) => {
-        if (!cancelled) {
-          indexTaskItems(result);
-          markInlineImages(result);
-
-          setParseError(false);
-          setKatex(katexInstance);
-          setParsed({
-            markdown,
-            ast: recognizeTextLinks(
-              result,
-              linkRecognitionRef.current?.text,
-              linkRecognitionRef.current?.inlineCode
-            ),
-          });
-        }
-      })
-      .catch((error) => {
-        if (!cancelled) {
-          if (__DEV__) {
-            console.error('[EnrichedMarkdownText] Parse failed:', error);
-          }
-
-          setParseError(true);
-          setParsed(null);
-          setKatex(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    markdown,
-    underline,
-    latexMath,
-    superscript,
-    subscript,
-    highlight,
-    hardSoftBreaks,
-    preserveBlankLines,
-    admonitions,
-    textLinkKey,
-    inlineCodeLinkKey,
-    immediate,
-    katex,
-  ]);
+  const ast = parsed?.ast ?? null;
+  const collected = parsed?.collected ?? EMPTY;
+  const katex = latexMath ? loadKaTeX() : null;
 
   const callbacks = useMemo<RendererCallbacks>(
     () => ({
@@ -200,9 +189,31 @@ export const EnrichedMarkdownText = ({
     ]
   );
 
+  const renderedBlocks = useRenderedBlocks(collected.blocks, renderers);
+  const blockSlots = useMemo(() => {
+    if (!renderersEnabled) return undefined;
+    const slots = new Map<string, ReactNode>();
+    for (const { block, element } of renderedBlocks) {
+      slots.set(block.id, element);
+    }
+    return slots;
+  }, [renderersEnabled, renderedBlocks]);
+
+  const imageSources = useImageSources(collected.images, resolveImageSource);
+  // Nothing is known before the first parse.
+  useLinksChange(collected.links, onLinksChange, collected !== EMPTY);
+
+  const blockDir = dir === 'ltr' || dir === 'rtl' ? undefined : 'auto';
   const capabilities = useMemo<RenderCapabilities>(
-    () => ({ katex, enableTaskListItemToggle, renderers }),
-    [katex, enableTaskListItemToggle, renderers]
+    () => ({
+      katex,
+      enableTaskListItemToggle,
+      blockSlots,
+      imageSources,
+      blockDir,
+      webRenderers,
+    }),
+    [katex, enableTaskListItemToggle, blockSlots, imageSources, blockDir, webRenderers]
   );
 
   const lastChildStyle = useMemo(
@@ -235,8 +246,7 @@ export const EnrichedMarkdownText = ({
 
   const domProps = filterNativeOnlyProps(rest);
 
-  const visibleParsed = immediate ?? parsed;
-  if (immediate ? immediate.ast === null : parseError) {
+  if (parsed ? !parsed.ast : loadFailed) {
     return (
       <div
         className={ENRM_TEXT_CLASS}
@@ -250,21 +260,21 @@ export const EnrichedMarkdownText = ({
     );
   }
 
-  const children = visibleParsed?.ast?.children ?? [];
+  const children = ast?.children ?? [];
   const lastIdx = children.length - 1;
 
   return (
     <div
-      aria-busy={visibleParsed?.markdown !== markdown}
       className={ENRM_TEXT_CLASS}
       style={wrapperStyle}
       dir={dir}
       data-testid={testID}
+      aria-busy={!ast || undefined}
       {...domProps}
     >
       {children.map((child, index) => (
         <RenderNode
-          key={`${child.type}-${index}`}
+          key={child.attributes?.blockSlotId ?? `${child.type}-${index}`}
           node={child}
           style={index === lastIdx ? lastChildStyle : normalizedStyle}
           styles={index === lastIdx ? lastChildStyles : styles}
@@ -275,5 +285,30 @@ export const EnrichedMarkdownText = ({
     </div>
   );
 };
+
+/**
+ * The `imageSources` capability: resolved `src` by occurrence id, `null` while
+ * pending or without a usable uri, no entry for images that keep the Markdown
+ * URL. Headers cannot be honored by `<img>` and are dropped. See
+ * `useResolvedImageSources` for the resolution rules.
+ */
+function useImageSources(
+  images: MarkdownImageOccurrence[],
+  resolve: EnrichedMarkdownTextProps['resolveImageSource']
+): ReadonlyMap<string, string | null> | undefined {
+  const resolved = useResolvedImageSources(images, resolve, resolve != null);
+  return useMemo(() => {
+    if (!resolved) return undefined;
+    const result = new Map<string, string | null>();
+    for (const [id, resolution] of resolved) {
+      if (resolution.state === 'markdown') continue;
+      result.set(
+        id,
+        resolution.state === 'resolved' ? resolution.source.uri || null : null
+      );
+    }
+    return result;
+  }, [resolved]);
+}
 
 export default EnrichedMarkdownText;

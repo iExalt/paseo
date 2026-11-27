@@ -5,8 +5,8 @@
 #import <Foundation/Foundation.h>
 
 #ifdef __cplusplus
-#import <ReactNativeEnrichedMarkdown/EventEmitters.h>
 #import <memory>
+#import <EnrichedMarkdownTextSpec/EventEmitters.h>
 #endif
 
 NS_ASSUME_NONNULL_BEGIN

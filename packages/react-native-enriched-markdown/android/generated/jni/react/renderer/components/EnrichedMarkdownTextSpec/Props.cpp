@@ -14,6 +14,35 @@
 
 namespace facebook::react {
 
+EnrichedMarkdownBlockSlotProps::EnrichedMarkdownBlockSlotProps(
+    const PropsParserContext &context,
+    const EnrichedMarkdownBlockSlotProps &sourceProps,
+    const RawProps &rawProps): ViewProps(context, sourceProps, rawProps),
+
+    slotId(convertRawProp(context, rawProps, "slotId", sourceProps.slotId, {})) {}
+    
+#ifdef RN_SERIALIZABLE_STATE
+ComponentName EnrichedMarkdownBlockSlotProps::getDiffPropsImplementationTarget() const {
+  return "EnrichedMarkdownBlockSlot";
+}
+
+folly::dynamic EnrichedMarkdownBlockSlotProps::getDiffProps(
+    const Props* prevProps) const {
+  static const auto defaultProps = EnrichedMarkdownBlockSlotProps();
+  const EnrichedMarkdownBlockSlotProps* oldProps = prevProps == nullptr
+      ? &defaultProps
+      : static_cast<const EnrichedMarkdownBlockSlotProps*>(prevProps);
+  if (this == oldProps) {
+    return folly::dynamic::object();
+  }
+  folly::dynamic result = HostPlatformViewProps::getDiffProps(prevProps);
+  
+  if (slotId != oldProps->slotId) {
+    result["slotId"] = slotId;
+  }
+  return result;
+}
+#endif
 EnrichedMarkdownProps::EnrichedMarkdownProps(
     const PropsParserContext &context,
     const EnrichedMarkdownProps &sourceProps,
@@ -22,8 +51,10 @@ EnrichedMarkdownProps::EnrichedMarkdownProps(
     markdown(convertRawProp(context, rawProps, "markdown", sourceProps.markdown, {})),
     markdownStyle(convertRawProp(context, rawProps, "markdownStyle", sourceProps.markdownStyle, {})),
     enableImagePress(convertRawProp(context, rawProps, "enableImagePress", sourceProps.enableImagePress, {false})),
+    enableTextPress(convertRawProp(context, rawProps, "enableTextPress", sourceProps.enableTextPress, {false})),
     enableTaskListItemToggle(convertRawProp(context, rawProps, "enableTaskListItemToggle", sourceProps.enableTaskListItemToggle, {true})),
     enableCodeBlockPress(convertRawProp(context, rawProps, "enableCodeBlockPress", sourceProps.enableCodeBlockPress, {false})),
+    enableCodeBlockWrapToggle(convertRawProp(context, rawProps, "enableCodeBlockWrapToggle", sourceProps.enableCodeBlockWrapToggle, {true})),
     enableBlockContextMenu(convertRawProp(context, rawProps, "enableBlockContextMenu", sourceProps.enableBlockContextMenu, {true})),
     enableLinkPreview(convertRawProp(context, rawProps, "enableLinkPreview", sourceProps.enableLinkPreview, {true})),
     selectable(convertRawProp(context, rawProps, "selectable", sourceProps.selectable, {false})),
@@ -39,6 +70,7 @@ EnrichedMarkdownProps::EnrichedMarkdownProps(
     spoilerOverlay(convertRawProp(context, rawProps, "spoilerOverlay", sourceProps.spoilerOverlay, {std::string{"particles"}})),
     contextMenuItems(convertRawProp(context, rawProps, "contextMenuItems", sourceProps.contextMenuItems, {})),
     imageRequestHeaders(convertRawProp(context, rawProps, "imageRequestHeaders", sourceProps.imageRequestHeaders, {})),
+    imageSources(convertRawProp(context, rawProps, "imageSources", sourceProps.imageSources, {})),
     linkPillContent(convertRawProp(context, rawProps, "linkPillContent", sourceProps.linkPillContent, {})),
     linkRecognition(convertRawProp(context, rawProps, "linkRecognition", sourceProps.linkRecognition, {})),
     linkContextMenuItems(convertRawProp(context, rawProps, "linkContextMenuItems", sourceProps.linkContextMenuItems, {})),
@@ -78,12 +110,20 @@ folly::dynamic EnrichedMarkdownProps::getDiffProps(
     result["enableImagePress"] = enableImagePress;
   }
     
+  if (enableTextPress != oldProps->enableTextPress) {
+    result["enableTextPress"] = enableTextPress;
+  }
+    
   if (enableTaskListItemToggle != oldProps->enableTaskListItemToggle) {
     result["enableTaskListItemToggle"] = enableTaskListItemToggle;
   }
     
   if (enableCodeBlockPress != oldProps->enableCodeBlockPress) {
     result["enableCodeBlockPress"] = enableCodeBlockPress;
+  }
+    
+  if (enableCodeBlockWrapToggle != oldProps->enableCodeBlockWrapToggle) {
+    result["enableCodeBlockWrapToggle"] = enableCodeBlockWrapToggle;
   }
     
   if (enableBlockContextMenu != oldProps->enableBlockContextMenu) {
@@ -144,6 +184,10 @@ folly::dynamic EnrichedMarkdownProps::getDiffProps(
     
   if (imageRequestHeaders != oldProps->imageRequestHeaders) {
     result["imageRequestHeaders"] = toDynamic(imageRequestHeaders);
+  }
+    
+  if (imageSources != oldProps->imageSources) {
+    result["imageSources"] = toDynamic(imageSources);
   }
     
   if (linkPillContent != oldProps->linkPillContent) {
@@ -340,6 +384,7 @@ EnrichedMarkdownTextProps::EnrichedMarkdownTextProps(
     markdown(convertRawProp(context, rawProps, "markdown", sourceProps.markdown, {})),
     markdownStyle(convertRawProp(context, rawProps, "markdownStyle", sourceProps.markdownStyle, {})),
     enableImagePress(convertRawProp(context, rawProps, "enableImagePress", sourceProps.enableImagePress, {false})),
+    enableTextPress(convertRawProp(context, rawProps, "enableTextPress", sourceProps.enableTextPress, {false})),
     enableTaskListItemToggle(convertRawProp(context, rawProps, "enableTaskListItemToggle", sourceProps.enableTaskListItemToggle, {true})),
     enableCodeBlockPress(convertRawProp(context, rawProps, "enableCodeBlockPress", sourceProps.enableCodeBlockPress, {false})),
     enableBlockContextMenu(convertRawProp(context, rawProps, "enableBlockContextMenu", sourceProps.enableBlockContextMenu, {true})),
@@ -394,6 +439,10 @@ folly::dynamic EnrichedMarkdownTextProps::getDiffProps(
     
   if (enableImagePress != oldProps->enableImagePress) {
     result["enableImagePress"] = enableImagePress;
+  }
+    
+  if (enableTextPress != oldProps->enableTextPress) {
+    result["enableTextPress"] = enableTextPress;
   }
     
   if (enableTaskListItemToggle != oldProps->enableTaskListItemToggle) {

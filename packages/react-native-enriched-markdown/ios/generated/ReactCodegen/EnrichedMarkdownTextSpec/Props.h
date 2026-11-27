@@ -18,6 +18,24 @@
 
 namespace facebook::react {
 
+class EnrichedMarkdownBlockSlotProps final : public ViewProps {
+ public:
+  EnrichedMarkdownBlockSlotProps() = default;
+  EnrichedMarkdownBlockSlotProps(const PropsParserContext& context, const EnrichedMarkdownBlockSlotProps &sourceProps, const RawProps &rawProps);
+
+#pragma mark - Props
+
+  std::string slotId{};
+
+  #ifdef RN_SERIALIZABLE_STATE
+  ComponentName getDiffPropsImplementationTarget() const override;
+
+  folly::dynamic getDiffProps(const Props* prevProps) const override;
+  #endif
+
+  
+};
+
 struct EnrichedMarkdownMarkdownStyleParagraphStruct {
   Float fontSize{0.0};
   std::string fontFamily{};
@@ -2676,6 +2694,7 @@ struct EnrichedMarkdownMd4cFlagsStruct {
   bool underline{false};
   bool superscript{false};
   bool subscript{false};
+  bool strikethrough{false};
   bool latexMath{false};
   bool highlight{false};
   bool hardSoftBreaks{false};
@@ -2691,6 +2710,7 @@ struct EnrichedMarkdownMd4cFlagsStruct {
     result["underline"] = underline;
     result["superscript"] = superscript;
     result["subscript"] = subscript;
+    result["strikethrough"] = strikethrough;
     result["latexMath"] = latexMath;
     result["highlight"] = highlight;
     result["hardSoftBreaks"] = hardSoftBreaks;
@@ -2715,6 +2735,10 @@ static inline void fromRawValue(const PropsParserContext& context, const RawValu
   auto tmp_subscript = map.find("subscript");
   if (tmp_subscript != map.end()) {
     fromRawValue(context, tmp_subscript->second, result.subscript);
+  }
+  auto tmp_strikethrough = map.find("strikethrough");
+  if (tmp_strikethrough != map.end()) {
+    fromRawValue(context, tmp_strikethrough->second, result.strikethrough);
   }
   auto tmp_latexMath = map.find("latexMath");
   if (tmp_latexMath != map.end()) {
@@ -2751,6 +2775,7 @@ static inline folly::dynamic toDynamic(const EnrichedMarkdownMd4cFlagsStruct &va
 struct EnrichedMarkdownStreamingConfigStruct {
   std::string tableMode{};
   std::string codeBlockMode{};
+  std::string mediaMode{};
 
 
 #ifdef RN_SERIALIZABLE_STATE
@@ -2760,6 +2785,7 @@ struct EnrichedMarkdownStreamingConfigStruct {
     folly::dynamic result = folly::dynamic::object();
     result["tableMode"] = tableMode;
     result["codeBlockMode"] = codeBlockMode;
+    result["mediaMode"] = mediaMode;
     return result;
   }
 #endif
@@ -2775,6 +2801,10 @@ static inline void fromRawValue(const PropsParserContext& context, const RawValu
   auto tmp_codeBlockMode = map.find("codeBlockMode");
   if (tmp_codeBlockMode != map.end()) {
     fromRawValue(context, tmp_codeBlockMode->second, result.codeBlockMode);
+  }
+  auto tmp_mediaMode = map.find("mediaMode");
+  if (tmp_mediaMode != map.end()) {
+    fromRawValue(context, tmp_mediaMode->second, result.mediaMode);
   }
 }
 
@@ -2882,6 +2912,112 @@ static inline void fromRawValue(const PropsParserContext& context, const RawValu
   auto items = (std::vector<RawValue>)value;
   for (const auto &item : items) {
     EnrichedMarkdownImageRequestHeadersStruct newItem;
+    fromRawValue(context, item, newItem);
+    result.emplace_back(newItem);
+  }
+}
+
+
+struct EnrichedMarkdownImageSourcesHeadersStruct {
+  std::string name{};
+  std::string value{};
+
+
+#ifdef RN_SERIALIZABLE_STATE
+  bool operator==(const EnrichedMarkdownImageSourcesHeadersStruct&) const = default;
+
+  folly::dynamic toDynamic() const {
+    folly::dynamic result = folly::dynamic::object();
+    result["name"] = name;
+    result["value"] = value;
+    return result;
+  }
+#endif
+};
+
+static inline void fromRawValue(const PropsParserContext& context, const RawValue &value, EnrichedMarkdownImageSourcesHeadersStruct &result) {
+  auto map = (std::unordered_map<std::string, RawValue>)value;
+
+  auto tmp_name = map.find("name");
+  if (tmp_name != map.end()) {
+    fromRawValue(context, tmp_name->second, result.name);
+  }
+  auto tmp_value = map.find("value");
+  if (tmp_value != map.end()) {
+    fromRawValue(context, tmp_value->second, result.value);
+  }
+}
+
+static inline std::string toString(const EnrichedMarkdownImageSourcesHeadersStruct &value) {
+  return "[Object EnrichedMarkdownImageSourcesHeadersStruct]";
+}
+
+#ifdef RN_SERIALIZABLE_STATE
+static inline folly::dynamic toDynamic(const EnrichedMarkdownImageSourcesHeadersStruct &value) {
+  return value.toDynamic();
+}
+#endif
+
+static inline void fromRawValue(const PropsParserContext& context, const RawValue &value, std::vector<EnrichedMarkdownImageSourcesHeadersStruct> &result) {
+  auto items = (std::vector<RawValue>)value;
+  for (const auto &item : items) {
+    EnrichedMarkdownImageSourcesHeadersStruct newItem;
+    fromRawValue(context, item, newItem);
+    result.emplace_back(newItem);
+  }
+}
+
+
+struct EnrichedMarkdownImageSourcesStruct {
+  std::string id{};
+  std::string uri{};
+  std::vector<EnrichedMarkdownImageSourcesHeadersStruct> headers{};
+
+
+#ifdef RN_SERIALIZABLE_STATE
+  bool operator==(const EnrichedMarkdownImageSourcesStruct&) const = default;
+
+  folly::dynamic toDynamic() const {
+    folly::dynamic result = folly::dynamic::object();
+    result["id"] = id;
+    result["uri"] = uri;
+    result["headers"] = ::facebook::react::toDynamic(headers);
+    return result;
+  }
+#endif
+};
+
+static inline void fromRawValue(const PropsParserContext& context, const RawValue &value, EnrichedMarkdownImageSourcesStruct &result) {
+  auto map = (std::unordered_map<std::string, RawValue>)value;
+
+  auto tmp_id = map.find("id");
+  if (tmp_id != map.end()) {
+    fromRawValue(context, tmp_id->second, result.id);
+  }
+  auto tmp_uri = map.find("uri");
+  if (tmp_uri != map.end()) {
+    fromRawValue(context, tmp_uri->second, result.uri);
+  }
+  auto tmp_headers = map.find("headers");
+  if (tmp_headers != map.end()) {
+    fromRawValue(context, tmp_headers->second, result.headers);
+  }
+}
+
+static inline std::string toString(const EnrichedMarkdownImageSourcesStruct &value) {
+  return "[Object EnrichedMarkdownImageSourcesStruct]";
+}
+
+#ifdef RN_SERIALIZABLE_STATE
+static inline folly::dynamic toDynamic(const EnrichedMarkdownImageSourcesStruct &value) {
+  return value.toDynamic();
+}
+#endif
+
+static inline void fromRawValue(const PropsParserContext& context, const RawValue &value, std::vector<EnrichedMarkdownImageSourcesStruct> &result) {
+  auto items = (std::vector<RawValue>)value;
+  for (const auto &item : items) {
+    EnrichedMarkdownImageSourcesStruct newItem;
     fromRawValue(context, item, newItem);
     result.emplace_back(newItem);
   }
@@ -3448,6 +3584,46 @@ static inline folly::dynamic toDynamic(const EnrichedMarkdownAccessibilityLabels
 }
 #endif
 
+struct EnrichedMarkdownAccessibilityLabelsCodeBlockStruct {
+  std::string wrap{};
+  std::string unwrap{};
+
+
+#ifdef RN_SERIALIZABLE_STATE
+  bool operator==(const EnrichedMarkdownAccessibilityLabelsCodeBlockStruct&) const = default;
+
+  folly::dynamic toDynamic() const {
+    folly::dynamic result = folly::dynamic::object();
+    result["wrap"] = wrap;
+    result["unwrap"] = unwrap;
+    return result;
+  }
+#endif
+};
+
+static inline void fromRawValue(const PropsParserContext& context, const RawValue &value, EnrichedMarkdownAccessibilityLabelsCodeBlockStruct &result) {
+  auto map = (std::unordered_map<std::string, RawValue>)value;
+
+  auto tmp_wrap = map.find("wrap");
+  if (tmp_wrap != map.end()) {
+    fromRawValue(context, tmp_wrap->second, result.wrap);
+  }
+  auto tmp_unwrap = map.find("unwrap");
+  if (tmp_unwrap != map.end()) {
+    fromRawValue(context, tmp_unwrap->second, result.unwrap);
+  }
+}
+
+static inline std::string toString(const EnrichedMarkdownAccessibilityLabelsCodeBlockStruct &value) {
+  return "[Object EnrichedMarkdownAccessibilityLabelsCodeBlockStruct]";
+}
+
+#ifdef RN_SERIALIZABLE_STATE
+static inline folly::dynamic toDynamic(const EnrichedMarkdownAccessibilityLabelsCodeBlockStruct &value) {
+  return value.toDynamic();
+}
+#endif
+
 struct EnrichedMarkdownAccessibilityLabelsRotorStruct {
   std::string headings{};
   std::string links{};
@@ -3499,6 +3675,7 @@ struct EnrichedMarkdownAccessibilityLabelsStruct {
   EnrichedMarkdownAccessibilityLabelsBlockquoteStruct blockquote{};
   EnrichedMarkdownAccessibilityLabelsTableStruct table{};
   EnrichedMarkdownAccessibilityLabelsMathStruct math{};
+  EnrichedMarkdownAccessibilityLabelsCodeBlockStruct codeBlock{};
   EnrichedMarkdownAccessibilityLabelsRotorStruct rotor{};
 
 
@@ -3511,6 +3688,7 @@ struct EnrichedMarkdownAccessibilityLabelsStruct {
     result["blockquote"] = ::facebook::react::toDynamic(blockquote);
     result["table"] = ::facebook::react::toDynamic(table);
     result["math"] = ::facebook::react::toDynamic(math);
+    result["codeBlock"] = ::facebook::react::toDynamic(codeBlock);
     result["rotor"] = ::facebook::react::toDynamic(rotor);
     return result;
   }
@@ -3535,6 +3713,10 @@ static inline void fromRawValue(const PropsParserContext& context, const RawValu
   auto tmp_math = map.find("math");
   if (tmp_math != map.end()) {
     fromRawValue(context, tmp_math->second, result.math);
+  }
+  auto tmp_codeBlock = map.find("codeBlock");
+  if (tmp_codeBlock != map.end()) {
+    fromRawValue(context, tmp_codeBlock->second, result.codeBlock);
   }
   auto tmp_rotor = map.find("rotor");
   if (tmp_rotor != map.end()) {
@@ -3561,8 +3743,10 @@ class EnrichedMarkdownProps final : public ViewProps {
   std::string markdown{};
   EnrichedMarkdownMarkdownStyleStruct markdownStyle{};
   bool enableImagePress{false};
+  bool enableTextPress{false};
   bool enableTaskListItemToggle{true};
   bool enableCodeBlockPress{false};
+  bool enableCodeBlockWrapToggle{true};
   bool enableBlockContextMenu{true};
   bool enableLinkPreview{true};
   bool selectable{false};
@@ -3578,6 +3762,7 @@ class EnrichedMarkdownProps final : public ViewProps {
   std::string spoilerOverlay{std::string{"particles"}};
   std::vector<EnrichedMarkdownContextMenuItemsStruct> contextMenuItems{};
   std::vector<EnrichedMarkdownImageRequestHeadersStruct> imageRequestHeaders{};
+  std::vector<EnrichedMarkdownImageSourcesStruct> imageSources{};
   std::vector<EnrichedMarkdownLinkPillContentStruct> linkPillContent{};
   EnrichedMarkdownLinkRecognitionStruct linkRecognition{};
   std::vector<EnrichedMarkdownLinkContextMenuItemsStruct> linkContextMenuItems{};
@@ -7228,6 +7413,7 @@ struct EnrichedMarkdownTextMd4cFlagsStruct {
   bool underline{false};
   bool superscript{false};
   bool subscript{false};
+  bool strikethrough{false};
   bool latexMath{false};
   bool highlight{false};
   bool hardSoftBreaks{false};
@@ -7243,6 +7429,7 @@ struct EnrichedMarkdownTextMd4cFlagsStruct {
     result["underline"] = underline;
     result["superscript"] = superscript;
     result["subscript"] = subscript;
+    result["strikethrough"] = strikethrough;
     result["latexMath"] = latexMath;
     result["highlight"] = highlight;
     result["hardSoftBreaks"] = hardSoftBreaks;
@@ -7267,6 +7454,10 @@ static inline void fromRawValue(const PropsParserContext& context, const RawValu
   auto tmp_subscript = map.find("subscript");
   if (tmp_subscript != map.end()) {
     fromRawValue(context, tmp_subscript->second, result.subscript);
+  }
+  auto tmp_strikethrough = map.find("strikethrough");
+  if (tmp_strikethrough != map.end()) {
+    fromRawValue(context, tmp_strikethrough->second, result.strikethrough);
   }
   auto tmp_latexMath = map.find("latexMath");
   if (tmp_latexMath != map.end()) {
@@ -7303,6 +7494,7 @@ static inline folly::dynamic toDynamic(const EnrichedMarkdownTextMd4cFlagsStruct
 struct EnrichedMarkdownTextStreamingConfigStruct {
   std::string tableMode{};
   std::string codeBlockMode{};
+  std::string mediaMode{};
 
 
 #ifdef RN_SERIALIZABLE_STATE
@@ -7312,6 +7504,7 @@ struct EnrichedMarkdownTextStreamingConfigStruct {
     folly::dynamic result = folly::dynamic::object();
     result["tableMode"] = tableMode;
     result["codeBlockMode"] = codeBlockMode;
+    result["mediaMode"] = mediaMode;
     return result;
   }
 #endif
@@ -7327,6 +7520,10 @@ static inline void fromRawValue(const PropsParserContext& context, const RawValu
   auto tmp_codeBlockMode = map.find("codeBlockMode");
   if (tmp_codeBlockMode != map.end()) {
     fromRawValue(context, tmp_codeBlockMode->second, result.codeBlockMode);
+  }
+  auto tmp_mediaMode = map.find("mediaMode");
+  if (tmp_mediaMode != map.end()) {
+    fromRawValue(context, tmp_mediaMode->second, result.mediaMode);
   }
 }
 
@@ -8000,6 +8197,46 @@ static inline folly::dynamic toDynamic(const EnrichedMarkdownTextAccessibilityLa
 }
 #endif
 
+struct EnrichedMarkdownTextAccessibilityLabelsCodeBlockStruct {
+  std::string wrap{};
+  std::string unwrap{};
+
+
+#ifdef RN_SERIALIZABLE_STATE
+  bool operator==(const EnrichedMarkdownTextAccessibilityLabelsCodeBlockStruct&) const = default;
+
+  folly::dynamic toDynamic() const {
+    folly::dynamic result = folly::dynamic::object();
+    result["wrap"] = wrap;
+    result["unwrap"] = unwrap;
+    return result;
+  }
+#endif
+};
+
+static inline void fromRawValue(const PropsParserContext& context, const RawValue &value, EnrichedMarkdownTextAccessibilityLabelsCodeBlockStruct &result) {
+  auto map = (std::unordered_map<std::string, RawValue>)value;
+
+  auto tmp_wrap = map.find("wrap");
+  if (tmp_wrap != map.end()) {
+    fromRawValue(context, tmp_wrap->second, result.wrap);
+  }
+  auto tmp_unwrap = map.find("unwrap");
+  if (tmp_unwrap != map.end()) {
+    fromRawValue(context, tmp_unwrap->second, result.unwrap);
+  }
+}
+
+static inline std::string toString(const EnrichedMarkdownTextAccessibilityLabelsCodeBlockStruct &value) {
+  return "[Object EnrichedMarkdownTextAccessibilityLabelsCodeBlockStruct]";
+}
+
+#ifdef RN_SERIALIZABLE_STATE
+static inline folly::dynamic toDynamic(const EnrichedMarkdownTextAccessibilityLabelsCodeBlockStruct &value) {
+  return value.toDynamic();
+}
+#endif
+
 struct EnrichedMarkdownTextAccessibilityLabelsRotorStruct {
   std::string headings{};
   std::string links{};
@@ -8051,6 +8288,7 @@ struct EnrichedMarkdownTextAccessibilityLabelsStruct {
   EnrichedMarkdownTextAccessibilityLabelsBlockquoteStruct blockquote{};
   EnrichedMarkdownTextAccessibilityLabelsTableStruct table{};
   EnrichedMarkdownTextAccessibilityLabelsMathStruct math{};
+  EnrichedMarkdownTextAccessibilityLabelsCodeBlockStruct codeBlock{};
   EnrichedMarkdownTextAccessibilityLabelsRotorStruct rotor{};
 
 
@@ -8063,6 +8301,7 @@ struct EnrichedMarkdownTextAccessibilityLabelsStruct {
     result["blockquote"] = ::facebook::react::toDynamic(blockquote);
     result["table"] = ::facebook::react::toDynamic(table);
     result["math"] = ::facebook::react::toDynamic(math);
+    result["codeBlock"] = ::facebook::react::toDynamic(codeBlock);
     result["rotor"] = ::facebook::react::toDynamic(rotor);
     return result;
   }
@@ -8087,6 +8326,10 @@ static inline void fromRawValue(const PropsParserContext& context, const RawValu
   auto tmp_math = map.find("math");
   if (tmp_math != map.end()) {
     fromRawValue(context, tmp_math->second, result.math);
+  }
+  auto tmp_codeBlock = map.find("codeBlock");
+  if (tmp_codeBlock != map.end()) {
+    fromRawValue(context, tmp_codeBlock->second, result.codeBlock);
   }
   auto tmp_rotor = map.find("rotor");
   if (tmp_rotor != map.end()) {
@@ -8113,6 +8356,7 @@ class EnrichedMarkdownTextProps final : public ViewProps {
   std::string markdown{};
   EnrichedMarkdownTextMarkdownStyleStruct markdownStyle{};
   bool enableImagePress{false};
+  bool enableTextPress{false};
   bool enableTaskListItemToggle{true};
   bool enableCodeBlockPress{false};
   bool enableBlockContextMenu{true};

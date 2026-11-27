@@ -1,15 +1,20 @@
 #pragma once
 
+#import "ENRMBlockSlotMeasurer.h"
+#import "ENRMBlockSlotSegmentView.h"
 #import "ENRMBlockquoteContainerView.h"
 #import "ENRMCodeBlockContainerView.h"
+#import "ENRMCodeBlockWrapState.h"
 #import "ENRMFeatureFlags.h"
 #import "ENRMLinkRegexProps.h"
 #import "ENRMMarkdownParser.h"
 #import "ENRMTextRenderer.h"
 #import "ENRMTextViewSetup.h"
+#import "ENRMUTF8.h"
 #import "ImageRequestHeaderUtils.h"
 #import "LinkPillContentUtils.h"
 #import "MarkdownASTNode.h"
+#import "MeasurementCache.h"
 #import "ParagraphStyleUtils.h"
 #import "RenderedMarkdownSegment.h"
 #import "SegmentRenderer.h"
@@ -90,6 +95,7 @@ template <typename Md4cFlagsT> static inline ENRMMd4cFlags *ENRMMd4cFlagsFromPro
   flags.underline = props.underline;
   flags.superscript = props.superscript;
   flags.subscript = props.subscript;
+  flags.strikethrough = props.strikethrough;
   flags.latexMath = props.latexMath;
   flags.highlight = props.highlight;
   flags.hardSoftBreaks = props.hardSoftBreaks;
@@ -116,6 +122,9 @@ static inline StyleConfig *ENRMStyleConfigFromProps(const PropsT &typedProps, CG
   [config setMaxFontSizeMultiplier:typedProps.maxFontSizeMultiplier];
   [config setImageRequestHeaders:ENRMImageRequestHeadersFromProps(typedProps.imageRequestHeaders)];
   [config setLinkPillContent:ENRMLinkPillContentFromProps(typedProps.linkPillContent)];
+  if constexpr (facebook::react::ENRMHasImageSources<PropsT>::value) {
+    [config setImageSourceOverrides:ENRMImageSourceOverridesFromProps(typedProps.imageSources)];
+  }
   return config;
 }
 
@@ -156,8 +165,47 @@ static inline CGSize ENRMMeasureAttributedTextViewFree(NSAttributedString *text,
   layout.usedRect = [layoutManager usedRectForTextContainer:textContainer];
   layout.extraLineFragmentRect = layoutManager.extraLineFragmentRect;
 
-  return ENRMFinalizeMeasuredTextSize(layout, layoutManager, text, maxWidth, config, allowTrailingMargin,
+  return ENRMFinalizeMeasuredTextSize(layout, layoutManager, maxWidth, config, allowTrailingMargin,
                                       lastElementMarginBottom, subtractExtraLineFragment, pointScaleFactor);
+}
+
+/**
+ * Renders EnrichedMarkdownText content from props alone, on the calling thread,
+ * with the calls `renderMarkdownContent:` makes: parse, `ENRMRenderASTNodes`,
+ * then the props' writing-direction mode. Returns nil for empty markdown, parse
+ * failures and empty output.
+ */
+template <typename PropsT>
+static inline ENRMRenderResult *ENRMRenderMarkdownViewFree(const PropsT &typedProps, StyleConfig *config,
+                                                           NSWritingDirection resolvedLayoutDirection)
+{
+  if (typedProps.markdown.empty()) {
+    return nil;
+  }
+
+  ENRMMarkdownParser *parser = [[ENRMMarkdownParser alloc] init];
+  MarkdownASTNode *ast = [parser parseMarkdown:ENRMStringFromUTF8(typedProps.markdown)
+                                         flags:ENRMMd4cFlagsFromProps(typedProps.md4cFlags)
+                                         isGFM:typedProps.isGFM
+                                     linkRegex:ENRMLinkRegexConfigFromProps(typedProps.linkRecognition.text)
+                           inlineCodeLinkRegex:ENRMLinkRegexConfigFromProps(typedProps.linkRecognition.inlineCode)];
+  if (!ast) {
+    return nil;
+  }
+
+  NSLineBreakStrategy lineBreakStrategy =
+      ENRMResolveLineBreakStrategy([[NSString alloc] initWithUTF8String:typedProps.lineBreakStrategyIOS.c_str()]);
+  ENRMRenderResult *result =
+      ENRMRenderASTNodes(ast.children, config, typedProps.allowTrailingMargin, typedProps.allowFontScaling,
+                         typedProps.maxFontSizeMultiplier, lineBreakStrategy);
+  if (result.attributedText.length == 0) {
+    return nil;
+  }
+
+  ENRMWritingDirectionMode writingDirectionMode =
+      ENRMResolveWritingDirectionMode([[NSString alloc] initWithUTF8String:typedProps.writingDirection.c_str()]);
+  ENRMApplyWritingDirectionMode(result.attributedText, writingDirectionMode, resolvedLayoutDirection);
+  return result;
 }
 
 /**
@@ -165,52 +213,28 @@ static inline CGSize ENRMMeasureAttributedTextViewFree(NSAttributedString *text,
  * thread. The line-break strategy and writing-direction mode are resolved
  * from the props exactly as `updateProps:` resolves them. Falls back to
  * (maxWidth × system-16 line height) for empty markdown, parse failures, and
- * empty render output — the same fallback `measureSize:` produced.
+ * empty render output — the same fallback `measureSize:` produced. `rendered`,
+ * when given, is this content already rendered (ENRMRenderMarkdownViewFree).
  */
 template <typename PropsT>
 static inline CGSize ENRMMeasureMarkdownViewFree(const PropsT &typedProps, CGFloat maxWidth, CGFloat fontScale,
-                                                 CGFloat pointScaleFactor, NSWritingDirection resolvedLayoutDirection)
+                                                 CGFloat pointScaleFactor, NSWritingDirection resolvedLayoutDirection,
+                                                 ENRMRenderResult *rendered = nil)
 {
   @autoreleasepool {
     CGSize fallback = CGSizeMake(maxWidth, UIFontLineHeight([UIFont systemFontOfSize:16.0]));
-    if (typedProps.markdown.empty()) {
-      return fallback;
-    }
-
-    NSString *markdown = [[NSString alloc] initWithUTF8String:typedProps.markdown.c_str()];
     StyleConfig *config = ENRMStyleConfigFromProps(typedProps, fontScale);
-
-    ENRMMd4cFlags *flags = ENRMMd4cFlagsFromProps(typedProps.md4cFlags);
-    ENRMMarkdownParser *parser = [[ENRMMarkdownParser alloc] init];
-    MarkdownASTNode *ast = [parser parseMarkdown:markdown
-                                           flags:flags
-                                           isGFM:typedProps.isGFM
-                                       linkRegex:ENRMLinkRegexConfigFromProps(typedProps.linkRecognition.text)
-                             inlineCodeLinkRegex:ENRMLinkRegexConfigFromProps(typedProps.linkRecognition.inlineCode)];
-    if (!ast) {
+    ENRMRenderResult *result = rendered ?: ENRMRenderMarkdownViewFree(typedProps, config, resolvedLayoutDirection);
+    if (!result) {
       return fallback;
     }
-
-    NSLineBreakStrategy lineBreakStrategy =
-        ENRMResolveLineBreakStrategy([[NSString alloc] initWithUTF8String:typedProps.lineBreakStrategyIOS.c_str()]);
-    ENRMRenderResult *result =
-        ENRMRenderASTNodes(ast.children, config, typedProps.allowTrailingMargin, typedProps.allowFontScaling,
-                           typedProps.maxFontSizeMultiplier, lineBreakStrategy);
-    NSMutableAttributedString *text = result.attributedText;
-    if (text.length == 0) {
-      return fallback;
-    }
-
-    ENRMWritingDirectionMode writingDirectionMode =
-        ENRMResolveWritingDirectionMode([[NSString alloc] initWithUTF8String:typedProps.writingDirection.c_str()]);
-    ENRMApplyWritingDirectionMode(text, writingDirectionMode, resolvedLayoutDirection);
 
     NSInteger numberOfLines = (NSInteger)typedProps.numberOfLines;
     NSLineBreakMode lineBreakMode =
         ENRMResolveEllipsizeLineBreakMode([[NSString alloc] initWithUTF8String:typedProps.ellipsizeMode.c_str()]);
-    CGSize size = ENRMMeasureAttributedTextViewFree(text, maxWidth, config, typedProps.allowTrailingMargin,
-                                                    result.lastElementMarginBottom, pointScaleFactor, numberOfLines,
-                                                    lineBreakMode, YES);
+    CGSize size = ENRMMeasureAttributedTextViewFree(result.attributedText, maxWidth, config,
+                                                    typedProps.allowTrailingMargin, result.lastElementMarginBottom,
+                                                    pointScaleFactor, numberOfLines, lineBreakMode, YES);
     if (size.height == 0) {
       return fallback;
     }
@@ -219,57 +243,103 @@ static inline CGSize ENRMMeasureMarkdownViewFree(const PropsT &typedProps, CGFlo
 }
 
 /**
+ * Renders segmented EnrichedMarkdown content from props alone, on the calling
+ * thread, with the calls `renderMarkdownContent:` makes: the streaming filter
+ * (`ENRMRenderableMarkdownForStreaming` with the props' streamingConfig modes),
+ * the parse stamping `slotIds`, `ENRMRenderSegmentsFromAST`, then the props'
+ * writing-direction mode on each text segment. Returns nil for empty markdown,
+ * parse failures and empty output.
+ */
+template <typename PropsT>
+static inline NSArray<ENRMRenderedSegment *> *
+ENRMRenderSegmentedMarkdownViewFree(const PropsT &typedProps, StyleConfig *config,
+                                    NSWritingDirection resolvedLayoutDirection, NSSet<NSString *> *slotIds)
+{
+  if (typedProps.markdown.empty()) {
+    return nil;
+  }
+
+  NSString *markdown = ENRMStringFromUTF8(typedProps.markdown);
+
+  if (typedProps.streamingAnimation) {
+    NSString *tableModeStr = [[NSString alloc] initWithUTF8String:typedProps.streamingConfig.tableMode.c_str()];
+    ENRMTableStreamingMode tableStreamingMode =
+        [tableModeStr isEqualToString:@"hidden"] ? ENRMTableStreamingModeHidden : ENRMTableStreamingModeProgressive;
+    NSString *codeBlockModeStr = [[NSString alloc] initWithUTF8String:typedProps.streamingConfig.codeBlockMode.c_str()];
+    ENRMCodeBlockStreamingMode codeBlockStreamingMode = [codeBlockModeStr isEqualToString:@"hidden"]
+                                                            ? ENRMCodeBlockStreamingModeHidden
+                                                            : ENRMCodeBlockStreamingModeProgressive;
+    NSString *mediaModeStr = [[NSString alloc] initWithUTF8String:typedProps.streamingConfig.mediaMode.c_str()];
+    ENRMMediaStreamingMode mediaStreamingMode =
+        [mediaModeStr isEqualToString:@"hidden"] ? ENRMMediaStreamingModeHidden : ENRMMediaStreamingModeProgressive;
+    markdown = ENRMRenderableMarkdownForStreaming(markdown, tableStreamingMode, codeBlockStreamingMode,
+                                                  mediaStreamingMode, NULL);
+    if (markdown.length == 0) {
+      return nil;
+    }
+  }
+
+  ENRMMarkdownParser *parser = [[ENRMMarkdownParser alloc] init];
+  MarkdownASTNode *ast = [parser parseMarkdown:markdown
+                                         flags:ENRMMd4cFlagsFromProps(typedProps.md4cFlags)
+                                         isGFM:typedProps.isGFM
+                                     linkRegex:ENRMLinkRegexConfigFromProps(typedProps.linkRecognition.text)
+                           inlineCodeLinkRegex:ENRMLinkRegexConfigFromProps(typedProps.linkRecognition.inlineCode)
+                            activeBlockSlotIds:slotIds
+                                annotateImages:config.imageSourceOverrides.count > 0];
+  if (!ast) {
+    return nil;
+  }
+
+  NSLineBreakStrategy lineBreakStrategy =
+      ENRMResolveLineBreakStrategy([[NSString alloc] initWithUTF8String:typedProps.lineBreakStrategyIOS.c_str()]);
+  ENRMWritingDirectionMode writingDirectionMode =
+      ENRMResolveWritingDirectionMode([[NSString alloc] initWithUTF8String:typedProps.writingDirection.c_str()]);
+
+  NSArray<ENRMRenderedSegment *> *segments =
+      ENRMRenderSegmentsFromAST(ast, config, typedProps.allowTrailingMargin, typedProps.allowFontScaling,
+                                typedProps.maxFontSizeMultiplier, lineBreakStrategy, /*blockquoteContent*/ NO);
+  for (ENRMRenderedSegment *segment in segments) {
+    if (segment.kind == ENRMSegmentKindText && segment.textResult) {
+      ENRMApplyWritingDirectionMode(segment.textResult.attributedText, writingDirectionMode, resolvedLayoutDirection);
+    }
+  }
+  return segments.count > 0 ? segments : nil;
+}
+
+/**
  * Measures segmented EnrichedMarkdown content from props alone, on the
- * calling thread, replicating the view path end to end: the streaming table
- * filter (`ENRMRenderableMarkdownForStreaming` with the props'
- * streamingConfig.tableMode), the segment split and per-segment rendering
- * (`ENRMRenderSegmentsFromAST` + per-text-segment writing direction — the
- * same calls `renderMarkdownContent:` makes), then the walk from
+ * calling thread, replicating the view path end to end: the render
+ * (ENRMRenderSegmentedMarkdownViewFree), then the walk from
  * `computeSegmentLayoutForWidth:`: text segments include their trailing
  * margin unless last (`!isLast || allowTrailingMargin`), table and math
  * segments add their config marginTop before and marginBottom after under the
  * same condition, tables report full width. Finishes with `measureSize:`'s
  * pixel rounding (width capped at maxWidth) and its
  * (maxWidth × system-16 line height) fallback for empty/failed content.
+ * `wrappedCodeBlocks` holds the document-order indexes, counted across nesting,
+ * of the code blocks the user wrapped (EnrichedMarkdown.wrappedCodeBlockIndices);
+ * those measure at the block width (a quote's inner width when nested) instead
+ * of their unwrapped height. `slotMeasurer`, when given, names the block slots
+ * whose React children are mounted (the parse stamps them), sizes each one and
+ * records its frame in the content box for the shadow node to place it.
+ * `rendered`, when given, is this content already rendered with the same slots.
  */
 template <typename PropsT>
 static inline CGSize ENRMMeasureSegmentedMarkdownViewFree(const PropsT &typedProps, CGFloat maxWidth, CGFloat fontScale,
                                                           CGFloat pointScaleFactor,
-                                                          NSWritingDirection resolvedLayoutDirection)
+                                                          NSWritingDirection resolvedLayoutDirection,
+                                                          NSSet<NSNumber *> *wrappedCodeBlocks = nil,
+                                                          ENRMBlockSlotMeasurer *slotMeasurer = nil,
+                                                          NSArray<ENRMRenderedSegment *> *rendered = nil)
 {
   @autoreleasepool {
     CGSize fallback = CGSizeMake(maxWidth, UIFontLineHeight([UIFont systemFontOfSize:16.0]));
-    if (typedProps.markdown.empty()) {
-      return fallback;
-    }
-
-    NSString *markdown = [[NSString alloc] initWithUTF8String:typedProps.markdown.c_str()];
-
-    if (typedProps.streamingAnimation) {
-      NSString *tableModeStr = [[NSString alloc] initWithUTF8String:typedProps.streamingConfig.tableMode.c_str()];
-      ENRMTableStreamingMode tableStreamingMode =
-          [tableModeStr isEqualToString:@"hidden"] ? ENRMTableStreamingModeHidden : ENRMTableStreamingModeProgressive;
-      NSString *codeBlockModeStr =
-          [[NSString alloc] initWithUTF8String:typedProps.streamingConfig.codeBlockMode.c_str()];
-      ENRMCodeBlockStreamingMode codeBlockStreamingMode = [codeBlockModeStr isEqualToString:@"hidden"]
-                                                              ? ENRMCodeBlockStreamingModeHidden
-                                                              : ENRMCodeBlockStreamingModeProgressive;
-      markdown = ENRMRenderableMarkdownForStreaming(markdown, tableStreamingMode, codeBlockStreamingMode, NULL);
-      if (markdown.length == 0) {
-        return fallback;
-      }
-    }
-
     StyleConfig *config = ENRMStyleConfigFromProps(typedProps, fontScale);
-
-    ENRMMd4cFlags *flags = ENRMMd4cFlagsFromProps(typedProps.md4cFlags);
-    ENRMMarkdownParser *parser = [[ENRMMarkdownParser alloc] init];
-    MarkdownASTNode *ast = [parser parseMarkdown:markdown
-                                           flags:flags
-                                           isGFM:typedProps.isGFM
-                                       linkRegex:ENRMLinkRegexConfigFromProps(typedProps.linkRecognition.text)
-                             inlineCodeLinkRegex:ENRMLinkRegexConfigFromProps(typedProps.linkRecognition.inlineCode)];
-    if (!ast) {
+    NSArray<ENRMRenderedSegment *> *segments =
+        rendered
+            ?: ENRMRenderSegmentedMarkdownViewFree(typedProps, config, resolvedLayoutDirection, slotMeasurer.slotIds);
+    if (!segments) {
       return fallback;
     }
 
@@ -278,22 +348,10 @@ static inline CGSize ENRMMeasureSegmentedMarkdownViewFree(const PropsT &typedPro
     ENRMWritingDirectionMode writingDirectionMode =
         ENRMResolveWritingDirectionMode([[NSString alloc] initWithUTF8String:typedProps.writingDirection.c_str()]);
 
-    NSArray<ENRMRenderedSegment *> *segments =
-        ENRMRenderSegmentsFromAST(ast, config, typedProps.allowTrailingMargin, typedProps.allowFontScaling,
-                                  typedProps.maxFontSizeMultiplier, lineBreakStrategy, /*blockquoteContent*/ NO);
-    for (ENRMRenderedSegment *segment in segments) {
-      if (segment.kind == ENRMSegmentKindText && segment.textResult) {
-        ENRMApplyWritingDirectionMode(segment.textResult.attributedText, writingDirectionMode, resolvedLayoutDirection);
-      }
-    }
-
-    if (segments.count == 0) {
-      return fallback;
-    }
-
     CGFloat yOffset = 0.0;
     CGFloat maxContentWidth = 0.0;
     const NSUInteger lastIndex = segments.count - 1;
+    ENRMCodeBlockWrapCursor *wrapCursor = [[ENRMCodeBlockWrapCursor alloc] initWithWrapped:wrappedCodeBlocks];
 
     for (NSUInteger i = 0; i < segments.count; i++) {
       ENRMRenderedSegment *segment = segments[i];
@@ -320,8 +378,12 @@ static inline CGSize ENRMMeasureSegmentedMarkdownViewFree(const PropsT &typedPro
         }
       } else if (segment.kind == ENRMSegmentKindCodeBlock && segment.codeBlockSegment) {
         yOffset += config.codeBlockMarginTop;
-        yOffset += [ENRMCodeBlockContainerView measureHeightForCodeBlockNode:segment.codeBlockSegment.codeBlockNode
-                                                                      config:config];
+        MarkdownASTNode *codeBlockNode = segment.codeBlockSegment.codeBlockNode;
+        yOffset += [wrapCursor nextIsWrapped]
+                       ? [ENRMCodeBlockContainerView measureWrappedHeightForCodeBlockNode:codeBlockNode
+                                                                                   config:config
+                                                                                 maxWidth:maxWidth]
+                       : [ENRMCodeBlockContainerView measureHeightForCodeBlockNode:codeBlockNode config:config];
         maxContentWidth = maxWidth;
         if (shouldAddBottomMargin) {
           yOffset += config.codeBlockMarginBottom;
@@ -333,10 +395,21 @@ static inline CGSize ENRMMeasureSegmentedMarkdownViewFree(const PropsT &typedPro
                                                                       maxWidth:maxWidth
                                                               pointScaleFactor:pointScaleFactor
                                                               allowFontScaling:typedProps.allowFontScaling
-                                                             lineBreakStrategy:lineBreakStrategy];
+                                                             lineBreakStrategy:lineBreakStrategy
+                                                                    wrapCursor:wrapCursor
+                                                                  slotMeasurer:slotMeasurer
+                                                                        origin:CGPointMake(0, yOffset)];
         maxContentWidth = maxWidth;
         if (shouldAddBottomMargin) {
           yOffset += config.blockquoteMarginBottom;
+        }
+      } else if (segment.kind == ENRMSegmentKindBlockSlot && segment.blockSlotSegment) {
+        ENRMBlockSlotSegment *slot = segment.blockSlotSegment;
+        yOffset += ENRMBlockSlotMarginTop(slot.kind, config);
+        yOffset += [slotMeasurer heightForSlot:slot.slotId width:maxWidth origin:CGPointMake(0, yOffset)];
+        maxContentWidth = maxWidth;
+        if (shouldAddBottomMargin) {
+          yOffset += ENRMBlockSlotMarginBottom(slot.kind, config);
         }
       }
 #if ENRICHED_MARKDOWN_MATH

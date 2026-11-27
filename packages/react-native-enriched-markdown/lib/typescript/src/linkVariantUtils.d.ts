@@ -1,5 +1,6 @@
+import type { LinkPillContentInternal } from './EnrichedMarkdownNativeComponent';
 import type { LinkVariantStyle } from './types/MarkdownStyle';
-import type { LinkPillContent } from './types/MarkdownTextProps';
+import type { LinkPillContent } from './types/linkPill';
 type LinkPatternEntry<T> = [pattern: string, value: T];
 /**
  * Orders URL patterns the way native tries them: longest first, so the most
@@ -23,12 +24,7 @@ export declare function normalizeLinkPillStyle(style: LinkVariantStyle): {
     maxWidth: number;
 };
 /** Flattens `linkPillContent` for native; sorted so equal maps produce the same array. */
-export declare function normalizeLinkPillContent(content: Record<string, LinkPillContent> | undefined): {
-    url: string;
-    label: string;
-    iconUri: string;
-    iconTintColor: import("react-native/types_generated/Libraries/StyleSheet/StyleSheetTypes").____ColorValue_Internal | undefined;
-}[] | undefined;
+export declare function normalizeLinkPillContent(content: Record<string, LinkPillContent> | undefined): LinkPillContentInternal[] | undefined;
 type NativeLinkPillContent = ReturnType<typeof normalizeLinkPillContent>;
 /** Whether two flattened `linkPillContent` arrays hold the same entries. */
 export declare function isLinkPillContentEqual(a: NativeLinkPillContent, b: NativeLinkPillContent): boolean;

@@ -1,5 +1,5 @@
 import type { AdmonitionsStyle } from './types/MarkdownStyle';
-export declare const ADMONITION_TYPES: readonly ["note", "tip", "important", "warning", "caution"];
+export declare const ADMONITION_TYPES: readonly ['note', 'tip', 'important', 'warning', 'caution'];
 export type AdmonitionType = (typeof ADMONITION_TYPES)[number];
 export interface ResolvedAdmonitionColors {
     color: string;

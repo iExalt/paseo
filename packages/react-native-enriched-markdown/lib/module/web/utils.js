@@ -1,5 +1,24 @@
 "use strict";
 
+/**
+ * Whether `text` has a letter to resolve `dir="auto"` from. Chromium resolves
+ * an element with none (digits, punctuation, empty) to LTR instead of
+ * inheriting, so such elements must not get `dir="auto"`.
+ */
+export function hasStrongChar(text) {
+  return /\p{L}/u.test(text);
+}
+
+/**
+ * `hasStrongChar` over the text a parent's `dir="auto"` reads: code blocks
+ * carry their own `dir="ltr"` and an image's alt text is not content.
+ */
+export function hasStrongText(node) {
+  if (node.type === 'CodeBlock' || node.type === 'Image') return false;
+  if (node.content !== undefined) return hasStrongChar(node.content);
+  return node.children?.some(hasStrongText) ?? false;
+}
+
 /** Recursively collects plain text content from an AST node's subtree. */
 export function extractNodeText(node) {
   if (node.type === 'SoftBreak' || node.type === 'LineBreak') return ' ';
@@ -36,6 +55,8 @@ export function indexTaskItems(node, counter = {
  * Stamps Image nodes with `isInline` when they appear inside a paragraph
  * that also contains other content (text, links, etc.).
  * Matches native behavior: sole-child images are block-level, mixed are inline.
+ * A link wrapping only an image counts as an image, so `[![badge](x)](y) text`
+ * stamps the nested image inline while a lone `[![x](y)](z)` stays a block.
  * Mutates the AST in-place (safe: called once on the freshly-parsed result).
  */
 export function markInlineImages(node) {

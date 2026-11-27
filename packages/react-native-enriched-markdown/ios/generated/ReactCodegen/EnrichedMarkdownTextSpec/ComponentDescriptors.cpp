@@ -16,7 +16,7 @@ namespace facebook::react {
 
 void EnrichedMarkdownTextSpec_registerComponentDescriptorsFromCodegen(
   std::shared_ptr<const ComponentDescriptorProviderRegistry> registry) {
-
+registry->add(concreteComponentDescriptorProvider<EnrichedMarkdownBlockSlotComponentDescriptor>());
 }
 
 } // namespace facebook::react

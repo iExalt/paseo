@@ -109,6 +109,8 @@ export const EnrichedMarkdownTextInput = ({
       insertMention: spy((_displayText, _url) => {}),
       startMention: spy(_indicator => {}),
       removeLink: spy(() => {}),
+      undo: spy(() => {}),
+      redo: spy(() => {}),
       copyToClipboard: spy(() => {}),
       getMarkdown: spy(() => Promise.resolve(textRef.current)),
       getCaretRect: spy(() => Promise.resolve(EMPTY_CARET_RECT))
@@ -239,6 +241,8 @@ export const EnrichedMarkdownText = ({
   contextMenuItems: _contextMenuItems,
   linkContextMenuItems: _linkContextMenuItems,
   imageRequestHeaders: _imageRequestHeaders,
+  renderers: _renderers,
+  resolveImageSource: _resolveImageSource,
   linkPillContent: _linkPillContent,
   selectionMenuConfig: _selectionMenuConfig,
   accessibilityLabels: _accessibilityLabels,

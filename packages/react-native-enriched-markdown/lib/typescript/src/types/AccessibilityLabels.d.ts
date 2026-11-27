@@ -9,8 +9,9 @@
  *
  * **Placeholder syntax.** Where a label has dynamic content, the default uses
  * `{n}` (count / index, 1-based), `{content}` (resolved cell text or similar),
- * or `{latex}` (math source). Translations must preserve the placeholder names
- * exactly — native code substitutes them at speak time.
+ * `{speech}` (a formula read in English) or `{latex}` (math source).
+ * Translations must preserve the placeholder names exactly — native code
+ * substitutes them at speak time.
  *
  * **No plurals.** Defaults intentionally use the cardinal form (`"Row 2"`,
  * `"List item 2"`) instead of ordinals or count-aware variants. Screen readers
@@ -65,10 +66,27 @@ export interface AccessibilityLabels {
     /** Labels spoken for math equations. iOS + Android. */
     math?: {
         /**
+         * `{speech}` → the formula read in English ("x squared over 2"),
          * `{latex}` → equation source.
-         * @default 'Math: {latex}'
+         * @default 'Math: {speech}'
          */
         equation?: string;
+    };
+    /**
+     * Labels for the fenced code block header's line wrap toggle
+     * (`enableCodeBlockWrapToggle`). iOS + Android.
+     */
+    codeBlock?: {
+        /**
+         * Spoken while the block scrolls horizontally.
+         * @default 'Wrap lines'
+         */
+        wrap?: string;
+        /**
+         * Spoken while the block's lines are wrapped.
+         * @default 'Disable line wrap'
+         */
+        unwrap?: string;
     };
     /**
      * Labels for the VoiceOver rotor (the secondary jump-by-type navigator on iOS).
@@ -104,6 +122,10 @@ export interface ResolvedAccessibilityLabels {
     };
     math: {
         equation: string;
+    };
+    codeBlock: {
+        wrap: string;
+        unwrap: string;
     };
     rotor: {
         headings: string;

@@ -1,0 +1,126 @@
+"use strict";
+
+import { useMemo } from 'react';
+import { StyleSheet } from 'react-native';
+import EnrichedMarkdownBlockSlotNativeComponent from "../EnrichedMarkdownBlockSlotNativeComponent.js";
+import { useRenderedBlocks } from "../blockRenderers.js";
+import NativeEnrichedMarkdownParser from "../NativeEnrichedMarkdownParser.js";
+import { jsx as _jsx } from "react/jsx-runtime";
+export const NOT_COLLECTED = {
+  blocks: [],
+  images: [],
+  links: []
+};
+let warnedAboutModule = false;
+let warnedAboutFlavor = false;
+
+/**
+ * The blocks `renderers` may replace, the image occurrences
+ * `resolveImageSource` is asked about and the links `onLinksChange` reports,
+ * in document order, from one parse by
+ * the C++ core. While streaming, the core applies the host's streaming filter
+ * first, so nothing is collected for a block the host is not rendering yet.
+ * Empty when disabled, when the module is unavailable (old architecture, web,
+ * Jest) or when the flavor is not GitHub, where the native hosts place no slots.
+ */
+export function useCollectedMarkdown(markdown, flags, isGFM, enabled, streaming) {
+  return useMemo(() => {
+    if (!enabled) return NOT_COLLECTED;
+    if (!isGFM) {
+      if (__DEV__ && !warnedAboutFlavor) {
+        warnedAboutFlavor = true;
+        console.warn('[EnrichedMarkdownText] `renderers`, `resolveImageSource` and `onLinksChange` only apply to flavor="github"; the CommonMark renderer keeps native images, videos and code blocks.');
+      }
+      return NOT_COLLECTED;
+    }
+    if (NativeEnrichedMarkdownParser == null) {
+      if (__DEV__ && !warnedAboutModule) {
+        warnedAboutModule = true;
+        console.warn('[EnrichedMarkdownText] `renderers`, `resolveImageSource` and `onLinksChange` need the EnrichedMarkdownParser TurboModule, which is not registered; rebuild the native app. Images, videos, links and code blocks render natively meanwhile.');
+      }
+      return NOT_COLLECTED;
+    }
+    const collected = NativeEnrichedMarkdownParser.collect(markdown, flags, isGFM, streaming);
+    return {
+      blocks: collected.slots.map(slot => {
+        const placement = slot.placement;
+        switch (slot.kind) {
+          case 'video':
+            return {
+              kind: 'video',
+              id: slot.id,
+              url: slot.url,
+              placement
+            };
+          case 'link':
+            return {
+              kind: 'link',
+              id: slot.id,
+              url: slot.url,
+              label: slot.altText,
+              title: slot.title,
+              placement
+            };
+          case 'code':
+            return {
+              kind: 'code',
+              id: slot.id,
+              language: slot.language,
+              code: slot.code,
+              isComplete: slot.isComplete,
+              placement
+            };
+          default:
+            return {
+              kind: 'image',
+              id: slot.id,
+              url: slot.url,
+              altText: slot.altText,
+              title: slot.title,
+              placement,
+              occurrenceId: slot.occurrenceId
+            };
+        }
+      }),
+      images: collected.images.map(image => ({
+        id: image.id,
+        url: image.url,
+        altText: image.altText,
+        title: image.title,
+        placement: image.placement
+      })),
+      links: collected.links
+    };
+  }, [markdown, flags, isGFM, enabled, streaming]);
+}
+
+/**
+ * Runs `renderers` over the collected blocks and wraps every element they return
+ * in a slot child keyed by the block id. Unchanged blocks keep their element, so
+ * keep the renderer functions stable (`useCallback`): a new function renders
+ * every block again.
+ */
+export function useBlockSlots(blocks, renderers) {
+  const rendered = useRenderedBlocks(blocks, renderers);
+  return useMemo(() => {
+    if (rendered.length === 0) return null;
+    return rendered.map(({
+      block,
+      element
+    }) => /*#__PURE__*/_jsx(EnrichedMarkdownBlockSlotNativeComponent, {
+      slotId: block.id,
+      style: styles.slot,
+      children: element
+    }, block.id));
+  }, [rendered]);
+}
+const styles = StyleSheet.create({
+  // The host's shadow node sizes and places each slot at the content width; the
+  // slot itself only has to let its content report an intrinsic height.
+  slot: {
+    position: 'absolute',
+    left: 0,
+    top: 0
+  }
+});
+//# sourceMappingURL=useBlockSlots.js.map

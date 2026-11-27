@@ -96,7 +96,7 @@ function LinkRenderer({
     onClick: handleClick,
     onContextMenu: handleContextMenu,
   };
-  const CustomLink = capabilities.renderers?.link;
+  const CustomLink = capabilities.webRenderers?.link;
   if (CustomLink) {
     return (
       <CustomLink

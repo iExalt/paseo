@@ -169,6 +169,12 @@ public class EnrichedMarkdownTextInputManagerDelegate<T extends View, U extends 
       case "copyToClipboard":
         mViewManager.copyToClipboard(view);
         break;
+      case "undo":
+        mViewManager.undo(view);
+        break;
+      case "redo":
+        mViewManager.redo(view);
+        break;
       case "requestMarkdown":
         mViewManager.requestMarkdown(view, args.getInt(0));
         break;

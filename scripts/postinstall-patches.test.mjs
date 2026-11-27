@@ -49,6 +49,52 @@ for (const platform of ["ios", "android"]) {
   });
 }
 
+test("vendored Markdown configures Android to compile packaged Java and JNI codegen", () => {
+  const vendor = path.resolve("packages/react-native-enriched-markdown");
+  const codegen = JSON.parse(readFileSync(path.join(vendor, "package.json"), "utf8")).codegenConfig;
+  assert.equal(codegen.includesGeneratedCode, true);
+  assert.equal(codegen.outputDir.android, "android/generated");
+
+  const gradle = readFileSync(path.join(vendor, "android/build.gradle"), "utf8");
+  assert.match(gradle, /java\.srcDir\("generated\/java"\)/);
+  assert.ok(
+    existsSync(
+      path.join(
+        vendor,
+        codegen.outputDir.android,
+        "java/com/facebook/react/viewmanagers/EnrichedMarkdownManagerDelegate.java",
+      ),
+    ),
+  );
+
+  const jni = path.join(vendor, "android/src/main/jni");
+  const componentCmake = readFileSync(path.join(jni, "CMakeLists.txt"), "utf8");
+  assert.match(
+    componentCmake,
+    /set\(LIB_ANDROID_GENERATED_JNI_DIR \$\{LIB_ANDROID_DIR\}\/generated\/jni\)/,
+  );
+  assert.match(componentCmake, /LIB_ANDROID_GENERATED_JNI_DIR}\/\*\.cpp/);
+  const moduleCmake = readFileSync(path.join(jni, "parser-module/CMakeLists.txt"), "utf8");
+  assert.match(moduleCmake, /\$\{LIB_ANDROID_DIR\}\/generated\/jni\/react\/renderer\/components/);
+});
+
+test("vendored Markdown configures CocoaPods to compile and expose packaged codegen", () => {
+  const vendor = path.resolve("packages/react-native-enriched-markdown");
+  const codegen = JSON.parse(readFileSync(path.join(vendor, "package.json"), "utf8")).codegenConfig;
+  assert.equal(codegen.includesGeneratedCode, true);
+  assert.equal(codegen.outputDir.ios, "ios/generated");
+
+  const podspec = readFileSync(path.join(vendor, "ReactNativeEnrichedMarkdown.podspec"), "utf8");
+  assert.match(podspec, /s\.source_files[^\n]*ios\/\*\*\/\*\.\{h,m,mm,cpp,swift\}/);
+  assert.doesNotMatch(podspec, /exclude[^\n]*ios\/generated/);
+  assert.match(podspec, /\$\(PODS_TARGET_SRCROOT\)\/ios\/generated\/ReactCodegen/);
+  const headers = path.join(vendor, codegen.outputDir.ios, "ReactCodegen");
+  assert.ok(existsSync(path.join(headers, "EnrichedMarkdownTextSpec/ComponentDescriptors.cpp")));
+  assert.ok(existsSync(path.join(headers, "EnrichedMarkdownTextSpecJSI.h")));
+  const view = readFileSync(path.join(vendor, "ios/slots/EnrichedMarkdownBlockSlot.mm"), "utf8");
+  assert.match(view, /#import <EnrichedMarkdownTextSpec\/ComponentDescriptors\.h>/);
+});
+
 function createCheckout() {
   const root = mkdtempSync(path.join(tmpdir(), "postinstall-patches-"));
   writeFileSync(path.join(root, "package.json"), JSON.stringify({ name: "checkout" }));

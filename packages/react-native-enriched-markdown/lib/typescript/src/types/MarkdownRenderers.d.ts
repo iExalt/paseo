@@ -17,7 +17,7 @@ export interface BlockquoteRendererProps {
     children: ReactNode;
 }
 /** Custom web components. Overrides own their styling and interactions. */
-export interface MarkdownRenderers {
+export interface MarkdownWebRenderers {
     blockquote?: ComponentType<BlockquoteRendererProps>;
     codeBlock?: ComponentType<CodeBlockRendererProps>;
     link?: ComponentType<LinkRendererProps>;

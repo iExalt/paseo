@@ -20,22 +20,6 @@ const resolvePackageEntry = (packageName: string) => {
 export default defineConfig({
   plugins: [
     {
-      name: "markdown-wasm-commonjs-export",
-      transform(source, id) {
-        // The ESM package contains a CommonJS WASM factory. Metro handles the
-        // interop; Vite needs an ESM export instead of the CommonJS trailer.
-        // Vite can request the file with a version query (`md4c.js?v=<hash>`), so match the
-        // path without it.
-        if (!id.split("?")[0].endsWith("/lib/module/web/wasm/md4c.js")) return;
-        const trailer = source.lastIndexOf("\nif (typeof exports === 'object'");
-        if (trailer < 0) throw new Error("Markdown WASM CommonJS trailer was not found");
-        return {
-          code: `${source.slice(0, trailer)}\nexport default createMd4cModule;`,
-          map: null,
-        };
-      },
-    },
-    {
       name: "reanimated-web-style-helpers",
       transform(_source, id) {
         // Reanimated writes animated styles to the DOM through react-native-web helpers it loads

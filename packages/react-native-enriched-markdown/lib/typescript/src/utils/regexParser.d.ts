@@ -1,5 +1,5 @@
 import type { LinkNativeRegex } from '../EnrichedMarkdownTextInputNativeComponent';
-import type { LinkRecognition } from '../types/MarkdownTextProps';
+import type { LinkRecognition } from '../types/linkRecognition';
 export declare const toNativeRegexConfig: (regex: RegExp | undefined | null) => LinkNativeRegex;
 /** Renderer recognition is opt-in, including when input normalization falls back. */
 export declare const toNativeTextLinkRegexConfig: (regex: RegExp | undefined) => LinkNativeRegex;

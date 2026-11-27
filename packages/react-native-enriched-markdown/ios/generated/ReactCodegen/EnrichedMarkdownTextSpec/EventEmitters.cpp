@@ -13,11 +13,12 @@
 
 namespace facebook::react {
 
+
 void EnrichedMarkdownEventEmitter::onLinkPress(OnLinkPress event) const {
   dispatchEvent("linkPress", [event=std::move(event)](jsi::Runtime &runtime) {
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "url", event.url);
-    payload.setProperty(runtime, "sourceType", event.sourceType);
+payload.setProperty(runtime, "sourceType", event.sourceType);
     return payload;
   });
 }
@@ -37,6 +38,16 @@ void EnrichedMarkdownEventEmitter::onImagePress(OnImagePress event) const {
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "url", event.url);
 payload.setProperty(runtime, "altText", event.altText);
+    return payload;
+  });
+}
+
+
+void EnrichedMarkdownEventEmitter::onTextPress(OnTextPress event) const {
+  dispatchEvent("textPress", [event=std::move(event)](jsi::Runtime &runtime) {
+    auto payload = jsi::Object(runtime);
+    payload.setProperty(runtime, "index", event.index);
+payload.setProperty(runtime, "text", event.text);
     return payload;
   });
 }
@@ -100,6 +111,18 @@ void EnrichedMarkdownEventEmitter::onContextMenuItemPress(OnContextMenuItemPress
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "itemText", event.itemText);
 payload.setProperty(runtime, "selectedText", event.selectedText);
+payload.setProperty(runtime, "selectionStart", event.selectionStart);
+payload.setProperty(runtime, "selectionEnd", event.selectionEnd);
+    return payload;
+  });
+}
+
+
+void EnrichedMarkdownEventEmitter::onSelectionCopy(OnSelectionCopy event) const {
+  dispatchEvent("selectionCopy", [event=std::move(event)](jsi::Runtime &runtime) {
+    auto payload = jsi::Object(runtime);
+    payload.setProperty(runtime, "text", event.text);
+payload.setProperty(runtime, "format", event.format);
 payload.setProperty(runtime, "selectionStart", event.selectionStart);
 payload.setProperty(runtime, "selectionEnd", event.selectionEnd);
     return payload;
@@ -359,11 +382,21 @@ void EnrichedMarkdownTextInputEventEmitter::onEndMention(OnEndMention event) con
 }
 
 
+void EnrichedMarkdownTextInputEventEmitter::onChangeHistoryState(OnChangeHistoryState event) const {
+  dispatchEvent("changeHistoryState", [event=std::move(event)](jsi::Runtime &runtime) {
+    auto payload = jsi::Object(runtime);
+    payload.setProperty(runtime, "canUndo", event.canUndo);
+payload.setProperty(runtime, "canRedo", event.canRedo);
+    return payload;
+  });
+}
+
+
 void EnrichedMarkdownTextEventEmitter::onLinkPress(OnLinkPress event) const {
   dispatchEvent("linkPress", [event=std::move(event)](jsi::Runtime &runtime) {
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "url", event.url);
-    payload.setProperty(runtime, "sourceType", event.sourceType);
+payload.setProperty(runtime, "sourceType", event.sourceType);
     return payload;
   });
 }
@@ -383,6 +416,16 @@ void EnrichedMarkdownTextEventEmitter::onImagePress(OnImagePress event) const {
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "url", event.url);
 payload.setProperty(runtime, "altText", event.altText);
+    return payload;
+  });
+}
+
+
+void EnrichedMarkdownTextEventEmitter::onTextPress(OnTextPress event) const {
+  dispatchEvent("textPress", [event=std::move(event)](jsi::Runtime &runtime) {
+    auto payload = jsi::Object(runtime);
+    payload.setProperty(runtime, "index", event.index);
+payload.setProperty(runtime, "text", event.text);
     return payload;
   });
 }
@@ -446,6 +489,18 @@ void EnrichedMarkdownTextEventEmitter::onContextMenuItemPress(OnContextMenuItemP
     auto payload = jsi::Object(runtime);
     payload.setProperty(runtime, "itemText", event.itemText);
 payload.setProperty(runtime, "selectedText", event.selectedText);
+payload.setProperty(runtime, "selectionStart", event.selectionStart);
+payload.setProperty(runtime, "selectionEnd", event.selectionEnd);
+    return payload;
+  });
+}
+
+
+void EnrichedMarkdownTextEventEmitter::onSelectionCopy(OnSelectionCopy event) const {
+  dispatchEvent("selectionCopy", [event=std::move(event)](jsi::Runtime &runtime) {
+    auto payload = jsi::Object(runtime);
+    payload.setProperty(runtime, "text", event.text);
+payload.setProperty(runtime, "format", event.format);
 payload.setProperty(runtime, "selectionStart", event.selectionStart);
 payload.setProperty(runtime, "selectionEnd", event.selectionEnd);
     return payload;

@@ -245,6 +245,10 @@ export interface ImagePressEvent {
     url: string;
     altText: string;
 }
+export interface TextPressEvent {
+    index: CodegenTypes.Int32;
+    text: string;
+}
 export interface TaskListItemPressEvent {
     index: CodegenTypes.Int32;
     checked: boolean;
@@ -292,6 +296,12 @@ export interface OnContextMenuItemPressEvent {
     selectionStart: CodegenTypes.Int32;
     selectionEnd: CodegenTypes.Int32;
 }
+export interface SelectionCopyEvent {
+    text: string;
+    format: string;
+    selectionStart: CodegenTypes.Int32;
+    selectionEnd: CodegenTypes.Int32;
+}
 export interface AccessibilityLabelsListProps {
     bulletPoint: string;
     nestedBulletPoint: string;
@@ -308,6 +318,10 @@ export interface AccessibilityLabelsTableProps {
 export interface AccessibilityLabelsMathProps {
     equation: string;
 }
+export interface AccessibilityLabelsCodeBlockProps {
+    wrap: string;
+    unwrap: string;
+}
 export interface AccessibilityLabelsRotorProps {
     headings: string;
     links: string;
@@ -318,6 +332,7 @@ export interface AccessibilityLabelsProps {
     blockquote: Readonly<AccessibilityLabelsBlockquoteProps>;
     table: Readonly<AccessibilityLabelsTableProps>;
     math: Readonly<AccessibilityLabelsMathProps>;
+    codeBlock: Readonly<AccessibilityLabelsCodeBlockProps>;
     rotor: Readonly<AccessibilityLabelsRotorProps>;
 }
 /**
@@ -342,6 +357,12 @@ export interface Md4cFlagsInternal {
      * @default false
      */
     subscript: boolean;
+    /**
+     * Enable strikethrough parsing (~~text~~ and ~text~) in CommonMark.
+     * GitHub flavor always enables it, so this is forced off there.
+     * @default false
+     */
+    strikethrough: boolean;
     /**
      * Enable LaTeX math span parsing ($..$ and $$..$$).
      * When disabled, dollar signs are treated as plain text.
@@ -373,6 +394,7 @@ export interface Md4cFlagsInternal {
 interface StreamingConfigInternal {
     tableMode: string;
     codeBlockMode: string;
+    mediaMode?: string;
 }
 interface LinkContextMenuItemConfig {
     text: string;
@@ -435,6 +457,19 @@ export interface NativeProps extends ViewProps {
      * @default false
      */
     enableImagePress?: CodegenTypes.WithDefault<boolean, false>;
+    /**
+     * Callback fired when plain text is tapped (not a link, image, checkbox or
+     * other interactive element). Receives the UTF-16 index of the character
+     * under the tap within the tapped text block, and that block's rendered text.
+     */
+    onTextPress?: CodegenTypes.BubblingEventHandler<TextPressEvent>;
+    /**
+     * Gates native plain-text tap handling. Set automatically to `true` by the
+     * JS wrapper when `onTextPress` is provided.
+     *
+     * @default false
+     */
+    enableTextPress?: CodegenTypes.WithDefault<boolean, false>;
     /**
      * Callback fired when a task list checkbox is tapped.
      * Receives the 0-based task index, current checked state, and the item's plain text.
@@ -586,6 +621,12 @@ export interface NativeProps extends ViewProps {
      * Receives the item label, the currently selected text, and the selection range.
      */
     onContextMenuItemPress?: CodegenTypes.BubblingEventHandler<OnContextMenuItemPressEvent>;
+    /**
+     * Fired after a text selection is copied from the selection menu, with the
+     * keyboard shortcut, or through TalkBack. Receives the copied text, its
+     * format, and the range.
+     */
+    onSelectionCopy?: CodegenTypes.BubblingEventHandler<SelectionCopyEvent>;
     /**
      * Sets the text break strategy on Android (API 23+).
      * @default 'highQuality'

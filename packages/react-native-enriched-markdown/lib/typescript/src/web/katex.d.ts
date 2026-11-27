@@ -6,6 +6,6 @@ export interface KaTeXInstance {
         output?: 'html' | 'mathml' | 'htmlAndMathml';
     }): string;
 }
-/** Lazily loads KaTeX. Resolves to null if not installed. */
-export declare function loadKaTeX(): Promise<KaTeXInstance | null>;
+/** Lazily loads KaTeX. Returns null if not installed. */
+export declare function loadKaTeX(): KaTeXInstance | null;
 //# sourceMappingURL=katex.d.ts.map

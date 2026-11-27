@@ -12,6 +12,6 @@
 
 namespace facebook::react {
 
-
+extern const char EnrichedMarkdownBlockSlotComponentName[] = "EnrichedMarkdownBlockSlot";
 
 } // namespace facebook::react

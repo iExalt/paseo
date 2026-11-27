@@ -46,12 +46,8 @@
   },
   "codegenConfig": {
     "name": "EnrichedMarkdownTextSpec",
-    "type": "components",
+    "type": "all",
     "jsSrcsDir": "src",
-    "outputDir": {
-      "ios": "ios/generated",
-      "android": "android/generated"
-    },
     "android": {
       "javaPackageName": "com.swmansion.enriched.markdown"
     },
@@ -65,8 +61,18 @@
         },
         "EnrichedMarkdownTextInput": {
           "className": "EnrichedMarkdownTextInput"
+        },
+        "EnrichedMarkdownBlockSlot": {
+          "className": "EnrichedMarkdownBlockSlot"
         }
+      },
+      "modulesProvider": {
+        "EnrichedMarkdownParser": "EnrichedMarkdownParserProvider"
       }
+    },
+    "outputDir": {
+      "ios": "ios/generated",
+      "android": "android/generated"
     },
     "includesGeneratedCode": true
   }

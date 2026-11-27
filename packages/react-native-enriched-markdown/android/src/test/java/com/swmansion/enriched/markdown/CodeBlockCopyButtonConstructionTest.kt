@@ -15,6 +15,7 @@ import com.swmansion.enriched.markdown.parser.MarkdownASTNode.NodeType
 import com.swmansion.enriched.markdown.segments.BlockquoteContainerView
 import com.swmansion.enriched.markdown.segments.CodeBlockContainerView
 import com.swmansion.enriched.markdown.segments.DynamicBlockProps
+import com.swmansion.enriched.markdown.segments.HeaderCopyButton
 import com.swmansion.enriched.markdown.segments.SegmentViewConfig
 import com.swmansion.enriched.markdown.styles.StyleConfig
 import com.swmansion.enriched.markdown.test.TestAstFactory.paragraph
@@ -132,10 +133,10 @@ class CodeBlockCopyButtonConstructionTest {
     )
 
   private fun CodeBlockContainerView.copyButton(): ImageButton =
-    (0 until childCount).map { getChildAt(it) }.filterIsInstance<ImageButton>().single()
+    (0 until childCount).map { getChildAt(it) }.filterIsInstance<HeaderCopyButton>().single()
 
   private fun BlockquoteContainerView.copyButton(): ImageButton =
-    (0 until childCount).map { getChildAt(it) }.filterIsInstance<ImageButton>().single()
+    (0 until childCount).map { getChildAt(it) }.filterIsInstance<HeaderCopyButton>().single()
 
   private fun ImageButton.accessibilityEventDescription(): CharSequence? {
     val event = AccessibilityEvent()

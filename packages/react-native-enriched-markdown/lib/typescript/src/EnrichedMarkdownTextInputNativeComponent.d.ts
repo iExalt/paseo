@@ -43,6 +43,10 @@ interface TargetedEvent {
 export interface OnChangeTextEvent {
     value: string;
 }
+export interface OnChangeHistoryStateEvent {
+    canUndo: boolean;
+    canRedo: boolean;
+}
 export interface OnChangeMarkdownEvent {
     value: string;
 }
@@ -310,6 +314,7 @@ export interface NativeProps extends ViewProps {
     onStartMention?: CodegenTypes.DirectEventHandler<OnStartMentionEvent>;
     onChangeMention?: CodegenTypes.DirectEventHandler<OnChangeMentionEvent>;
     onEndMention?: CodegenTypes.DirectEventHandler<OnEndMentionEvent>;
+    onChangeHistoryState?: CodegenTypes.DirectEventHandler<OnChangeHistoryStateEvent>;
 }
 type ComponentType = HostComponent<NativeProps>;
 interface NativeCommands {
@@ -334,6 +339,8 @@ interface NativeCommands {
     startMention: (viewRef: React.ElementRef<ComponentType>, indicator: string) => void;
     removeLink: (viewRef: React.ElementRef<ComponentType>) => void;
     copyToClipboard: (viewRef: React.ElementRef<ComponentType>) => void;
+    undo: (viewRef: React.ElementRef<ComponentType>) => void;
+    redo: (viewRef: React.ElementRef<ComponentType>) => void;
     requestMarkdown: (viewRef: React.ElementRef<ComponentType>, requestId: CodegenTypes.Int32) => void;
     requestCaretRect: (viewRef: React.ElementRef<ComponentType>, requestId: CodegenTypes.Int32) => void;
 }

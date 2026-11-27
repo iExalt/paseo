@@ -1,14 +1,10 @@
 "use strict";
 
 import { processColor } from 'react-native';
+import { DEFAULT_LINK_BG_COLOR, DEFAULT_LINK_COLOR, DEFAULT_SPOILER_BG_COLOR, DEFAULT_SPOILER_COLOR } from "./inputStyleDefaults.js";
 import { normalizeLinkVariantEntries } from "./linkVariantUtils.js";
 import { normalizeColor } from "./styleUtils.js";
 import { DEFAULT_HEADING_FONT_WEIGHT, HEADING_DEFAULTS } from "./headingDefaults.js";
-const DEFAULT_LINK_COLOR = '#2563EB';
-const DEFAULT_LINK_BG_COLOR = 'transparent';
-const DEFAULT_SPOILER_COLOR = '#374151';
-const DEFAULT_SPOILER_BG_COLOR = '#E5E7EB';
-
 // Defaults shared with the read-only renderer via headingDefaults; consumers
 // override per level via markdownStyle h1..h6.
 const defaultHeadingInternal = key => {
