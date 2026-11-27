@@ -1,5 +1,6 @@
 "use strict";
 
+import { isDev } from "./isDev.js";
 const DISABLED_REGEX = {
   pattern: '',
   caseInsensitive: false,
@@ -26,7 +27,7 @@ export const toNativeRegexConfig = regex => {
   if (hasLookbehind) {
     const lookbehindContent = source.match(/\(\?<[=!](.*?)\)/)?.[1] || '';
     if (/[*+{]/.test(lookbehindContent)) {
-      if (__DEV__) {
+      if (isDev) {
         console.error('Variable-width lookbehinds are not supported. Using default link regex.');
       }
       return DEFAULT_REGEX;

@@ -1,5 +1,5 @@
 import { type ColorValue } from 'react-native';
-import type { MarkdownTextInputStyle } from './EnrichedMarkdownTextInput';
+import type { MarkdownTextInputStyle } from './types/MarkdownTextInputStyle';
 interface LinkVariantEntryInternal {
     pattern: string;
     color: ColorValue;

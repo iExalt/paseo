@@ -1,4 +1,5 @@
 #import "ENRMCodeBlockContainerView.h"
+#import "ENRMAccessibilityLabels.h"
 #import "ENRMCodeBlockContent.h"
 #import "ENRMCodeBlockHighlighter.h"
 #import "ENRMHorizontalScrollView.h"
@@ -18,8 +19,9 @@
 //
 // measureHeight: must stay in sync with the drawn content: it uses the
 // unconstrained bounding rect of the same attributed string and the same
-// header metrics, so the reported height matches the drawn height. Since
-// lines never wrap, the height is independent of the available width.
+// header metrics, so the reported height matches the drawn height. Unless the
+// block is wrapped (the optional header wrap toggle), lines never wrap and the
+// height is independent of the available width.
 
 static const CGFloat kENRMHeaderLabelScale = 0.85;
 // The copy glyph's box as a multiple of the code font size; Android uses the same
@@ -62,6 +64,12 @@ static CGFloat ENRMCodeBlockContentInset(StyleConfig *config)
 static UIFont *ENRMCodeBlockHeaderFont(StyleConfig *config)
 {
   return [UIFont systemFontOfSize:[config codeBlockFont].pointSize * kENRMHeaderLabelScale weight:UIFontWeightMedium];
+}
+
+static UIImageSymbolConfiguration *ENRMCodeBlockHeaderSymbolConfiguration(StyleConfig *config)
+{
+  return [UIImageSymbolConfiguration configurationWithPointSize:[config codeBlockFont].pointSize * kENRMHeaderIconScale
+                                                         weight:UIImageSymbolWeightRegular];
 }
 
 static CGFloat ENRMCodeBlockHeaderLabelLineHeight(UIFont *headerFont)
@@ -118,6 +126,37 @@ static CGFloat ENRMCodeBlockCodeHeight(NSString *code, StyleConfig *config)
   return ceil(lineCount * ENRMCodeBlockPerLineHeight(config));
 }
 
+// Width the code text gets when wrapped: the block width minus the border and
+// the code pane's horizontal padding, exactly as layoutScrollArea insets it.
+static CGFloat ENRMCodeBlockWrapWidth(CGFloat blockWidth, StyleConfig *config)
+{
+  CGFloat borderW = ceil([config codeBlockBorderWidth]);
+  CGFloat horizontalPad = MAX(ENRMCodeBlockContentInset(config) - borderW, 0);
+  return MAX(blockWidth - borderW * 2, 0) - horizontalPad * 2;
+}
+
+// Wrapped code height: the same per-line-height arithmetic as the analytic
+// height, over visual lines from a call-confined TextKit layout at the wrap width.
+static CGFloat ENRMCodeBlockWrappedCodeHeight(NSAttributedString *code, CGFloat wrapWidth, StyleConfig *config)
+{
+  if (code.length == 0) {
+    return 0;
+  }
+  NSTextStorage *storage = [[NSTextStorage alloc] initWithAttributedString:code];
+  NSLayoutManager *layoutManager = [[NSLayoutManager alloc] init];
+  layoutManager.usesFontLeading = ENRMLayoutManagerUsesFontLeading;
+  NSTextContainer *container = [[NSTextContainer alloc] initWithSize:CGSizeMake(wrapWidth, CGFLOAT_MAX)];
+  container.lineFragmentPadding = 0;
+  [layoutManager addTextContainer:container];
+  [storage addLayoutManager:layoutManager];
+  [layoutManager ensureLayoutForTextContainer:container];
+  __block NSUInteger lineCount = 0;
+  [layoutManager enumerateLineFragmentsForGlyphRange:NSMakeRange(0, layoutManager.numberOfGlyphs)
+                                          usingBlock:^(CGRect rect, CGRect usedRect, NSTextContainer *textContainer,
+                                                       NSRange glyphRange, BOOL *stop) { lineCount++; }];
+  return ceil(MAX(lineCount, 1) * ENRMCodeBlockPerLineHeight(config));
+}
+
 // Used only to pick the scroll indicator style for the code pane, so the
 // indicator stays visible on dark code block backgrounds without affecting
 // any other scroll view.
@@ -154,10 +193,12 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
 // the same rendering path drawAtPoint used internally, so output is identical,
 // but the layout is no longer thrown away on every draw. The container is
 // unbounded (lines never wrap) with zero line-fragment padding and font leading
-// disabled, matching the NSStringDrawing origin the block used before.
+// disabled, matching the NSStringDrawing origin the block used before. A
+// positive wrapWidth bounds it instead, so lines wrap at that width.
 @interface ENRMCodeBlockContentView : RCTUIView
 @property (nonatomic, strong, nullable) NSAttributedString *attributedCode;
 @property (nonatomic, assign) CGPoint textOrigin;
+@property (nonatomic, assign) CGFloat wrapWidth;
 // Laid-out content width, for the horizontal scroll extent. Free once the
 // cached stack exists; no separate measurement pass.
 @property (nonatomic, readonly) CGFloat usedWidth;
@@ -196,12 +237,34 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
   _textStorage = [[NSTextStorage alloc] initWithAttributedString:attributedCode];
   _layoutManager = [[NSLayoutManager alloc] init];
   _layoutManager.usesFontLeading = ENRMLayoutManagerUsesFontLeading;
-  _textContainer = [[NSTextContainer alloc] initWithSize:CGSizeMake(CGFLOAT_MAX, CGFLOAT_MAX)];
+  _textContainer = [[NSTextContainer alloc] initWithSize:[self containerSize]];
   _textContainer.lineFragmentPadding = 0;
   _textContainer.maximumNumberOfLines = 0;
   [_layoutManager addTextContainer:_textContainer];
   [_textStorage addLayoutManager:_layoutManager];
   [_layoutManager ensureLayoutForTextContainer:_textContainer];
+}
+
+- (CGSize)containerSize
+{
+  return CGSizeMake(_wrapWidth > 0 ? _wrapWidth : CGFLOAT_MAX, CGFLOAT_MAX);
+}
+
+- (void)setWrapWidth:(CGFloat)wrapWidth
+{
+  if (_wrapWidth == wrapWidth) {
+    return;
+  }
+  _wrapWidth = wrapWidth;
+  if (_textContainer) {
+    _textContainer.size = [self containerSize];
+    [_layoutManager ensureLayoutForTextContainer:_textContainer];
+  }
+#if !TARGET_OS_OSX
+  [self setNeedsDisplay];
+#else
+  [self setNeedsDisplay:YES];
+#endif
 }
 
 - (CGFloat)usedWidth
@@ -243,9 +306,13 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
   CGFloat _headerLabelLineHeight;
   NSAttributedString *_languageLabel;
   CGSize _languageLabelSize;
+  // Wrapped code height, valid for _wrappedHeightWidth until the code changes.
+  CGFloat _wrappedHeight;
+  CGFloat _wrappedHeightWidth;
 #if !TARGET_OS_OSX
   UIFont *_headerFont;
   UIButton *_copyButton;
+  UIButton *_wrapButton;
   UITapGestureRecognizer *_tapRecognizer;
 #else
   NSFont *_headerFont;
@@ -328,6 +395,7 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
     _config = config;
     _cachedCode = @"";
     _fenceChar = @"`";
+    _wrappedHeightWidth = -1;
     _dynamicProps = [[ENRMDynamicBlockProps alloc] init];
     _headerFont = ENRMCodeBlockHeaderFont(config);
     _headerLabelLineHeight = ENRMCodeBlockHeaderLabelLineHeight(_headerFont);
@@ -398,12 +466,17 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
   _scrollView.frame = frame;
 
   CGFloat horizontalPad = MAX(inset - borderW, 0);
-  CGFloat contentWidth = MAX(_codeSize.width + horizontalPad * 2, frame.size.width);
+  _codeContentView.wrapWidth = _wrapped ? MAX(ENRMCodeBlockWrapWidth(self.bounds.size.width, _config), 1) : 0;
+  CGFloat codeWidth = _wrapped ? 0 : _codeSize.width;
+  CGFloat contentWidth = MAX(codeWidth + horizontalPad * 2, frame.size.width);
   _codeContentView.textOrigin = CGPointMake(horizontalPad, inset);
   _codeContentView.frame = CGRectMake(0, 0, contentWidth, frame.size.height);
 #if !TARGET_OS_OSX
   _scrollView.contentSize = CGSizeMake(contentWidth, frame.size.height);
   _scrollView.scrollEnabled = contentWidth > frame.size.width;
+  if (_wrapped) {
+    _scrollView.contentOffset = CGPointZero;
+  }
 #endif
 }
 
@@ -422,6 +495,88 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
 - (void)layoutHeaderButton
 {
   [ENRMCodeBlockContainerView layoutHeaderCopyButton:_copyButton width:self.bounds.size.width config:_config];
+#if !TARGET_OS_OSX
+  const CGRect copyFrame = _copyButton.frame;
+  const CGFloat wrapWidth = CGRectGetWidth(copyFrame);
+  _wrapButton.frame = CGRectMake(MAX(CGRectGetMinX(copyFrame) - wrapWidth, 0),
+                                 CGRectGetMinY(copyFrame), wrapWidth, CGRectGetHeight(copyFrame));
+#endif
+}
+
+#if !TARGET_OS_OSX
+- (void)setShowsWrapButton:(BOOL)showsWrapButton
+{
+  if (_showsWrapButton == showsWrapButton) {
+    return;
+  }
+  _showsWrapButton = showsWrapButton;
+  if (showsWrapButton && !_wrapButton) {
+    _wrapButton = [UIButton buttonWithType:UIButtonTypeSystem];
+    [_wrapButton setImage:[UIImage systemImageNamed:@"text.alignleft"
+                                  withConfiguration:ENRMCodeBlockHeaderSymbolConfiguration(_config)]
+                 forState:UIControlStateNormal];
+    [_wrapButton addTarget:self action:@selector(toggleWrap) forControlEvents:UIControlEventTouchUpInside];
+    [self addSubview:_wrapButton];
+    [self updateWrapButtonAppearance];
+  }
+  _wrapButton.hidden = !showsWrapButton;
+  [self setNeedsLayout];
+  // The language label's room shrinks by one button.
+  [self setNeedsDisplay];
+}
+
+- (void)updateWrapButtonAppearance
+{
+  // Full-strength tint marks the toggle as on; off matches the copy button.
+  CGFloat alpha = _wrapped ? 1 : kENRMHeaderSecondaryAlpha;
+  _wrapButton.tintColor = [[_config codeBlockColor] colorWithAlphaComponent:alpha];
+  _wrapButton.accessibilityLabel = [self wrapActionLabel];
+}
+#endif
+
+- (NSString *)wrapActionLabel
+{
+  return _wrapped ? _accessibilityLabels.codeBlockUnwrap : _accessibilityLabels.codeBlockWrap;
+}
+
+- (void)setAccessibilityLabels:(ENRMAccessibilityLabels *)labels
+{
+  if (_accessibilityLabels == labels) {
+    return;
+  }
+  _accessibilityLabels = labels;
+#if !TARGET_OS_OSX
+  [self updateWrapButtonAppearance];
+#endif
+}
+
+- (void)setWrapped:(BOOL)wrapped
+{
+  if (_wrapped == wrapped) {
+    return;
+  }
+  _wrapped = wrapped;
+  if (!wrapped) {
+    // Restore the unwrapped width for the scroll extent; a rebuild while
+    // wrapped measured at the wrap width.
+    _codeContentView.wrapWidth = 0;
+    _codeSize.width = _codeContentView.usedWidth;
+  }
+#if !TARGET_OS_OSX
+  [self updateWrapButtonAppearance];
+  [self setNeedsLayout];
+  [_codeContentView setNeedsDisplay];
+#else
+  self.needsLayout = YES;
+  [_codeContentView setNeedsDisplay:YES];
+#endif
+}
+
+- (void)toggleWrap
+{
+  if (self.onWrapToggle) {
+    self.onWrapToggle(self);
+  }
 }
 
 #if !TARGET_OS_OSX
@@ -464,6 +619,7 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
   // width then reads out of that layout, and height stays analytic.
   _codeContentView.attributedCode = _attributedCode;
   _codeSize = CGSizeMake(_codeContentView.usedWidth, ENRMCodeBlockCodeHeight(_cachedCode, _config));
+  _wrappedHeightWidth = -1;
 }
 
 - (void)applyCodeBlockNode:(MarkdownASTNode *)node
@@ -529,7 +685,16 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
 - (CGFloat)measureHeight:(CGFloat)maxWidth
 {
   CGFloat inset = [self contentInset];
-  return _codeSize.height + inset * 2 + [self headerHeight];
+  CGFloat codeHeight = _codeSize.height;
+  if (_wrapped) {
+    if (_wrappedHeightWidth != maxWidth) {
+      _wrappedHeight = ENRMCodeBlockWrappedCodeHeight([self plainAttributedCode],
+                                                      MAX(ENRMCodeBlockWrapWidth(maxWidth, _config), 1), _config);
+      _wrappedHeightWidth = maxWidth;
+    }
+    codeHeight = _wrappedHeight;
+  }
+  return codeHeight + inset * 2 + [self headerHeight];
 }
 
 + (CGFloat)measureHeightForCodeBlockNode:(MarkdownASTNode *)node config:(StyleConfig *)config
@@ -537,6 +702,17 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
   CGFloat inset = ENRMCodeBlockContentInset(config);
   CGFloat headerH = inset + ENRMCodeBlockHeaderLabelLineHeight(ENRMCodeBlockHeaderFont(config));
   CGFloat codeHeight = ENRMCodeBlockCodeHeight(ENRMCodeBlockExtractCode(node), config);
+  return codeHeight + inset * 2 + headerH;
+}
+
++ (CGFloat)measureWrappedHeightForCodeBlockNode:(MarkdownASTNode *)node
+                                         config:(StyleConfig *)config
+                                       maxWidth:(CGFloat)maxWidth
+{
+  CGFloat inset = ENRMCodeBlockContentInset(config);
+  CGFloat headerH = inset + ENRMCodeBlockHeaderLabelLineHeight(ENRMCodeBlockHeaderFont(config));
+  NSAttributedString *code = ENRMCodeBlockPlainAttributedCode(ENRMCodeBlockExtractCode(node), config);
+  CGFloat codeHeight = ENRMCodeBlockWrappedCodeHeight(code, MAX(ENRMCodeBlockWrapWidth(maxWidth, config), 1), config);
   return codeHeight + inset * 2 + headerH;
 }
 
@@ -583,7 +759,15 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
   }
 
   if (_languageLabel.length > 0) {
-    [_languageLabel drawAtPoint:CGPointMake(inset, [self headerCenterY] - _languageLabelSize.height / 2)];
+    // Keep clear of the header buttons, as Android caps its label view; a long
+    // name is cut short with an ellipsis.
+    CGFloat headerButtonsWidth = _showsWrapButton ? headerH * 2 : headerH;
+    CGFloat labelMaxWidth = MAX(self.bounds.size.width - inset * 2 - headerButtonsWidth, 0);
+    CGRect labelRect = CGRectMake(inset, [self headerCenterY] - _languageLabelSize.height / 2,
+                                  MIN(_languageLabelSize.width, labelMaxWidth), _languageLabelSize.height);
+    [_languageLabel drawWithRect:labelRect
+                         options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingTruncatesLastVisibleLine
+                         context:nil];
   }
 }
 
@@ -626,9 +810,9 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
 
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gestureRecognizer shouldReceiveTouch:(UITouch *)touch
 {
-  // Let the copy button handle its own tap.
+  // Let the header buttons handle their own taps.
   for (UIView *hit = touch.view; hit != nil; hit = hit.superview) {
-    if (hit == _copyButton) {
+    if (hit == _copyButton || (_wrapButton != nil && hit == _wrapButton)) {
       return NO;
     }
   }
@@ -693,23 +877,33 @@ static BOOL ENRMColorIsDark(RCTUIColor *color)
   return UIAccessibilityTraitStaticText;
 }
 
-// The container is a single accessibility element, which hides the copy
-// button subview from VoiceOver; expose the copy action explicitly instead.
+// The container is a single accessibility element, which hides the header
+// button subviews from VoiceOver; expose their actions explicitly instead.
 - (NSArray<UIAccessibilityCustomAction *> *)accessibilityCustomActions
 {
-  if (_pending || self.dynamicProps.menuCopyLabel.length == 0) {
-    return @[];
+  NSMutableArray<UIAccessibilityCustomAction *> *actions = [NSMutableArray array];
+  if (!_pending && self.dynamicProps.menuCopyLabel.length > 0) {
+    [actions addObject:[[UIAccessibilityCustomAction alloc] initWithName:self.dynamicProps.menuCopyLabel
+                                                                  target:self
+                                                                selector:@selector(performCopyAccessibilityAction:)]];
   }
-  UIAccessibilityCustomAction *copyAction =
-      [[UIAccessibilityCustomAction alloc] initWithName:self.dynamicProps.menuCopyLabel
-                                                 target:self
-                                               selector:@selector(performCopyAccessibilityAction:)];
-  return @[ copyAction ];
+  if (_showsWrapButton && [self wrapActionLabel].length > 0) {
+    [actions addObject:[[UIAccessibilityCustomAction alloc] initWithName:[self wrapActionLabel]
+                                                                  target:self
+                                                                selector:@selector(performWrapAccessibilityAction:)]];
+  }
+  return actions;
 }
 
 - (BOOL)performCopyAccessibilityAction:(UIAccessibilityCustomAction *)action
 {
   [self copyCodeToPasteboard];
+  return YES;
+}
+
+- (BOOL)performWrapAccessibilityAction:(UIAccessibilityCustomAction *)action
+{
+  [self toggleWrap];
   return YES;
 }
 #endif

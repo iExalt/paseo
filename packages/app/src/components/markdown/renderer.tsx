@@ -225,11 +225,12 @@ const MarkdownPart = memo(function MarkdownPart({
               enableTaskListItemToggle={false}
               enableLinkPreview={false}
               enableBlockContextMenu={false}
+              enableCodeBlockWrapToggle={false}
               // JS reveal owns pacing; native fade animation is a separate experiment.
               streamingAnimation={false}
               onLinkPress={pressLink}
               onImagePress={pressImage}
-              renderers={isWeb ? WEB_RENDERERS : undefined}
+              webRenderers={isWeb ? WEB_RENDERERS : undefined}
             />
           ),
         )}

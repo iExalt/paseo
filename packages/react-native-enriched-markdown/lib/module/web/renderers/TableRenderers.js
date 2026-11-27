@@ -49,20 +49,24 @@ function TableRowRenderer({
 function TableHeaderCellRenderer({
   node,
   styles,
+  capabilities,
   renderChildren
 }) {
   return /*#__PURE__*/_jsx("th", {
     style: styles.tableHeaderCell[node.attributes?.align ?? 'default'],
+    dir: capabilities.blockDir,
     children: renderChildren(node)
   });
 }
 function TableCellRenderer({
   node,
   styles,
+  capabilities,
   renderChildren
 }) {
   return /*#__PURE__*/_jsx("td", {
     style: styles.tableCell[node.attributes?.align ?? 'default'],
+    dir: capabilities.blockDir,
     children: renderChildren(node)
   });
 }

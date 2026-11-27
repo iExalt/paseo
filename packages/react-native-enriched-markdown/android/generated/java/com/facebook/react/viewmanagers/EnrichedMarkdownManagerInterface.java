@@ -19,8 +19,10 @@ public interface EnrichedMarkdownManagerInterface<T extends View> extends ViewMa
   void setMarkdown(T view, @Nullable String value);
   void setMarkdownStyle(T view, @Nullable ReadableMap value);
   void setEnableImagePress(T view, boolean value);
+  void setEnableTextPress(T view, boolean value);
   void setEnableTaskListItemToggle(T view, boolean value);
   void setEnableCodeBlockPress(T view, boolean value);
+  void setEnableCodeBlockWrapToggle(T view, boolean value);
   void setEnableBlockContextMenu(T view, boolean value);
   void setEnableLinkPreview(T view, boolean value);
   void setSelectable(T view, boolean value);
@@ -36,6 +38,7 @@ public interface EnrichedMarkdownManagerInterface<T extends View> extends ViewMa
   void setSpoilerOverlay(T view, @Nullable String value);
   void setContextMenuItems(T view, @Nullable ReadableArray value);
   void setImageRequestHeaders(T view, @Nullable ReadableArray value);
+  void setImageSources(T view, @Nullable ReadableArray value);
   void setLinkPillContent(T view, @Nullable ReadableArray value);
   void setLinkRecognition(T view, @Nullable ReadableMap value);
   void setLinkContextMenuItems(T view, @Nullable ReadableArray value);

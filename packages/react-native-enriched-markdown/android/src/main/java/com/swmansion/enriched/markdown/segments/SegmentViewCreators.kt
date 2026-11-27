@@ -13,6 +13,7 @@ import com.swmansion.enriched.markdown.parser.MarkdownASTNode
 import com.swmansion.enriched.markdown.styles.StyleConfig
 import com.swmansion.enriched.markdown.utils.common.BreakStrategyUtils
 import com.swmansion.enriched.markdown.utils.common.FeatureFlags
+import com.swmansion.enriched.markdown.utils.text.view.OnSelectionCopy
 import com.swmansion.enriched.markdown.utils.text.view.SelectionMenuConfig
 import com.swmansion.enriched.markdown.utils.text.view.applySelectionColors
 
@@ -72,6 +73,7 @@ data class SegmentViewConfig(
   val onTaskListItemPress: ((taskIndex: Int, checked: Boolean, itemText: String) -> Unit)?,
   val onContextMenuItemPress: ((itemText: String, selectedText: String, selectionStart: Int, selectionEnd: Int) -> Unit)?,
   val onLatexError: LatexErrorReporter? = null,
+  val onSelectionCopy: OnSelectionCopy? = null,
 )
 
 /**
@@ -105,6 +107,7 @@ object SegmentViewCreators {
       onTaskListItemPressCallback = { taskIndex, checked, itemText ->
         config.onTaskListItemPress?.invoke(taskIndex, checked, itemText)
       }
+      onSelectionCopyCallback = config.onSelectionCopy
 
       if (config.contextMenuItemTexts.isNotEmpty()) {
         val onPress = config.onContextMenuItemPress
@@ -145,6 +148,7 @@ object SegmentViewCreators {
     config: SegmentViewConfig,
   ) = CodeBlockContainerView(config.context, config.style).apply {
     dynamicProps = config.dynamicProps
+    accessibilityLabels = config.accessibilityLabels
     applyCodeBlockNode(segment.node)
   }
 
@@ -208,7 +212,7 @@ object SegmentViewCreators {
     segment: RenderedSegment.Blockquote,
     config: SegmentViewConfig,
   ) = BlockquoteContainerView(config.context, config).apply {
-    applyBlockquoteNode(segment.node)
+    applyBlockquoteNode(segment.node, segment.taskIndexOffset)
   }
 
   private val cachedVideoContainerClass: Class<*>? by lazy {
@@ -254,5 +258,20 @@ object SegmentViewCreators {
     videoContainerClass()
       ?.getMethod("applyVideoNode", MarkdownASTNode::class.java)
       ?.invoke(view, segment.node)
+  }
+
+  fun createBlockSlotView(
+    segment: RenderedSegment.BlockSlot,
+    config: SegmentViewConfig,
+  ) = BlockSlotSegmentView(config.context, config.style, segment.slotId, segment.kind)
+
+  // A reused placeholder takes over the new slot's id, or the heights keyed by
+  // id never reach it and it reserves nothing.
+  fun updateBlockSlotView(
+    view: BlockSlotSegmentView,
+    segment: RenderedSegment.BlockSlot,
+  ) {
+    view.slotId = segment.slotId
+    view.kind = segment.kind
   }
 }

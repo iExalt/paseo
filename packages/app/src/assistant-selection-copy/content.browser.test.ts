@@ -1005,7 +1005,7 @@ describe("quote copy", () => {
                 markdown,
                 flavor: "github",
                 md4cFlags: { latexMath: false, admonitions: true },
-                renderers: WEB_RENDERERS,
+                webRenderers: WEB_RENDERERS,
               }),
             }),
           ),

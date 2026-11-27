@@ -11,7 +11,7 @@ import {
 import type {
   CodeBlockRendererProps,
   LinkRendererProps,
-  MarkdownRenderers,
+  MarkdownWebRenderers,
 } from "react-native-enriched-markdown";
 import { StyleSheet, withUnistyles } from "react-native-unistyles";
 import { useFileLink } from "@/assistant-file-links";
@@ -129,7 +129,7 @@ const styles = StyleSheet.create((theme) => ({
   },
 }));
 
-export const WEB_RENDERERS: MarkdownRenderers = {
+export const WEB_RENDERERS: MarkdownWebRenderers = {
   codeBlock: WebCodeBlock,
   link: WebLink,
   blockquote: WebBlockquote,

@@ -16,7 +16,7 @@
 
 namespace facebook::react {
 
-
+using EnrichedMarkdownBlockSlotComponentDescriptor = ConcreteComponentDescriptor<EnrichedMarkdownBlockSlotShadowNode>;
 
 void EnrichedMarkdownTextSpec_registerComponentDescriptorsFromCodegen(
   std::shared_ptr<const ComponentDescriptorProviderRegistry> registry);

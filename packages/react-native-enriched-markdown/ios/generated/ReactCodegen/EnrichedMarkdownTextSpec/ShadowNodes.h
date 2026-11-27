@@ -18,6 +18,15 @@
 
 namespace facebook::react {
 
+JSI_EXPORT extern const char EnrichedMarkdownBlockSlotComponentName[];
 
+/*
+ * `ShadowNode` for <EnrichedMarkdownBlockSlot> component.
+ */
+using EnrichedMarkdownBlockSlotShadowNode = ConcreteViewShadowNode<
+    EnrichedMarkdownBlockSlotComponentName,
+    EnrichedMarkdownBlockSlotProps,
+    EnrichedMarkdownBlockSlotEventEmitter,
+    EnrichedMarkdownBlockSlotState>;
 
 } // namespace facebook::react

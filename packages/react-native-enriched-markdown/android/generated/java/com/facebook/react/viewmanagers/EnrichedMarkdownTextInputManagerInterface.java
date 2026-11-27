@@ -61,6 +61,8 @@ public interface EnrichedMarkdownTextInputManagerInterface<T extends View> exten
   void startMention(T view, String indicator);
   void removeLink(T view);
   void copyToClipboard(T view);
+  void undo(T view);
+  void redo(T view);
   void requestMarkdown(T view, int requestId);
   void requestCaretRect(T view, int requestId);
 }

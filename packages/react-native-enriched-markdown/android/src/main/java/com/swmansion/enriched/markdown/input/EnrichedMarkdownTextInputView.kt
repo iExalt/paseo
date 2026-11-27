@@ -49,6 +49,7 @@ import com.swmansion.enriched.markdown.input.formatting.InputFormatter
 import com.swmansion.enriched.markdown.input.formatting.InputParser
 import com.swmansion.enriched.markdown.input.layout.InputEventEmitter
 import com.swmansion.enriched.markdown.input.layout.InputLayoutManager
+import com.swmansion.enriched.markdown.input.layout.InputMeasurementStore
 import com.swmansion.enriched.markdown.input.model.BlockRange
 import com.swmansion.enriched.markdown.input.model.BlockType
 import com.swmansion.enriched.markdown.input.model.FormattingRange
@@ -111,7 +112,10 @@ class EnrichedMarkdownTextInputView(
       override val editable: Editable? get() = text
       override val emitMarkdown: Boolean get() = this@EnrichedMarkdownTextInputView.emitMarkdown
 
-      override fun syncEmptyListAnchor(restamp: Boolean) = this@EnrichedMarkdownTextInputView.syncEmptyListAnchor(restamp)
+      override fun syncEmptyListAnchor(
+        restamp: Boolean,
+        anchorLineStart: Int?,
+      ) = this@EnrichedMarkdownTextInputView.syncEmptyListAnchor(restamp, anchorLineStart)
 
       override fun forceScrollToSelection() = this@EnrichedMarkdownTextInputView.forceScrollToSelection()
 
@@ -354,7 +358,24 @@ class EnrichedMarkdownTextInputView(
     y: Int,
   ) {
     if (!scrollEnabled) return
-    super.scrollTo(x, y)
+    // Pin to the top while the text fits the height Yoga allows: the view is
+    // about to grow to fit it, so scrolling to the caret now would show the text
+    // bottom-aligned for a frame until the resize lands.
+    val textHeight = layout?.height
+    val maxHeight = InputMeasurementStore.getMaxHeight(id)
+    val textFitsMaxHeight = textHeight != null && maxHeight != null && textHeight <= maxHeight
+    super.scrollTo(x, if (textFitsMaxHeight) 0 else y)
+  }
+
+  override fun onLayout(
+    changed: Boolean,
+    left: Int,
+    top: Int,
+    right: Int,
+    bottom: Int,
+  ) {
+    super.onLayout(changed, left, top, right, bottom)
+    InputMeasurementStore.onLaidOut(id, (bottom - top - paddingTop - paddingBottom).toFloat())
   }
 
   override fun canScrollVertically(direction: Int): Boolean = scrollEnabled && super.canScrollVertically(direction)
@@ -524,6 +545,12 @@ class EnrichedMarkdownTextInputView(
       applyFormattingAndEmit()
       eventEmitter.emitChangeText()
     }
+    // The scope above suppresses the text watcher, so the pipeline's own hint
+    // sync never ran. Without this, an insert into an empty editor (paste,
+    // insertText, insertLink, startMention) leaves the placeholder in place and
+    // the next selection change calls setHint from inside
+    // Editor.selectCurrentWordAndStartDrag, which crashes — same as setValue.
+    syncHintVisibility()
     emitSelectionIfChanged()
   }
 
@@ -681,6 +708,8 @@ class EnrichedMarkdownTextInputView(
    *
    * @param restamp re-apply block formatting here (selection path); the text-change
    *   pass and list commands pass false and stamp once afterwards.
+   * @param anchorLineStart one more empty list line to anchor, away from the caret
+   *   (the item an Enter at the start of a non-empty item leaves above it).
    * @return true if an anchor was inserted or stripped (text/ranges mutated).
    *
    * When called from `onAfterTextChanged` this mutates the [Editable] from inside
@@ -696,11 +725,16 @@ class EnrichedMarkdownTextInputView(
    * deferring the insert/delete (e.g. via `post`) would run it outside every guard
    * and reintroduce the double-bullet and stale-caret bugs.
    */
-  private fun syncEmptyListAnchor(restamp: Boolean = true): Boolean {
+  private fun syncEmptyListAnchor(
+    restamp: Boolean = true,
+    anchorLineStart: Int? = null,
+  ): Boolean {
     if (editSession.shouldSuppressAnchorSync) return false
     val editable = text ?: return false
     return editSession.scoped(EditPhase.ManagingAnchors) {
-      var anchorChanged = false
+      // Before the strip, which can shift text after it. The caret sits on a later
+      // line, so the selection shifts past the inserted ZWSP on its own.
+      var anchorChanged = anchorLineStart != null && insertEmptyListAnchor(editable, anchorLineStart)
       // Strip every stale ZWSP first (a line that gained content or stopped being a
       // list). Skip the full-document scan when we've inserted no anchors — there is
       // nothing to strip, so a caret move in a document with no empty list lines is
@@ -732,18 +766,10 @@ class EnrichedMarkdownTextInputView(
         zwspAnchorCount = keptAnchors
       }
 
-      val caret = selectionStart
       if (selectionStart == selectionEnd) {
-        val ls = blockCoordinator.lineStartOf(editable, caret)
-        val le = blockCoordinator.lineEndOf(editable, caret)
-        val block = blockCoordinator.listBlockAtLineStart(ls)
-        if (block != null && le == ls) {
-          runAsATransaction { editable.insert(ls, ZWSP.toString()) }
-          formattingStore.adjustForEdit(ls, 0, 1)
-          blockStore.adjustForEdit(ls, 0, 1)
-          blockStore.normalizeToLineBounds(editable)
+        val ls = blockCoordinator.lineStartOf(editable, selectionStart)
+        if (insertEmptyListAnchor(editable, ls)) {
           setSelection(ls + 1)
-          zwspAnchorCount++
           anchorChanged = true
         }
       }
@@ -760,6 +786,21 @@ class EnrichedMarkdownTextInputView(
     }
   }
 
+  /** Inserts a ZWSP anchor on the empty list line starting at [lineStart]; false if it isn't one. */
+  private fun insertEmptyListAnchor(
+    editable: Editable,
+    lineStart: Int,
+  ): Boolean {
+    if (blockCoordinator.lineEndOf(editable, lineStart) != lineStart) return false
+    if (blockCoordinator.listBlockAtLineStart(lineStart) == null) return false
+    runAsATransaction { editable.insert(lineStart, ZWSP.toString()) }
+    formattingStore.adjustForEdit(lineStart, 0, 1)
+    blockStore.adjustForEdit(lineStart, 0, 1)
+    blockStore.normalizeToLineBounds(editable)
+    zwspAnchorCount++
+    return true
+  }
+
   /**
    * The hint shows only on a truly empty editor with no block range — a bullet's
    * ZWSP anchor counts as content, so the hint never overlaps a marker. Mirrors iOS.
@@ -771,7 +812,14 @@ class EnrichedMarkdownTextInputView(
     val target: CharSequence? = if (hasRealText || hasBlock) "" else styledHint
     // Compare as strings: setHint copies the hint, so the spanned copy is never
     // identical to target. A line-height change passes force instead.
-    if (force || hint?.toString() != target?.toString()) super.setHint(target)
+    if (!force && hint?.toString() == target?.toString()) return
+
+    super.setHint(target)
+    // An empty editor is measured with its hint, not its text (see
+    // InputMeasurementStore.getMeasureById), and the snapshot Yoga holds was
+    // taken before this change — re-measure so a hint that lays out taller than
+    // the text it replaced is not left clipped.
+    layoutManager.invalidateLayout()
   }
 
   fun setUserHint(value: CharSequence?) {
@@ -1081,6 +1129,7 @@ class EnrichedMarkdownTextInputView(
       // No invalidateLayout() needed: applyFormatting() already re-measures.
       lastProcessedText = text?.toString() ?: ""
     }
+    syncHintVisibility()
     emitSelectionIfChanged()
   }
 

@@ -12,6 +12,7 @@ function ListRenderer({
   node,
   styles,
   parentType,
+  capabilities,
   renderChildren,
   listTag: ListTag,
 }: RendererProps & { listTag: 'ul' | 'ol' }) {
@@ -25,10 +26,13 @@ function ListRenderer({
     : hasTaskChild
       ? styles.listTask
       : styles.list;
+  // One direction per list, from its first item; per-item markers would need
+  // the indent moved from the list onto each item.
   return (
     <ListTag
       start={ListTag === 'ol' ? Number(node.attributes?.start ?? 1) : undefined}
       style={resolvedStyle}
+      dir={capabilities.blockDir}
     >
       {renderChildren(node)}
     </ListTag>

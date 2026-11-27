@@ -1,5 +1,6 @@
 #import "ENRMBlockquoteContainerView.h"
 #import "ENRMAdmonitionIcons.h"
+#import "ENRMBlockSlotSegmentView.h"
 #import "ENRMCodeBlockContainerView.h"
 #import "ENRMFeatureFlags.h"
 #import "ENRMLinkContextMenus.h"
@@ -217,6 +218,8 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
       ((TableContainerView *)child).accessibilityLabels = accessibilityLabels;
     } else if ([child isKindOfClass:[ENRMBlockquoteContainerView class]]) {
       ((ENRMBlockquoteContainerView *)child).accessibilityLabels = accessibilityLabels;
+    } else if ([child isKindOfClass:[ENRMCodeBlockContainerView class]]) {
+      ((ENRMCodeBlockContainerView *)child).accessibilityLabels = accessibilityLabels;
     }
 #if ENRICHED_MARKDOWN_MATH
     else if ([child isKindOfClass:[ENRMMathContainerView class]]) {
@@ -247,6 +250,7 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
                       view.lastElementMarginBottom = segment.textResult.lastElementMarginBottom;
                       view.accessibilityInfo = segment.textResult.accessibilityInfo;
                       view.accessibilityLabels = strongSelf.accessibilityLabels;
+                      view.onSelectionCopy = strongSelf.onSelectionCopy;
                       [view applyAttributedText:segment.textResult.attributedText context:segment.textResult.context];
                       if (strongSelf) {
                         [strongSelf attachLinkTapToTextView:view];
@@ -303,6 +307,7 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
                       ENRMCodeBlockContainerView *view = [[ENRMCodeBlockContainerView alloc] initWithConfig:config];
                       ENRMBlockquoteContainerView *strongSelf = weakSelf;
                       view.dynamicProps = strongSelf.dynamicProps;
+                      view.accessibilityLabels = strongSelf.accessibilityLabels;
                       view.onCopyPress = ^(NSString *code, NSString *language) {
                         ENRMBlockquoteContainerView *s = weakSelf;
                         if (s.onCopyPress)
@@ -336,10 +341,16 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
                               view.accessibilityLabels = strongSelf.accessibilityLabels;
                               view.onCopyPress = strongSelf.onCopyPress;
                               view.onCodeBlockPress = strongSelf.onCodeBlockPress;
+                              view.onSelectionCopy = strongSelf.onSelectionCopy;
                               view.onImagePress = ^(NSString *url, NSString *altText) {
                                 ENRMBlockquoteContainerView *s = weakSelf;
                                 if (s.onImagePress && url)
                                   s.onImagePress(url, altText);
+                              };
+                              view.onTextPress = ^(NSInteger index, NSString *text) {
+                                ENRMBlockquoteContainerView *s = weakSelf;
+                                if (s.onTextPress)
+                                  s.onTextPress(index, text);
                               };
                               view.onLinkPress = ^(NSString *url, NSString *sourceType) {
                                 ENRMBlockquoteContainerView *s = weakSelf;
@@ -380,6 +391,22 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
 #endif
 #endif
 
+  [handlers addObject:[ENRMSegmentViewHandler handlerWithKind:ENRMSegmentKindBlockSlot
+                          matchesView:^BOOL(RCTUIView *view, ENRMRenderedSegment *segment) {
+                            return [view isKindOfClass:[ENRMBlockSlotSegmentView class]];
+                          }
+                          createView:^RCTUIView *(ENRMRenderedSegment *segment) {
+                            ENRMBlockSlotSegmentView *view = [[ENRMBlockSlotSegmentView alloc] init];
+                            view.slotId = segment.blockSlotSegment.slotId;
+                            view.kind = segment.blockSlotSegment.kind;
+                            return view;
+                          }
+                          updateView:^(RCTUIView *view, ENRMRenderedSegment *segment) {
+                            ENRMBlockSlotSegmentView *slotView = (ENRMBlockSlotSegmentView *)view;
+                            slotView.slotId = segment.blockSlotSegment.slotId;
+                            slotView.kind = segment.blockSlotSegment.kind;
+                          }]];
+
 #if ENRICHED_MARKDOWN_VIDEO
   __weak ENRMBlockquoteContainerView *weakBQ = self;
   [handlers addObject:[ENRMSegmentViewHandler handlerWithKind:ENRMSegmentKindVideo
@@ -415,6 +442,8 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
 - (void)handleTextTap:(ENRMTapRecognizer *)recognizer
 {
   ENRMPlatformTextView *textView = (ENRMPlatformTextView *)recognizer.view;
+  // Read before the link check below clears the selection.
+  BOOL hadSelection = textView.selectedRange.length > 0;
   __weak ENRMBlockquoteContainerView *weakSelf = self;
   if (ENRMHandleTapOnTextView(textView, recognizer, ^(NSString *url, NSString *sourceType) {
         ENRMBlockquoteContainerView *strongSelf = weakSelf;
@@ -426,8 +455,17 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
 
   if (self.onImagePress) {
     NSDictionary<NSString *, NSString *> *image = imageAtTapLocation(textView, recognizer);
-    if (image)
+    if (image) {
       self.onImagePress(image[@"url"], image[@"altText"]);
+      return;
+    }
+  }
+
+  // Skip while text is selected so the tap only clears the selection.
+  if (self.onTextPress && !hadSelection) {
+    NSUInteger index = textPressIndexAtTapLocation(textView, recognizer);
+    if (index != NSNotFound)
+      self.onTextPress(index, ENRMGetAttributedText(textView).string);
   }
 }
 
@@ -442,6 +480,9 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
                          pointScaleFactor:(CGFloat)pointScaleFactor
                          allowFontScaling:(BOOL)allowFontScaling
                         lineBreakStrategy:(NSLineBreakStrategy)lineBreakStrategy
+                               wrapCursor:(ENRMCodeBlockWrapCursor *)wrapCursor
+                             slotMeasurer:(ENRMBlockSlotMeasurer *)slotMeasurer
+                                   origin:(CGPoint)origin
 {
   UIEdgeInsets insets = ENRMBlockquoteContentInsetsForNode(config, ENRMAdmonitionTypeForNode(node) != nil);
   CGFloat innerWidth = MAX(maxWidth - insets.left - insets.right, 1);
@@ -450,7 +491,8 @@ static UIEdgeInsets ENRMBlockquoteContentInsets(StyleConfig *config)
       ENRMRenderBlockquoteChildren(node, config, allowFontScaling, lineBreakStrategy);
   CGFloat childrenHeight = ENRMMeasureSegmentsHeightViewFree(
       rendered, config, innerWidth, /*allowTrailingMargin*/ NO, pointScaleFactor, ENRMWritingDirectionModeFirstStrong,
-      NSWritingDirectionNatural, allowFontScaling, lineBreakStrategy);
+      NSWritingDirectionNatural, allowFontScaling, lineBreakStrategy, wrapCursor, slotMeasurer,
+      CGPointMake(origin.x + insets.left, origin.y + insets.top));
 
   return childrenHeight + insets.top + insets.bottom;
 }

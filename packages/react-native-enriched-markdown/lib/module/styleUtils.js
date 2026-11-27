@@ -1,16 +1,20 @@
 "use strict";
 
 import { Platform, processColor } from 'react-native';
+import { isDev } from "./utils/isDev.js";
 export const normalizeColor = color => {
   if (!color) return undefined;
   if (Platform.OS === 'web') return color;
   const processed = processColor(color);
   if (processed === null || processed === undefined) {
-    if (__DEV__) {
+    if (isDev) {
       console.warn(`[MarkdownStyle] Ignoring invalid color value "${color}"; falling back to the default.`);
     }
     return undefined;
   }
+  // What native color props take. Typed as `ColorValue` for callers; some
+  // `react-native` type versions (react-native-web's among them) keep the
+  // processed number out of that union.
   return processed;
 };
 export function mergeSubStyle(defaultStyle, userStyle) {

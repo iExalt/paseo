@@ -299,6 +299,12 @@ object MarkdownASTSerializer {
         buffer.append("==")
       }
 
+      NodeType.LatexMathInline -> {
+        buffer.append("\$")
+        appendChildren(node, buffer)
+        buffer.append("\$")
+      }
+
       NodeType.Code -> {
         buffer.append("`")
         appendChildren(node, buffer)

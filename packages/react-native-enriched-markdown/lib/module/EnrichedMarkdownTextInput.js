@@ -1,19 +1,15 @@
 "use strict";
 
 import { useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef } from 'react';
-import EnrichedMarkdownTextInputNativeComponent, { Commands } from './EnrichedMarkdownTextInputNativeComponent';
+import EnrichedMarkdownTextInputNativeComponent, { Commands } from "./EnrichedMarkdownTextInputNativeComponent.js";
 import { Platform } from 'react-native';
+import { toHeadingLevel } from "./headingLevel.js";
 import { normalizeMarkdownShortcuts } from "./normalizeMarkdownShortcuts.js";
 import { normalizeMarkdownTextInputStyle } from "./normalizeMarkdownTextInputStyle.js";
 import { normalizeMenuItem } from "./normalizeMenuItem.js";
 import { toNativeRegexConfig } from "./utils/regexParser.js";
 import { TextInputState } from "./utils/textInputState.js";
 import { usePressability } from "./utils/usePressability.js";
-import { jsx as _jsx } from "react/jsx-runtime";
-const VALID_HEADING_LEVELS = new Set([1, 2, 3, 4, 5, 6]);
-function toHeadingLevel(n) {
-  return VALID_HEADING_LEVELS.has(n) ? n : 1;
-}
 
 /**
  * Per-item shape: `{ enabled }` toggles visibility, `label` overrides the
@@ -26,7 +22,7 @@ function toHeadingLevel(n) {
  * Which typed markdown block prefixes convert into blocks. An omitted key is
  * off, so `{ heading: true }` enables headings and nothing else.
  */
-
+import { jsx as _jsx } from "react/jsx-runtime";
 function getNativeRef(ref) {
   if (ref.current == null) {
     throw new Error('EnrichedMarkdownTextInput: native ref is not attached. Ensure the component is mounted.');
@@ -52,6 +48,7 @@ export const EnrichedMarkdownTextInput = ({
   onChangeMarkdown,
   onChangeSelection,
   onChangeState,
+  onChangeHistoryState,
   onKeyPress,
   onCaretRectChange,
   onLinkDetected,
@@ -220,6 +217,16 @@ export const EnrichedMarkdownTextInput = ({
       orderedList
     });
   }, [onChangeState]);
+  const handleChangeHistoryState = useCallback(e => {
+    const {
+      canUndo,
+      canRedo
+    } = e.nativeEvent;
+    onChangeHistoryState?.({
+      canUndo,
+      canRedo
+    });
+  }, [onChangeHistoryState]);
   const handleCaretRectChange = useCallback(e => {
     const {
       x,
@@ -367,6 +374,8 @@ export const EnrichedMarkdownTextInput = ({
       startMention: indicator => Commands.startMention(commandRef, indicator),
       removeLink: () => Commands.removeLink(commandRef),
       copyToClipboard: () => Commands.copyToClipboard(commandRef),
+      undo: () => Commands.undo(commandRef),
+      redo: () => Commands.redo(commandRef),
       getMarkdown: () => new Promise((resolve, reject) => {
         const requestId = nextRequestId.current++;
         pendingRequests.current.set(requestId, {
@@ -405,6 +414,7 @@ export const EnrichedMarkdownTextInput = ({
     onChangeMarkdown: handleChangeMarkdown,
     onChangeSelection: handleChangeSelection,
     onChangeState: handleChangeState,
+    onChangeHistoryState: handleChangeHistoryState,
     onInputKeyPress: onKeyPress,
     onLinkDetected: handleLinkDetected,
     onInputFocus: handleFocus,

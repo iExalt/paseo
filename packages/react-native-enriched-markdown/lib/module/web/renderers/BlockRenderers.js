@@ -5,18 +5,28 @@ import { toHeadingLevel } from "../styles.js";
 import { KaTeXRenderer } from "./KaTeXRenderer.js";
 import { ADMONITION_ICON_PATHS, ADMONITION_ICON_VIEWBOX, ADMONITION_TITLES } from "./admonitionIcons.js";
 import { ENRM_ADMONITION_CLASS } from "../globalStyles.js";
-import { Fragment as _Fragment, jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
+import { jsx as _jsx, Fragment as _Fragment, jsxs as _jsxs } from "react/jsx-runtime";
 function ParagraphRenderer({
   node,
   styles,
   parentType,
+  capabilities,
   renderChildren
 }) {
   const isImageOnly = node.children?.length === 1 && node.children[0]?.type === 'Image';
+  const inQuote = parentType === 'Blockquote' || parentType === 'Admonition';
+  const slot = blockSlotFor(node, capabilities);
+  if (slot !== undefined) {
+    const spacing = isImageOnly ? styles.image : inQuote ? styles.paragraphInBlockquote : styles.paragraph;
+    return /*#__PURE__*/_jsx("div", {
+      style: slotSpacing(spacing),
+      children: slot
+    });
+  }
   if (isImageOnly) return /*#__PURE__*/_jsx(_Fragment, {
     children: renderChildren(node)
   });
-  if (parentType === 'Blockquote' || parentType === 'Admonition') {
+  if (inQuote) {
     return /*#__PURE__*/_jsx("p", {
       style: styles.paragraphInBlockquote,
       children: renderChildren(node)
@@ -29,37 +39,42 @@ function ParagraphRenderer({
   }
   return /*#__PURE__*/_jsx("p", {
     style: styles.paragraph,
+    dir: capabilities.blockDir,
     children: renderChildren(node)
   });
 }
 function HeadingRenderer({
   node,
   styles,
+  capabilities,
   renderChildren
 }) {
   const Tag = toHeadingLevel(node.attributes?.level ?? '1');
   return /*#__PURE__*/_jsx(Tag, {
     style: styles[Tag],
+    dir: capabilities.blockDir,
     children: renderChildren(node)
   });
 }
 function BlockquoteRenderer({
   node,
   styles,
-  renderChildren,
-  capabilities
+  capabilities,
+  renderChildren
 }) {
-  const CustomBlockquote = capabilities.renderers?.blockquote;
+  const CustomBlockquote = capabilities.webRenderers?.blockquote;
   if (CustomBlockquote) {
     return /*#__PURE__*/_jsx(CustomBlockquote, {
       blockquoteProps: {
-        style: styles.blockquote
+        style: styles.blockquote,
+        dir: capabilities.blockDir
       },
       children: renderChildren(node)
     });
   }
   return /*#__PURE__*/_jsx("blockquote", {
     style: styles.blockquote,
+    dir: capabilities.blockDir,
     children: renderChildren(node)
   });
 }
@@ -67,6 +82,7 @@ function AdmonitionRenderer({
   node,
   style,
   styles,
+  capabilities,
   renderChildren
 }) {
   const type = node.attributes?.admonitionType ?? 'note';
@@ -94,6 +110,7 @@ function AdmonitionRenderer({
   return /*#__PURE__*/_jsxs("div", {
     className: ENRM_ADMONITION_CLASS,
     style: boxStyle,
+    dir: capabilities.blockDir,
     "data-enrm-admonition-type": type,
     children: [/*#__PURE__*/_jsxs("div", {
       style: headerStyle,
@@ -108,20 +125,28 @@ function AdmonitionRenderer({
           d: ADMONITION_ICON_PATHS[type]
         })
       }), /*#__PURE__*/_jsx("span", {
+        dir: "ltr",
         children: ADMONITION_TITLES[type]
       })]
     }), renderChildren(node)]
   });
 }
 function CodeBlockRenderer({
-  capabilities,
   node,
   styles,
   renderChildren,
-  callbacks
+  callbacks,
+  capabilities
 }) {
+  const slot = blockSlotFor(node, capabilities);
+  if (slot !== undefined) {
+    return /*#__PURE__*/_jsx("div", {
+      style: slotSpacing(styles.codeBlock),
+      children: slot
+    });
+  }
   const language = node.attributes?.language;
-  const CustomCodeBlock = capabilities.renderers?.codeBlock;
+  const CustomCodeBlock = capabilities.webRenderers?.codeBlock;
   if (CustomCodeBlock) {
     // The custom renderer owns the block's look; the library keeps its spacing,
     // including the zeroed trailing margin of the last block.
@@ -140,6 +165,7 @@ function CodeBlockRenderer({
   if (callbacks.onCodeBlockPress == null) {
     return /*#__PURE__*/_jsx("pre", {
       style: styles.codeBlock,
+      dir: "ltr",
       "aria-label": label,
       children: /*#__PURE__*/_jsx("code", {
         style: styles.codeBlockFont,
@@ -170,6 +196,7 @@ function CodeBlockRenderer({
       ...styles.codeBlock,
       cursor: 'pointer'
     },
+    dir: "ltr",
     "aria-label": label,
     role: "button",
     tabIndex: 0,
@@ -207,14 +234,35 @@ function BlankLineRenderer({
     }
   });
 }
+
+// A replacement keeps the vertical spacing of the block it stands in for, as the
+// native hosts give its placeholder the block's margins.
+function slotSpacing(style) {
+  return {
+    marginTop: style.marginTop,
+    marginBottom: style.marginBottom
+  };
+}
+
+// A block slot the app filled, or undefined to keep the default rendering.
+function blockSlotFor(node, capabilities) {
+  const id = node.attributes?.blockSlotId;
+  if (id === undefined) return undefined;
+  return capabilities.blockSlots?.get(id);
+}
 function ImageRenderer({
   node,
   styles,
   parentType,
-  callbacks
+  callbacks,
+  capabilities
 }) {
   const url = node.attributes?.url;
   if (!url) return null;
+  const occurrenceId = node.attributes?.imageOccurrenceId;
+  const resolved = occurrenceId !== undefined && capabilities.imageSources?.has(occurrenceId) ? capabilities.imageSources.get(occurrenceId) : url;
+  // A pending or failed resolution keeps the element, so layout holds, without a request.
+  const src = resolved === null || resolved === '' ? undefined : resolved;
   const title = node.attributes?.title;
   const markdownAlt = extractNodeText(node).trim();
   const alt = markdownAlt || title || filenameFromUrl(url) || 'Image';
@@ -222,7 +270,7 @@ function ImageRenderer({
   const interactive = callbacks.onImagePress != null && parentType !== 'Link' && parentType !== 'TableCell' && parentType !== 'TableHeaderCell';
   if (!interactive) {
     return /*#__PURE__*/_jsx("img", {
-      src: url,
+      src: src,
       alt: alt,
       title: title,
       style: imgStyle
@@ -240,7 +288,7 @@ function ImageRenderer({
     }
   };
   return /*#__PURE__*/_jsx("img", {
-    src: url,
+    src: src,
     alt: alt,
     title: title,
     style: {
@@ -269,8 +317,16 @@ function LatexMathDisplayRenderer({
 }
 function VideoRenderer({
   node,
-  styles
+  styles,
+  capabilities
 }) {
+  const slot = blockSlotFor(node, capabilities);
+  if (slot !== undefined) {
+    return /*#__PURE__*/_jsx("div", {
+      style: slotSpacing(styles.video),
+      children: slot
+    });
+  }
   const url = node.attributes?.url;
   if (!url) return null;
   const title = node.attributes?.title;

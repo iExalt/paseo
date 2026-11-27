@@ -5,6 +5,9 @@
 extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cFlags *flags, BOOL isGFM);
 extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cFlags *flags, BOOL isGFM,
                                                    ENRMLinkRegexConfig *textRegex, ENRMLinkRegexConfig *codeRegex);
+extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cFlags *flags, BOOL isGFM,
+                                                   ENRMLinkRegexConfig *textRegex, ENRMLinkRegexConfig *codeRegex,
+                                                   NSSet<NSString *> *activeBlockSlotIds, BOOL annotateImages);
 
 @implementation ENRMMd4cFlags
 
@@ -15,6 +18,7 @@ extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cF
     _latexMath = YES;
     _superscript = NO;
     _subscript = NO;
+    _strikethrough = NO;
     _highlight = NO;
     _hardSoftBreaks = NO;
     _preserveBlankLines = NO;
@@ -35,6 +39,7 @@ extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cF
   copy.latexMath = self.latexMath;
   copy.superscript = self.superscript;
   copy.subscript = self.subscript;
+  copy.strikethrough = self.strikethrough;
   copy.highlight = self.highlight;
   copy.hardSoftBreaks = self.hardSoftBreaks;
   copy.preserveBlankLines = self.preserveBlankLines;
@@ -68,6 +73,18 @@ extern MarkdownASTNode *parseMarkdownWithCppParser(NSString *markdown, ENRMMd4cF
                inlineCodeLinkRegex:(ENRMLinkRegexConfig *)inlineCodeLinkRegex
 {
   return parseMarkdownWithCppParser(markdown, flags, isGFM, linkRegex, inlineCodeLinkRegex);
+}
+
+- (MarkdownASTNode *)parseMarkdown:(NSString *)markdown
+                             flags:(ENRMMd4cFlags *)flags
+                             isGFM:(BOOL)isGFM
+                         linkRegex:(ENRMLinkRegexConfig *)linkRegex
+               inlineCodeLinkRegex:(ENRMLinkRegexConfig *)inlineCodeLinkRegex
+                activeBlockSlotIds:(NSSet<NSString *> *)activeBlockSlotIds
+                    annotateImages:(BOOL)annotateImages
+{
+  return parseMarkdownWithCppParser(markdown, flags, isGFM, linkRegex, inlineCodeLinkRegex, activeBlockSlotIds,
+                                    annotateImages);
 }
 
 @end

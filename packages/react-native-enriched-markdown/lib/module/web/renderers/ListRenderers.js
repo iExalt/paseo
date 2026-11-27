@@ -9,15 +9,19 @@ function ListRenderer({
   node,
   styles,
   parentType,
+  capabilities,
   renderChildren,
   listTag: ListTag
 }) {
   const isNested = parentType === 'ListItem';
   const hasTaskChild = !isNested && node.children?.some(child => child.attributes?.isTask === 'true');
   const resolvedStyle = isNested ? styles.listNested : hasTaskChild ? styles.listTask : styles.list;
+  // One direction per list, from its first item; per-item markers would need
+  // the indent moved from the list onto each item.
   return /*#__PURE__*/_jsx(ListTag, {
     start: ListTag === 'ol' ? Number(node.attributes?.start ?? 1) : undefined,
     style: resolvedStyle,
+    dir: capabilities.blockDir,
     children: renderChildren(node)
   });
 }

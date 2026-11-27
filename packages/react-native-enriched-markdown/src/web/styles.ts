@@ -34,12 +34,13 @@ const normalizeTextAlign = (
   value: BlockTextAlign
 ): CSSProperties['textAlign'] => (value === 'auto' ? undefined : value);
 
-// 'default' is an AST sentinel for "unspecified column alignment".
+// 'default' is an AST sentinel for "unspecified column alignment"; it follows
+// the cell's direction so RTL cells right-align.
 function resolveColumnAlign(
   align: 'left' | 'center' | 'right' | 'default' | undefined
-): 'left' | 'center' | 'right' {
-  if (align === 'center' || align === 'right') return align;
-  return 'left';
+): 'left' | 'center' | 'right' | 'start' {
+  if (align === 'center' || align === 'right' || align === 'left') return align;
+  return 'start';
 }
 
 export function zeroTrailingMargins(
@@ -258,6 +259,12 @@ function videoStyle(style: MarkdownStyleInternal): CSSProperties {
   return base;
 }
 
+// Browsers without the `cap` would drop the whole declaration.
+const SUPPORTS_CAP_UNIT =
+  typeof CSS !== 'undefined' &&
+  typeof CSS.supports === 'function' &&
+  CSS.supports('vertical-align', '1cap');
+
 function inlineImageStyle(style: MarkdownStyleInternal): CSSProperties {
   const size = style.inlineImage.size;
   // Inline images match the line height and keep their aspect ratio, so wide
@@ -265,8 +272,13 @@ function inlineImageStyle(style: MarkdownStyleInternal): CSSProperties {
   return {
     width: 'auto',
     height: size,
-    maxWidth: '100%',
-    verticalAlign: 'middle',
+      maxWidth: '100%',
+    objectFit: 'contain',
+    // Centre on the cap height: lift the bottom edge to half the cap height
+    // minus half the image. Without `cap`, the middle.
+    verticalAlign: SUPPORTS_CAP_UNIT
+      ? `calc(0.5cap - ${size / 2}px)`
+      : 'middle',
     display: 'inline',
   };
 }

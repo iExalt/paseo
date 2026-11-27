@@ -1,6 +1,7 @@
 "use strict";
 
 import { normalizeColor } from "./styleUtils.js";
+import { isDev } from "./utils/isDev.js";
 // Lookbehind assertions (?<=...) and (?<!...) are not supported by
 // NSRegularExpression on iOS. Warn early so the issue surfaces in JS tests
 // before it silently misfires on device.
@@ -21,12 +22,12 @@ export function normalizeLinkPatternEntries(entries, owner) {
     try {
       RegExp(pattern);
     } catch {
-      if (__DEV__) {
+      if (isDev) {
         console.warn(`${owner} pattern "${pattern}" is not a valid regex and will be ignored.`);
       }
       return false;
     }
-    if (__DEV__) {
+    if (isDev) {
       warnAboutUnsafePattern(owner, pattern);
     }
     return true;

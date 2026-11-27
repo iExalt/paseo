@@ -96,7 +96,10 @@ function CodeRenderer({
   renderChildren
 }) {
   return /*#__PURE__*/_jsx("code", {
-    style: parentType === 'Link' ? { ...styles.code, color: 'inherit' } : styles.code,
+    style: parentType === 'Link' ? {
+      ...styles.code,
+      color: 'inherit'
+    } : styles.code,
     children: node.content ?? renderChildren(node)
   });
 }
@@ -117,7 +120,10 @@ function LinkRenderer({
   if (isRecognizedLink) {
     sourceType = containsInlineCode ? 'inline-code' : 'text';
   }
-  const link = { url, sourceType };
+  const link = {
+    url,
+    sourceType
+  };
   const handleClick = event => {
     if (callbacks.onLinkPress) {
       event.preventDefault();
@@ -141,15 +147,18 @@ function LinkRenderer({
     onClick: handleClick,
     onContextMenu: handleContextMenu
   };
-  const CustomLink = capabilities.renderers?.link;
+  const CustomLink = capabilities.webRenderers?.link;
   if (CustomLink) {
     return /*#__PURE__*/_jsx(CustomLink, {
-      link,
-      anchorProps,
+      link: link,
+      anchorProps: anchorProps,
       children: renderChildren(node)
     });
   }
-  return /*#__PURE__*/_jsx("a", { ...anchorProps, children: renderChildren(node) });
+  return /*#__PURE__*/_jsx("a", {
+    ...anchorProps,
+    children: renderChildren(node)
+  });
 }
 function LatexMathInlineRenderer({
   node,

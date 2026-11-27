@@ -19,6 +19,7 @@ public interface EnrichedMarkdownTextManagerInterface<T extends View> extends Vi
   void setMarkdown(T view, @Nullable String value);
   void setMarkdownStyle(T view, @Nullable ReadableMap value);
   void setEnableImagePress(T view, boolean value);
+  void setEnableTextPress(T view, boolean value);
   void setEnableTaskListItemToggle(T view, boolean value);
   void setEnableCodeBlockPress(T view, boolean value);
   void setEnableBlockContextMenu(T view, boolean value);

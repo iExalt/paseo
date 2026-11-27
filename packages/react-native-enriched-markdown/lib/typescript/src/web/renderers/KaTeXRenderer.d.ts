@@ -6,6 +6,6 @@ interface KaTeXRendererProps {
     displayMode: boolean;
     style: CSSProperties;
 }
-export declare function KaTeXRenderer({ content, katex, displayMode, style, }: KaTeXRendererProps): import("react/jsx-runtime").JSX.Element;
+export declare function KaTeXRenderer({ content, katex, displayMode, style, }: KaTeXRendererProps): import("react").JSX.Element;
 export {};
 //# sourceMappingURL=KaTeXRenderer.d.ts.map

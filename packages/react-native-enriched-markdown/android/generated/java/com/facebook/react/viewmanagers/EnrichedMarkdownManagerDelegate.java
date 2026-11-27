@@ -35,11 +35,17 @@ public class EnrichedMarkdownManagerDelegate<T extends View, U extends BaseViewM
       case "enableImagePress":
         mViewManager.setEnableImagePress(view, value == null ? false : (boolean) value);
         break;
+      case "enableTextPress":
+        mViewManager.setEnableTextPress(view, value == null ? false : (boolean) value);
+        break;
       case "enableTaskListItemToggle":
         mViewManager.setEnableTaskListItemToggle(view, value == null ? true : (boolean) value);
         break;
       case "enableCodeBlockPress":
         mViewManager.setEnableCodeBlockPress(view, value == null ? false : (boolean) value);
+        break;
+      case "enableCodeBlockWrapToggle":
+        mViewManager.setEnableCodeBlockWrapToggle(view, value == null ? true : (boolean) value);
         break;
       case "enableBlockContextMenu":
         mViewManager.setEnableBlockContextMenu(view, value == null ? true : (boolean) value);
@@ -85,6 +91,9 @@ public class EnrichedMarkdownManagerDelegate<T extends View, U extends BaseViewM
         break;
       case "imageRequestHeaders":
         mViewManager.setImageRequestHeaders(view, (ReadableArray) value);
+        break;
+      case "imageSources":
+        mViewManager.setImageSources(view, (ReadableArray) value);
         break;
       case "linkPillContent":
         mViewManager.setLinkPillContent(view, (ReadableArray) value);

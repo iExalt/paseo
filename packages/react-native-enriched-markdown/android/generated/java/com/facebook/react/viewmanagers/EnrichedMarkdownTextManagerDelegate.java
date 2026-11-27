@@ -35,6 +35,9 @@ public class EnrichedMarkdownTextManagerDelegate<T extends View, U extends BaseV
       case "enableImagePress":
         mViewManager.setEnableImagePress(view, value == null ? false : (boolean) value);
         break;
+      case "enableTextPress":
+        mViewManager.setEnableTextPress(view, value == null ? false : (boolean) value);
+        break;
       case "enableTaskListItemToggle":
         mViewManager.setEnableTaskListItemToggle(view, value == null ? true : (boolean) value);
         break;

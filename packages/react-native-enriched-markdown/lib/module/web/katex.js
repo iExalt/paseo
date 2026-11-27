@@ -1,22 +1,22 @@
 "use strict";
 
-let katexLoadPromise = null;
+// `undefined` until the first lookup; `null` when KaTeX is not installed.
+let katexInstance;
 
-/** Lazily loads KaTeX. Resolves to null if not installed. */
+/** Lazily loads KaTeX. Returns null if not installed. */
 export function loadKaTeX() {
-  if (!katexLoadPromise) {
-    let instance = null;
+  if (katexInstance === undefined) {
+    katexInstance = null;
     try {
       const mod = require('katex');
       const candidate = mod?.default ?? mod;
       if (typeof candidate?.renderToString === 'function') {
-        instance = candidate;
+        katexInstance = candidate;
       }
     } catch {
       // katex not installed — math rendering will be skipped
     }
-    katexLoadPromise = Promise.resolve(instance);
   }
-  return katexLoadPromise;
+  return katexInstance;
 }
 //# sourceMappingURL=katex.js.map
