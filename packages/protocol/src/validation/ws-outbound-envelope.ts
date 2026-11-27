@@ -7,8 +7,9 @@ import {
 
 export const sessionOutboundMessageOptions = SessionOutboundMessageSchema.options;
 
+// Retain the payload for the selected message validator after checking the tag.
 const [firstSessionTag, ...otherSessionTags] = sessionOutboundMessageOptions.map((option) =>
-  z.object({ type: option.shape.type }),
+  z.looseObject({ type: option.shape.type }),
 );
 
 // WSOutboundMessageSchema with every session message reduced to its tag. It reports the same
