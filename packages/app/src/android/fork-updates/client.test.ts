@@ -26,7 +26,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
       harness.storage.set(key, value);
     },
     removeItem: async (key: string) => harness.storage.delete(key),
-    multiRemove: async (keys: string[]) => keys.forEach((key) => harness.storage.delete(key)),
+    removeMany: async (keys: string[]) => keys.forEach((key) => harness.storage.delete(key)),
   },
 }));
 
@@ -46,6 +46,7 @@ vi.mock("./release", async () => ({
 }));
 
 import {
+  clearStagedForkUpdate,
   downloadForkUpdate,
   restoreStagedForkUpdate,
   launchForkUpdateInstaller,
@@ -74,6 +75,17 @@ describe("fork update staged receipt recovery", () => {
     harness.native.installApk.mockClear();
     harness.native.downloadAndVerifyApk.mockClear();
     harness.native.findVerifiedStagedApk.mockClear();
+  });
+
+  it("clears both staged receipts without deleting the installed high-water mark", async () => {
+    const prefix = "@getpaseo/fork-update/semver-v1";
+    harness.storage.set(`${prefix}/staged`, "staged receipt");
+    harness.storage.set(`${prefix}/staged-pending`, "pending receipt");
+    harness.storage.set(`${prefix}/high-water`, "0.1.1");
+
+    await clearStagedForkUpdate();
+
+    expect([...harness.storage]).toEqual([[`${prefix}/high-water`, "0.1.1"]]);
   });
 
   it("recovers a verified APK when receipt promotion fails after native staging", async () => {

@@ -9,7 +9,7 @@ const SNAPSHOT_INDEX_KEY = "@paseo/provider-snapshot-index/v2";
 function createStorage(maxSnapshotBytes = Number.POSITIVE_INFINITY) {
   const values = new Map<string, string>();
   const stats = { getAllKeysCalls: 0 };
-  type Operation = "setItem" | "removeItem" | "multiRemove";
+  type Operation = "setItem" | "removeItem" | "removeMany";
   let failure: { operation: Operation; timing: "before" | "after"; key?: string } | null = null;
 
   function takeFailure(operation: Operation, timing: "before" | "after", key?: string): boolean {
@@ -60,15 +60,17 @@ function createStorage(maxSnapshotBytes = Number.POSITIVE_INFINITY) {
       stats.getAllKeysCalls += 1;
       return [...values.keys()];
     },
-    async multiGet(keys: readonly string[]) {
-      return keys.map((key) => [key, values.get(key) ?? null] as const);
+    async getMany(keys: readonly string[]) {
+      if (keys.length > 999) throw new Error("too many SQL variables");
+      return Object.fromEntries(keys.map((key) => [key, values.get(key) ?? null]));
     },
-    async multiRemove(keys: readonly string[]) {
-      if (takeFailure("multiRemove", "before")) throw new Error("Injected multiRemove failure");
+    async removeMany(keys: readonly string[]) {
+      if (keys.length > 999) throw new Error("too many SQL variables");
+      if (takeFailure("removeMany", "before")) throw new Error("Injected removeMany failure");
       for (const [index, key] of keys.entries()) {
         values.delete(key);
-        if (index === 0 && takeFailure("multiRemove", "after")) {
-          throw new Error("Injected partial multiRemove failure");
+        if (index === 0 && takeFailure("removeMany", "after")) {
+          throw new Error("Injected partial removeMany failure");
         }
       }
     },
@@ -165,6 +167,29 @@ describe("provider snapshot cache", () => {
     });
     expect(unchanged.entries[0].models).toEqual([first]);
     expect(unchanged.snapshotHash).toBe("old-hash");
+  });
+
+  it("reads and removes oversized cache inventories within the SQLite variable limit", async () => {
+    const storage = createStorage();
+    await writeSnapshot(createProviderSnapshotCache(storage), {
+      cwd: "/kept",
+      label: "kept",
+      generatedAt: "2027-01-01T00:00:00.000Z",
+    });
+    for (let index = 0; index < 1001; index++) {
+      storage.values.set(`@paseo/provider-snapshot/v1:${index}`, "legacy");
+      storage.values.set(
+        `${SNAPSHOT_KEY_PREFIX}${JSON.stringify(["server-1", "hash", index])}`,
+        "corrupt",
+      );
+    }
+
+    const cache = createProviderSnapshotCache(storage);
+    expect((await cache.read("server-1", "/kept"))?.hash).toBe("kept");
+    expect([...storage.values.keys()]).toEqual([
+      `${SNAPSHOT_KEY_PREFIX}["server-1","hash","kept"]`,
+      `${SNAPSHOT_KEY_PREFIX}["server-1","cwd","/kept"]`,
+    ]);
   });
 
   it("removes externally lost body references and retains independent orphan bodies on reconciliation", async () => {
@@ -546,7 +571,7 @@ describe("provider snapshot cache", () => {
       label: "middle",
       generatedAt: "2026-08-02T00:00:00.000Z",
     });
-    storage.failNext("multiRemove", "after");
+    storage.failNext("removeMany", "after");
     await writeSnapshot(cache, {
       cwd: "/large-newest",
       label: "newest",
@@ -605,7 +630,7 @@ describe("provider snapshot cache", () => {
       const storage = createStorage();
       const key = `${SNAPSHOT_KEY_PREFIX}["server-1","cwd","/invalid"]`;
       storage.values.set(key, "invalid");
-      storage.failNext("multiRemove", timing);
+      storage.failNext("removeMany", timing);
       const cache = createProviderSnapshotCache(storage);
 
       await expect(cache.read("server-1", "/invalid")).resolves.toBeNull();

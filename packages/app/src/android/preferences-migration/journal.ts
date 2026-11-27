@@ -19,7 +19,7 @@ export interface PreferenceStorage {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
   removeItem(key: string): Promise<void>;
-  multiSet?(pairs: [string, string][]): Promise<void>;
+  setMany?(entries: Record<string, string>): Promise<void>;
 }
 
 const JournalSchema = z.strictObject({
@@ -56,8 +56,8 @@ async function writeValues(storage: PreferenceStorage, values: Journal["before"]
       entry.value !== null,
   );
   const removals = values.filter((entry) => entry.value === null);
-  if (storage.multiSet && pairs.length > 0)
-    await storage.multiSet(pairs.map(({ key, value }) => [key, value]));
+  if (storage.setMany && pairs.length > 0)
+    await storage.setMany(Object.fromEntries(pairs.map(({ key, value }) => [key, value])));
   else for (const { key, value } of pairs) await storage.setItem(key, value);
   for (const { key } of removals) await storage.removeItem(key);
 }
