@@ -6,7 +6,8 @@ import { Unicode11Addon } from "@xterm/addon-unicode11";
 import { UnicodeGraphemesAddon } from "@xterm/addon-unicode-graphemes";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { WebglAddon } from "@xterm/addon-webgl";
-import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.mjs";
+// The ESM entry imports Node diagnostics. Use the package's browser-compatible build.
+import { LigaturesAddon } from "@xterm/addon-ligatures/lib/addon-ligatures.js";
 import { Terminal, type ITheme, type IMarker } from "@xterm/xterm";
 import type { TerminalCharacterWidths } from "../character-widths";
 import {
