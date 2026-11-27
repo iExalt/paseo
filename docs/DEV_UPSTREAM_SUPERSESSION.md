@@ -2,7 +2,7 @@
 
 The version 2 ledger carries the reviewed retained outcomes onto published `dev`. Exact fully superseded and empty/history-only matches are drop instructions; partial decisions require target-bound source retain receipts. Retained curated commits keep one-to-one replay. [The rebase procedure](upstream/rebase-dev.md#carry-supersession-decisions-forward) owns matching, target and release-boundary safeguards.
 
-The ledger matches published `dev` after the rebase onto `0273b6b614bac623168d03e7f89f9e161274b468`. It changes no application code and does not establish runtime parity.
+The ledger carries the published decisions forward for rehearsal at the pinned mirror `518e58cd639f01f63da35544bce3eff5123b10ee`. The refreshed receipts record source review. Run the listed integration checks on the replay tree.
 
 ## Published rebase
 
@@ -17,37 +17,35 @@ matched all 143 to a clean replay, commit for commit and tree for tree, apart fr
 the generated `last-release-sha`. All 143 carry the pinned production signature
 and GitHub verification.
 
-The ledger has 145 rows: 136 carried rows, seven new keep rows and two historical
+After the published carry-forward, the ledger had 145 rows: 136 carried rows, seven new keep rows and two historical
 fully superseded rows that match no current commit. Rows were carried through the
 replay's original-to-rewritten mapping, not by subject, because each rebase adds
 generated commits with repeated subjects. The carry changed 18 patch IDs and every
 SHA hint. The new keep rows are #498 to #501 and this rebase's three generated
-commits. The engine's ledger check on published dev with this ledger retains every
-published commit and drops none.
+commits. The ledger check for that publication retained every published commit.
 
 [The manifest](upstream-rebase-inventory.json) records the carried keys, incoming
 paths and capture provenance. The previous ledger is available at
 [the pre-rebase dev](https://github.com/iExalt/paseo/blob/37a7244debe3ed1dd2b3682d4db94a5b55e2748e/docs/upstream-rebase-inventory.json).
 
-The ten partial rows authorized retaining their distinct outcomes at this
-target. Two of them changed patch identity through upstream context and content
-drift: the engine hashes moved files whole, and `git range-diff` shows the fork's
-own changes unchanged. Their receipts carry the published identity and cite the
-resolution snapshot and run.
-A newer target needs new source review and receipts for every partial row. Nine listed source-path sets do not overlap the incoming changes. The
-replica-rendering row overlaps only `_layout.tsx`: incoming changes add two plugin
-routes away from the fork's favicon mount and hidden-selector behavior. These
-source decisions authorized rehearsal; validate-only and the publishing run then
-passed the full routine on the exact tree. Runtime and platform parity remain
-unproven.
+## Pending replay
+
+The ten partial rows carry refreshed source reviews for the pinned mirror. Each
+receipt names the evidence commits, the fork behavior to retain and the checks
+to run against the replay tree. A newer target requires source review and new
+receipts for all ten rows.
+
+The ledger's minimum upstream ancestor advances to `d49991318f088623155231a1e293d4efc7b3cade`
+so the planner rejects targets that lack the #620 replacement. The manifest's
+incoming inventory and `refs.actual_upstream` record the published capture above.
 
 ## Decisions
 
-| Category             | Ledger rows | Replay                                                      |
-| -------------------- | ----------: | ----------------------------------------------------------- |
-| keep                 |         133 | Retain one-to-one.                                          |
-| partially superseded |          10 | Retain with the exact-target source review receipt.         |
-| fully superseded     |           2 | Historical decisions; neither commit is in current history. |
+| Category             | Ledger rows | Replay                                                                                          |
+| -------------------- | ----------: | ----------------------------------------------------------------------------------------------- |
+| keep                 |         133 | Retain one-to-one.                                                                              |
+| partially superseded |          10 | Retain with the exact-target source review receipt.                                             |
+| fully superseded     |           3 | Drop the #620 backport. The other two rows record historical drops absent from current history. |
 
 ### Fully superseded behavior
 
@@ -65,17 +63,17 @@ unproven.
   before deleting the old test scaffolding. Later Android proof must cover wheel
   direction, history prepend and reading position.
 
+- `e623aa387766e8d2b8457a7645e0aa323eddbb46`:
+  upstream `d49991318f088623155231a1e293d4efc7b3cade` preserves the index timestamp
+  and covers same-size edits in both comparison modes. The decision accepts
+  dropping the fork's fixture hardening and bigint rounding. The precision edge
+  remains an upstream candidate. Run both comparison cases after replay.
+  [Supersession decision #623](https://github.com/iExalt/paseo/pull/623)
+
 ### Partial overlap
 
-- `070bacffa`: target evidence: `0a549945b` replaces JS terminal rows with native views and layout caches.; retain and reconcile: Keep fork screen-store subscriptions, latency stages, find/selection overlays and bundled fonts through the new renderer; do not restore deleted JS row abstractions. Native latency parity remains unproven..
-- `1125d440c`: target evidence: `82d5f6c58` backports root constraints to Unistyles 3.2.4.; retain and reconcile: Keep selected 3.8.1 and CSSOM resize detection/self-check. Existing local 3.8.1 source preserves latest root constraints/context on retry. Confirm it from the locked clean install before choosing C++ hunks; source presence does not prove Android rotation runtime..
-- `00b6b6eab`: target evidence: `4f7813d3a` pins disclosure trigger edges.; retain and reconcile: Carry content reveal and the active-element stale-trigger guard through `holdRow`; preserve find/outline jumps after an earlier toggle..
-- `1e403c813`, `1e403c813`, `1e403c813`: target evidence: `1c4400194`, `9e607a3aa` supply shortcut dispatch and physical arrows.; retain and reconcile: Keep broader terminal key capture, iPad command priorities, app-shortcut priority and Android IME Enter/Backspace pairing. Preserve the explicit unsupported fork iOS build gate..
-- `1bd082ae9`, `1bd082ae9`, `1bd082ae9`: target evidence: `c6f0c24bf` creates separate summary rows.; retain and reconcile: Carry CLI sends, received-agent input membership, folded message counts and downward expansion into those rows..
-
-Full SHAs, source paths and the cheapest later invariant checks are on each
-ledger row. These checks are requirements for later adaptation, not results of
-this inventory.
+The ten [retain receipts](upstream-rebase-inventory.json) carry the current
+source witnesses and the cheapest checks for each affected behavior.
 
 ### Distinct behavior to keep
 
@@ -137,23 +135,11 @@ snapshot. The separate retry/cancellation guard verification task remains parked
 this inventory does not adopt it or add dependencies. Those are tracker/source
 statuses, not fresh runtime proof.
 
-### Git diff index snapshots
-
-For the next target-bound ledger refresh, verify that
-[`d49991318f088623155231a1e293d4efc7b3cade`](https://github.com/getpaseo/paseo/commit/d49991318f088623155231a1e293d4efc7b3cade)
-is an ancestor of the captured target. Then add a fully superseded drop row for
-`d27133f4bc34a630828548e8367b93f11d6c5e6c`. Match the subject `fix(diff): preserve index timestamps in worktree comparisons (#620)`
-and stable patch ID `d9a2c3f773f349eea1865452f8e821c992742e62`.
-
-Upstream covers both affected comparison paths. Drop the fork's extra regression
-variants and bigint rounding with the backport. The precision edge stays an
-upstream candidate. [PR #620](https://github.com/iExalt/paseo/pull/620)
-
 ## Reproduction and evidence boundary
 
 Recompute the captured curated list with `git rev-list --reverse --topo-order --no-merges BASE..TIP`. Compute identities with `git show --format= --binary --no-ext-diff --no-textconv --no-renames --ignore-submodules=none --no-color SHA | git patch-id --stable`, paired with `git show -s --format=%s SHA`. A null patch ID identifies an empty patch; it does not classify the commit for dropping. The immutable capture and archive refs make the source review reachable after rewritten SHAs change. No new generator or proof framework is required to consume the ledger.
 
-The refresh swept every ledger identity against published history and all 40
+The published carry-forward swept every ledger identity against published history and all 40
 incoming subjects and touched paths, then checked the partial rows against their
 listed source paths. It does not claim a line-by-line audit of every incoming
 change or runtime parity. Non-keep decisions retain their source evidence.
