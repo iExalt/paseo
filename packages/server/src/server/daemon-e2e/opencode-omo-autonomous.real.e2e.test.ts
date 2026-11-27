@@ -5,6 +5,7 @@ import { expect, test } from "vitest";
 
 import type { SessionOutboundMessage } from "../messages.js";
 import { createMessageCollector } from "../test-utils/message-collector.js";
+import { startOmoModelFixture } from "./opencode-omo-model-fixture.js";
 import { createOpenCodeOmoRealRuntime } from "./opencode-omo-real-runtime.js";
 
 const CHILD_TOKEN = "PASEO_OMO_CHILD_READY";
@@ -13,9 +14,17 @@ const FINAL_TOKEN = "PASEO_OMO_AUTONOMOUS_FINAL";
 const ROOT_IDLE_BARRIER = ".paseo-omo-root-idle";
 
 test("OpenCode remains idle while an OMO child works and completes the autonomous wake", async () => {
-  const runtime = await createOpenCodeOmoRealRuntime();
+  const modelFixture =
+    process.env.OPENROUTER_API_KEY?.trim() || process.env.PASEO_REAL_OPENCODE_MODEL?.trim()
+      ? undefined
+      : await startOmoModelFixture();
+  const runtime = await createOpenCodeOmoRealRuntime(modelFixture?.baseUrl).catch(async (error) => {
+    await modelFixture?.close();
+    throw error;
+  });
   const collector = createMessageCollector(runtime.client);
   let passed = false;
+  const subscriptions = new AbortController();
 
   try {
     const modeId = await resolveSisyphusMode(runtime.client, runtime.workspace);
@@ -26,6 +35,12 @@ test("OpenCode remains idle while an OMO child works and completes the autonomou
       model: runtime.model,
       modeId,
     });
+
+    const timeline = runtime.client.observeTimeline([agent.id], { signal: subscriptions.signal });
+    const children = runtime.client.observeEvents(["agent.provider_subagents.update"], {
+      signal: subscriptions.signal,
+    });
+    await Promise.all([timeline.ready, children.ready]);
 
     await runtime.client.sendMessage(
       agent.id,
@@ -42,7 +57,11 @@ test("OpenCode remains idle while an OMO child works and completes the autonomou
     expect(firstFinish.status).toBe("idle");
     const firstTimeline = await runtime.client.fetchAgentTimeline(agent.id, { limit: 240 });
     expect(assistantTexts(firstTimeline.entries).join("\n")).toContain(ROOT_IDLE_TOKEN);
-    await writeFile(join(runtime.workspace, ROOT_IDLE_BARRIER), "root idle\n", "utf8");
+    if (modelFixture) {
+      modelFixture.releaseChild();
+    } else {
+      await writeFile(join(runtime.workspace, ROOT_IDLE_BARRIER), "root idle\n", "utf8");
+    }
 
     const completedChild = await waitForCompletedChildWithToken(
       runtime.client,
@@ -110,8 +129,13 @@ test("OpenCode remains idle while an OMO child works and completes the autonomou
       { cause: error },
     );
   } finally {
+    subscriptions.abort();
     collector.unsubscribe();
-    await runtime.close(passed);
+    try {
+      await runtime.close(passed);
+    } finally {
+      await modelFixture?.close();
+    }
   }
 }, 2_100_000);
 

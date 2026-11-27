@@ -13,9 +13,10 @@ import { createTestPaseoDaemon, type TestPaseoDaemon } from "../test-utils/paseo
 import { DaemonClient } from "../test-utils/daemon-client.js";
 
 const PINNED_OPENCODE_VERSION = "1.19.6";
-const PINNED_OMO_VERSION = "4.19.3";
+const PINNED_OMO_VERSION = "5.1.84";
 const DEFAULT_OPENROUTER_MODEL = "openrouter/google/gemini-2.5-flash";
 const NO_AUTH_MODEL = "opencode/big-pickle";
+const FIXTURE_MODEL = "fixture/fixture";
 const COMMAND_TIMEOUT_MS = 180_000;
 
 interface RuntimePaths {
@@ -52,15 +53,37 @@ export interface OpenCodeOmoRealRuntime {
   close: (passed: boolean) => Promise<void>;
 }
 
-export async function createOpenCodeOmoRealRuntime(): Promise<OpenCodeOmoRealRuntime> {
+export async function createOpenCodeOmoRealRuntime(
+  modelFixtureUrl?: string,
+): Promise<OpenCodeOmoRealRuntime> {
   const paths = createRuntimePaths();
   const openCodeVersion =
     process.env.PASEO_REAL_OPENCODE_VERSION?.trim() || PINNED_OPENCODE_VERSION;
   const omoVersion = process.env.PASEO_REAL_OMO_VERSION?.trim() || PINNED_OMO_VERSION;
   const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim() || null;
-  const model = resolveModel(openRouterApiKey);
+  const model = modelFixtureUrl ? FIXTURE_MODEL : resolveModel(openRouterApiKey);
   const secrets = collectEnvironmentSecrets(openRouterApiKey);
   const runtimeEnv = buildRuntimeEnv(paths, openRouterApiKey);
+  if (modelFixtureUrl) {
+    runtimeEnv.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+      model: FIXTURE_MODEL,
+      small_model: FIXTURE_MODEL,
+      provider: {
+        fixture: {
+          npm: "@ai-sdk/openai-compatible",
+          name: "Fixture",
+          options: { baseURL: modelFixtureUrl, apiKey: "fixture-token" },
+          models: {
+            fixture: {
+              name: "Fixture",
+              tool_call: true,
+              limit: { context: 128_000, output: 8192 },
+            },
+          },
+        },
+      },
+    });
+  }
   const npmCli = process.env.npm_execpath;
   if (!npmCli || !existsSync(npmCli)) {
     throw new Error(
@@ -96,7 +119,12 @@ export async function createOpenCodeOmoRealRuntime(): Promise<OpenCodeOmoRealRun
     ".bin",
     `opencode${executableSuffix}`,
   );
-  const omoCommand = path.join(paths.runtime, "node_modules", ".bin", `omo${executableSuffix}`);
+  const omoCommand = path.join(
+    paths.runtime,
+    "node_modules",
+    ".bin",
+    `oh-my-openagent${executableSuffix}`,
+  );
   assertFixtureExecutable(openCodeCommand, `opencode-ai@${openCodeVersion}`);
   assertFixtureExecutable(omoCommand, `oh-my-openagent@${omoVersion}`);
 
