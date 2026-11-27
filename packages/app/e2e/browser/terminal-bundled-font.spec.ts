@@ -108,6 +108,20 @@ test.describe("Terminal bundled Nerd Font", () => {
   });
 
   test("draws Nerd Font icons once the bundled font loads", async ({ page }, testInfo) => {
+    const readLocalFontQueries = () => Reflect.get(window, "__paseoLocalFontQueries");
+    await page.addInitScript(() => {
+      const browser = window as Window & {
+        queryLocalFonts?: () => Promise<unknown[]>;
+        __paseoLocalFontQueries?: number;
+      };
+      const queryLocalFonts = browser.queryLocalFonts?.bind(browser);
+      if (!queryLocalFonts) return;
+      browser.__paseoLocalFontQueries = 0;
+      browser.queryLocalFonts = () => {
+        browser.__paseoLocalFontQueries = (browser.__paseoLocalFontQueries ?? 0) + 1;
+        return queryLocalFonts();
+      };
+    });
     const allowFontDownload = Promise.withResolvers<void>();
     await page.route("**/fonts/meslolgs-nf/**", async (route) => {
       await allowFontDownload.promise;
@@ -119,6 +133,7 @@ test.describe("Terminal bundled Nerd Font", () => {
         allowFontDownload.resolve();
         await waitForBundledFont(page);
         const crops = await printIconsAndCrop(page, harness);
+        expect(await page.evaluate(readLocalFontQueries)).toBe(0);
         expect(crops[0]!.equals(crops[1]!)).toBe(false);
         expect(crops[1]!.equals(crops[2]!)).toBe(false);
         expect(crops[0]!.equals(crops[2]!)).toBe(false);
