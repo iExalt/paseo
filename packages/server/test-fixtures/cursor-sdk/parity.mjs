@@ -52,6 +52,7 @@ const p5Fixture = useCallerFixture
 const backend = await startBackend(workspace, {
   p5: !!p5Fixture,
   inspectRequest: mode === "green",
+  checkCommitAttribution: mode === "green",
   allowCodexPrewarm: mode === "baseline",
 });
 const codexProvider =
@@ -341,6 +342,13 @@ try {
   } else {
     const completed = await launch(workspaceId, "Run the shell canary.");
     await checkCompleted(completed);
+    // The PR flag confirms the mock team policy allows attribution.
+    assert.deepEqual(
+      backend.attributionContext,
+      { commit: undefined, pullRequest: "enabled" },
+      "Cursor SDK should omit commit attribution from its request context",
+    );
+    console.log("PASS Cursor SDK request context omits commit attribution");
     assert.deepEqual(
       (await readFile(join(workspace, "cursor-cli-disabled.txt"), "utf8")).trimEnd().split("\n"),
       [paseoHome, "absent"],
