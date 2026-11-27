@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.38.4](https://github.com/iExalt/paseo/compare/paseo-v0.38.3...paseo-v0.38.4) (2026-11-27)
+
+
+### Bug Fixes
+
+* **cursor-sdk:** suppress automatic commit attribution ([ae89318](https://github.com/iExalt/paseo/commit/ae89318779bd46ad43faf49a08fa0b89f857a0c1))
+* **cursor-sdk:** upgrade to 1.5.2 ([d728b7b](https://github.com/iExalt/paseo/commit/d728b7b7c916d10257de530bd4ae579f3e66303b))
+* **diff:** preserve index timestamps in worktree comparisons ([#620](https://github.com/iExalt/paseo/issues/620)) ([d27133f](https://github.com/iExalt/paseo/commit/d27133f4bc34a630828548e8367b93f11d6c5e6c))
+
 ## [0.38.3](https://github.com/iExalt/paseo/compare/paseo-v0.38.2...paseo-v0.38.3) (2026-11-26)
 
 
