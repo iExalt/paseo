@@ -6,6 +6,9 @@ import { forkAndroidVersionCode } from "./fork-version.mjs";
 
 export const FORK_CONFIG_PATH = ".github/fork-release.json";
 export const FORK_CHANGELOG_PATH = "CHANGELOG.fork.md";
+const markdownWorkspace = "packages/react-native-enriched-markdown";
+const markdownMigrationBase = "0273b6b614bac623168d03e7f89f9e161274b468";
+const markdownMigrationTarget = "518e58cd639f01f63da35544bce3eff5123b10ee";
 const sections = ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"];
 
 export function validateForkConfig(config) {
@@ -33,7 +36,16 @@ export async function inspectForkRelease(read) {
   const entries = [["", root]];
   for (const directory of root.workspaces) {
     assert.match(directory, /^(?:packages\/[a-z0-9-]+|plugins)$/);
-    entries.push([directory, JSON.parse(await read(`${directory}/package.json`))]);
+    const manifest = JSON.parse(await read(`${directory}/package.json`));
+    if (directory === markdownWorkspace) {
+      assert.equal(
+        manifest.name,
+        "react-native-enriched-markdown",
+        "Vendored Markdown workspace identity differs",
+      );
+      assert.equal(manifest.private, true, "Vendored Markdown workspace must stay private");
+    }
+    entries.push([directory, manifest]);
   }
   const names = new Set(entries.map(([, pkg]) => pkg.name));
   assert.equal(names.size, entries.length, "Workspace names must be unique");
@@ -75,14 +87,22 @@ export function assertForkReleasePreserved(
   before,
   after,
   upstreamBase = before.config.upstreamBase,
+  { migrationTarget = upstreamBase } = {},
 ) {
   assert.deepEqual(
     after.config,
     { ...before.config, upstreamBase },
     "Rebase changed authoritative fork release metadata",
   );
+  const addsVendoredMarkdown =
+    before.config.upstreamBase === markdownMigrationBase &&
+    migrationTarget === markdownMigrationTarget &&
+    !before.workspaces.includes(markdownWorkspace) &&
+    after.workspaces.includes(markdownWorkspace);
   assert.deepEqual(
-    after.workspaces,
+    addsVendoredMarkdown
+      ? after.workspaces.filter((directory) => directory !== markdownWorkspace)
+      : after.workspaces,
     before.workspaces,
     "Rebase changed release workspace membership",
   );
