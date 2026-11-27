@@ -21,11 +21,17 @@ function sendToHost(message: MermaidRuntimeMessage): void {
   }
 }
 
-function initializeMermaid(colorScheme: "light" | "dark"): void {
+// Register Mermaid's built-in detectors before selecting a layout for the first render.
+mermaid.initialize({ startOnLoad: false });
+
+function initializeMermaid(colorScheme: "light" | "dark", source: string): void {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
     suppressErrorRendering: true,
+    // Keep the prior Dagre default. Mindmaps choose their own layout when it is unset.
+    ...(mermaid.detectType(source) === "mindmap" ? {} : { layout: "dagre" }),
+    look: "classic",
     theme: colorScheme === "dark" ? "dark" : "default",
     secure: [
       "secure",
@@ -38,7 +44,9 @@ function initializeMermaid(colorScheme: "light" | "dark"): void {
       "themeVariables",
       "themeCSS",
     ],
-    flowchart: { htmlLabels: false },
+    // Mermaid 12 sets a minimum node width. Keep sizing these labels from their text.
+    flowchart: { htmlLabels: false, minNodeWidth: 0 },
+    state: { minNodeWidth: 0 },
     class: { htmlLabels: false },
     // A gantt chart takes the width of the element it renders in, which is the oversized staging
     // container. Keep it as wide as this frame, which on native is the message column.
@@ -99,7 +107,7 @@ function measureDiagram(host: HTMLElement, svg: SVGSVGElement | null): DiagramSi
 
 async function render(message: MermaidRuntimeRenderMessage): Promise<void> {
   try {
-    initializeMermaid(message.colorScheme);
+    initializeMermaid(message.colorScheme, message.source);
     const staging = document.getElementById("staging");
     if (!staging) {
       throw new Error("Missing Mermaid staging container");

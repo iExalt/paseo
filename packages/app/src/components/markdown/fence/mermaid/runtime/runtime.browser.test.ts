@@ -31,7 +31,7 @@ function waitForRuntimeMessage(
 
 async function mountRuntime(
   size?: { width: number; height: number },
-  options?: { allowSameOrigin?: boolean },
+  options?: { allowSameOrigin?: boolean; withoutEs2024?: boolean },
 ): Promise<HTMLIFrameElement> {
   const frame = document.createElement("iframe");
   frame.sandbox.add("allow-scripts");
@@ -43,7 +43,12 @@ async function mountRuntime(
     frame.style.height = `${size.height}px`;
   }
   const ready = waitForRuntimeMessage(frame, (message) => message.type === "bridgeReady");
-  frame.srcdoc = mermaidRuntimeHtml;
+  frame.srcdoc = options?.withoutEs2024
+    ? mermaidRuntimeHtml.replace(
+        "<script>",
+        "<script>Object.groupBy = undefined; URL.canParse = undefined;</script><script>",
+      )
+    : mermaidRuntimeHtml;
   document.body.append(frame);
   mountedFrames.push(frame);
   await ready;
@@ -107,6 +112,17 @@ describe("Mermaid sandbox runtime", () => {
    * back: every re-render measures inside a frame the previous measurement already shrank by the
    * container's padding, and a streaming diagram ratchets down to a few pixels.
    */
+  it.each([
+    ["flowchart", (label: string) => `flowchart LR\nA[${label}] --> B`],
+    ["state diagram", (label: string) => `stateDiagram-v2\nstate "${label}" as A\nA --> B`],
+  ])("sizes %s nodes from the text of their labels", async (_name, source) => {
+    const frame = await mountRuntime();
+    const shortLabel = await render(frame, { revision: 1, source: source("Node") });
+    const longLabel = await render(frame, { revision: 2, source: source("A longer node") });
+
+    expect(renderedSize(shortLabel).width).toBeLessThan(renderedSize(longLabel).width);
+  });
+
   it("reports the same size whatever frame the host gives it", async () => {
     const source = "flowchart TD\nA[Start] --> B[Middle]\nB --> C[Ship]";
     const narrowFrame = await mountRuntime({ height: 60, width: 60 });
@@ -224,7 +240,8 @@ describe("Mermaid sandbox runtime", () => {
     "flowchart LR\n  A[ops@example.com] --> B",
     "flowchart LR\n  A -->|@user approves| B",
     "graph TD\n  A(@x) --> B{@x?}",
-  ])("renders a flowchart whose label contains an @: %s", async (source) => {
+    "agentflow-beta LR\n  A[ops@example.com] --> B[Next]",
+  ])("renders a diagram whose label contains an @: %s", async (source) => {
     const frame = await mountRuntime();
 
     const result = await render(frame, { revision: 1, source });
@@ -251,6 +268,60 @@ describe("Mermaid sandbox runtime", () => {
     expect(svg?.textContent).toContain("Rendered");
     expect(svg?.querySelector("img")).not.toBeNull();
     expect(svg?.querySelector("script, [onerror]")).toBeNull();
+  });
+
+  it("renders Mermaid 12 diagrams without native ES2024 grouping and URL checks", async () => {
+    const frame = await mountRuntime(undefined, { allowSameOrigin: true, withoutEs2024: true });
+    const sandbox = frame.contentWindow as (Window & typeof globalThis) | null;
+    const groups = sandbox?.Object.groupBy(["a", "b"], (_, index) =>
+      index === 0 ? "__proto__" : "rest",
+    );
+    expect(groups?.["__proto__"]).toEqual(["a"]);
+    expect(groups?.rest).toEqual(["b"]);
+    expect(groups && Object.getPrototypeOf(groups)).toBeNull();
+    expect(sandbox?.URL.canParse("/local", "https://example.invalid")).toBe(true);
+    expect(sandbox?.URL.canParse("/local")).toBe(false);
+    const source = [
+      "architecture-beta",
+      "  service api(server)[API]",
+      "  service database(database)[Database]",
+      "  api:R -- L:database",
+    ].join("\n");
+
+    expect(await render(frame, { revision: 1, source })).toMatchObject({
+      type: "rendered",
+      revision: 1,
+    });
+  });
+
+  it("keeps the mindmap default distinct from an explicit Dagre layout", async () => {
+    const frame = await mountRuntime();
+    const source = [
+      "mindmap",
+      "  root((Plan))",
+      "    Discover",
+      "      Read",
+      "    Build",
+      "      Test",
+      "    Release",
+    ].join("\n");
+    const automatic = await render(frame, { revision: 1, source });
+    const dagre = await render(frame, {
+      revision: 2,
+      source: `---\nconfig:\n  layout: dagre\n---\n${source}`,
+    });
+
+    expect(renderedSize(automatic)).not.toEqual(renderedSize(dagre));
+  });
+
+  it("renders an explicitly requested ELK layout in the sandbox", async () => {
+    const frame = await mountRuntime();
+    const source = "---\nconfig:\n  layout: elk\n---\nflowchart LR\nA[Start] --> B[Next]";
+
+    expect(await render(frame, { revision: 1, source })).toMatchObject({
+      type: "rendered",
+      revision: 1,
+    });
   });
 
   it("still renders a flowchart edge id", async () => {
