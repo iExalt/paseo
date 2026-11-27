@@ -1,10 +1,11 @@
+import { AcpClientConnection } from "@getpaseo/plugin/internal/acp-client";
 import { beforeAll, describe, expect, test } from "vitest";
 import { spawn } from "node:child_process";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable, Writable } from "node:stream";
-import { ClientSideConnection, ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk";
+import { ndJsonStream, PROTOCOL_VERSION } from "@agentclientprotocol/sdk/unstable";
 
 import { isCommandAvailable } from "../../../executable-resolution/executable-resolution.js";
 import { createTestLogger } from "../../../test-utils/test-logger.js";
@@ -32,11 +33,11 @@ describe("Copilot ACP provider (real) Allow All mode", () => {
     }
     const cwd = await mkdtemp(join(tmpdir(), "copilot-allow-all-real-"));
     const child = spawn("copilot", ["--acp"], { cwd, stdio: ["pipe", "pipe", "ignore"] });
-    const connection = new ClientSideConnection(
-      () => ({
+    const connection = new AcpClientConnection(
+      {
         sessionUpdate: async () => {},
         requestPermission: async () => ({ outcome: { outcome: "cancelled" } }),
-      }),
+      },
       ndJsonStream(Writable.toWeb(child.stdin), Readable.toWeb(child.stdout)),
     );
 

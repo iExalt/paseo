@@ -1,5 +1,5 @@
 import type { Logger } from "pino";
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk/unstable";
 
 import type {
   AgentCapabilityFlags,

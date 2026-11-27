@@ -1,3 +1,9 @@
+import {
+  AgentSideConnection,
+  RequestError as LegacyRequestError,
+  type Agent,
+} from "@agentclientprotocol/sdk-v1-fixture";
+import { AcpClientConnection, type AcpClientHandlers } from "@getpaseo/plugin/internal/acp-client";
 import { type ChildProcess, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { EventEmitter, once } from "node:events";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -9,12 +15,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { TransformStream } from "node:stream/web";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
-  AgentSideConnection,
-  ClientSideConnection,
   PROTOCOL_VERSION,
   RequestError,
   ndJsonStream,
-  type Agent,
   type CreateTerminalRequest,
   PermissionOption,
   type PromptRequest,
@@ -23,8 +26,7 @@ import {
   SessionConfigOption,
   SessionUpdate,
   type NewSessionResponse,
-  type Client,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 
 import {
   appendACPStderrTail,
@@ -115,7 +117,7 @@ describe("buildACPClientCapabilities", () => {
   });
 });
 
-test("ACP 1.7 preserves legacy model extensions and forwards the old model method over the SDK", async () => {
+test("ACP SDK 2 preserves model extensions from an SDK 1 peer and forwards the old model method", async () => {
   const clientToAgent = new TransformStream<Uint8Array, Uint8Array>();
   const agentToClient = new TransformStream<Uint8Array, Uint8Array>();
   let receivedPrompt: PromptRequest | undefined;
@@ -127,7 +129,7 @@ test("ACP 1.7 preserves legacy model extensions and forwards the old model metho
       availableModels: [{ modelId: "model-a", name: "Model A" }],
     },
   };
-  const client: Client = {
+  const client: AcpClientHandlers = {
     async sessionUpdate() {},
     async requestPermission() {
       return { outcome: { outcome: "cancelled" } };
@@ -152,8 +154,8 @@ test("ACP 1.7 preserves legacy model extensions and forwards the old model metho
     },
   };
 
-  const clientConnection = new ClientSideConnection(
-    () => client,
+  const clientConnection = new AcpClientConnection(
+    client,
     ndJsonStream(clientToAgent.writable, agentToClient.readable),
   );
   const agentConnection = new AgentSideConnection(
@@ -2494,13 +2496,13 @@ describe("ACPAgentClient catalog discovery without a model resolver", () => {
         () => agent,
         ndJsonStream(agentToClient.writable, clientToAgent.readable),
       );
-      const connection = new ClientSideConnection(
-        () => ({
+      const connection = new AcpClientConnection(
+        {
           async requestPermission() {
             return { outcome: { outcome: "cancelled" } };
           },
           async sessionUpdate() {},
-        }),
+        },
         ndJsonStream(clientToAgent.writable, agentToClient.readable),
       );
       const initialize = await connection.initialize({ protocolVersion: PROTOCOL_VERSION });
@@ -3077,13 +3079,13 @@ describe("ACPAgentClient import listing deadlines", () => {
       () => agent,
       ndJsonStream(Writable.toWeb(agentToClient), Readable.toWeb(clientToAgent)),
     );
-    const connection = new ClientSideConnection(
-      () => ({
+    const connection = new AcpClientConnection(
+      {
         async requestPermission() {
           return { outcome: { outcome: "cancelled" } };
         },
         async sessionUpdate() {},
-      }),
+      },
       ndJsonStream(Writable.toWeb(clientToAgent), Readable.toWeb(agentToClient)),
     );
 
@@ -4444,7 +4446,7 @@ describe("ACPAgentSession", () => {
         return { sessionId: "session-1" };
       },
       async prompt() {
-        throw new RequestError(-32000, upstreamMessage, upstreamData);
+        throw new LegacyRequestError(-32000, upstreamMessage, upstreamData);
       },
       async authenticate() {},
       async cancel() {},
@@ -4453,13 +4455,13 @@ describe("ACPAgentSession", () => {
       () => agent,
       ndJsonStream(agentToClient.writable, clientToAgent.readable),
     );
-    const connection = new ClientSideConnection(
-      () => ({
+    const connection = new AcpClientConnection(
+      {
         async requestPermission() {
           return { outcome: { outcome: "cancelled" } };
         },
         async sessionUpdate() {},
-      }),
+      },
       ndJsonStream(clientToAgent.writable, agentToClient.readable),
     );
     await connection.initialize({
@@ -4516,7 +4518,7 @@ describe("ACPAgentSession", () => {
     options: { closeAfterPromptResponse?: boolean } = {},
   ): Promise<{
     agentConnection: AgentSideConnection;
-    connection: ClientSideConnection;
+    connection: AcpClientConnection;
     sessionId: string;
     closeTransport: () => Promise<void>;
   }> {
@@ -4538,13 +4540,13 @@ describe("ACPAgentSession", () => {
         clientToAgent.readable,
       ),
     );
-    const connection = new ClientSideConnection(
-      () => ({
+    const connection = new AcpClientConnection(
+      {
         async requestPermission() {
           return { outcome: { outcome: "cancelled" } };
         },
         async sessionUpdate() {},
-      }),
+      },
       ndJsonStream(clientToAgent.writable, agentToClient.readable),
     );
     await connection.initialize({
@@ -4871,7 +4873,7 @@ describe("ACPAgentSession initialization cleanup", () => {
           child,
           connection: {
             newSession: vi.fn().mockRejectedValue(new Error("session/new failed")),
-          } as unknown as ClientSideConnection,
+          } as unknown as AcpClientConnection,
           initialize: { agentCapabilities: {} },
         };
       }
@@ -4907,7 +4909,7 @@ describe("ACPAgentSession initialization cleanup", () => {
           child,
           connection: {
             loadSession: vi.fn().mockRejectedValue(new Error("session/load failed")),
-          } as unknown as ClientSideConnection,
+          } as unknown as AcpClientConnection,
           initialize: { agentCapabilities: { loadSession: true } },
         };
       }
@@ -5254,7 +5256,7 @@ describe("ACP session/load invariant — cwd and mcpServers always passed", () =
             prompt: vi.fn(),
             loadSession,
             resumeSession,
-          } as unknown as ClientSideConnection,
+          } as unknown as AcpClientConnection,
           initialize: { agentCapabilities: args.capabilities ?? {} },
         } as SpawnedACPProcess;
       }
@@ -5565,7 +5567,7 @@ async function startSilentCloseProvider(): Promise<SilentCloseProvider> {
       },
       launchEnv: {
         ACP_SDK_URL: pathToFileURL(
-          createRequire(import.meta.url).resolve("@agentclientprotocol/sdk"),
+          createRequire(import.meta.url).resolve("@agentclientprotocol/sdk-v1-fixture"),
         ).href,
         ACP_PID_FILE: pidFile,
       },
@@ -5655,7 +5657,7 @@ describe("ACPAgentSession after its provider process exits", () => {
         capabilities: { supportsStreaming: true, supportsSessionPersistence: true },
         launchEnv: {
           ACP_SDK_URL: pathToFileURL(
-            createRequire(import.meta.url).resolve("@agentclientprotocol/sdk"),
+            createRequire(import.meta.url).resolve("@agentclientprotocol/sdk-v1-fixture"),
           ).href,
         },
       },
@@ -5668,7 +5670,7 @@ describe("ACPAgentSession after its provider process exits", () => {
     const provider = await startExitingProvider();
     const events: AgentStreamEvent[] = [];
     provider.subscribe((event) => events.push(event));
-    const internals = asInternals<{ child: ChildProcess; connection: ClientSideConnection }>(
+    const internals = asInternals<{ child: ChildProcess; connection: AcpClientConnection }>(
       provider,
     );
     const { child, connection } = internals;
@@ -5805,7 +5807,7 @@ describe("ACP idle runtime cleanup", () => {
         capabilities: { supportsStreaming: true, supportsSessionPersistence: true },
         launchEnv: {
           ACP_SDK_URL: pathToFileURL(
-            createRequire(import.meta.url).resolve("@agentclientprotocol/sdk"),
+            createRequire(import.meta.url).resolve("@agentclientprotocol/sdk-v1-fixture"),
           ).href,
         },
       },
@@ -5936,7 +5938,7 @@ describe("custom ACP provider with configured models", () => {
           command: [process.execPath, agentScript],
           env: {
             ACP_SDK_URL: pathToFileURL(
-              createRequire(import.meta.url).resolve("@agentclientprotocol/sdk"),
+              createRequire(import.meta.url).resolve("@agentclientprotocol/sdk-v1-fixture"),
             ).href,
             ...agentEnv,
           },

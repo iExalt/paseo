@@ -54,6 +54,11 @@
       "source": "./src/client/index.ts",
       "default": "./dist/client/index.js"
     },
+    "./internal/acp-client": {
+      "types": "./dist/server/acp-internal/client-connection.d.ts",
+      "source": "./src/server/acp-internal/client-connection.ts",
+      "default": "./dist/server/acp-internal/client-connection.js"
+    },
     "./internal/lifecycle": {
       "types": "./dist/server/lifecycle.d.ts",
       "source": "./src/server/lifecycle.ts",
@@ -78,7 +83,7 @@
     "typecheck:examples": "npm --prefix ../../plugin-examples/markdown-panel install --ignore-scripts --no-audit --no-fund && tsc -p tsconfig.examples.json --noEmit"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "^1.7.0",
+    "@agentclientprotocol/sdk": "2.12.0",
     "i18next": "^26.3.0",
     "use-sync-external-store": "^1.7.0"
   },

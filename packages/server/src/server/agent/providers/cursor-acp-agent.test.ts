@@ -1,4 +1,4 @@
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk/unstable";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -57,7 +57,7 @@ describe("CursorACPAgentClient model discovery", () => {
         child: { kill: vi.fn(), exitCode: 0, signalCode: null, once: vi.fn() },
         connection: {
           newSession: vi.fn().mockResolvedValue(this.response),
-          extMethod: async () => ({
+          request: async () => ({
             models: (this.response.models?.availableModels ?? []).map((model) => ({
               value: model.modelId,
               name: model.name,
