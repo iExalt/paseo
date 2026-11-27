@@ -335,10 +335,10 @@ export const ACP_PROVIDER_CATALOG_DATA = [
     id: "qoder",
     title: "Qoder CLI",
     description: "AI coding assistant with agentic capabilities",
-    version: "1.1.78",
+    version: "1.1.100",
     iconId: "qoder",
     installLink: "https://qoder.com",
-    command: ["npx", "-y", "@qoder-ai/qodercli@1.1.78", "--acp"],
+    command: ["npx", "-y", "@qoder-ai/qodercli@1.1.100", "--acp"],
   },
   {
     id: "qwen-code",

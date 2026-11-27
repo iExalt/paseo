@@ -98,7 +98,7 @@ jobs:
           ref: ${{ needs.rebase.outputs.dev-sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rebased-${{ github.run_attempt }}
           path: ${{ runner.temp }}/rebase-input
@@ -167,7 +167,7 @@ jobs:
           ref: ${{ needs.rebase.outputs.dev-sha }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: actions/download-artifact@70fc10c6e5e1ce46ad2ea6f2b72d43f7d47b13c3 # v8.0.0
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: rebased-${{ github.run_attempt }}
           path: ${{ runner.temp }}/rebase-input
@@ -191,7 +191,7 @@ jobs:
 
       # GITHUB_TOKEN cannot push commits that change workflow files. Mint the
       # one-hour App token only for publication, once validation has passed.
-      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+      - uses: actions/create-github-app-token@f418cff399f7aef4c2f0ad47e25ca7a6abbdd6fc # v3.4.0
         id: token
         if: ${{ !inputs.validate_only }}
         with:

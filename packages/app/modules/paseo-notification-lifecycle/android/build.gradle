@@ -9,7 +9,7 @@ useExpoPublishing()
 useDefaultAndroidSdkVersions()
 android { namespace "sh.paseo.notifications" }
 dependencies {
-  implementation "androidx.lifecycle:lifecycle-process:2.9.3"
+  implementation "androidx.lifecycle:lifecycle-process:2.10.0"
   if (findProject(':expo-notifications') != null) {
     implementation project(':expo-notifications')
   } else {

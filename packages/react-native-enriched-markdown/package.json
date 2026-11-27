@@ -31,6 +31,9 @@
     "url": "https://github.com/software-mansion/enriched-markdown/issues"
   },
   "homepage": "https://enriched.swmansion.com/markdown",
+  "devDependencies": {
+    "katex": "0.19.1"
+  },
   "peerDependencies": {
     "katex": ">=0.16.0",
     "react": "*",

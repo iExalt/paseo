@@ -85,7 +85,7 @@
   "devDependencies": {
     "@getpaseo/client": "0.38.4",
     "@getpaseo/protocol": "0.38.4",
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.11",
     "@types/react": "~19.2.0",
     "react": "19.2.3",
     "react-native": "0.86.3",
