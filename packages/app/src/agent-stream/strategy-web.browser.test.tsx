@@ -285,6 +285,7 @@ describe("web disclosure hold", () => {
 describe("web history start", () => {
   it("loads older history when an upward wheel lands at the start after the reader stopped following", async () => {
     let olderHistoryLoads = 0;
+    const olderHistoryRequested = Promise.withResolvers<void>();
     const history = [1, 2, 3, 4, 5, 6].map((index) => row(index));
     const timeline = mountTimeline(history, {
       olderHistory: {
@@ -292,6 +293,7 @@ describe("web history start", () => {
         olderHistoryProgressKey: "epoch:1",
         onNearHistoryStart: async () => {
           olderHistoryLoads += 1;
+          olderHistoryRequested.resolve();
           return true;
         },
       },
@@ -304,7 +306,11 @@ describe("web history start", () => {
     await timeline.settle();
     expect(olderHistoryLoads).toBe(0);
 
-    timeline.wheelUpTo(0);
+    // A browser scroll event can arrive after the layout animation frames.
+    await act(async () => {
+      timeline.wheelUpTo(0);
+      await olderHistoryRequested.promise;
+    });
     await timeline.settle();
 
     expect(olderHistoryLoads).toBe(1);
