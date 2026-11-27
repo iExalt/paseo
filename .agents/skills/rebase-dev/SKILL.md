@@ -1,11 +1,12 @@
 ---
 name: rebase-dev
-description: Plan, prepare, rehearse, execute or verify an upstream rebase of iExalt/paseo dev. Use for fork upstream rebases and rebase-dev workflow operations; production publication requires a separate user go.
+description: Plan, compact fork history before preparation, prepare, rehearse, execute or verify an upstream rebase of iExalt/paseo dev. Use for fork upstream rebases and rebase-dev workflow operations. Production publication requires a separate user go.
 ---
 
 # Rebase fork dev
 
-Run the requested stage: **plan**, **prepare**, **dry run**, **execute**, or **verify**.
+Run the requested stage in order: **plan**, optional **compact**, **prepare**,
+**dry run**, **execute**, or **verify**.
 One agent can run them all; a new worker can start at any stage from the evidence
 record. Read [the engine contract](../../../docs/upstream/rebase-dev.md),
 `.github/scripts/rebase-dev.mjs` and both `rebase-dev.yml` and `upstream-sync.yml`
@@ -31,26 +32,93 @@ target decision. A moving upstream main is discovery input, never the target.
 
 Record the scope, active-time cap, review/check ownership, approvals for pausing
 sync, pinning the mirror and updating resolutions, and the production go gate.
-A plan-only request stops before changing workflow state unless those operations
-are separately authorized. Check active upstream-sync and rebase-dev runs before changing workflow state.
-Pause upstream-sync with `gh workflow disable upstream-sync.yml -R iExalt/paseo`
-and read back `disabled_manually`. Disabling the workflow also disables manual
-dispatch: to pin by its authorized `ref` input, dispatch once while enabled, then
-pause it immediately and wait for that run to finish. Never cancel another run.
-Read back `refs/heads/upstream/main`; require the exact chosen target. If the
-mirror has passed it, stop for a separately authorized rewind or target change.
+Identify the last verified published rebase and the ordered commits on dev after
+it. Assess whether folding related changes, splitting mixed patches or ordering
+dependent changes can reduce replay churn while preserving the release
+boundaries and independently droppable patches. Record a no-op when there is
+no worthwhile compaction. Otherwise record the proposed scope, expected churn
+reduction and proof, and ask for a decision unless the user already requested
+a candidate. A plan-only request stops before changing workflow state unless
+those operations are separately authorized.
 
-Exit: the target and scope are settled, sync is paused, and the mirror is pinned.
-Hand off the sync's original state, run ID and readbacks with the evidence path.
+Exit with the immutable proposed upstream target, the source dev SHA, the
+verified prefix tip, the compaction decision, and the evidence path. Complete
+any approved compaction before preparing the upstream replay.
+
+## Compact
+
+Enter only with approval to build a candidate from the recorded source dev.
+Freeze that SHA and tree, the verified prefix tip, the incorporated upstream
+base, the engine/ledger revision and relevant tags and release anchors. Verify
+that the prefix is on the source's first-parent chain and that the incorporated
+base agrees with the published rebase. Stop if that boundary cannot be proven.
+Keep the verified prefix byte-for-byte, including its commit IDs. Work in an
+isolated checkout on the existing base and freeze the ordered suffix inventory.
+
+1. Partition the suffix at every intervening release boundary. Within each
+   partition, build one signed commit per independent feature or fix. Fold
+   implementation follow-ups, tests and docs into their owning change. Keep
+   unrelated patches and independently droppable or partially superseded
+   changes separable. Map every source SHA to the commits it contributes to,
+   recording hunk provenance for splits, shared files and merge-only changes.
+   Give an explicit reason for effects that are absent or canceled. Preserve
+   dependency order and inspect the resulting patches and dispositions,
+   including deletions.
+2. Compare exact tree IDs at each mapped release boundary and at the source tip.
+   Keep existing release tags at their original objects. If release-please
+   needs a new anchor, first prove the exact tip tree and then isolate the sole
+   `release-please-config.json:last-release-sha` substitution in its own commit.
+   Bind it to the mapped release boundary. Compare the release-please baseline
+   and selected commits using the installed action version, with the original
+   release tags both present and absent. Require the same pending release
+   changes, allowing the explicit bookkeeping commit.
+3. Carry ledger decisions and evidence forward using the
+   [engine's supersession rules](../../../docs/upstream/rebase-dev.md#carry-supersession-decisions-forward).
+   Recompute affected identities with `commitIdentity`. Account for every old
+   row and fail on stale or ambiguous identities or an unintended replay drop
+   in `planRebase`. If the ledger needs edits, isolate that delta after the
+   tree-equivalent checkpoint and verify exactly which bytes changed.
+4. Have an independent reviewer rebuild the signed candidate in a fresh
+   checkout from pinned inputs and the builder. Compare mapping, metadata,
+   signature validity, release anchors and every commit tree. Record the source
+   and candidate counts, candidate checkpoint and final SHAs, exact allowed
+   deltas, check results, manifest and builder, and retain a Git bundle of the
+   source and candidate with a checksum. If hosted CI is authorized, preflight
+   the existing draft-PR trigger against a temporary base at the retained
+   prefix and verify the actual merge tree equals the candidate. Keep that PR
+   unmerged and record the run, exact tree, and owner of PR and base cleanup.
+
+Hand off the source and candidate SHAs and trees, bundle and checksum, complete
+mapping, release and ledger evidence, and independent review result. Stop at
+the candidate until the user separately adopts it. Keep live dev, release tags
+and workflows untouched during compaction. If dev advances, review and
+account for the new source commits before treating any candidate as current.
+After the user adopts, verify the exact remote dev SHA/tree and archival
+reachability of the former source. Treat adoption and approval of the upstream
+rehearsal as separate gates.
 
 ## Prepare
 
-Entry: the plan's approvals and mirror pin still hold. Freeze remote dev, mirror
-and rebase-resolutions with `git ls-remote origin` and record all three SHAs,
-including the old resolutions SHA for rollback. Require no active sync/rebase
-run. A later stage must reject changed inputs instead of silently refreshing them.
-Pausing sync freezes only the mirror; other approved work can still advance dev.
-Dry runs need no writer hold. Review and replay a changed input before re-freezing it.
+Enter with the approved target and rehearsal scope. If compaction is pending
+adoption, stop. If adopted, require its verified remote dev readback. If
+skipped, use the untouched dev history. Require no active sync/rebase run
+before changing workflow state. Complete the approved mirror pin and sync pause
+if the plan stage did not already do so:
+
+- Pause upstream-sync with `gh workflow disable upstream-sync.yml -R iExalt/paseo`
+  and read back `disabled_manually`. Disabling the workflow also disables manual
+  dispatch. To pin by its authorized `ref` input, dispatch once while enabled,
+  pause immediately and wait for that run to finish. Never cancel another run.
+- Read back `refs/heads/upstream/main` and require the exact chosen target.
+  If the mirror has passed it, stop for a separately authorized rewind or
+  target change. Record the original sync state, run ID and readbacks.
+
+Freeze remote dev, mirror and rebase-resolutions with `git ls-remote origin`
+and record all three SHAs, including the old resolutions SHA for rollback.
+Require no active sync/rebase run. A later stage must reject changed inputs
+instead of silently refreshing them. Pausing sync freezes only the mirror.
+Other approved work can still advance dev. Dry runs need no writer hold.
+Review and replay a changed input before re-freezing it.
 
 Run preflight from a clean checkout whose effective origin fetch and single push URL
 point at GitHub iExalt/paseo, before switching rehearsal to a frozen local origin.
