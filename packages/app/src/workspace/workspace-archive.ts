@@ -130,22 +130,26 @@ function hideWorkspaceOptimistically(
     serverId: workspace.serverId,
     workspaceId: workspace.workspaceId,
   });
-  getHostRuntimeStore().removeWorkspaceSnapshot(workspace.serverId, workspace.workspaceId);
+  getHostRuntimeStore().projectWorkspaceArchiveIntent(workspace.serverId, workspace.workspaceId);
   return { workspace: snapshot, archivedAgentIds, intent };
 }
 
-/**
- * Puts back a row whose archive did not happen. Skipped when a newer request on this client
- * (an undo, or another archive) owns the row by now.
- */
-function restoreOptimisticallyHiddenWorkspace(input: {
-  serverId: string;
-  snapshot: OptimisticWorkspaceArchiveSnapshot;
-}): void {
-  if (!isWorkspaceArchiveIntentCurrent(input.snapshot.intent)) return;
-  settleWorkspaceArchiveIntent(input.snapshot.intent);
-  if (input.snapshot.workspace) {
-    getHostRuntimeStore().acceptWorkspaceSnapshots(input.serverId, [input.snapshot.workspace]);
+async function reconcileWorkspaceArchive(
+  workspace: WorkspaceArchiveTarget,
+  intent: WorkspaceArchiveIntent,
+  present: boolean,
+): Promise<void> {
+  if (!isWorkspaceArchiveIntentCurrent(intent)) return;
+  try {
+    await getHostRuntimeStore().reconcileWorkspaceArchive(
+      workspace.serverId,
+      workspace.workspaceId,
+      present,
+    );
+  } catch (error) {
+    // A directory refresh failure does not change the outcome of the mutation.
+    // Reconnect or a later refresh will reconcile the retained baseline.
+    console.warn("[workspace-archive] directory reconciliation failed", error);
   }
 }
 
@@ -184,15 +188,19 @@ export function beginOptimisticWorkspaceArchive(input: {
         client: input.client,
         workspaceId: input.workspace.workspaceId,
       });
-      if (outcome === "canceled") {
-        restoreOptimisticallyHiddenWorkspace({ serverId: input.workspace.serverId, snapshot });
-      } else {
+      if (outcome === "archived") {
         invalidateAgentHistory(input.workspace.serverId);
       }
+      await reconcileWorkspaceArchive(input.workspace, snapshot.intent, outcome === "canceled");
       return outcome;
-    } catch (error) {
-      restoreOptimisticallyHiddenWorkspace({ serverId: input.workspace.serverId, snapshot });
-      throw error;
+    } finally {
+      if (isWorkspaceArchiveIntentCurrent(snapshot.intent)) {
+        settleWorkspaceArchiveIntent(snapshot.intent);
+        getHostRuntimeStore().projectWorkspaceArchiveIntent(
+          input.workspace.serverId,
+          input.workspace.workspaceId,
+        );
+      }
     }
   })();
   return { hidden: snapshot.workspace, archivedAgentIds: snapshot.archivedAgentIds, done };
@@ -207,8 +215,8 @@ export async function archiveWorkspaceOptimistically(input: {
 
 /**
  * Puts the archived row back now and asks the host to undo the archive, whether it is still
- * running or already finished. A failed undo hides the row again, unless the user archived
- * it again in the meantime.
+ * running or already finished. When the request settles, the authoritative directory decides
+ * whether the row remains visible.
  */
 export async function undoWorkspaceArchiveOptimistically(input: {
   client: WorkspaceArchiveUndoClient;
@@ -222,18 +230,21 @@ export async function undoWorkspaceArchiveOptimistically(input: {
     workspaceId,
     archivedAgentIds: input.archivedAgentIds,
   });
-  if (input.hidden) {
-    getHostRuntimeStore().acceptWorkspaceSnapshots(serverId, [input.hidden]);
-  }
+  getHostRuntimeStore().projectWorkspaceArchiveIntent(
+    serverId,
+    workspaceId,
+    input.hidden ?? undefined,
+  );
+  let restored = false;
   try {
     await input.client.undoWorkspaceArchive(workspaceId);
-  } catch (error) {
-    if (isWorkspaceArchiveIntentCurrent(intent)) {
-      getHostRuntimeStore().removeWorkspaceSnapshot(serverId, workspaceId);
-    }
-    throw error;
+    restored = true;
   } finally {
-    settleWorkspaceArchiveIntent(intent);
+    await reconcileWorkspaceArchive(input.workspace, intent, restored);
+    if (isWorkspaceArchiveIntentCurrent(intent)) {
+      settleWorkspaceArchiveIntent(intent);
+      getHostRuntimeStore().projectWorkspaceArchiveIntent(serverId, workspaceId);
+    }
   }
 }
 

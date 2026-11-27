@@ -109,10 +109,22 @@ function createClient() {
   };
   return {
     client,
-    finishArchive: (workspaceId: string, payload: Partial<ArchivePayload> = {}) =>
-      archives.get(workspaceId)?.resolve({ error: null, ...payload }),
+    finishArchive: (workspaceId: string, payload: Partial<ArchivePayload> = {}) => {
+      const response = archives.get(workspaceId);
+      if (!response) return;
+      const result = { error: null, ...payload };
+      // The daemon publishes a successful archive before acknowledging it.
+      if (!result.error && !result.canceled)
+        getHostRuntimeStore().removeWorkspaceSnapshot(SERVER_ID, workspaceId);
+      response.resolve(result);
+    },
     undoRequested: (workspaceId: string) => undos.has(workspaceId),
-    finishUndo: (workspaceId: string) => undos.get(workspaceId)?.resolve(),
+    finishUndo: (workspaceId: string) => {
+      const response = undos.get(workspaceId);
+      if (!response) return;
+      getHostRuntimeStore().acceptWorkspaceSnapshots(SERVER_ID, [workspace(workspaceId)]);
+      response.resolve();
+    },
     failUndo: (workspaceId: string, error: Error) => undos.get(workspaceId)?.reject(error),
   };
 }

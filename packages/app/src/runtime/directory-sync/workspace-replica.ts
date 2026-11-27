@@ -12,9 +12,8 @@ import {
 } from "@/stores/session-store";
 import { useWorkspaceSetupStore } from "@/stores/workspace-setup-store";
 import {
-  clearWorkspaceArchivePending,
-  shouldSuppressWorkspaceForLocalArchive,
-  shouldSuppressWorkspaceRemovalForLocalUndo,
+  isWorkspaceArchivePending,
+  isWorkspaceArchiveUndoPending,
 } from "@/contexts/session-workspace-upserts";
 import { resolveWorkspaceMapKeyByIdentity } from "@/utils/workspace-identity";
 import type { DirectoryReplicaMutation } from "@/runtime/replica-cache";
@@ -36,6 +35,7 @@ export interface WorkspaceDirectorySnapshot {
 
 export class WorkspaceDirectoryReplica {
   private workspaces = new Map<string, WorkspaceDescriptor>();
+  private readonly undoSnapshots = new Map<string, WorkspaceDescriptor>();
   private projects = new Map<string, ProjectDescriptor>();
   private workspaceIdsByProject = new Map<string, Set<string>>();
 
@@ -63,7 +63,6 @@ export class WorkspaceDirectoryReplica {
     workspace: WorkspaceDescriptor,
     project: ProjectDescriptor | undefined,
   ): void {
-    if (shouldSuppressWorkspaceForLocalArchive({ serverId: this.serverId, workspace })) return;
     if (project) this.setProject(project);
     this.setWorkspace(workspace);
   }
@@ -101,28 +100,44 @@ export class WorkspaceDirectoryReplica {
     return [{ kind: "workspace", type: "delete", id: workspaceId }];
   }
 
+  projectArchiveIntent(workspaceId: string, undoSnapshot?: WorkspaceDescriptor): void {
+    if (undoSnapshot) this.undoSnapshots.set(workspaceId, undoSnapshot);
+    else this.undoSnapshots.delete(workspaceId);
+    this.publishWorkspace(workspaceId);
+  }
+
+  private visibleWorkspace(workspaceId: string): WorkspaceDescriptor | undefined {
+    const target = { serverId: this.serverId, workspaceId };
+    if (isWorkspaceArchivePending(target)) return undefined;
+    // The undo preview exists only in the view. Host tombstones and checkpoints
+    // must still describe the same authoritative rows while the RPC is pending.
+    return (
+      this.workspaces.get(workspaceId) ??
+      (isWorkspaceArchiveUndoPending(target) ? this.undoSnapshots.get(workspaceId) : undefined)
+    );
+  }
+
+  private publishWorkspace(workspaceId: string): void {
+    const store = useSessionStore.getState();
+    const workspace = this.visibleWorkspace(workspaceId);
+    if (workspace) store.mergeWorkspaces(this.serverId, [workspace]);
+    else store.removeWorkspace(this.serverId, workspaceId);
+  }
+
   private replace(snapshot: WorkspaceDirectorySnapshot): void {
-    const workspaces = new Map<string, WorkspaceDescriptor>();
-    for (const [workspaceId, workspace] of snapshot.workspaces) {
-      if (!shouldSuppressWorkspaceForLocalArchive({ serverId: this.serverId, workspace })) {
-        workspaces.set(workspaceId, workspace);
-      }
-    }
-    // A snapshot taken while an undo runs can predate the restore; the host publishes the row.
-    for (const [workspaceId, workspace] of this.workspaces) {
-      if (
-        !workspaces.has(workspaceId) &&
-        shouldSuppressWorkspaceRemovalForLocalUndo({ serverId: this.serverId, workspaceId })
-      ) {
-        workspaces.set(workspaceId, workspace);
-      }
-    }
-    for (const workspace of workspaces.values()) this.applySetupStatus(workspace);
-    this.workspaces = workspaces;
+    this.workspaces = new Map(snapshot.workspaces);
     this.projects = new Map(snapshot.projects);
     this.rebuildProjectIndex();
+    const visible = new Map<string, WorkspaceDescriptor>();
+    for (const workspaceId of new Set([...this.workspaces.keys(), ...this.undoSnapshots.keys()])) {
+      const workspace = this.visibleWorkspace(workspaceId);
+      if (workspace) {
+        this.applySetupStatus(workspace);
+        visible.set(workspaceId, workspace);
+      }
+    }
     const store = useSessionStore.getState();
-    store.setWorkspaces(this.serverId, this.workspaces);
+    store.setWorkspaces(this.serverId, visible);
     store.setProjects(this.serverId, this.projects.values());
   }
 
@@ -183,12 +198,6 @@ export class WorkspaceDirectoryReplica {
       kind: "remove";
     },
   ): DirectoryReplicaMutation[] {
-    // The archive this remove reports is being undone; the host publishes the restored row.
-    if (
-      shouldSuppressWorkspaceRemovalForLocalUndo({ serverId: this.serverId, workspaceId: delta.id })
-    ) {
-      return [];
-    }
     this.deleteWorkspace(delta.id);
     const mutations: DirectoryReplicaMutation[] = [
       { kind: "workspace", type: "delete", id: delta.id },
@@ -203,7 +212,6 @@ export class WorkspaceDirectoryReplica {
       useSessionStore.getState().removeProject(this.serverId, delta.removedProjectId);
       mutations.push({ kind: "project", type: "delete", id: delta.removedProjectId });
     }
-    clearWorkspaceArchivePending({ serverId: this.serverId, workspaceId: delta.id });
     useWorkspaceSetupStore
       .getState()
       .removeWorkspace({ serverId: this.serverId, workspaceId: delta.id });
@@ -211,11 +219,6 @@ export class WorkspaceDirectoryReplica {
   }
 
   private upsertWorkspace(workspace: WorkspaceDescriptor): DirectoryReplicaMutation[] {
-    if (shouldSuppressWorkspaceForLocalArchive({ serverId: this.serverId, workspace })) {
-      if (!this.workspaces.has(workspace.id)) return [];
-      this.deleteWorkspace(workspace.id);
-      return [{ kind: "workspace", type: "delete", id: workspace.id }];
-    }
     this.setWorkspace(workspace);
     return [{ kind: "workspace", type: "upsert", id: workspace.id, value: workspace }];
   }
@@ -238,14 +241,14 @@ export class WorkspaceDirectoryReplica {
     const projectWorkspaces = this.workspaceIdsByProject.get(workspace.projectId) ?? new Set();
     projectWorkspaces.add(workspace.id);
     this.workspaceIdsByProject.set(workspace.projectId, projectWorkspaces);
-    useSessionStore.getState().mergeWorkspaces(this.serverId, [workspace]);
+    this.publishWorkspace(workspace.id);
   }
 
   private deleteWorkspace(workspaceId: string): void {
     const workspace = this.workspaces.get(workspaceId);
     if (workspace) this.workspaceIdsByProject.get(workspace.projectId)?.delete(workspaceId);
     this.workspaces.delete(workspaceId);
-    useSessionStore.getState().removeWorkspace(this.serverId, workspaceId);
+    this.publishWorkspace(workspaceId);
   }
 
   private setProject(project: ProjectDescriptor): void {
