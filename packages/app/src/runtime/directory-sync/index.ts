@@ -77,6 +77,19 @@ interface AgentPageInfo {
   afterCursor?: string | null;
 }
 
+function workspaceDeltaIsCovered(
+  delta: WorkspaceDirectoryDelta,
+  cursor: DirectoryCheckpoint["workspaces"],
+): boolean {
+  if (!cursor || delta.kind === "script_status" || "projectId" in delta || "project" in delta)
+    return false;
+  return (
+    delta.generation === cursor.generation &&
+    delta.seq !== undefined &&
+    delta.seq <= cursor.afterSeq
+  );
+}
+
 function applyWorkspaceSnapshotPage(
   snapshot: WorkspaceDirectorySnapshot,
   payload: Awaited<ReturnType<DaemonClient["fetchWorkspaces"]>>,
@@ -171,6 +184,7 @@ export class DirectorySync {
   private readonly fullDemandSources = new Set<object>();
   private readonly scriptStatusDemand = new Map<object, string>();
   private demandRefresh: Promise<void> | null = null;
+  private workspaceRefresh: Promise<void> | null = null;
   private subscriptionGeneration = 0;
   private satisfiedDemandSource: DirectorySourceToken | null = null;
   private cursors: DirectoryCheckpoint = {};
@@ -306,15 +320,16 @@ export class DirectorySync {
     source: DirectorySourceToken,
     delta: WorkspaceDirectoryDelta,
   ): void {
+    if (workspaceDeltaIsCovered(delta, this.readCursors().workspaces)) return;
     this.revision += 1;
     this.workspaceRevision += 1;
     if (this.workspaceTransactions.record(source, delta)) return;
     this.applyWorkspaceDelta(delta);
-    if (delta.kind !== "script_status" && this.extendsRefreshedBaseline(source))
-      this.noteLiveCursor(
-        "projectId" in delta || "project" in delta ? "projects" : "workspaces",
-        delta,
-      );
+    // Workspace sequences are assigned daemon-wide, but each subscription
+    // publishes through per-workspace queues. A later event for another row
+    // does not prove that this client has received every earlier change.
+    if (("projectId" in delta || "project" in delta) && this.extendsRefreshedBaseline(source))
+      this.noteLiveCursor("projects", delta);
     this.persistCheckpoint();
   }
 
@@ -604,7 +619,41 @@ export class DirectorySync {
     return this.refreshWorkspacesInternal(input, true);
   }
 
-  private async refreshWorkspacesInternal(
+  async reconcileWorkspaceArchive(workspaceId: string, present: boolean): Promise<void> {
+    if (
+      !this.workspaceRefresh &&
+      this.workspaces.snapshot().workspaces.has(workspaceId) === present
+    )
+      return;
+    // Start after the mutation response so a pre-mutation directory snapshot
+    // cannot decide whether the workspace remains when the preview is removed.
+    let refresh: Promise<void> | null = this.refreshWorkspaces();
+    while (refresh) {
+      try {
+        await refresh;
+        return;
+      } catch (error) {
+        if (!(error instanceof DirectoryRefreshSupersededError)) throw error;
+        const current: Promise<void> | null = this.workspaceRefresh;
+        refresh = current === refresh ? null : current;
+      }
+    }
+  }
+
+  private refreshWorkspacesInternal(
+    input: { subscribe?: boolean } | undefined,
+    loadDirectoryCache: boolean,
+  ): Promise<void> {
+    const refresh = this.fetchAndCommitWorkspaces(input, loadDirectoryCache);
+    this.workspaceRefresh = refresh;
+    const clear = () => {
+      if (this.workspaceRefresh === refresh) this.workspaceRefresh = null;
+    };
+    void refresh.then(clear, clear);
+    return refresh;
+  }
+
+  private async fetchAndCommitWorkspaces(
     input: { subscribe?: boolean } | undefined,
     loadDirectoryCache: boolean,
   ): Promise<void> {
@@ -742,6 +791,10 @@ export class DirectorySync {
   acceptProject(project: ProjectDescriptor): void {
     const mutations = this.workspaces.acceptProject(project);
     this.checkpoints?.commitDirectoryMutations(this.serverId, mutations);
+  }
+
+  projectWorkspaceArchiveIntent(workspaceId: string, undoSnapshot?: WorkspaceDescriptor): void {
+    this.workspaces.projectArchiveIntent(workspaceId, undoSnapshot);
   }
 
   removeWorkspace(workspaceId: string): void {
@@ -936,7 +989,13 @@ export class DirectorySync {
     this.revision += 1;
     this.workspaceRevision += 1;
     const previous = this.readWorkspaceState();
-    const deltaMutations = this.workspaces.commitSnapshot(completion.snapshot, completion.deltas);
+    // A replacement refresh inherits buffered events from the prior request.
+    // Its newer snapshot already includes events through its own cursor.
+    const workspaceCursor = completion.snapshot.syncCursors?.workspaces;
+    const deltas = completion.deltas.filter(
+      (delta) => !workspaceDeltaIsCovered(delta, workspaceCursor),
+    );
+    const deltaMutations = this.workspaces.commitSnapshot(completion.snapshot, deltas);
     const next = this.workspaces.snapshot();
     const workspaceIds =
       completion.snapshot.syncModes?.workspaces === "changes"
@@ -955,9 +1014,7 @@ export class DirectorySync {
       if (cursor) this.writeCursor(entity as "projects" | "workspaces", cursor);
     }
     for (const delta of completion.deltas) {
-      if (delta.kind === "script_status") continue;
-      const entity = "projectId" in delta || "project" in delta ? "projects" : "workspaces";
-      this.noteLiveCursor(entity, delta);
+      if ("projectId" in delta || "project" in delta) this.noteLiveCursor("projects", delta);
     }
     this.persistCheckpoint();
   }

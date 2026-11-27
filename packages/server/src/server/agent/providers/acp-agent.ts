@@ -1,3 +1,4 @@
+import { AcpClientConnection, type AcpClientHandlers } from "@getpaseo/plugin/internal/acp-client";
 import type { ProviderOptions } from "@getpaseo/protocol/agent-types";
 import { ACPProviderOptionsSchema } from "./acp-options.js";
 import { applyProviderOptionsPatch } from "../option-controls.js";
@@ -20,12 +21,10 @@ import type {
   WritableStream as NodeWritableStream,
 } from "node:stream/web";
 import {
-  ClientSideConnection,
   PROTOCOL_VERSION,
   type AgentCapabilities as ACPAgentCapabilities,
   type Error as ACPError,
   type AnyMessage,
-  type Client as ACPClient,
   type ClientCapabilities as ACPClientCapabilities,
   type ConfigOptionUpdate,
   type ContentBlock,
@@ -64,7 +63,7 @@ import {
   type WaitForTerminalExitRequest,
   type WriteTextFileRequest,
   type Stream as ACPStream,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import type { Logger } from "pino";
 import { z } from "zod";
 
@@ -190,7 +189,7 @@ function rejectOnProcessFailure(child: ChildProcess, stderrChunks: string[]): Pr
 // SDK 1.7 rejects initialize on EOF before the child closes and stderr drains.
 async function preferACPProcessFailure(
   requestError: unknown,
-  connection: ClientSideConnection,
+  connection: AcpClientConnection,
   processError: Promise<never>,
 ): Promise<never> {
   if (connection.signal.aborted) {
@@ -494,7 +493,7 @@ export type ACPExtensionCommandsParser = (
  * the catalog plumbing.
  */
 export interface ACPCatalogModelResolverContext {
-  connection: Pick<ClientSideConnection, "setSessionConfigOption" | "extMethod">;
+  connection: Pick<AcpClientConnection, "setSessionConfigOption" | "request">;
   sessionId: string;
   models: AgentModelDefinition[];
   configOptions: SessionConfigOption[] | null | undefined;
@@ -535,7 +534,7 @@ interface ACPAgentClientOptions {
   ) => Promise<ACPProviderModeWriteResult>;
   beforeModeWriter?: (context: ACPProviderModeWriterContext) => Promise<ACPBeforeModeWriteResult>;
   thinkingOptionWriter?: (
-    connection: ClientSideConnection,
+    connection: AcpClientConnection,
     sessionId: string,
     thinkingOptionId: string,
   ) => Promise<void>;
@@ -567,7 +566,7 @@ interface ACPAgentSessionOptions {
   ) => Promise<ACPProviderModeWriteResult>;
   beforeModeWriter?: (context: ACPProviderModeWriterContext) => Promise<ACPBeforeModeWriteResult>;
   thinkingOptionWriter?: (
-    connection: ClientSideConnection,
+    connection: AcpClientConnection,
     sessionId: string,
     thinkingOptionId: string,
   ) => Promise<void>;
@@ -587,7 +586,7 @@ interface ACPAgentSessionOptions {
 
 export interface SpawnedACPProcess {
   child: ChildProcessWithoutNullStreams;
-  connection: ClientSideConnection;
+  connection: AcpClientConnection;
   initialize: InitializeResponse;
   stderrChunks?: string[];
 }
@@ -600,7 +599,7 @@ type UninitializedACPProcess = Omit<ACPProbeProcess, "initialize"> & {
 interface ACPProcessTransport {
   child: ChildProcessWithoutNullStreams;
   ownsProcessGroup?: boolean;
-  connection: ClientSideConnection;
+  connection: AcpClientConnection;
   stderrChunks: string[];
   spawnReady: Promise<void>;
   processError: Promise<never>;
@@ -784,7 +783,7 @@ interface ACPModelSelection {
 }
 
 export interface ACPProviderModeWriterContext {
-  connection: ClientSideConnection;
+  connection: AcpClientConnection;
   sessionId: string;
   requestedModeId: string;
   currentModeId: string | null;
@@ -1143,7 +1142,7 @@ export class ACPAgentClient implements AgentClient {
     context: ACPProviderModeWriterContext,
   ) => Promise<ACPBeforeModeWriteResult>;
   private readonly thinkingOptionWriter?: (
-    connection: ClientSideConnection,
+    connection: AcpClientConnection,
     sessionId: string,
     thinkingOptionId: string,
   ) => Promise<void>;
@@ -1680,7 +1679,7 @@ export class ACPAgentClient implements AgentClient {
       initializeTimeoutMs?: number;
       providerOptions?: Record<string, unknown>;
       onSpawned?: (probe: UninitializedACPProcess) => void;
-      client?: ACPClient;
+      client?: AcpClientHandlers;
       signal?: AbortSignal;
       deferCleanupOnError?: boolean;
       ownsProcessGroup?: boolean;
@@ -1757,7 +1756,7 @@ export class ACPAgentClient implements AgentClient {
 
   protected async spawnTransport(
     launchEnv?: Record<string, string>,
-    client: ACPClient = this.buildProbeClient(),
+    client: AcpClientHandlers = this.buildProbeClient(),
     ownsProcessGroup = false,
   ): Promise<ACPProcessTransport> {
     const { command, args } = await this.resolveLaunchCommand();
@@ -1790,7 +1789,7 @@ export class ACPAgentClient implements AgentClient {
       Readable.toWeb(child.stdout),
       { logger: this.logger, provider: this.provider },
     );
-    const connection = new ClientSideConnection(() => client, stream);
+    const connection = new AcpClientConnection(client, stream);
 
     return {
       child,
@@ -1842,7 +1841,7 @@ export class ACPAgentClient implements AgentClient {
 
   protected buildProbeClient(
     onSessionUpdate?: (params: SessionNotification) => void | Promise<void>,
-  ): ACPClient {
+  ): AcpClientHandlers {
     return {
       async requestPermission(): Promise<RequestPermissionResponse> {
         return { outcome: { outcome: "cancelled" } };
@@ -2046,7 +2045,7 @@ export class ACPAgentClient implements AgentClient {
   }
 }
 
-export class ACPAgentSession implements AgentSession, ACPClient {
+export class ACPAgentSession implements AgentSession, AcpClientHandlers {
   readonly provider: string;
   readonly capabilities: AgentCapabilityFlags;
 
@@ -2074,7 +2073,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
     context: ACPProviderModeWriterContext,
   ) => Promise<ACPBeforeModeWriteResult>;
   private readonly thinkingOptionWriter?: (
-    connection: ClientSideConnection,
+    connection: AcpClientConnection,
     sessionId: string,
     thinkingOptionId: string,
   ) => Promise<void>;
@@ -2096,7 +2095,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
 
   private readonly config: AgentSessionConfig;
   private child: ChildProcessWithoutNullStreams | null = null;
-  private connection: ClientSideConnection | null = null;
+  private connection: AcpClientConnection | null = null;
   private agentCapabilities: ACPAgentCapabilities | null = null;
   private sessionId: string | null = null;
   private readonly earlySessionUpdates: SessionNotification[] = [];
@@ -3404,7 +3403,7 @@ export class ACPAgentSession implements AgentSession, ACPClient {
       Readable.toWeb(child.stdout),
       { logger: this.logger, provider: this.provider },
     );
-    const connection = new ClientSideConnection(() => this, stream);
+    const connection = new AcpClientConnection(this, stream);
     // Take ownership before initialize so the outer initialization guard can
     // close the process even when the ACP handshake itself rejects.
     this.child = child;

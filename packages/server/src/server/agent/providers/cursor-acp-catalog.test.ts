@@ -1,4 +1,4 @@
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk/unstable";
 import { expect, test } from "vitest";
 import { ZodError } from "zod";
 
@@ -55,7 +55,7 @@ class CursorCatalogConnection {
     ],
   };
 
-  async extMethod(method: string, params: Record<string, unknown>) {
+  async request(method: string, params: Record<string, unknown>) {
     if (method !== "cursor/list_available_models" || Object.keys(params).length !== 0) {
       throw new Error(`Unsupported catalog request: ${method}`);
     }

@@ -1,4 +1,4 @@
-import { SessionConfigOption } from "@agentclientprotocol/sdk";
+import { SessionConfigOption } from "@agentclientprotocol/sdk/unstable";
 import { describe, expect, test, vi } from "vitest";
 
 import { createTestLogger } from "../../../test-utils/test-logger.js";

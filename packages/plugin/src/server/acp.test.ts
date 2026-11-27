@@ -5,11 +5,10 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
-  AgentSideConnection,
+  agent as createAcpAgent,
   PROTOCOL_VERSION,
-  type Agent,
   type SessionUpdate,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import type { ProviderConnection, ProviderEvent, ProviderInput } from "./provider.js";
 import { afterEach, describe, expect, it } from "vitest";
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
@@ -1025,17 +1024,37 @@ lines.on("line", (line) => {
     const connector = () => {
       const clientToAgent = new TransformStream();
       const agentToClient = new TransformStream();
-      const agent: Agent = {
-        initialize: async () => ({ protocolVersion: PROTOCOL_VERSION, agentCapabilities: {} }),
-        newSession: async () => ({ sessionId: "sdk-session", modes: null, configOptions: [] }),
-        prompt: async () => ({ stopReason: "end_turn" }),
-        cancel: async () => undefined,
-      };
-      const agentConnection = new AgentSideConnection(() => agent, {
-        writable: agentToClient.writable,
-        readable: clientToAgent.readable,
-      });
-      void agentConnection;
+      createAcpAgent()
+        .onRequest("initialize", () => ({
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities: {},
+        }))
+        .onRequest("session/new", () => ({
+          sessionId: "sdk-session",
+          modes: null,
+          configOptions: [],
+        }))
+        .onRequest("session/prompt", async ({ client, params: { sessionId } }) => {
+          const result = await client.request("session/request_permission", {
+            sessionId,
+            toolCall: { toolCallId: "sdk-call", title: "SDK tool" },
+            options: [{ optionId: "deny", name: "Deny", kind: "reject_once" }],
+          });
+          expect(result.outcome).toEqual({ outcome: "selected", optionId: "deny" });
+          await client.notify("session/update", {
+            sessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              content: { type: "text", text: "SDK fixture done" },
+            },
+          });
+          return { stopReason: "end_turn" };
+        })
+        .onNotification("session/cancel", () => {})
+        .connect({
+          writable: agentToClient.writable,
+          readable: clientToAgent.readable,
+        });
       return {
         writable: clientToAgent.writable,
         readable: agentToClient.readable,
@@ -1049,15 +1068,43 @@ lines.on("line", (line) => {
 
     const connection = await registration.connect({
       versions: [1],
-      capabilities: ["prompt.message"],
+      capabilities: ["prompt.message", "permission"],
     });
     const events: ProviderEvent[] = [];
     connection.onEvent((event) => events.push(event));
-    await connection.send(openInput());
+    try {
+      await connection.send(openInput());
+      await waitForEvent(events, (event) => event.type === "session.ready");
 
-    await waitForEvent(events, (event) => event.type === "session.ready");
-    expect(connection.capabilities).toEqual(["prompt.message"]);
-    await connection.close();
+      await connection.send({
+        type: "session.prompt",
+        sessionId: "session-1",
+        prompt: {
+          clientMessageId: "sdk-prompt",
+          delivery: "auto",
+          input: { type: "message", content: [{ type: "text", text: "run SDK fixture" }] },
+        },
+      });
+      await waitForEvent(events, (event) => event.type === "session.permission");
+      await connection.send({
+        type: "session.permission",
+        sessionId: "session-1",
+        permissionId: "permission:sdk-call",
+        response: { behavior: "deny" },
+      });
+      await waitForEvent(
+        events,
+        (event) => event.type === "session.turn" && event.state === "completed",
+      );
+      expect(events).toContainEqual(
+        expect.objectContaining({
+          type: "timeline.item",
+          item: expect.objectContaining({ type: "assistant_message", text: "SDK fixture done" }),
+        }),
+      );
+    } finally {
+      await connection.close();
+    }
   });
 
   it("maps permission behavior to the first matching ACP option", async () => {

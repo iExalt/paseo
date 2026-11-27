@@ -389,14 +389,11 @@ it("restores a missing workspace after an archive failure without replacing a li
   try {
     replica.acceptWorkspaces([initial]);
     markWorkspaceArchivePending({ serverId, workspaceId: initial.id });
-    replica.removeWorkspaceSnapshot(initial.id);
-    expect(replica.acceptWorkspaces([initial])).toEqual([]);
+    replica.projectArchiveIntent(initial.id);
     expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(initial.id)).toBe(false);
 
     clearWorkspaceArchivePending({ serverId, workspaceId: initial.id });
-    expect(replica.acceptWorkspaces([initial])).toEqual([
-      { kind: "workspace", type: "upsert", id: initial.id, value: initial },
-    ]);
+    replica.projectArchiveIntent(initial.id);
     expect(useSessionStore.getState().sessions[serverId]?.workspaces.get(initial.id)).toEqual(
       initial,
     );
@@ -422,14 +419,44 @@ it("keeps a workspace whose archive is being undone when the host reports its re
 
   const undo = markWorkspaceArchiveUndoPending({ serverId, workspaceId: restored.id });
   try {
-    replica.acceptWorkspaces([restored]);
+    replica.projectArchiveIntent(restored.id, restored);
 
-    expect(replica.applyDelta({ kind: "remove", id: restored.id })).toEqual([]);
+    expect(replica.applyDelta({ kind: "remove", id: restored.id })).toEqual([
+      { kind: "workspace", type: "delete", id: restored.id },
+    ]);
     expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(restored.id)).toBe(true);
 
     settleWorkspaceArchiveIntent(undo);
-    replica.applyDelta({ kind: "remove", id: restored.id });
+    replica.projectArchiveIntent(restored.id);
     expect(useSessionStore.getState().sessions[serverId]?.workspaces.has(restored.id)).toBe(false);
+  } finally {
+    settleWorkspaceArchiveIntent(undo);
+    store.clearSession(serverId);
+  }
+});
+
+it("keeps the host's restored workspace after the undo preview settles", () => {
+  const serverId = "workspace-archive-undo-upsert";
+  const store = useSessionStore.getState();
+  store.initializeSession(serverId, null as unknown as DaemonClient);
+  const replica = new WorkspaceDirectoryReplica(serverId);
+  const hidden = normalizeWorkspaceDescriptor(workspace("restored"));
+  const recovered = { ...workspace(hidden.id), title: "Recovered on host" };
+  const undo = markWorkspaceArchiveUndoPending({ serverId, workspaceId: hidden.id });
+  try {
+    replica.projectArchiveIntent(hidden.id, hidden);
+    replica.applyDelta({ kind: "remove", id: hidden.id });
+    replica.applyDelta({ kind: "upsert", workspace: recovered });
+
+    settleWorkspaceArchiveIntent(undo);
+    replica.projectArchiveIntent(hidden.id);
+
+    expect(replica.snapshot().workspaces.get(hidden.id)).toEqual(
+      normalizeWorkspaceDescriptor(recovered),
+    );
+    expect(useSessionStore.getState().sessions[serverId]?.workspaces.get(hidden.id)).toEqual(
+      normalizeWorkspaceDescriptor(recovered),
+    );
   } finally {
     settleWorkspaceArchiveIntent(undo);
     store.clearSession(serverId);
@@ -449,13 +476,13 @@ it("keeps a workspace whose archive is being undone when a refresh snapshot omit
 
   const undo = markWorkspaceArchiveUndoPending({ serverId, workspaceId: restored.id });
   try {
-    replica.acceptWorkspaces([restored]);
+    replica.projectArchiveIntent(restored.id, restored);
 
     replica.commitSnapshot({ workspaces: new Map([[other.id, other]]), projects: new Map() }, []);
     expect(workspaceIds().sort()).toEqual(["other", "restored"]);
 
     settleWorkspaceArchiveIntent(undo);
-    replica.commitSnapshot({ workspaces: new Map([[other.id, other]]), projects: new Map() }, []);
+    replica.projectArchiveIntent(restored.id);
     expect(workspaceIds()).toEqual(["other"]);
   } finally {
     settleWorkspaceArchiveIntent(undo);

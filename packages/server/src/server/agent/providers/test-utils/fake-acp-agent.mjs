@@ -7,7 +7,7 @@
 //            by a config_option_update after the write is answered
 //   adds:    { [configId]: option[] } writes that make more selects appear, announced the same way
 import { Readable, Writable } from "node:stream";
-import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk";
+import { AgentSideConnection, ndJsonStream } from "@agentclientprotocol/sdk-v1-fixture";
 
 const scenario = JSON.parse(process.argv[2] ?? "{}");
 let options = scenario.options ?? [];

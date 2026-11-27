@@ -1,4 +1,4 @@
-import type { SessionConfigOption } from "@agentclientprotocol/sdk";
+import type { SessionConfigOption } from "@agentclientprotocol/sdk/unstable";
 import type { Logger } from "pino";
 import { z } from "zod";
 
@@ -113,7 +113,7 @@ export async function resolveCursorCatalogModels({
 
 async function fetchCursorModelCatalog(connection: ACPCatalogModelResolverContext["connection"]) {
   try {
-    const response = await connection.extMethod("cursor/list_available_models", {});
+    const response = await connection.request("cursor/list_available_models", {});
     return CursorModelCatalogSchema.parse(response);
   } catch (error) {
     const extensionUnavailable =

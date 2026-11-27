@@ -131,10 +131,30 @@ describe("archiveWorkspaceOptimistically", () => {
       }),
     ).toBe(true);
 
+    getHostRuntimeStore().removeWorkspaceSnapshot(SERVER_ID, archived.id);
     releaseArchive.resolve(archivePayload({ workspaceId: archived.id }));
     await archive;
 
     expect(storedWorkspace(archived.id)).toBeUndefined();
+  });
+
+  it("keeps a host restore that arrives before an earlier archive response", async () => {
+    const archived = workspace();
+    const restored = { ...archived, title: "Restored elsewhere" };
+    const runtime = getHostRuntimeStore();
+    runtime.acceptWorkspaceSnapshots(SERVER_ID, [archived]);
+    const response = deferred<ArchiveWorkspacePayload>();
+    const done = archiveWorkspaceOptimistically({
+      client: createClient(async () => response.promise),
+      workspace: target(),
+    });
+
+    runtime.removeWorkspaceSnapshot(SERVER_ID, archived.id);
+    runtime.acceptWorkspaceSnapshots(SERVER_ID, [restored]);
+    response.resolve(archivePayload({ workspaceId: archived.id }));
+    await done;
+
+    expect(storedWorkspace(archived.id)).toEqual(restored);
   });
 
   it("marks cached agent history stale once the host has archived the workspace", async () => {
@@ -182,12 +202,11 @@ describe("archiveWorkspacesOptimistically", () => {
     });
     getHostRuntimeStore().acceptWorkspaceSnapshots(SERVER_ID, [first, second]);
     const client = createClient(
-      vi.fn(async (workspaceId) =>
-        archivePayload({
-          workspaceId,
-          error: workspaceId === second.id ? "failed" : null,
-        }),
-      ),
+      vi.fn(async (workspaceId) => {
+        if (workspaceId === second.id) return archivePayload({ workspaceId, error: "failed" });
+        getHostRuntimeStore().removeWorkspaceSnapshot(SERVER_ID, workspaceId);
+        return archivePayload({ workspaceId });
+      }),
     );
 
     const failures = await archiveWorkspacesOptimistically({
@@ -216,6 +235,7 @@ describe("archiveWorkspacesOptimistically", () => {
     const clientFor = (serverId: string) =>
       createClient(async (workspaceId) => {
         archivedByServer.set(serverId, [...(archivedByServer.get(serverId) ?? []), workspaceId]);
+        getHostRuntimeStore().removeWorkspaceSnapshot(serverId, workspaceId);
         return archivePayload({ workspaceId });
       });
 
@@ -280,7 +300,10 @@ describe("undoWorkspaceArchiveOptimistically", () => {
     const archived = workspace();
     getHostRuntimeStore().acceptWorkspaceSnapshots(SERVER_ID, [archived]);
     const archive = beginOptimisticWorkspaceArchive({
-      client: createClient(async () => archivePayload({ workspaceId: archived.id })),
+      client: createClient(async () => {
+        getHostRuntimeStore().removeWorkspaceSnapshot(SERVER_ID, archived.id);
+        return archivePayload({ workspaceId: archived.id });
+      }),
       workspace: target(),
     });
     await archive.done;
@@ -321,7 +344,10 @@ describe("undoWorkspaceArchiveOptimistically", () => {
     getHostRuntimeStore().acceptWorkspaceSnapshots(SERVER_ID, [archived]);
     const undoResponse = deferred<void>();
     const first = beginOptimisticWorkspaceArchive({
-      client: createClient(async () => archivePayload({ workspaceId: archived.id })),
+      client: createClient(async () => {
+        getHostRuntimeStore().removeWorkspaceSnapshot(SERVER_ID, archived.id);
+        return archivePayload({ workspaceId: archived.id });
+      }),
       workspace: target(),
     });
     await first.done;
@@ -366,7 +392,10 @@ describe("undoWorkspaceArchiveOptimistically", () => {
     const firstUndoResponse = deferred<void>();
     const secondUndoResponse = deferred<void>();
     const first = beginOptimisticWorkspaceArchive({
-      client: createClient(async () => archivePayload({ workspaceId: archived.id })),
+      client: createClient(async () => {
+        getHostRuntimeStore().removeWorkspaceSnapshot(SERVER_ID, archived.id);
+        return archivePayload({ workspaceId: archived.id });
+      }),
       workspace: target(),
     });
     await first.done;
@@ -437,7 +466,10 @@ describe("undoWorkspaceArchiveOptimistically", () => {
     const firstUndoResponse = deferred<void>();
     const secondUndoResponse = deferred<void>();
     const first = beginOptimisticWorkspaceArchive({
-      client: createClient(async () => archivePayload({ workspaceId: archived.id })),
+      client: createClient(async () => {
+        getHostRuntimeStore().removeWorkspaceSnapshot(SERVER_ID, archived.id);
+        return archivePayload({ workspaceId: archived.id });
+      }),
       workspace: target(),
     });
     expect([...first.archivedAgentIds]).toEqual(["agent-active"]);

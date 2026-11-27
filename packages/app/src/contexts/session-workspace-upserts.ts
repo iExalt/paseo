@@ -4,8 +4,8 @@ import { normalizeWorkspaceOpaqueId } from "@/utils/workspace-identity";
 /**
  * What this client last asked the host to do with a workspace, while the host catches up.
  *
- * - `archive`: the row is hidden; host upserts for it are dropped until its remove arrives.
- * - `undo`: the row is back; host removes for it are dropped until the undo response arrives.
+ * - `archive`: hide the row while the archive runs.
+ * - `undo`: show a preview while the host restores the workspace.
  *
  * Each request gets its own intent. A request settles or checks only the intent it set, so a
  * late response for an earlier request never touches the intent of a newer one.
@@ -163,11 +163,4 @@ export function shouldSuppressWorkspaceForLocalArchive(input: {
   workspace: WorkspaceDescriptor;
 }): boolean {
   return isWorkspaceArchivePending({ serverId: input.serverId, workspaceId: input.workspace.id });
-}
-
-export function shouldSuppressWorkspaceRemovalForLocalUndo(input: {
-  serverId: string;
-  workspaceId: string;
-}): boolean {
-  return isWorkspaceArchiveUndoPending(input);
 }

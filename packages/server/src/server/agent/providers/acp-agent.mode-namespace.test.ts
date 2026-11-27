@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from "vitest";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type { SessionConfigOption, SessionUpdate } from "@agentclientprotocol/sdk";
+import type { SessionConfigOption, SessionUpdate } from "@agentclientprotocol/sdk/unstable";
 import { ACPAgentClient, type SessionStateResponse } from "./acp-agent.js";
 import { CopilotACPAgentClient, COPILOT_ALLOW_ALL_MODE_ID } from "./copilot-acp-agent.js";
 import type { AgentSession } from "../agent-sdk-types.js";

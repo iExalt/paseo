@@ -416,9 +416,10 @@ const DirectoryCheckpointSchema = z.strictObject({
 
 // A checkpoint is trusted only when this version wrote it. Earlier writers could store one for a
 // directory the cache no longer held: unversioned ones after an overlapping refresh, version 1
-// after an eviction, version 2 after another tab evicted the host. Rejecting them revalidates
-// directory contents once without evicting cached rows or timelines.
-const DIRECTORY_CHECKPOINT_VERSION = 3;
+// after an eviction, version 2 after another tab evicted the host, and version 3 after an
+// optimistic workspace undo survived a host removal. Rejecting them revalidates the directory
+// once without evicting cached rows or timelines.
+const DIRECTORY_CHECKPOINT_VERSION = 4;
 
 const StoredDirectoryCheckpointSchema = z.strictObject({
   version: z.literal(DIRECTORY_CHECKPOINT_VERSION),
