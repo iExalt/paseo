@@ -22,7 +22,7 @@ The library is a private workspace, `packages/react-native-enriched-markdown`. I
 
 The package keeps the npm tarball's layout, including its build output:
 
-- Metro, Vitest and TypeScript load `lib/`, not `src/`. A JavaScript change edits `src/` and the matching `lib/module` and `lib/typescript` files.
+- Native Metro reads `src/` so codegen can see the component prop types. For package imports, web Metro and Vitest load `lib/module`, and TypeScript reads declarations from `lib/typescript`. Update the matching `lib/` files when you edit `src/`.
 - `android/generated` and `ios/generated` are checked-in codegen output (`includesGeneratedCode`). A change to a native component spec regenerates both; `scripts/postinstall-patches.test.mjs` compares them against the specs.
 - `src/web/wasm/md4c.js` and `lib/module/web/wasm/md4c.js` share the native `cpp/enrmrkd` parser, which carries the MD4C 0.6.0 update and Paseo's permissive autolink rules. Rebuild the WASM with `packages/react-native-enriched-markdown/cpp/wasm/build.sh` and regenerate the ESM module under `lib/module`.
 - Upstream's Gradle, CMake and CocoaPods scripts detect upstream's own monorepo by the paths `packages/core` and a root `vendor/`. Do not add either path to this repository.

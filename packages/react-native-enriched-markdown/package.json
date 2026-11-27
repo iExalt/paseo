@@ -6,6 +6,7 @@
   "main": "./lib/module/index",
   "module": "./lib/module/index",
   "source": "./src/index.tsx",
+  "react-native": "./src/index.tsx",
   "types": "./lib/typescript/src/index.d.ts",
   "scripts": {
     "postinstall": "node postinstall.mjs"
