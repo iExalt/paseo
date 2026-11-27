@@ -2,7 +2,7 @@
   "captured_at": "2026-11-16T02:06:57.045693+00:00",
   "refs": {
     "dev": "428ee71c667ab1bc645e8e90837bbc671e397c29",
-    "target": "0273b6b614bac623168d03e7f89f9e161274b468",
+    "target": "d49991318f088623155231a1e293d4efc7b3cade",
     "actual_upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
     "resolutions": "ee15d9c93920488be24042655aae42a9e528477c",
     "base": "c1d7d56b71960bca17ce86f8d358445b6135b809"
@@ -643,6 +643,24 @@
   ],
   "fork": [
     {
+      "sha": "e623aa387766e8d2b8457a7645e0aa323eddbb46",
+      "subject": "fix(diff): preserve index timestamps in worktree comparisons (#620)",
+      "patch_id": "d9a2c3f773f349eea1865452f8e821c992742e62",
+      "category": "fully superseded",
+      "replay": "drop",
+      "constituent_counts": {
+        "fully superseded": 1
+      },
+      "reason": "Upstream #9854 preserves the source index timestamp on temporary copies and covers same-size edits in both comparison modes. Fork PR #623 accepts dropping the extra fixture hardening and bigint rounding.",
+      "retain": "Keep the upstream timestamp-preserving snapshot and both comparison cases. The near-second nanosecond precision edge remains an upstream candidate.",
+      "cheapest_later_proof": "Run both same-size edit cases in packages/server/src/server/diff/git.test.ts against the replay tree.",
+      "upstream": ["d49991318f088623155231a1e293d4efc7b3cade"],
+      "source_paths": [
+        "packages/server/src/server/diff/git.test.ts",
+        "packages/server/src/utils/checkout-git.ts"
+      ]
+    },
+    {
       "sha": "fba9a3727182c29672bfe24c1d0c57f3129ea3ca",
       "subject": "feat(notifications): configure workspace delivery and daemon reply rules",
       "patch_id": "a48e7c9aa8fe770ef7357d1c937f09dbd3963c38",
@@ -673,10 +691,10 @@
       "upstream": [],
       "source_paths": [],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "7c8e21d9513c4b1493d158a43333673bf5cf1e3c",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate. Carried to the published patch identity after the reviewed resolution snapshot 307f2300ce7786e06b74b6d40f2344738c9f479d and publication run https://github.com/iExalt/paseo/actions/runs/43810387905. The identity moved through upstream context and content drift (the engine hashes moved files whole under --no-renames); git range-diff shows the fork's own changes unchanged."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change 4fb05a031439887d0192a74a874009ad314a2944, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The fork maintains its own docs index and keeps bundled upstream docs under docs/upstream/. The target edits docs/android.md in 6e4f2ef8da74644f86149c4e95ea2f1f84a44e35 and adds docs/drag-reorder.md at the top level. Retain the fork layout and completed-plan removals. Move incoming docs to their fork locations and check cross-links after replay. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -695,10 +713,10 @@
       "upstream": [],
       "source_paths": [],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "6b44a93ffc56c8a4e4c443462c3ea5234e9c2e68",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate. Carried to the published patch identity after the reviewed resolution snapshot 307f2300ce7786e06b74b6d40f2344738c9f479d and publication run https://github.com/iExalt/paseo/actions/runs/43810387905. The identity moved through upstream context and content drift (the engine hashes moved files whole under --no-renames); git range-diff shows the fork's own changes unchanged."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change 65f5fa8de60462c99f6e6c383431955e5d74cb78, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The fork's root package and lockfile, Mise pins, .github/workflows/ci.yml and nix/npm-deps.hash carry its build and packaged dependency choices. The target moves release signature auditing in 5c97cd590325ee18a9953c0a0a870eb57fa80bea, vendors the Markdown engine in 80c44321cc6fa1968c84c58f1022d437965edd04 and patches Unistyles 3.2.4 in b4af7599d5b770a41e8af899272c307f7fc7f9ad. Preserve fork toolchain and release ownership. Reconcile dependencies, patches and Nix hash. Verify clean install, postinstall, workflow inventory and package builds. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -1047,10 +1065,10 @@
         "packages/app/src/workspace-tabs/agent-visibility.test.ts"
       ],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "d6a37ee5a4e109649b1178b5a592c8930af00f89",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change c549008562a3781dd7401f3bcf69241ce7e30c83, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The fork's packages/app/src/app/_layout.tsx gates FaviconStatusSync on native and packages/app/src/panels/agent-panel.tsx freezes hidden turn and pending selectors via useRetainedSessionSelector. The target mounts favicon sync on native and has no retained selector at that call site. Preserve both fork behaviors with upstream workspace filtering and panel metrics. Verify hide, reveal and panel-key changes. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -1195,10 +1213,10 @@
       "upstream": ["6376f2bf409405b9857c03262381655433a6d0ee"],
       "source_paths": ["packages/app/src/terminal"],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "6b65bf8d32feca12078e47633f0f2113fdfb124d",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change dcbb54a6ed8096f9fa0e3ba73a2b9d6b9d2b64c6, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. Upstream 6376f2bf409405b9857c03262381655433a6d0ee removes the WebView terminal renderer. Keep the fork native diff, file-viewer and terminal behavior without reviving obsolete HTML generation. Preserve browser swipe focus from 27c126d352c4544c6a8f43251527d61228b8d12f and keyboard privacy from 6e4f2ef8da74644f86149c4e95ea2f1f84a44e35. Check final blobs and platform journeys after replay. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -1434,10 +1452,10 @@
         "packages/app/src/terminal/native-renderer/terminal-input.native.tsx"
       ],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "c94a20ab62b3df70d597b3b46cc5e390940cb553",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change 178eeccff0da8cffad99f0af3df61bf49609e1f6, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The fork terminal-input.native.tsx pairs Android change and physical key events and retains wider modifiers and iPad key priority. The target's onKeyPress path covers a smaller set of behaviors and 6e4f2ef8da74644f86149c4e95ea2f1f84a44e35 adds privacy controls. Keep exactly-once routing, stuck-clear recovery and the iOS build gate. Integrate the target's importantForAutofill, keyboard privacy module and shared input identifier before hardware and IME checks. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -1550,10 +1568,10 @@
         "packages/app/src/terminal/native-renderer/terminal-row-model.ts"
       ],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "98878825191bb11493923c4a5317e13ec382259d",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change d3c4c404a7e882f8133f41e8cd62c0916bedd5f2, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The target uses native row layout after 0a549945b550fe7c40c154e43e74026f44445f35. Its terminal-emulator-native-grid.native.tsx lacks the fork's useSyncExternalStore(screenStore.subscribe, screenStore.get) subscription. Retain screen updates, latency stages, selection and find through the native views. Verify model fixtures and measure native echo and changed-row behavior. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -2305,10 +2323,10 @@
         "packages/app/src/tool-calls/paseo-send.ts"
       ],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "362d29cbb157c0271e9f068276f5adf6c6306832",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change d10dc03b9cb336b8a3401c65667aca955a673c0e, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The fork's packages/app/src/agent-stream/turn-collapse/model.ts counts distinct received-message IDs via messageCount. The target lacks that model field and e108fdc79203b93ee42677640d2d9a7749b23be6 changes the footer on plugin-transformed assistant replies. Retain received-message membership, CLI send projection and expansion alongside the upstream footer and summary rows. Verify the combined presentation. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -2513,10 +2531,10 @@
         "patches/react-native-unistyles+3.8.1.patch"
       ],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "7a35b83b07d2d3b1df07e3d4797356ae24db669c",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change b480bfc3380eba98747c5eca269306450e34ddc2, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The fork lockfile selects Unistyles 3.8.1. Target 3.2.4 carries earlier root-layout fixes from 82d5f6c580fccf500ed718aa8dad1be03639df7a and shared CSSOM observation from b4af7599d5b770a41e8af899272c307f7fc7f9ad. Retain 3.8.1 and the fork's mutation witness. Reconcile compatible CSSOM behavior, verify installed ShadowTreeManager.cpp preserves root constraints and context on retry, then exercise resize and Android rotation. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -2589,10 +2607,10 @@
         "packages/app/src/tool-calls/expansion.ts"
       ],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "3fc4146aa31cdc440427dc3109ff33d88d5b6275",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change 678d69563269baffe79373202d37b80f288d3384, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The fork's strategy-web.tsx checks document.activeElement in holdRow and reveals expanded content below its header. The target holdRow lacks the focus guard and changes group boundaries through a7a12ef4cdcaa183bbedfc876580971a43e3b5be. Preserve both fork outcomes and upstream tool grouping. Verify the sequence from one disclosure to a find or outline jump, plus keyboard and pointer activation. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -2660,10 +2678,10 @@
         "patches/react-native-unistyles+3.8.1.patch"
       ],
       "review_receipt": {
-        "upstream": "0273b6b614bac623168d03e7f89f9e161274b468",
+        "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
         "patch_id": "85e06eda0ffed6f717528627605961edadedbbe5",
         "decision": "retain",
-        "evidence": "Source retain review of https://github.com/getpaseo/paseo/compare/c1d7d56b71960bca17ce86f8d358445b6135b809...0273b6b614bac623168d03e7f89f9e161274b468: all ten partial outcomes remain required; nine listed source-path sets unchanged, replica row only adds plugin routes in _layout.tsx away from favicon/hidden selectors. Authorizes retain, no drops. Replay, validation and platform proof remain separate."
+        "evidence": "Source retain review of frozen fork 32df4162c7c1211a479c5e46bbae5dcf2b49d6df, fork change 956dc67032b8fe5f01268c26657ee74bfc9d0962, and upstream target 518e58cd639f01f63da35544bce3eff5123b10ee. The fork's 0.28.0 packaging commit changes .github/fork-release.json, CHANGELOG.fork.md and package-lock.json. The target reconciles upstream 0.18.0 and locks Unistyles 3.2.4. Preserve the fork release lineage, packaging and 3.8.1 selection. Share installation and rotation proof with b480bfc3380eba98747c5eca269306450e34ddc2 and check the rewritten release boundary. Source decision accepts replay. Integration proof is pending."
       }
     },
     {
@@ -3000,9 +3018,9 @@
     "overlapping_touched_paths": 73
   },
   "classification_counts": {
-    "keep": 126,
+    "keep": 133,
     "partially superseded": 10,
-    "fully superseded": 2
+    "fully superseded": 3
   },
   "method": "Carry every ledger subject/patch-ID key forward from published dev using the rebase engine commitIdentity; preserve constituent reasons and historical absent drops. Review partial retain decisions against the next target; do not infer runtime parity.",
   "patches": {
