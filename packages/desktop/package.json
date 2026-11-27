@@ -37,14 +37,14 @@
     "zod": "^4.6.5"
   },
   "devDependencies": {
-    "@electron/asar": "4.3.1",
+    "@electron/asar": "4.3.4",
     "@types/node": "24.19.1",
     "@types/ws": "^8.18.2",
     "electron": "44.6.0",
     "typescript": "npm:@typescript/typescript6@^6.0.2",
     "unzip-crx-3": "^0.2.0",
     "vitest": "^5.0.3",
-    "wait-on": "8.0.5"
+    "wait-on": "9.5.1"
   },
   "desktopName": "Paseo.desktop"
 }
