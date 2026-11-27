@@ -1373,7 +1373,9 @@ export async function rebaseDev({
       signingKey,
       publicKey,
     });
-    assertForkReleasePreserved(before, await readRelease());
+    assertForkReleasePreserved(before, await readRelease(), before.config.upstreamBase, {
+      migrationTarget: snapshots.upstream,
+    });
     await assertNoInheritedWorkflows(repositoryPath, snapshots.dev);
     await assertDocsLayoutPreserved(repositoryPath, snapshots.dev);
     let provenanceCommits = 0;
