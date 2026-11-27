@@ -8,7 +8,7 @@ import {
   markWorkspaceArchiveUndoPending,
   shouldSuppressWorkspaceForLocalArchive,
   settleWorkspaceArchiveIntent,
-  shouldSuppressWorkspaceRemovalForLocalUndo,
+  isWorkspaceArchiveUndoPending,
 } from "@/contexts/session-workspace-upserts";
 
 const baseWorkspace: WorkspaceDescriptor = {
@@ -133,11 +133,11 @@ describe("workspace archive undo intent", () => {
         serverId: target.serverId,
         workspace: workspace({ archivingAt: null }),
       }),
-      removeSuppressed: shouldSuppressWorkspaceRemovalForLocalUndo(target),
-    }).toEqual({ upsertSuppressed: false, removeSuppressed: true });
+      undoPending: isWorkspaceArchiveUndoPending(target),
+    }).toEqual({ upsertSuppressed: false, undoPending: true });
 
     settleWorkspaceArchiveIntent(undo);
-    expect(shouldSuppressWorkspaceRemovalForLocalUndo(target)).toBe(false);
+    expect(isWorkspaceArchiveUndoPending(target)).toBe(false);
   });
 
   it("keeps a newer intent when the request behind an older one settles late", () => {
@@ -145,7 +145,7 @@ describe("workspace archive undo intent", () => {
     const firstUndo = markWorkspaceArchiveUndoPending(target);
     settleWorkspaceArchiveIntent(firstArchive);
     clearWorkspaceArchivePending(target);
-    expect(shouldSuppressWorkspaceRemovalForLocalUndo(target)).toBe(true);
+    expect(isWorkspaceArchiveUndoPending(target)).toBe(true);
 
     markWorkspaceArchivePending(target);
     settleWorkspaceArchiveIntent(firstUndo);
@@ -153,7 +153,7 @@ describe("workspace archive undo intent", () => {
 
     const secondUndo = markWorkspaceArchiveUndoPending(target);
     settleWorkspaceArchiveIntent(firstUndo);
-    expect(shouldSuppressWorkspaceRemovalForLocalUndo(target)).toBe(true);
+    expect(isWorkspaceArchiveUndoPending(target)).toBe(true);
 
     settleWorkspaceArchiveIntent(secondUndo);
   });

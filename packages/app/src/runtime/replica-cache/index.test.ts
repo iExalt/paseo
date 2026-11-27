@@ -476,6 +476,10 @@ describe("ReplicaCache", () => {
       "before the eviction fix",
       (checkpoint: DirectoryCheckpoint): unknown => ({ version: 1, cursors: checkpoint }),
     ],
+    [
+      "before the workspace undo fix",
+      (checkpoint: DirectoryCheckpoint): unknown => ({ version: 3, cursors: checkpoint }),
+    ],
   ])(
     "rejects checkpoints written %s without discarding cached rows or timelines",
     async (_era, legacyPayload) => {

@@ -1,3 +1,7 @@
+import {
+  markWorkspaceArchiveUndoPending,
+  settleWorkspaceArchiveIntent,
+} from "@/contexts/session-workspace-upserts";
 import { DatabaseSync } from "node:sqlite";
 import { ReplicaCache } from "@/runtime/replica-cache";
 import {
@@ -5,7 +9,7 @@ import {
   type ReplicaSqliteConnection,
   type SqliteValue,
 } from "@/runtime/replica-cache/row-store-sqlite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type {
   DaemonClient,
   WorkspaceLabelListPayload,
@@ -213,7 +217,7 @@ const serverIds = new Set<string>();
 
 function createDirectory(
   serverId: string,
-  options?: { workspaceLabels?: boolean },
+  options?: { workspaceLabels?: boolean; checkpoints?: DirectoryCheckpointStorage },
 ): {
   client: FakeDirectoryClient;
   directory: DirectorySync;
@@ -221,12 +225,16 @@ function createDirectory(
   serverIds.add(serverId);
   const client = new FakeDirectoryClient();
   client.supportsWorkspaceLabels = options?.workspaceLabels === true;
-  const directory = new DirectorySync(serverId, {
-    onAgentStoppedRunning: () => undefined,
-    markAgentLoading: () => undefined,
-    markAgentReady: () => undefined,
-    markAgentError: () => undefined,
-  });
+  const directory = new DirectorySync(
+    serverId,
+    {
+      onAgentStoppedRunning: () => undefined,
+      markAgentLoading: () => undefined,
+      markAgentReady: () => undefined,
+      markAgentError: () => undefined,
+    },
+    options?.checkpoints,
+  );
   directory.connectionChanged({
     client: client as unknown as DaemonClient,
     status: "online",
@@ -1563,6 +1571,136 @@ describe("DirectorySync session readiness", () => {
   });
 });
 
+it("accepts out-of-order live workspace events without skipping them on the next sync", async () => {
+  const serverId = "out-of-order-live-workspaces";
+  const { client, directory } = createDirectory(serverId);
+  const store = useSessionStore.getState();
+  const workspace = createWorkspaceEntry("to-remove");
+  const other = createWorkspaceEntry("to-update");
+  const reply = {
+    requestId: "workspaces",
+    entries: [],
+    emptyProjects: [],
+    pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+  };
+  store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+  store.updateSessionServerInfo(serverId, {
+    serverId,
+    hostname: null,
+    version: "test",
+    features: { workspaceMultiplicity: true, directorySync: true },
+  });
+  const initial = client.holdWorkspaceFetch();
+  try {
+    directory.setDemand({}, true);
+    const starting = directory.refreshDemand();
+    initial({
+      ...reply,
+      entries: [workspace],
+      sync: { generation: "g", headSeq: 1, mode: "snapshot", removals: [] },
+    });
+    await starting;
+
+    client.emit({
+      type: "workspace_update",
+      payload: { kind: "upsert", workspace: other, generation: "g", seq: 3 },
+    });
+    client.emit({
+      type: "workspace_update",
+      payload: { kind: "remove", id: workspace.id, generation: "g", seq: 2 },
+    });
+    expect([...useSessionStore.getState().sessions[serverId]!.workspaces.keys()]).toEqual([
+      other.id,
+    ]);
+
+    const changes = client.holdWorkspaceFetch();
+    const refresh = directory.refreshWorkspaces();
+    changes({
+      ...reply,
+      entries: [other],
+      sync: {
+        generation: "g",
+        headSeq: 3,
+        mode: "changes",
+        removals: [{ id: workspace.id, seq: 2 }],
+      },
+    });
+    await refresh;
+    expect(client.lastWorkspaceOptions).toMatchObject({ sync: { generation: "g", afterSeq: 1 } });
+  } finally {
+    directory.dispose();
+  }
+});
+
+it("settles undo from a fresh snapshot ahead of a buffered older tombstone", async () => {
+  const serverId = "undo-supersedes-workspace-refresh";
+  const { client, directory } = createDirectory(serverId);
+  const store = useSessionStore.getState();
+  const entry = createWorkspaceEntry("restored-workspace");
+  const workspace = normalizeWorkspaceDescriptor(entry);
+  const reply = {
+    requestId: "workspaces",
+    entries: [],
+    emptyProjects: [],
+    pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+  };
+  store.initializeSession(serverId, client as unknown as DaemonClient, 1);
+  store.updateSessionServerInfo(serverId, {
+    serverId,
+    hostname: null,
+    version: "test",
+    features: { workspaceMultiplicity: true, directorySync: true },
+  });
+  const undo = markWorkspaceArchiveUndoPending({ serverId, workspaceId: workspace.id });
+  const currentWorkspace = () =>
+    useSessionStore.getState().sessions[serverId]?.workspaces.get(workspace.id);
+  try {
+    const initial = client.holdWorkspaceFetch();
+    const starting = directory.refreshWorkspaces({ subscribe: true });
+    initial({ ...reply, sync: { generation: "g", headSeq: 1, mode: "snapshot", removals: [] } });
+    await starting;
+    directory.projectWorkspaceArchiveIntent(workspace.id, workspace);
+
+    const preUndoStarted = Promise.withResolvers<void>();
+    const fetchWorkspaces = client.fetchWorkspaces.bind(client);
+    vi.spyOn(client, "fetchWorkspaces").mockImplementationOnce((options) => {
+      preUndoStarted.resolve();
+      return fetchWorkspaces(options);
+    });
+    const preUndoResponse = client.holdWorkspaceFetch();
+    const preUndo = directory.refreshWorkspaces();
+    const superseded = expect(preUndo).rejects.toBeInstanceOf(DirectoryRefreshSupersededError);
+    await preUndoStarted.promise;
+    const tombstone = {
+      type: "workspace_update",
+      payload: { kind: "remove", id: workspace.id, generation: "g", seq: 2 },
+    } as const;
+    client.emit(tombstone);
+
+    const postUndoResponse = client.holdWorkspaceFetch();
+    const settle = directory.reconcileWorkspaceArchive(workspace.id, true);
+    expect(currentWorkspace()).toEqual(workspace);
+    postUndoResponse({
+      ...reply,
+      entries: [{ ...entry, name: "Restored on host" }],
+      sync: { generation: "g", headSeq: 3, mode: "changes", removals: [] },
+    });
+    await settle;
+    settleWorkspaceArchiveIntent(undo);
+    directory.projectWorkspaceArchiveIntent(workspace.id);
+    preUndoResponse({
+      ...reply,
+      sync: { generation: "g", headSeq: 2, mode: "snapshot", removals: [] },
+    });
+    await superseded;
+    client.emit(tombstone);
+    expect(currentWorkspace()?.name).toBe("Restored on host");
+  } finally {
+    settleWorkspaceArchiveIntent(undo);
+    directory.dispose();
+  }
+});
+
 function createSqliteCache() {
   const database = new DatabaseSync(":memory:");
   let beforeRead = async () => {};
@@ -1601,6 +1739,92 @@ function createSqliteCache() {
     },
   };
 }
+
+it.each(["snapshot", "changes"] as const)(
+  "does not save the optimistic undo row when workspace sync in %s mode confirms it is absent",
+  async (mode) => {
+    const serverId = `undo-reload-${mode}`;
+    const { cache, database, reopen } = createSqliteCache();
+    cache.setHosts([serverId]);
+    const { client, directory } = createDirectory(serverId, { checkpoints: cache });
+    const store = useSessionStore.getState();
+    const workspace = normalizeWorkspaceDescriptor(createWorkspaceEntry("undo-target"));
+    const connect = (connected: FakeDirectoryClient) => {
+      store.initializeSession(serverId, connected as unknown as DaemonClient, 1);
+      store.updateSessionServerInfo(serverId, {
+        serverId,
+        hostname: null,
+        version: "test",
+        features: { workspaceMultiplicity: true, directorySync: true },
+      });
+    };
+    const listed = () =>
+      useSessionStore.getState().sessions[serverId]?.workspaces.has(workspace.id);
+    const reply = {
+      requestId: "workspaces",
+      entries: [],
+      emptyProjects: [],
+      pageInfo: { hasMore: false, nextCursor: null, prevCursor: null },
+    };
+    connect(client);
+
+    const initial = client.holdWorkspaceFetch();
+    const initialRefresh = directory.refreshWorkspaces({ subscribe: true });
+    initial({
+      ...reply,
+      entries: [createWorkspaceEntry(workspace.id)],
+      sync: { generation: "g", headSeq: 1, mode: "snapshot", removals: [] },
+    });
+    await initialRefresh;
+    expect(listed()).toBe(true);
+    const undo = markWorkspaceArchiveUndoPending({ serverId, workspaceId: workspace.id });
+    directory.projectWorkspaceArchiveIntent(workspace.id, workspace);
+    let reloaded: DirectorySync | undefined;
+    try {
+      const archived = client.holdWorkspaceFetch();
+      const refresh = directory.refreshWorkspaces();
+      archived({
+        ...reply,
+        sync: {
+          generation: "g",
+          headSeq: 2,
+          mode,
+          removals: mode === "changes" ? [{ id: workspace.id, seq: 2 }] : [],
+        },
+      });
+      await refresh;
+      expect(listed()).toBe(true);
+      settleWorkspaceArchiveIntent(undo);
+      directory.projectWorkspaceArchiveIntent(workspace.id);
+      expect(listed()).toBe(false);
+      await cache.flush();
+
+      const reopened = reopen();
+      reopened.setHosts([serverId]);
+      directory.dispose();
+      store.clearSession(serverId);
+      const fresh = createDirectory(serverId, { checkpoints: reopened });
+      reloaded = fresh.directory;
+      connect(fresh.client);
+      await reloaded.restoreCachedDirectory();
+      const unchanged = fresh.client.holdWorkspaceFetch();
+      const resumed = reloaded.refreshWorkspaces();
+      unchanged({ ...reply, sync: { generation: "g", headSeq: 2, mode: "changes", removals: [] } });
+      await resumed;
+
+      expect(fresh.client.lastWorkspaceOptions).toMatchObject({
+        sync: { generation: "g", afterSeq: 2 },
+      });
+      expect(listed()).toBe(false);
+    } finally {
+      settleWorkspaceArchiveIntent(undo);
+      directory.dispose();
+      reloaded?.dispose();
+      await cache.flush();
+      database.close();
+    }
+  },
+);
 
 it("fills every cached workspace beneath live updates received during the SQLite read", async () => {
   const serverId = "sqlite-directory-race";

@@ -3011,6 +3011,22 @@ export class HostRuntimeStore {
     this.requireDirectory(serverId).acceptProject(project);
   }
 
+  projectWorkspaceArchiveIntent(
+    serverId: string,
+    workspaceId: string,
+    undoSnapshot?: WorkspaceDescriptor,
+  ): void {
+    this.requireDirectory(serverId).projectWorkspaceArchiveIntent(workspaceId, undoSnapshot);
+  }
+
+  reconcileWorkspaceArchive(
+    serverId: string,
+    workspaceId: string,
+    present: boolean,
+  ): Promise<void> {
+    return this.requireDirectory(serverId).reconcileWorkspaceArchive(workspaceId, present);
+  }
+
   removeWorkspaceSnapshot(serverId: string, workspaceId: string): void {
     this.requireDirectory(serverId).removeWorkspace(workspaceId);
   }
