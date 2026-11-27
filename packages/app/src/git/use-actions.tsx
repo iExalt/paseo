@@ -644,13 +644,17 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
       });
   }, [baseRef, cwd, runMergeFromBase, serverId, t, toast, toastActionError, toastActionSuccess]);
 
+  const translateDynamicKey = useCallback(
+    (key: string, options: Record<string, unknown> = {}) => t(key, options),
+    [t],
+  );
   const archiveController = useWorkspaceScreenArchiveController({
     serverId,
     activeWorkspaceSelection,
     workspaceDirectory: status?.cwd,
     branchLabel,
     gitStatus,
-    t,
+    t: translateDynamicKey,
   });
 
   const handleArchiveWorkspace = useCallback(() => {
@@ -881,9 +885,9 @@ export function useGitActions({ serverId, cwd, icons }: UseGitActionsInput): Use
         baseRefLabel,
         hasPullRequest,
         forge,
-        t,
+        t: translateDynamicKey,
       }),
-    [gitActionsInput, baseRefLabel, hasPullRequest, forge, t],
+    [gitActionsInput, baseRefLabel, hasPullRequest, forge, translateDynamicKey],
   );
 
   return {

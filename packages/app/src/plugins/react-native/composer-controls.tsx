@@ -167,7 +167,12 @@ export function Combobox<Item extends ComboboxItem>({
       searchable: true,
       remoteSearch: true,
       onSearchQueryChange: setQuery,
-      emptyText: comboboxEmptyText({ t, results, query, settled }),
+      emptyText: comboboxEmptyText({
+        t: (key, options = {}) => t(key, options),
+        results,
+        query,
+        settled,
+      }),
       showCaret: true,
     };
   }, [Icon, items, onSelect, query, results, settled, t, title, value]);
