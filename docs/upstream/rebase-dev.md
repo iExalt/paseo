@@ -20,6 +20,14 @@ After the replay the run may add up to three signed commits of its own: `chore(r
 
 For the reviewed target `c1d7d56b71960bca17ce86f8d358445b6135b809`, dispatch `upstream-sync` on `dev` with `ref` set to that SHA. Check `origin/upstream/main` equals it, then dispatch `rebase-dev` with `validate_only: true` as the pre-publication gate. After it passes, dispatch with `validate_only: false` to publish. Both runs capture current refs independently; compare their captured inputs, since the second run does not publish the first run's objects. Confirm the rebase run's captured upstream equals the reviewed target. A scheduled sync can advance the mirror between those operations; if it does, stop and prepare reviewed receipts, resolutions and a fixup for the new captured target before publication. Never rename an old patch to a newer SHA.
 
+## Compact fork history before replay
+
+For an approved cleanup of the fork commits after the last verified
+publication, use the [compaction stage](../../.agents/skills/rebase-dev/SKILL.md#compact).
+The rebase workflow always reads the remote dev it captures at startup. It
+cannot consume an offline compaction candidate. After the user adopts a
+candidate, capture dev again before preparing the upstream replay.
+
 ## Carry supersession decisions forward
 
 Carry the ledger forward after every publication. Sweep every subject/patch-ID key against the published history before the next rehearsal; rebasing can change patches even when subjects survive. The retain review authorizes rehearsal and does not establish replay or runtime parity.
