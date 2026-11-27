@@ -122,12 +122,13 @@ test("published npm packages declare and ship the repository license", () => {
     "node scripts/publish-release-packages.mjs",
   );
   const workspaceArgs = PUBLISH_WORKSPACES.map((name) => `--workspace=${name}`);
-  const packed = JSON.parse(
+  const packOutput = JSON.parse(
     execFileSync("npm", ["pack", "--dry-run", "--ignore-scripts", "--json", ...workspaceArgs], {
       cwd: repoRoot,
       encoding: "utf8",
     }),
   );
+  const packed = Object.values(packOutput);
   const manifests = new Map(
     rootManifest.workspaces.map((workspace) => {
       const directory = new URL(`${workspace}/`, repoRoot);

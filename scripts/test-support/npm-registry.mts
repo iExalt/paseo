@@ -74,7 +74,7 @@ export async function startNpmRegistry(packages: FixturePackage[]) {
       ["pack", "--ignore-scripts", "--json", ...prepared.map(({ directory }) => directory)],
       { cwd: root },
     );
-    const packed: Array<{ filename: string }> = JSON.parse(stdout);
+    const packed = Object.values(JSON.parse(stdout) as Record<string, { filename: string }>);
     for (const { manifest, pkg, index } of prepared) {
       const artifact = await readFile(path.join(root, packed[index].filename));
       const artifactPath = `/artifacts/${index}.tgz`;

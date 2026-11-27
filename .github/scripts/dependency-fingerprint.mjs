@@ -62,6 +62,8 @@ function requireEnv(env) {
 export async function dependencyFingerprint(root = ".", env = process.env) {
   requireEnv(env);
   const lock = normalizedLock(JSON.parse(await readFile(`${root}/package-lock.json`, "utf8")));
+  const { allowScripts = {} } = JSON.parse(await readFile(`${root}/package.json`, "utf8"));
+  const approvals = JSON.stringify(Object.entries(allowScripts).sort());
   const patches = (await readdir(`${root}/patches`).catch(() => []))
     .filter((name) => name.endsWith(".patch"))
     .sort();
@@ -74,7 +76,7 @@ export async function dependencyFingerprint(root = ".", env = process.env) {
     installFiles.map(async (file) => `${file}\n${await readFile(`${root}/${file}`, "utf8")}`),
   );
   const platform = [env.ImageOS, process.arch, process.version, env.NPM_VERSION].join(" ");
-  return { deps: digest(lock), modules: digest(lock, platform, ...installed) };
+  return { deps: digest(lock), modules: digest(lock, platform, approvals, ...installed) };
 }
 
 // Weekly image versions are omitted so rollouts do not split the cache; node,

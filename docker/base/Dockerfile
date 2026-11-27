@@ -18,6 +18,10 @@ RUN set -eux; \
 WORKDIR /tmp/paseo-src
 COPY . .
 
+RUN npm install --global --prefix /opt/paseo-build-npm --ignore-scripts --no-audit --no-fund \
+    "$(node -p 'require("./package.json").packageManager')"
+ENV PATH=/opt/paseo-build-npm/bin:$PATH
+
 RUN set -eux; \
     if [ -n "${PASEO_VERSION:-}" ]; then \
       test "$(node -p "require('./package.json').version")" = "${PASEO_VERSION}"; \
@@ -66,12 +70,14 @@ RUN set -eux; \
     rm -rf /var/lib/apt/lists/*
 
 COPY --from=source-pack /tmp/paseo-packs /tmp/paseo-packs
-RUN set -eux; \
+RUN --mount=type=bind,from=source-pack,source=/opt/paseo-build-npm,target=/tmp/paseo-build-npm \
+    set -eux; \
     if [ "$(dpkg --print-architecture)" = arm64 ]; then \
       apt-get update; \
       apt-get install -y --no-install-recommends g++ make python3; \
     fi; \
-    npm_config_nodedir=/usr/local npm install -g /tmp/paseo-packs/*.tgz; \
+    npm_config_nodedir=/usr/local /tmp/paseo-build-npm/bin/npm install --global \
+      --allow-scripts=node-pty@1.1.0 /tmp/paseo-packs/*.tgz; \
     if [ "$(dpkg --print-architecture)" = arm64 ]; then \
       apt-get purge -y --auto-remove g++ make python3; \
       rm -rf /var/lib/apt/lists/*; \

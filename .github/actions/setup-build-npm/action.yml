@@ -1,0 +1,19 @@
+name: Select npm for repository builds
+description: Install the repository npm alongside the Node-bundled npm
+runs:
+  using: composite
+  steps:
+    - name: Install the pinned build npm
+      shell: bash
+      run: |
+        set -euo pipefail
+        spec="$(node -p 'require("./package.json").packageManager')"
+        prefix="$RUNNER_TEMP/paseo-build-npm"
+        npm install --global --prefix "$prefix" --ignore-scripts --no-audit --no-fund "$spec"
+        bin="$prefix/bin"
+        if [[ "$RUNNER_OS" == Windows ]]; then
+          bin="$prefix"
+        fi
+        test "$("$bin/npm" --version)" = "${spec#npm@}"
+        echo "$bin" >> "$GITHUB_PATH"
+        echo "PASEO_BUILD_NPM_BIN=$bin" >> "$GITHUB_ENV"

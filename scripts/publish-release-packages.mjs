@@ -212,7 +212,8 @@ async function syncBetaDistTags(version, { otp }, { runNpm, sleep }) {
   for (let attempt = 1; attempt <= VIEW_ATTEMPTS; attempt += 1) {
     const result = runNpm(["view", "@getpaseo/cli", "dist-tags", "--json"]);
     if (result.status === 0) {
-      distTags = JSON.parse(result.stdout.trim());
+      const metadata = JSON.parse(result.stdout.trim());
+      distTags = (Array.isArray(metadata) ? metadata[0] : metadata) ?? {};
       break;
     }
     const combined = outputOf(result);

@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { machine } from "node:os";
+import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { machine, tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import {
@@ -76,4 +78,28 @@ test("the routine key names the ABI and the modules fingerprint, and needs both 
     env: { ...process.env, ...env },
   });
   assert.equal(stdout, `${key}\n`);
+});
+
+test("lifecycle approvals invalidate installed modules without invalidating the Gradle lock", async (t) => {
+  const fixture = await mkdtemp(join(tmpdir(), "paseo-dependency-fingerprint-"));
+  t.after(() => rm(fixture, { recursive: true, force: true }));
+  await mkdir(join(fixture, "scripts"));
+  await Promise.all(
+    ["postinstall-patches.mjs", "postinstall-patches-target.mjs"].map((file) =>
+      writeFile(join(fixture, "scripts", file), ""),
+    ),
+  );
+  await writeFile(join(fixture, "package-lock.json"), "{}");
+  const env = { ImageOS: "ubuntu26", NPM_VERSION: "12.2.3" };
+  await writeFile(join(fixture, "package.json"), "{}");
+  const blocked = await dependencyFingerprint(fixture, env);
+  await writeFile(
+    join(fixture, "package.json"),
+    JSON.stringify({
+      allowScripts: { "node-pty@1.1.0": true },
+    }),
+  );
+  const allowed = await dependencyFingerprint(fixture, env);
+  assert.notEqual(allowed.modules, blocked.modules);
+  assert.equal(allowed.deps, blocked.deps);
 });

@@ -2,4 +2,11 @@
 #MISE description="Run shared routine CI against this checkout"
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
-exec node .github/scripts/ci-routine.mjs "$@"
+npm_spec="$(node -p 'require("./package.json").packageManager')"
+if [[ -n "${PASEO_BUILD_NPM_BIN:-}" ]]; then
+  # Mise can put the Node tool's bin directory ahead of the runner's npm.
+  export PATH="$PASEO_BUILD_NPM_BIN:$PATH"
+  test "npm@$(npm --version)" = "$npm_spec"
+  exec node .github/scripts/ci-routine.mjs "$@"
+fi
+exec mise exec "npm:npm@${npm_spec#npm@}" -- node .github/scripts/ci-routine.mjs "$@"

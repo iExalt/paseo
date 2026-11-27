@@ -112,10 +112,9 @@ export function preflight({ upstream, repositoryPath = process.cwd(), run = comm
     assert.equal(invoke("node", ["--version"]).trim(), `v${version}`);
   });
   check("pinned npm", () => {
-    const workflow = readFileSync(`${repositoryPath}/.github/workflows/rebase-dev.yml`, "utf8");
-    const version = /npm --version\)" = ([\d.]+)/.exec(workflow)?.[1];
-    assert.ok(version, "Missing workflow npm pin");
-    assert.equal(invoke("npm", ["--version"]).trim(), version);
+    const { packageManager } = JSON.parse(readFileSync(`${repositoryPath}/package.json`, "utf8"));
+    assert.match(packageManager, /^npm@\d+\.\d+\.\d+$/);
+    assert.equal(`npm@${invoke("mise", ["run", "npm", "--", "--version"]).trim()}`, packageManager);
   });
   return { ok: checks.every((entry) => entry.ok), upstream, checks };
 }
@@ -208,7 +207,7 @@ export async function assertHostedRoutine({
     unscoped(null),
     "Pull request plan differs from the full routine beyond the format step",
   );
-  run("npm", ["run", "format:check"], { cwd, timeout: 600_000 });
+  run("mise", ["run", "npm", "--", "run", "format:check"], { cwd, timeout: 600_000 });
   return `${routineRun} at ${head}, tree ${tree}`;
 }
 

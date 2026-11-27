@@ -51,13 +51,14 @@ for (const [key, val] of Object.entries(lock.packages || {})) {
   const version = val.version;
 
   try {
-    const info = JSON.parse(
+    const metadata = JSON.parse(
       execSync(`npm view ${pkgName}@${version} --json dist`, {
         encoding: "utf8",
         stdio: ["pipe", "pipe", "pipe"],
       }),
     );
-    if (info.tarball && info.integrity) {
+    const info = Array.isArray(metadata) ? metadata[0] : metadata;
+    if (info?.tarball && info.integrity) {
       val.resolved = info.tarball;
       val.integrity = info.integrity;
       fixed++;

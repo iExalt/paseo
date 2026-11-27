@@ -2,6 +2,8 @@
   lib,
   stdenv,
   buildNpmPackage,
+  callPackage,
+  buildNpm ? callPackage ./build-npm.nix { },
   nodejs_26,
   python3,
   makeWrapper,
@@ -61,6 +63,12 @@ buildNpmPackage {
   };
 
   nodejs = nodejs_26;
+
+  # The npm config hook runs after patching and must use this build-only CLI.
+  prePatch = ''
+    export PATH="${buildNpm}/bin:$PATH"
+    npm --version
+  '';
   inherit (paseo) npmDeps;
   passthru.updaterZstd = lib.getBin zstd;
 
