@@ -3,11 +3,12 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { selectP5Turn } from "./interactions.mjs";
 
-export const sdkVersion = "1.4.2";
+export const sdkVersion = "1.5.2";
 export const model = "paseo-loopback";
 export const apiKey = "cursor-fixture-key";
 export const assistantText = "PASEO_FIXTURE_DONE";
 export const callId = "fixture-shell";
+const attributionExecId = 24;
 
 const token = "cursor-fixture-access-token";
 const proto = "application/proto";
@@ -130,7 +131,7 @@ function shellMessages(workspace, script = "cursor-canary.sh") {
 
 export async function startBackend(
   workspace,
-  { allowCodexPrewarm, selectSkillTurn, models, p5, inspectRequest },
+  { allowCodexPrewarm, selectSkillTurn, models, p5, inspectRequest, checkCommitAttribution },
 ) {
   const shell = shellMessages(workspace);
   const stoppedShell = shellMessages(workspace, "p8-held.sh");
@@ -141,6 +142,7 @@ export async function startBackend(
   const failures = [];
   let runs = 0;
   let shellReplies = 0;
+  let attributionContext;
   const nextSteer = [];
   const steers = [];
   const wire = [];
@@ -229,8 +231,16 @@ export async function startBackend(
     }
     stream.isContextTurn = Boolean(request?.includes("PASEO_P8_CONTEXT"));
     stream.shell = prepareShellResponse(stream.response, request);
-    stream.response.write(stream.shell.started);
-    stream.response.write(stream.shell.execute);
+    if (checkCommitAttribution && request?.includes("Run the shell canary.")) {
+      stream.response.write(frame(bytes(2, join(number(1, attributionExecId), bytes(10, "")))));
+    } else {
+      startShell(stream);
+    }
+  }
+
+  function startShell({ response, shell: command }) {
+    response.write(command.started);
+    response.write(command.execute);
   }
 
   function handleBidiAppend(body, send) {
@@ -262,6 +272,19 @@ export async function startBackend(
   function handleExecReply(active, reply, send) {
     const result = reply[2];
     const stream = active?.response;
+    if (reply[10] && reply[1] === attributionExecId) {
+      assert.ok(active?.shell && stream && !stream.writableEnded);
+      const success = fields(reply[10])[1];
+      assert.ok(success, "Cursor SDK request context failed");
+      const context = fields(fields(success)[1]);
+      attributionContext = {
+        commit: context[26]?.toString(),
+        pullRequest: context[27]?.toString(),
+      };
+      send(proto);
+      startShell(active);
+      return;
+    }
     if (active?.p5 && !active.shell) {
       assert.ok(stream && !stream.writableEnded, "MCP reply has no active run");
       send(proto);
@@ -391,6 +414,9 @@ export async function startBackend(
     },
     get runs() {
       return runs;
+    },
+    get attributionContext() {
+      return attributionContext;
     },
     get shellReplies() {
       return shellReplies;
