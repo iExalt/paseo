@@ -219,5 +219,515 @@
         "stage": 3
       }
     ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "4fb05a031439887d0192a74a874009ad314a2944",
+    "path": "docs/android.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "229c2bf02d70c849a1b4c8d4c77424791471b13f",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "55d2c6e1bb5369ad4f0a7335e0bf30c482f59499",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "4fb05a031439887d0192a74a874009ad314a2944",
+    "path": "public-docs/muse-code.zh-CN.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "8a318b9f506403fa02567d570bbe588f5af08074",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "08973c19136ad26170b947e48c67f3b402e4de13",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "4fb05a031439887d0192a74a874009ad314a2944",
+    "path": "public-docs/supported-providers.zh-CN.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "afb753843158d9fd8f6970f8bbfbdf7ec94bc1e5",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "74faef135b6726d4eeea4c06edebe6b2702ef86c",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "65f5fa8de60462c99f6e6c383431955e5d74cb78",
+    "path": "packages/app/src/screens/settings/providers-section.test.tsx",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "3e551345202a4d74618188665efd2154382ba81b",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "5f70d165d4e61768781344ce4b5d0e537f9a420b",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "65f5fa8de60462c99f6e6c383431955e5d74cb78",
+    "path": "patches/react-native-unistyles+3.2.4.patch",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "c3da63a8ace3115bbce5ae2676f887c9aeb84fc0",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "ec921dc957d772367f3cd69c620c4dbee84baa78",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "09068947d97f601585a157a25c5bdb1c10d27463",
+    "path": ".github/workflows/desktop-packages.yml",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "77e2735c6ae6559a468b2e68d91326fac0cf0cb1",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "08cbf0055b4f121e8f7bc96fc0cbb1dad1af7524",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "09068947d97f601585a157a25c5bdb1c10d27463",
+    "path": ".github/workflows/desktop-release.yml",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "26be12291b261192f752782529cd62bb71b57a9a",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "b72fbaac04a28ab43f4f38c5f91449ab144d697a",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "09068947d97f601585a157a25c5bdb1c10d27463",
+    "path": ".github/workflows/docker.yml",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "aa53f3ec81836cb47cd863de84e35c953084d109",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "1a243dea7f316a689231377886101c2c970a58c6",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "09068947d97f601585a157a25c5bdb1c10d27463",
+    "path": ".github/workflows/nix.yml",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "b6535647939968a34e335367d05cbee46acb7bc1",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "72db40e230d104f731d423ca584cd3aaaa355166",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "b8bd8d0a6e608c8cb3516898e65cc6ee3dd5a57b",
+    "path": "packages/app/src/screens/settings/providers-section.test.tsx",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "5f70d165d4e61768781344ce4b5d0e537f9a420b",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "1d3ec05ea73efbe4e83ac5e7a072f9ba382fa66b",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "b8bd8d0a6e608c8cb3516898e65cc6ee3dd5a57b",
+    "path": "packages/server/src/server/agent/agent-mcp.e2e.test.ts",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "b123fa30c34581cbe217d31e222e335b052c5c9e",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "540417c123a76853acdec40a2a0b1b0d2aacb37e",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "b8bd8d0a6e608c8cb3516898e65cc6ee3dd5a57b",
+    "path": "packages/server/src/server/agent/mcp-parity.e2e.test.ts",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "f7d7d76d78c97ed384733422769c2371a6fdfb20",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "39d4d797e2973b4a86a0656b8d40061cc04cbac8",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "b8bd8d0a6e608c8cb3516898e65cc6ee3dd5a57b",
+    "path": "packages/server/src/server/agent/mcp-server.test.ts",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "6d267ff53a6a673aefbb53be8af0df15e9bce32c",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "fee53aae6e2fc668d45200bf12862e4783f8fc80",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "b8bd8d0a6e608c8cb3516898e65cc6ee3dd5a57b",
+    "path": "packages/server/src/server/agent/mcp-server.ts",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "23bff8f3ecec5e8d68cc91d8b9e320e6a3d11d63",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "b35c0b160a7045e3c45e05856cea2c0b71789c91",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "b8bd8d0a6e608c8cb3516898e65cc6ee3dd5a57b",
+    "path": "public-docs/muse-code.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "83dea4d244e2485164c517fab3f74f8c4c34d7b8",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "404c5de9b86e8aac664dc8001f55d3befe7074cb",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "b8bd8d0a6e608c8cb3516898e65cc6ee3dd5a57b",
+    "path": "public-docs/supported-providers.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "1fe249a1e0d70c736d84ae89c768f6e61f1635a5",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "5243146c4e89270a6579f9cf8985f09422f948f2",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "815fb6ff63220536e685386fc735800052e5a642",
+    "path": ".github/ci-paths.yml",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "87fc924b6b849e3ff959acdb4bde47095e09519e",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "ed18172a28c823c015990a7a2ed1c1ca9528d491",
+        "stage": 2
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "26705395f276a68b3ee236bc6ab5ac052075bdee",
+    "path": "patches/react-native-enriched-markdown+1.2.0-nightly-20261014-766fc0e67.patch",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "7607522924c222fb455fd7651288261600d4dab9",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "4c9d5499951d5468771a9da9d419d82de3ccf6d0",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "3efee8f46cddc4665e7e7e8b2f0a9d537512867a",
+    "path": "public-docs/supported-providers.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "5243146c4e89270a6579f9cf8985f09422f948f2",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "06ebfba96fb21ba90a0cfa4f3b4c060a200f59fa",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "005214e5c63220657be10420d561e095517aec15",
+    "path": "public-docs/supported-providers.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "27a4d2f2150e0d3726f06da5aad3faf4d446ff57",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "6b586abb0dd7a1223e93eb64f67c80f7e34f8dae",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "037ac7baee02d037f946ecd5c8ec35b8584045f1",
+    "path": "public-docs/supported-providers.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "62a138f05a197d3c3c910face658d5ffa06311e1",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "27a4d2f2150e0d3726f06da5aad3faf4d446ff57",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "19b09926955a2a194d4555cbe1f23d565f9f6335",
+    "path": "packages/app/src/components/provider-diagnostic-sheet.tsx",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "904ba17e8bf89402509e5f486597693f8df1dc5c",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "2109f1a0e6b708722a44ffd83702168254220f5c",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "1e9dd9af12e8551f2a81e9d61fd0b135c4e11533",
+    "path": "packages/app/src/components/provider-catalog-list.tsx",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "b911f10553edab0bf3d446e82bcf4925bf26004c",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "2780651ee058eeae2ce01c5663f2c0893f0b3132",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "1e9dd9af12e8551f2a81e9d61fd0b135c4e11533",
+    "path": "packages/app/src/components/provider-diagnostic-sheet.tsx",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "2109f1a0e6b708722a44ffd83702168254220f5c",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "ded5651c359cd6b53e1c7cde6187621cbcae9b46",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "1e9dd9af12e8551f2a81e9d61fd0b135c4e11533",
+    "path": "packages/app/src/screens/settings/providers-section.tsx",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "078cf086f5a5d1c017d4eda83cd9964df413aa5a",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "7afd8c8421ce946f0b5728c1b0c3a8774bfae67d",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "1e9dd9af12e8551f2a81e9d61fd0b135c4e11533",
+    "path": "public-docs/supported-providers.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "54b29798082c46ca93ba4a5e535eff277d4eea5b",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "539fff7ec85a2fafa850d659c34c01de5c8eae5d",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "4bc8df32ae844bddc0245ad344cae7e142f123c6",
+    "path": "packages/app/src/components/provider-diagnostic-sheet.tsx",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "ded5651c359cd6b53e1c7cde6187621cbcae9b46",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "26f525f78a810f06e5806078e730356925a37fbc",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "4bc8df32ae844bddc0245ad344cae7e142f123c6",
+    "path": "public-docs/supported-providers.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "539fff7ec85a2fafa850d659c34c01de5c8eae5d",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "4218b5ab09c5c6b398f11c695fa443f9cf6ddb87",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "51bebd8b12997f4c5bbf894f07f4984c53452ef8",
+    "path": "public-docs/supported-providers.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "4218b5ab09c5c6b398f11c695fa443f9cf6ddb87",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "62a138f05a197d3c3c910face658d5ffa06311e1",
+        "stage": 3
+      }
+    ]
+  },
+  {
+    "upstream": "518e58cd639f01f63da35544bce3eff5123b10ee",
+    "commit": "c432f869261d44c0a76f2d3c018e91e85fc58f00",
+    "path": "public-docs/supported-providers.md",
+    "stages": [
+      {
+        "mode": "100644",
+        "oid": "06ebfba96fb21ba90a0cfa4f3b4c060a200f59fa",
+        "stage": 1
+      },
+      {
+        "mode": "100644",
+        "oid": "54b29798082c46ca93ba4a5e535eff277d4eea5b",
+        "stage": 3
+      }
+    ]
   }
 ]

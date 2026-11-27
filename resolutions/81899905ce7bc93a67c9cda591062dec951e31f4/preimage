@@ -1,0 +1,637 @@
+diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/codegen-patch/react/renderer/components/PasteTextInputSpecs/ShadowNodes.cpp b/node_modules/@mattermost/react-native-paste-input/android/src/codegen-patch/react/renderer/components/PasteTextInputSpecs/ShadowNodes.cpp
+index 73466dd..8440ac9 100644
+--- a/node_modules/@mattermost/react-native-paste-input/android/src/codegen-patch/react/renderer/components/PasteTextInputSpecs/ShadowNodes.cpp
++++ b/node_modules/@mattermost/react-native-paste-input/android/src/codegen-patch/react/renderer/components/PasteTextInputSpecs/ShadowNodes.cpp
+@@ -33,7 +33,11 @@ Size PasteTextInputShadowNode::measureContent(
+       .surfaceId = getSurfaceId(),
+   };
+ 
+-  if (getStateData().cachedAttributedStringId != 0) {
++  AttributedString attributedString = getMostRecentAttributedString(layoutContext);
++  const auto text = attributedString.getString();
++  const auto hasTrailingNewline = !text.empty() && text.back() == '\n';
++
++  if (getStateData().cachedAttributedStringId != 0 && !hasTrailingNewline) {
+     auto textSize = textLayoutManager_
+                         ->measureCachedSpannableById(
+                             getStateData().cachedAttributedStringId,
+@@ -44,9 +48,10 @@ Size PasteTextInputShadowNode::measureContent(
+     return layoutConstraints.clamp(textSize);
+   }
+ 
+-  AttributedString attributedString = getMostRecentAttributedString(layoutContext);
+   if (attributedString.isEmpty()) {
+     attributedString = getPlaceholderAttributedString(layoutContext);
++  } else if (hasTrailingNewline) {
++    attributedString.getFragments().back().string += " ";
+   }
+ 
+   auto textSize = textLayoutManager_
+diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
+index 9e60bd9..35c89ef 100644
+--- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
++++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputActionCallback.kt
+@@ -1,7 +1,5 @@
+ package com.mattermost.pasteinputtext
+ 
+-import android.content.ClipboardManager
+-import android.content.Context
+ import android.net.Uri
+ import android.view.ActionMode
+ import android.view.Menu
+@@ -57,16 +55,5 @@ class PasteInputActionCallback(editText: PasteInputEditText, disabled: Boolean,
+     }
+   }
+ 
+-  private fun getUriInClipboard() : Uri? {
+-    val clipboardManager = mEditText.context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+-    val clipData = clipboardManager.primaryClip ?: return null
+-    val item = clipData.getItemAt(0) ?: return null
+-    val chars = item.text ?: return null
+-
+-    val text = chars.toString()
+-    return if (text.isNotEmpty()) {
+-      null
+-    } else item.uri
+-
+-  }
++  private fun getUriInClipboard() : Uri? = mEditText.clipboardFileUri()
+ }
+diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
+<<<<<<<
+index 1794b53..6f27aa2 100644
+--- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
++++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
+@@ -1,9 +1,15 @@
+ package com.mattermost.pasteinputtext
+ 
+ import android.annotation.SuppressLint
++import android.content.ClipboardManager
++import android.content.Context
++import android.net.Uri
++import android.util.Log
+ import android.os.Build
+ import android.view.inputmethod.EditorInfo
++import android.view.KeyEvent
+ import android.view.inputmethod.InputConnection
++import android.view.inputmethod.InputConnectionWrapper
+ import androidx.core.view.inputmethod.EditorInfoCompat
+ import androidx.core.view.inputmethod.InputConnectionCompat
+ import com.facebook.react.uimanager.ThemedReactContext
+@@ -33,10 +39,39 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+=======
+index 1794b53..eca5e57 100644
+--- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
++++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputEditText.kt
+@@ -33,8 +33,8 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+>>>>>>>
+     return mOnPasteListener
+   }
+ 
+-  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
+-    val ic = super.onCreateInputConnection(outAttrs)
++  // A file on the clipboard, such as a copied image: a URI-only clip whose
++  // provider type is not text. Text clips and text-typed URIs return null so
++  // the stock paste handles them.
++  fun clipboardFileUri(): Uri? {
++    val clipboardManager = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
++    val item = clipboardManager.primaryClip?.getItemAt(0) ?: return null
++    if (!item.text.isNullOrEmpty()) return null
++    val uri = item.uri ?: return null
++    val type = context.contentResolver.getType(uri) ?: return null
++    return if (type.startsWith("text/")) null else uri
++  }
++
++  // Ctrl+V and keyboards that paste with performContextMenuAction(paste) come
++  // here without going through the action mode menu.
++  override fun onTextContextMenuItem(id: Int): Boolean {
++    if (id == android.R.id.paste && !mDisabledCopyPaste) {
++      val uri = clipboardFileUri()
++      if (uri != null) {
++        Log.i(TAG, "paste command with clipboard file $uri")
++        val dispatcher = if (::mPasteEventDispatcher.isInitialized) mPasteEventDispatcher else null
++        getOnPasteListener().onPaste(uri, dispatcher)
++        return true
++      }
++    }
++    return super.onTextContextMenuItem(id)
++  }
+ 
+-    EditorInfoCompat.setContentMimeTypes(outAttrs, arrayOf("*/*"))
++  override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection? {
++    val ic = super.onCreateInputConnection(outAttrs) ?: return null
+<<<<<<<
+ 
+     EditorInfoCompat.setContentMimeTypes(outAttrs, arrayOf("*/*"))
+ 
+@@ -55,6 +55,6 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+=======
++
++    // List image types explicitly before the wildcard: some keyboards match
++    // their content against these entries literally and skip "*/*".
++    EditorInfoCompat.setContentMimeTypes(outAttrs, CONTENT_MIME_TYPES)
+ 
+     val callback = InputConnectionCompat.OnCommitContentListener { inputContentInfo, flags, _ ->
+       val lacksPermission = (flags and InputConnectionCompat.INPUT_CONTENT_GRANT_READ_URI_PERMISSION) != 0
+@@ -48,6 +83,7 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+         }
+       }
+ 
++      Log.i(TAG, "keyboard commitContent ${inputContentInfo.contentUri} ${inputContentInfo.description}")
+       if (!mDisabledCopyPaste) {
+         getOnPasteListener().onPaste(inputContentInfo.contentUri, mPasteEventDispatcher)
+       }
+@@ -55,6 +91,41 @@ class PasteInputEditText(context: ThemedReactContext) : ReactEditText(context) {
+>>>>>>>
+       true
+     }
+ 
+-    return InputConnectionCompat.createWrapper(ic!!, outAttrs, callback)
+<<<<<<<
++    return InputConnectionCompat.createWrapper(ic, outAttrs, callback)
+   }
+ }
+=======
++    return PasteLoggingInputConnection(InputConnectionCompat.createWrapper(ic, outAttrs, callback))
++  }
++
++  // Logs the keyboard calls that can carry a paste, so a keyboard whose paste
++  // never reaches onPaste shows which route it took. Typed text is not logged.
++  private class PasteLoggingInputConnection(target: InputConnection) : InputConnectionWrapper(target, false) {
++    override fun performContextMenuAction(id: Int): Boolean {
++      Log.i(TAG, "keyboard performContextMenuAction $id")
++      return super.performContextMenuAction(id)
++    }
++
++    override fun performPrivateCommand(action: String?, data: android.os.Bundle?): Boolean {
++      Log.i(TAG, "keyboard performPrivateCommand $action")
++      return super.performPrivateCommand(action, data)
++    }
++
++    override fun sendKeyEvent(event: KeyEvent): Boolean {
++      if (event.isCtrlPressed && event.action == KeyEvent.ACTION_DOWN) {
++        Log.i(TAG, "keyboard ctrl key ${event.keyCode}")
++      }
++      return super.sendKeyEvent(event)
++    }
++
++    override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
++      if (text != null && (text.startsWith("content://") || text.startsWith("file://"))) {
++        Log.i(TAG, "keyboard commitText of a URI")
++      }
++      return super.commitText(text, newCursorPosition)
++    }
++  }
++
++  companion object {
++    private const val TAG = "PasteInput"
++    private val CONTENT_MIME_TYPES = arrayOf(
++      "image/*", "image/png", "image/jpeg", "image/gif", "image/webp", "*/*",
++    )
+   }
+ }
+diff --git a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
+index 9afe1f0..73dd18e 100644
+--- a/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
++++ b/node_modules/@mattermost/react-native-paste-input/android/src/main/java/com/mattermost/pasteinputtext/PasteInputListener.kt
+@@ -19,7 +19,9 @@ class PasteInputListener(editText: PasteInputEditText, surfaceId: Int) : IPasteI
+ 
+   override fun onPaste(itemUri: Uri, eventDispatcher: EventDispatcher?) {
+     val reactContext = mEditText.context as ReactContext
+-    reactContext.contentResolver.getType(itemUri) ?: return
++    val providerMimeType = reactContext.contentResolver.getType(itemUri)
++    android.util.Log.i("PasteInput", "onPaste $itemUri type=$providerMimeType")
++    providerMimeType ?: return
+ 
+     var uriString: String = itemUri.toString()
+     val mimeType: String
+@@ -52,8 +54,11 @@ class PasteInputListener(editText: PasteInputEditText, surfaceId: Int) : IPasteI
+       uriString = RealPathUtil.getRealPathFromURI(reactContext, itemUri) ?: return
+     }
+ 
+-    val extension: String = MimeTypeMap.getFileExtensionFromUrl(uriString) ?: return
+-    mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: return
++    // Keyboards such as Gboard commit URIs whose name has no extension, and
++    // getFileExtensionFromUrl returns "" for names with spaces. Fall back to the
++    // provider's MIME type instead of dropping the paste.
++    val extension: String = MimeTypeMap.getFileExtensionFromUrl(uriString) ?: ""
++    mimeType = MimeTypeMap.getSingleton().getMimeTypeFromExtension(extension) ?: providerMimeType
+     val fileName: String = URLUtil.guessFileName(uriString, null, mimeType)
+ 
+     try {
+>>>>>>>
+diff --git a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js b/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
+index 51b9dfa..501badf 100644
+--- a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
++++ b/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteInput.js
+@@ -54,17 +54,25 @@ function PasteInputIOSComponent(props, forwardedRef) {
+ 
+   // Expose the TextInput ref to parent components (same as Android)
+   // TextInput already has all methods from PasteTextInputInstance (clear, isFocused, setSelection)
+-  (0, _react.useImperativeHandle)(forwardedRef, () => {
+-    if (textInputRef.current) {
+-      return textInputRef.current;
+-    }
+-    // Return a no-op implementation if ref is not yet available
+-    return {
+-      clear: () => {},
+-      isFocused: () => false,
+-      setSelection: () => {}
+-    };
+-  }, []);
++  (0, _react.useImperativeHandle)(forwardedRef, () => ({
++    clear: () => textInputRef.current?.clear?.(),
++    focus: () => textInputRef.current?.focus?.(),
++    blur: () => textInputRef.current?.blur?.(),
++    isFocused: () => textInputRef.current?.isFocused?.() ?? false,
++    setSelection: (start, end) => textInputRef.current?.setSelection?.(start, end),
++    replaceText: (text, selection) => {
++      if (text === '') {
++        textInputRef.current?.clear?.();
++      } else {
++        textInputRef.current?.setNativeProps?.({ text, ...(selection ? { selection } : {}) });
++      }
++      if (selection) {
++        textInputRef.current?.setSelection?.(selection.start, selection.end);
++      }
++    },
++    getNativeRef: () => textInputRef.current,
++    setNativeProps: nativeProps => textInputRef.current?.setNativeProps?.(nativeProps)
++  }), []);
+ 
+   // Register/unregister with native module on mount/unmount
+   (0, _react.useEffect)(() => {
+@@ -125,17 +133,15 @@ function PasteInputAndroidComponent(props, forwardedRef) {
+   const pasteTextInputRef = (0, _react.useRef)(null);
+ 
+   // Expose the PasteTextInput ref to parent components (same as iOS)
+-  (0, _react.useImperativeHandle)(forwardedRef, () => {
+-    if (pasteTextInputRef.current) {
+-      return pasteTextInputRef.current;
+-    }
+-    // Return a no-op implementation if ref is not yet available
+-    return {
+-      clear: () => {},
+-      isFocused: () => false,
+-      setSelection: () => {}
+-    };
+-  }, []);
++  (0, _react.useImperativeHandle)(forwardedRef, () => ({
++    clear: () => pasteTextInputRef.current?.clear?.(),
++    focus: () => pasteTextInputRef.current?.focus?.(),
++    blur: () => pasteTextInputRef.current?.blur?.(),
++    isFocused: () => pasteTextInputRef.current?.isFocused?.() ?? false,
++    setSelection: (start, end) => pasteTextInputRef.current?.setSelection?.(start, end),
++    replaceText: (text, selection) => pasteTextInputRef.current?.replaceText?.(text, selection),
++    getNativeRef: () => pasteTextInputRef.current?.getNativeRef?.() ?? pasteTextInputRef.current
++  }), []);
+ 
+   // For Android, PasteTextInput already handles everything internally
+   // Just need to adapt the onPaste callback format
+diff --git a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteTextInput.js b/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteTextInput.js
+index 5119e65..77c3aea 100644
+--- a/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteTextInput.js
++++ b/node_modules/@mattermost/react-native-paste-input/lib/commonjs/PasteTextInput.js
+@@ -16,7 +16,6 @@ var _nullthrows = _interopRequireDefault(require("nullthrows"));
+ var _jsxRuntime = require("react/jsx-runtime");
+ function _interopRequireDefault(e) { return e && e.__esModule ? e : { default: e }; }
+ function _interopRequireWildcard(e, t) { if ("function" == typeof WeakMap) var r = new WeakMap(), n = new WeakMap(); return (_interopRequireWildcard = function (e, t) { if (!t && e && e.__esModule) return e; var o, i, f = { __proto__: null, default: e }; if (null === e || "object" != typeof e && "function" != typeof e) return f; if (o = t ? n : r) { if (o.has(e)) return o.get(e); o.set(e, f); } for (const t in e) "default" !== t && {}.hasOwnProperty.call(e, t) && ((i = (o = Object.defineProperty) && Object.getOwnPropertyDescriptor(e, t)) && (i.get || i.set) ? o(f, t, i) : f[t] = e[t]); return f; })(e, t); }
+-const emptyFunctionThatReturnsTrue = () => true;
+ function useMergeRefs(...refs) {
+   return React.useCallback(current => {
+     for (const ref of refs) {
+@@ -52,6 +51,7 @@ function InternalTextInput(props) {
+     end: propsSelection.end ?? propsSelection.start
+   }, [propsSelection]);
+   const [mostRecentEventCount, setMostRecentEventCount] = React.useState(0);
++  const mostRecentEventCountRef = React.useRef(0);
+   const [lastNativeText, setLastNativeText] = React.useState(props.value);
+   const [lastNativeSelectionState, setLastNativeSelection] = React.useState({
+     selection: {
+@@ -103,7 +103,12 @@ function InternalTextInput(props) {
+       Object.assign(instance, {
+         clear() {
+           if (inputRef.current != null) {
+-            _PasteTextInputNativeComponent.Commands.setTextAndSelection(inputRef.current, mostRecentEventCount, '', 0, 0);
++            _PasteTextInputNativeComponent.Commands.setTextAndSelection(inputRef.current, mostRecentEventCountRef.current, '', 0, 0);
++          }
++        },
++        replaceText(text, selection) {
++          if (inputRef.current != null) {
++            _PasteTextInputNativeComponent.Commands.setTextAndSelection(inputRef.current, mostRecentEventCountRef.current, text, selection?.start ?? -1, selection?.end ?? -1);
+           }
+         },
+         isFocused() {
+@@ -114,12 +119,12 @@ function InternalTextInput(props) {
+         },
+         setSelection(start, end) {
+           if (inputRef.current != null) {
+-            _PasteTextInputNativeComponent.Commands.setTextAndSelection(inputRef.current, mostRecentEventCount, null, start, end);
++            _PasteTextInputNativeComponent.Commands.setTextAndSelection(inputRef.current, mostRecentEventCountRef.current, null, start, end);
+           }
+         }
+       });
+     }
+-  }, [mostRecentEventCount]);
++  }, []);
+   const ref = useMergeRefs(setLocalRef, props.forwardedRef);
+   const _onChange = event => {
+     const currentText = event.nativeEvent.text;
+@@ -128,6 +133,7 @@ function InternalTextInput(props) {
+     if (inputRef.current == null) {
+       return;
+     }
++    mostRecentEventCountRef.current = event.nativeEvent.eventCount;
+     setLastNativeText(currentText);
+     setMostRecentEventCount(event.nativeEvent.eventCount);
+   };
+@@ -294,7 +300,6 @@ function InternalTextInput(props) {
+     onPaste: _onPaste,
+     onScroll: _onScroll,
+     onSelectionChange: _onSelectionChange,
+-    onSelectionChangeShouldSetResponder: emptyFunctionThatReturnsTrue,
+     placeholder: placeholder,
+     style: _style,
+     text: text,
+diff --git a/node_modules/@mattermost/react-native-paste-input/lib/module/PasteInput.js b/node_modules/@mattermost/react-native-paste-input/lib/module/PasteInput.js
+index 75fe015..1d3cd64 100644
+--- a/node_modules/@mattermost/react-native-paste-input/lib/module/PasteInput.js
++++ b/node_modules/@mattermost/react-native-paste-input/lib/module/PasteInput.js
+@@ -49,17 +49,25 @@ function PasteInputIOSComponent(props, forwardedRef) {
+ 
+   // Expose the TextInput ref to parent components (same as Android)
+   // TextInput already has all methods from PasteTextInputInstance (clear, isFocused, setSelection)
+-  useImperativeHandle(forwardedRef, () => {
+-    if (textInputRef.current) {
+-      return textInputRef.current;
+-    }
+-    // Return a no-op implementation if ref is not yet available
+-    return {
+-      clear: () => {},
+-      isFocused: () => false,
+-      setSelection: () => {}
+-    };
+-  }, []);
++  useImperativeHandle(forwardedRef, () => ({
++    clear: () => textInputRef.current?.clear?.(),
++    focus: () => textInputRef.current?.focus?.(),
++    blur: () => textInputRef.current?.blur?.(),
++    isFocused: () => textInputRef.current?.isFocused?.() ?? false,
++    setSelection: (start, end) => textInputRef.current?.setSelection?.(start, end),
++    replaceText: (text, selection) => {
++      if (text === '') {
++        textInputRef.current?.clear?.();
++      } else {
++        textInputRef.current?.setNativeProps?.({ text, ...(selection ? { selection } : {}) });
++      }
++      if (selection) {
++        textInputRef.current?.setSelection?.(selection.start, selection.end);
++      }
++    },
++    getNativeRef: () => textInputRef.current,
++    setNativeProps: nativeProps => textInputRef.current?.setNativeProps?.(nativeProps)
++  }), []);
+ 
+   // Register/unregister with native module on mount/unmount
+   useEffect(() => {
+@@ -120,17 +128,15 @@ function PasteInputAndroidComponent(props, forwardedRef) {
+   const pasteTextInputRef = useRef(null);
+ 
+   // Expose the PasteTextInput ref to parent components (same as iOS)
+-  useImperativeHandle(forwardedRef, () => {
+-    if (pasteTextInputRef.current) {
+-      return pasteTextInputRef.current;
+-    }
+-    // Return a no-op implementation if ref is not yet available
+-    return {
+-      clear: () => {},
+-      isFocused: () => false,
+-      setSelection: () => {}
+-    };
+-  }, []);
++  useImperativeHandle(forwardedRef, () => ({
++    clear: () => pasteTextInputRef.current?.clear?.(),
++    focus: () => pasteTextInputRef.current?.focus?.(),
++    blur: () => pasteTextInputRef.current?.blur?.(),
++    isFocused: () => pasteTextInputRef.current?.isFocused?.() ?? false,
++    setSelection: (start, end) => pasteTextInputRef.current?.setSelection?.(start, end),
++    replaceText: (text, selection) => pasteTextInputRef.current?.replaceText?.(text, selection),
++    getNativeRef: () => pasteTextInputRef.current?.getNativeRef?.() ?? pasteTextInputRef.current
++  }), []);
+ 
+   // For Android, PasteTextInput already handles everything internally
+   // Just need to adapt the onPaste callback format
+diff --git a/node_modules/@mattermost/react-native-paste-input/lib/module/PasteTextInput.js b/node_modules/@mattermost/react-native-paste-input/lib/module/PasteTextInput.js
+index 39bd607..832dcc2 100644
+--- a/node_modules/@mattermost/react-native-paste-input/lib/module/PasteTextInput.js
++++ b/node_modules/@mattermost/react-native-paste-input/lib/module/PasteTextInput.js
+@@ -10,7 +10,6 @@ import usePressability from 'react-native/Libraries/Pressability/usePressability
+ import flattenStyle from 'react-native/Libraries/StyleSheet/flattenStyle';
+ import nullthrows from 'nullthrows';
+ import { jsx as _jsx } from "react/jsx-runtime";
+-const emptyFunctionThatReturnsTrue = () => true;
+ function useMergeRefs(...refs) {
+   return React.useCallback(current => {
+     for (const ref of refs) {
+@@ -46,6 +45,7 @@ function InternalTextInput(props) {
+     end: propsSelection.end ?? propsSelection.start
+   }, [propsSelection]);
+   const [mostRecentEventCount, setMostRecentEventCount] = React.useState(0);
++  const mostRecentEventCountRef = React.useRef(0);
+   const [lastNativeText, setLastNativeText] = React.useState(props.value);
+   const [lastNativeSelectionState, setLastNativeSelection] = React.useState({
+     selection: {
+@@ -97,7 +97,12 @@ function InternalTextInput(props) {
+       Object.assign(instance, {
+         clear() {
+           if (inputRef.current != null) {
+-            Commands.setTextAndSelection(inputRef.current, mostRecentEventCount, '', 0, 0);
++            Commands.setTextAndSelection(inputRef.current, mostRecentEventCountRef.current, '', 0, 0);
++          }
++        },
++        replaceText(text, selection) {
++          if (inputRef.current != null) {
++            Commands.setTextAndSelection(inputRef.current, mostRecentEventCountRef.current, text, selection?.start ?? -1, selection?.end ?? -1);
+           }
+         },
+         isFocused() {
+@@ -108,12 +113,12 @@ function InternalTextInput(props) {
+         },
+         setSelection(start, end) {
+           if (inputRef.current != null) {
+-            Commands.setTextAndSelection(inputRef.current, mostRecentEventCount, null, start, end);
++            Commands.setTextAndSelection(inputRef.current, mostRecentEventCountRef.current, null, start, end);
+           }
+         }
+       });
+     }
+-  }, [mostRecentEventCount]);
++  }, []);
+   const ref = useMergeRefs(setLocalRef, props.forwardedRef);
+   const _onChange = event => {
+     const currentText = event.nativeEvent.text;
+@@ -122,6 +127,7 @@ function InternalTextInput(props) {
+     if (inputRef.current == null) {
+       return;
+     }
++    mostRecentEventCountRef.current = event.nativeEvent.eventCount;
+     setLastNativeText(currentText);
+     setMostRecentEventCount(event.nativeEvent.eventCount);
+   };
+@@ -288,7 +294,6 @@ function InternalTextInput(props) {
+     onPaste: _onPaste,
+     onScroll: _onScroll,
+     onSelectionChange: _onSelectionChange,
+-    onSelectionChangeShouldSetResponder: emptyFunctionThatReturnsTrue,
+     placeholder: placeholder,
+     style: _style,
+     text: text,
+diff --git a/node_modules/@mattermost/react-native-paste-input/src/PasteInput.tsx b/node_modules/@mattermost/react-native-paste-input/src/PasteInput.tsx
+index 12befab..0d23ca5 100644
+--- a/node_modules/@mattermost/react-native-paste-input/src/PasteInput.tsx
++++ b/node_modules/@mattermost/react-native-paste-input/src/PasteInput.tsx
+@@ -64,17 +64,25 @@ function PasteInputIOSComponent(
+ 
+     // Expose the TextInput ref to parent components (same as Android)
+     // TextInput already has all methods from PasteTextInputInstance (clear, isFocused, setSelection)
+-    useImperativeHandle(forwardedRef, () => {
+-        if (textInputRef.current) {
+-            return textInputRef.current as unknown as PasteTextInputInstance;
+-        }
+-        // Return a no-op implementation if ref is not yet available
+-        return {
+-            clear: () => {},
+-            isFocused: () => false,
+-            setSelection: () => {},
+-        } as unknown as PasteTextInputInstance;
+-    }, []);
++    useImperativeHandle(forwardedRef, () => ({
++        clear: () => textInputRef.current?.clear?.(),
++        focus: () => textInputRef.current?.focus?.(),
++        blur: () => textInputRef.current?.blur?.(),
++        isFocused: () => textInputRef.current?.isFocused?.() ?? false,
++        setSelection: (start: number, end: number) => textInputRef.current?.setSelection?.(start, end),
++        replaceText: (text: string, selection?: { start: number; end: number }) => {
++            if (text === '') {
++                textInputRef.current?.clear?.();
++            } else {
++                textInputRef.current?.setNativeProps?.({ text, ...(selection ? { selection } : {}) });
++            }
++            if (selection) {
++                textInputRef.current?.setSelection?.(selection.start, selection.end);
++            }
++        },
++        getNativeRef: () => textInputRef.current,
++        setNativeProps: (nativeProps: any) => textInputRef.current?.setNativeProps?.(nativeProps),
++    } as unknown as PasteTextInputInstance), []);
+ 
+     // Register/unregister with native module on mount/unmount
+     useEffect(() => {
+@@ -143,17 +151,15 @@ function PasteInputAndroidComponent(
+     const pasteTextInputRef = useRef<PasteTextInputInstance>(null);
+ 
+     // Expose the PasteTextInput ref to parent components (same as iOS)
+-    useImperativeHandle(forwardedRef, () => {
+-        if (pasteTextInputRef.current) {
+-            return pasteTextInputRef.current;
+-        }
+-        // Return a no-op implementation if ref is not yet available
+-        return {
+-            clear: () => {},
+-            isFocused: () => false,
+-            setSelection: () => {},
+-        } as unknown as PasteTextInputInstance;
+-    }, []);
++    useImperativeHandle(forwardedRef, () => ({
++        clear: () => pasteTextInputRef.current?.clear?.(),
++        focus: () => pasteTextInputRef.current?.focus?.(),
++        blur: () => pasteTextInputRef.current?.blur?.(),
++        isFocused: () => pasteTextInputRef.current?.isFocused?.() ?? false,
++        setSelection: (start: number, end: number) => pasteTextInputRef.current?.setSelection?.(start, end),
++        replaceText: (text: string, selection?: { start: number; end: number }) => (pasteTextInputRef.current as any)?.replaceText?.(text, selection),
++        getNativeRef: () => pasteTextInputRef.current?.getNativeRef?.() ?? pasteTextInputRef.current,
++    } as unknown as PasteTextInputInstance), []);
+ 
+     // For Android, PasteTextInput already handles everything internally
+     // Just need to adapt the onPaste callback format
+diff --git a/node_modules/@mattermost/react-native-paste-input/src/PasteTextInput.tsx b/node_modules/@mattermost/react-native-paste-input/src/PasteTextInput.tsx
+index dcc4a2b..7d10e11 100644
+--- a/node_modules/@mattermost/react-native-paste-input/src/PasteTextInput.tsx
++++ b/node_modules/@mattermost/react-native-paste-input/src/PasteTextInput.tsx
+@@ -27,8 +27,6 @@ import usePressability from 'react-native/Libraries/Pressability/usePressability
+ import flattenStyle from 'react-native/Libraries/StyleSheet/flattenStyle';
+ import nullthrows from 'nullthrows';
+ 
+-const emptyFunctionThatReturnsTrue = () => true;
+-
+ function useMergeRefs<Instance>(
+     ...refs: ReadonlyArray<React.ForwardedRef<Instance> | null | undefined>
+ ): (arg0: Instance | null) => void {
+@@ -84,6 +82,7 @@ function InternalTextInput(props: PasteInputProps): React.ReactNode {
+ 
+     const [mostRecentEventCount, setMostRecentEventCount] =
+         React.useState<number>(0);
++    const mostRecentEventCountRef = React.useRef<number>(0);
+     const [lastNativeText, setLastNativeText] = React.useState<
+         string | undefined
+     >(props.value);
+@@ -181,13 +180,24 @@ function InternalTextInput(props: PasteInputProps): React.ReactNode {
+                         if (inputRef.current != null) {
+                             Commands.setTextAndSelection(
+                                 inputRef.current,
+-                                mostRecentEventCount,
++                                mostRecentEventCountRef.current,
+                                 '',
+                                 0,
+                                 0
+                             );
+                         }
+                     },
++                    replaceText(text: string, selection?: { start: number; end: number }): void {
++                        if (inputRef.current != null) {
++                            Commands.setTextAndSelection(
++                                inputRef.current,
++                                mostRecentEventCountRef.current,
++                                text,
++                                selection?.start ?? -1,
++                                selection?.end ?? -1
++                            );
++                        }
++                    },
+                     isFocused(): boolean {
+                         return (
+                             TextInputState.currentlyFocusedInput() ===
+@@ -203,7 +213,7 @@ function InternalTextInput(props: PasteInputProps): React.ReactNode {
+                         if (inputRef.current != null) {
+                             Commands.setTextAndSelection(
+                                 inputRef.current,
+-                                mostRecentEventCount,
++                                mostRecentEventCountRef.current,
+                                 null,
+                                 start,
+                                 end
+@@ -213,7 +223,7 @@ function InternalTextInput(props: PasteInputProps): React.ReactNode {
+                 });
+             }
+         },
+-        [mostRecentEventCount]
++        []
+     );
+ 
+     const ref = useMergeRefs<PasteTextInputInstance>(
+@@ -232,6 +242,7 @@ function InternalTextInput(props: PasteInputProps): React.ReactNode {
+             return;
+         }
+ 
++        mostRecentEventCountRef.current = event.nativeEvent.eventCount;
+         setLastNativeText(currentText);
+         setMostRecentEventCount(event.nativeEvent.eventCount);
+     };
+@@ -445,7 +456,6 @@ function InternalTextInput(props: PasteInputProps): React.ReactNode {
+             onPaste={_onPaste}
+             onScroll={_onScroll}
+             onSelectionChange={_onSelectionChange}
+-            onSelectionChangeShouldSetResponder={emptyFunctionThatReturnsTrue}
+             placeholder={placeholder}
+             style={_style}
+             text={text}

@@ -1,0 +1,516 @@
+import type { Page, TestInfo } from "@playwright/test";
+import {
+  closeModelPicker,
+  openModelPicker,
+  seedAgentProfiles,
+} from "../support/helpers/agent-profiles";
+import { expectComposerVisible } from "../support/helpers/composer";
+import { clickNewChat, gotoWorkspace } from "../support/helpers/launcher";
+import { seedWorkspace } from "../support/helpers/seed-client";
+import { writeFile } from "node:fs/promises";
+import { expect, test } from "../support/fixtures";
+import { gotoAppShell, openSettings } from "../support/helpers/app";
+import { connectDaemonClient } from "../support/helpers/daemon-client-loader";
+import { getServerId } from "../support/helpers/server-id";
+import { daemonWsRoutePattern } from "../support/helpers/daemon-port";
+import {
+  expectProviderInstalledInSettings,
+  findAcpCatalogProvider,
+  installAcpCatalogProvider,
+  openAddProvider,
+  openProviderDetail,
+  openSettingsHost,
+  openSettingsHostSection,
+  seedSavedSettingsHosts,
+} from "../support/helpers/settings";
+
+const ACP_PROVIDER = {
+  id: "minimax-code",
+  name: "MiniMax Code",
+};
+
+interface ProviderCatalogDaemonClient {
+  getLastServerInfoMessage(): {
+    features?: {
+      gooseProvider?: boolean;
+      fxProvider?: boolean;
+      hopliteProvider?: boolean;
+      plugins?: boolean;
+    };
+  } | null;
+  connect(): Promise<void>;
+  close(): Promise<void>;
+  getDaemonConfig(): Promise<{ config: { providers?: Record<string, unknown> } }>;
+  getProvidersSnapshot(): Promise<{ entries: Array<{ provider: string }> }>;
+  patchDaemonConfig(config: { removeProviders?: string[] }): Promise<unknown>;
+}
+
+test.describe("ACP provider catalog", () => {
+  test("adds MiniMax Code from settings", async ({ page }) => {
+    const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+      clientIdPrefix: "provider-catalog-e2e",
+    });
+    try {
+      await gotoAppShell(page);
+      await openSettings(page);
+      await openSettingsHost(page, getServerId());
+      await openSettingsHostSection(page, getServerId(), "providers");
+      await openAddProvider(page);
+
+      await installAcpCatalogProvider(page, ACP_PROVIDER.name);
+      await expectProviderInstalledInSettings(page, ACP_PROVIDER.name);
+    } finally {
+      await client.patchDaemonConfig({ removeProviders: [ACP_PROVIDER.id] }).catch(() => undefined);
+      await client.close().catch(() => undefined);
+    }
+  });
+});
+
+test("adds fx from the catalog with only a config entry", async ({ page }, testInfo) => {
+  const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+    clientIdPrefix: "fx-catalog-e2e",
+  });
+  try {
+    expect(client.getLastServerInfoMessage()?.features?.fxProvider).toBe(true);
+    await client.patchDaemonConfig({ removeProviders: ["fx"] });
+    await gotoAppShell(page);
+    await openSettings(page);
+    await openSettingsHost(page, getServerId());
+    await openSettingsHostSection(page, getServerId(), "providers");
+    await openAddProvider(page);
+
+    await findAcpCatalogProvider(page, "fx");
+    await page.screenshot({ path: testInfo.outputPath("fx-catalog.png") });
+    await installAcpCatalogProvider(page, "fx");
+    await expectProviderInstalledInSettings(page, "fx");
+    await page.screenshot({ path: testInfo.outputPath("fx-installed.png") });
+    expect((await client.getDaemonConfig()).config.providers?.fx).toEqual({ enabled: true });
+  } finally {
+    await client.patchDaemonConfig({ removeProviders: ["fx"] }).catch(() => undefined);
+    await client.close().catch(() => undefined);
+  }
+});
+
+for (const theme of ["light", "dark"] as const) {
+  test(`adds Hoplite from the catalog in ${theme} theme`, async ({ page }, testInfo) => {
+    const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+      clientIdPrefix: "hoplite-catalog-e2e",
+    });
+    try {
+      expect(client.getLastServerInfoMessage()?.features?.hopliteProvider).toBe(true);
+      await client.patchDaemonConfig({ removeProviders: ["hoplite"] });
+      expect(
+        (await client.getProvidersSnapshot()).entries.some((entry) => entry.provider === "hoplite"),
+      ).toBe(false);
+      await page.addInitScript((value) => {
+        localStorage.setItem("@paseo:app-settings", JSON.stringify({ theme: value }));
+      }, theme);
+      await gotoAppShell(page);
+      await openSettings(page);
+      await openSettingsHost(page, getServerId());
+      await openSettingsHostSection(page, getServerId(), "providers");
+      await expect(
+        page.getByRole("button", { name: "Hoplite provider details", exact: true }),
+      ).toHaveCount(0);
+      await openAddProvider(page);
+      await findAcpCatalogProvider(page, "Hoplite");
+      await page.screenshot({ path: testInfo.outputPath(`hoplite-catalog-${theme}.png`) });
+      await installAcpCatalogProvider(page, "Hoplite");
+      await expectProviderInstalledInSettings(page, "Hoplite");
+      await page.screenshot({ path: testInfo.outputPath(`hoplite-installed-${theme}.png`) });
+      expect((await client.getDaemonConfig()).config.providers?.hoplite).toEqual({ enabled: true });
+      await writeFile(
+        testInfo.outputPath(`hoplite-added-${theme}.json`),
+        JSON.stringify(await client.getProvidersSnapshot(), null, 2),
+      );
+      await removeHoplite(page);
+      await expect(
+        page.getByRole("button", { name: "Hoplite provider details", exact: true }),
+      ).toHaveCount(0);
+      expect((await client.getDaemonConfig()).config.providers?.hoplite).toBeUndefined();
+      expect(
+        (await client.getProvidersSnapshot()).entries.some((entry) => entry.provider === "hoplite"),
+      ).toBe(false);
+      await writeFile(
+        testInfo.outputPath(`hoplite-removed-${theme}.json`),
+        JSON.stringify(await client.getProvidersSnapshot(), null, 2),
+      );
+      await openAddProvider(page);
+      await findAcpCatalogProvider(page, "Hoplite");
+      await page.screenshot({ path: testInfo.outputPath(`hoplite-removed-${theme}.png`) });
+      await installAcpCatalogProvider(page, "Hoplite");
+      await expectProviderInstalledInSettings(page, "Hoplite");
+    } finally {
+      await client.patchDaemonConfig({ removeProviders: ["hoplite"] }).catch(() => undefined);
+      await client.close().catch(() => undefined);
+    }
+  });
+}
+
+async function removeHoplite(page: import("@playwright/test").Page): Promise<void> {
+  await openProviderDetail(page, "Hoplite");
+  page.once("dialog", (dialog) => {
+    void dialog.accept();
+  });
+  await page.getByTestId("provider-remove").click();
+}
+
+test("unsupported host asks for an update without writing Hoplite config", async ({
+  page,
+  outdatedDaemon,
+}, testInfo) => {
+  const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+    clientIdPrefix: "hoplite-unsupported",
+    port: Number(new URL(`http://${outdatedDaemon.endpoint}`).port),
+  });
+  try {
+    expect(client.getLastServerInfoMessage()?.features?.plugins).toBe(true);
+    expect(client.getLastServerInfoMessage()?.features?.hopliteProvider).toBe(false);
+    const before = await client.getDaemonConfig();
+    await seedSavedSettingsHosts(page, [outdatedDaemon]);
+    await page.reload();
+    await openSettings(page);
+    await openSettingsHost(page, outdatedDaemon.serverId);
+    await openSettingsHostSection(page, outdatedDaemon.serverId, "providers");
+    await openAddProvider(page);
+    await page.getByRole("button", { name: "Add Hoplite", exact: true }).click();
+    const errorToast = page.getByTestId("app-toast-message");
+    await expect(errorToast).toHaveText("Update the host to add Hoplite.");
+    await expect(errorToast).toBeInViewport();
+    expect((await client.getDaemonConfig()).config).toEqual(before.config);
+    await expect(
+      page.getByRole("button", { name: "Hoplite provider details", exact: true }),
+    ).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("hoplite-update-host.png") });
+  } finally {
+    await client.close();
+  }
+});
+
+test("model selector excludes Hoplite before opt-in", async ({ page }, testInfo) => {
+  const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+    clientIdPrefix: "hoplite-picker",
+  });
+  const profiles = await seedAgentProfiles([
+    { id: "hoplite-picker-anchor", name: "Picker anchor", provider: "mock" },
+  ]);
+  const workspace = await seedWorkspace({ repoPrefix: "hoplite-picker-" });
+  try {
+    await client.patchDaemonConfig({ removeProviders: ["hoplite"] });
+    await gotoWorkspace(page, workspace.workspaceId);
+    await clickNewChat(page);
+    await expectComposerVisible(page);
+    await openModelPicker(page);
+    await expect(page.getByTestId("model-provider-mock")).toBeVisible();
+    await expect(page.getByTestId("model-provider-hoplite")).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("hoplite-model-selector-absent.png") });
+    await closeModelPicker(page);
+  } finally {
+    await workspace.cleanup();
+    await profiles.restore();
+    await client.close();
+  }
+});
+
+<<<<<<<
+test("adds bundled goose from the catalog", async ({ page }) => {
+  const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+    clientIdPrefix: "goose-catalog-e2e",
+  });
+  try {
+    expect(client.getLastServerInfoMessage()?.features?.gooseProvider).toBe(true);
+    await client.patchDaemonConfig({ removeProviders: ["goose"] });
+    await gotoAppShell(page);
+    await addGooseFromSettings(page, getServerId());
+    expect((await client.getDaemonConfig()).config.providers?.goose).toEqual({ enabled: true });
+  } finally {
+    await client.patchDaemonConfig({ removeProviders: ["goose"] });
+    await client.close();
+  }
+});
+
+test("adds goose through ACP on an older host", async ({ page, outdatedDaemon }) => {
+  const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+    clientIdPrefix: "goose-catalog-old-host",
+    port: Number(new URL(`http://${outdatedDaemon.endpoint}`).port),
+  });
+  try {
+    expect(client.getLastServerInfoMessage()?.features?.gooseProvider).toBe(false);
+    await seedSavedSettingsHosts(page, [outdatedDaemon]);
+    await page.reload();
+    await addGooseFromSettings(page, outdatedDaemon.serverId);
+    expect((await client.getDaemonConfig()).config.providers?.goose).toMatchObject({
+      extends: "acp",
+      command: ["goose", "acp"],
+    });
+  } finally {
+    await client.close();
+  }
+});
+
+async function addGooseFromSettings(page: import("@playwright/test").Page, serverId: string) {
+  await openSettings(page);
+  await openSettingsHost(page, serverId);
+  await openSettingsHostSection(page, serverId, "providers");
+  await openAddProvider(page);
+  await installAcpCatalogProvider(page, "goose");
+  await expectProviderInstalledInSettings(page, "goose");
+}
+
+test("adds Cursor SDK and refreshes its models after browser sign-in", async ({
+  page,
+}, testInfo) => {
+=======
+test("uses legacy Cursor SDK sign-in and refreshes models", async ({ page }, testInfo) => {
+  await exerciseCursorSignIn(page, testInfo, false);
+});
+
+test("recovers Cursor SDK sign-in after reload and signs out", async ({ page }, testInfo) => {
+  await exerciseCursorSignIn(page, testInfo, true);
+});
+
+async function exerciseCursorSignIn(page: Page, testInfo: TestInfo, recovery: boolean) {
+>>>>>>>
+  const provider = "cursor-sdk";
+  const nextAttempt = () => "cursor-sdk-fixture-attempt-" + startCount;
+  const signInUrl = "https://cursor.example.test/sign-in";
+  let authStatus: "signed_out" | "pending" | "signed_in" = "signed_out";
+  let startCount = 0;
+  let expired = false;
+  let canceledAttempt: string | undefined;
+  const checkedAttempts: (string | undefined)[] = [];
+  const requestedDetails: (boolean | undefined)[] = [];
+  let sentModels = false;
+  const authPrefix = "provider.cursor_sdk.auth.";
+  const client = await connectDaemonClient<ProviderCatalogDaemonClient>({
+    clientIdPrefix: "cursor-sdk-catalog-e2e",
+  });
+
+  await page.addInitScript(() => {
+    window.open = (url) => {
+      document.documentElement.dataset["cursorSignInUrl"] = String(url);
+      return null; // Simulate a browser blocking an asynchronous popup.
+    };
+  });
+  await page.routeWebSocket(daemonWsRoutePattern(), (browser) => {
+    const server = browser.connectToServer();
+    const snapshotRequests = new Set<string>();
+    let snapshotSubscriptionId: string | undefined;
+    server.onMessage((message) => {
+      if (typeof message === "string") {
+        const envelope = JSON.parse(message) as {
+          message?: {
+            type: string;
+            payload?: {
+              requestId: string;
+              subscriptionId?: string;
+              status?: string;
+              features?: Record<string, boolean>;
+            };
+          };
+        };
+        const reply = envelope.message;
+        if (reply?.payload?.status === "server_info" && reply.payload.features) {
+          expect(reply.payload.features.cursorSdkAuthRecovery).toBe(true);
+          if (!recovery) delete reply.payload.features.cursorSdkAuthRecovery;
+          browser.send(JSON.stringify(envelope));
+          return;
+        }
+        if (
+          reply?.type === "session.events.set_subscription.response" &&
+          reply.payload &&
+          snapshotRequests.delete(reply.payload.requestId)
+        ) {
+          snapshotSubscriptionId = reply.payload.subscriptionId;
+        }
+      }
+      browser.send(message);
+    });
+    browser.onMessage((message) => {
+      if (typeof message !== "string") {
+        server.send(message);
+        return;
+      }
+      const request = (
+        JSON.parse(message) as {
+          message?: {
+            type: string;
+            requestId: string;
+            attemptId?: string;
+            includeDetails?: boolean;
+            events?: string[];
+          };
+        }
+      ).message;
+      if (
+        request?.type === "session.events.set_subscription.request" &&
+        request.events?.includes("providers_snapshot_update")
+      ) {
+        snapshotRequests.add(request.requestId);
+      }
+      const respond = (payload: Record<string, unknown>) => {
+        if (!request) throw new Error("Expected a sign-in request");
+        browser.send(
+          JSON.stringify({
+            type: "session",
+            message: {
+              type: request.type.replace(/\.request$/, ".response"),
+              payload: { requestId: request.requestId, error: null, ...payload },
+            },
+          }),
+        );
+      };
+      switch (request?.type) {
+        case authPrefix + "get_status.request":
+          checkedAttempts.push(request.attemptId);
+          requestedDetails.push(request.includeDetails);
+          respond({
+            status: authStatus,
+            ...(request.includeDetails && authStatus === "pending"
+              ? { attempt: { id: nextAttempt(), url: signInUrl } }
+              : {}),
+            ...(request.includeDetails && expired ? { expired: true } : {}),
+          });
+          if (authStatus === "signed_in" && snapshotSubscriptionId && !sentModels) {
+            sentModels = true;
+            browser.send(
+              JSON.stringify({
+                type: "session",
+                message: {
+                  type: "providers_snapshot_update",
+                  payload: {
+                    subscriptionId: snapshotSubscriptionId,
+                    generatedAt: new Date().toISOString(),
+                    entries: [
+                      {
+                        provider,
+                        status: "ready",
+                        enabled: true,
+                        label: "Cursor SDK",
+                        models: [{ provider, id: "cursor-fixture", label: "Cursor fixture model" }],
+                      },
+                    ],
+                  },
+                },
+              }),
+            );
+          }
+          return;
+        case authPrefix + "start_sign_in.request":
+          startCount += 1;
+          expired = false;
+          authStatus = "pending";
+          respond({ attemptId: nextAttempt(), url: signInUrl });
+          return;
+        case authPrefix + "cancel_sign_in.request":
+          canceledAttempt = request.attemptId;
+          authStatus = "signed_out";
+          respond({});
+          return;
+        case authPrefix + "sign_out.request":
+          expect(recovery).toBe(true);
+          authStatus = "signed_out";
+          respond({});
+          return;
+        default:
+          server.send(message);
+      }
+    });
+  });
+
+  try {
+    await client.patchDaemonConfig({ removeProviders: [provider] });
+    await gotoAppShell(page);
+    await openSettings(page);
+    await openSettingsHost(page, getServerId());
+    await openSettingsHostSection(page, getServerId(), "providers");
+    await openAddProvider(page);
+    const settingsRow = page.getByRole("button", {
+      name: "Cursor SDK provider details",
+      exact: true,
+    });
+    const tile = page.getByTestId("provider-catalog-row-cursor-sdk");
+    await page.getByRole("textbox", { name: "Search providers" }).fill("Cursor");
+    await expect(tile.getByText("SDK", { exact: true })).toBeVisible();
+    await expect(settingsRow).toHaveCount(0);
+    await page.screenshot({ path: testInfo.outputPath("cursor-sdk-catalog.png") });
+
+    await tile.getByRole("button", { name: "Add Cursor SDK", exact: true }).click();
+    const account = page.getByTestId("cursor-sdk-account");
+    const signIn = account.getByRole("button", { name: "Sign in with Cursor", exact: true });
+    await expect(signIn).toBeEnabled();
+    expect((await client.getDaemonConfig()).config.providers?.[provider]).toEqual({
+      enabled: true,
+    });
+    await expect(tile).toHaveCount(0);
+
+    await signIn.click();
+    const openPage = account.getByRole("button", { name: "Open sign-in page", exact: true });
+    await expect(openPage).toBeEnabled();
+    await expect(page.locator("html")).toHaveAttribute("data-cursor-sign-in-url", signInUrl);
+    if (recovery) {
+      await page.screenshot({ path: testInfo.outputPath("cursor-sdk-pending-desktop.png") });
+      await page.setViewportSize({ width: 820, height: 1180 });
+      await expect(openPage).toBeEnabled();
+      await page.screenshot({ path: testInfo.outputPath("cursor-sdk-pending-tablet.png") });
+      await page.setViewportSize({ width: 390, height: 844 });
+      await page.reload();
+      await settingsRow.click();
+      await expect(openPage).toBeEnabled();
+      await expect(page.locator("html")).not.toHaveAttribute("data-cursor-sign-in-url");
+      await expect(openPage).toBeInViewport({ ratio: 1 });
+      await page.screenshot({ path: testInfo.outputPath("cursor-sdk-pending-phone.png") });
+    } else {
+      await page
+        .locator("html")
+        .evaluate((element) => element.removeAttribute("data-cursor-sign-in-url"));
+    }
+    await openPage.click();
+    await expect(page.locator("html")).toHaveAttribute("data-cursor-sign-in-url", signInUrl);
+    await account.getByRole("button", { name: "Cancel", exact: true }).click();
+    await expect(signIn).toBeEnabled();
+    expect(canceledAttempt).toBe(nextAttempt());
+
+    await signIn.click();
+    await expect(openPage).toBeEnabled();
+    await page.screenshot({ path: testInfo.outputPath("cursor-sdk-pending.png") });
+    expect(startCount).toBe(2);
+    authStatus = "signed_in";
+    await expect(account.getByText("Signed in to Cursor", { exact: true })).toBeVisible();
+    await expect(openPage).toHaveCount(0);
+    if (recovery) {
+      expect(requestedDetails).toContain(true);
+      expect(checkedAttempts.filter(Boolean)).toEqual([]);
+      const signOut = account.getByRole("button", { name: "Sign out of Cursor", exact: true });
+      await expect(signOut).toBeEnabled();
+      await signOut.click();
+      await expect(signIn).toBeEnabled();
+      await expect(signOut).toHaveCount(0);
+      expired = true;
+      await expect(
+        account.getByText("Your Cursor sign-in expired. Sign in again to load models.", {
+          exact: true,
+        }),
+      ).toBeVisible();
+      await signIn.click();
+      await expect(openPage).toBeEnabled();
+      authStatus = "signed_in";
+      await expect(signOut).toBeEnabled();
+    } else {
+      expect(requestedDetails).not.toContain(true);
+      expect(checkedAttempts).toContain(nextAttempt());
+      await expect(
+        account.getByRole("button", { name: "Sign out of Cursor", exact: true }),
+      ).toHaveCount(0);
+    }
+    await expect(
+      page.getByRole("switch", {
+        name: "Show Cursor fixture model in model pickers",
+        exact: true,
+      }),
+    ).toBeVisible();
+  } finally {
+    await client.patchDaemonConfig({ removeProviders: [provider] }).catch(() => undefined);
+    await client.close();
+  }
+}

@@ -1,0 +1,1045 @@
+import type { CursorSkillReference } from "@getpaseo/protocol/messages";
+import type { ResolvedCursorSkill } from "./cursor-skill-catalog.js";
+import type {
+  AgentMetric,
+  AgentOptionControl,
+  AgentOptionSelectControl,
+  AgentOptionToggleControl,
+  AgentProviderNotice,
+  AgentTaskItem,
+  AgentUsage,
+  JsonValue,
+  ProviderOptions,
+  ToolPolicy,
+} from "@getpaseo/protocol/agent-types";
+import type { AgentMessage } from "@getpaseo/protocol/agent-message";
+import type { AgentAttachment, ProviderInstallationInspection } from "@getpaseo/protocol/messages";
+import type {
+  ProviderCatalogRefreshMode,
+  ProviderInspection,
+  ProviderUpdateCheck,
+  ProviderUpdateReport,
+  ProviderUpdateResult,
+} from "@getpaseo/plugin/server/provider";
+import type { PaseoToolCatalog } from "./tools/types.js";
+
+export type {
+  AgentMetric,
+  AgentOptionControl,
+  AgentOptionSelectControl,
+  AgentOptionToggleControl,
+  AgentProviderNotice,
+  AgentTaskItem,
+  AgentUsage,
+};
+
+export type AgentProvider = string;
+
+export interface AgentMetadata {
+  [key: string]: unknown;
+}
+
+/**
+ * Stdio-based MCP server (spawns a subprocess).
+ */
+export interface McpStdioServerConfig {
+  type: "stdio";
+  command: string;
+  args?: string[];
+  env?: Record<string, string>;
+  /**
+   * When true, all tools from this server are always included in the prompt
+   * and never deferred behind tool search. Honored by the Claude provider.
+   */
+  alwaysLoad?: boolean;
+}
+
+/**
+ * HTTP-based MCP server.
+ */
+export interface McpHttpServerConfig {
+  type: "http";
+  url: string;
+  headers?: Record<string, string>;
+  /**
+   * When true, all tools from this server are always included in the prompt
+   * and never deferred behind tool search. Honored by the Claude provider.
+   */
+  alwaysLoad?: boolean;
+}
+
+/**
+ * SSE-based MCP server (Server-Sent Events over HTTP).
+ */
+export interface McpSseServerConfig {
+  type: "sse";
+  url: string;
+  headers?: Record<string, string>;
+  /**
+   * When true, all tools from this server are always included in the prompt
+   * and never deferred behind tool search. Honored by the Claude provider.
+   */
+  alwaysLoad?: boolean;
+}
+
+/**
+ * Canonical MCP server configuration.
+ * Discriminated union by `type` field.
+ * Each provider normalizes this to their expected format.
+ */
+export type McpServerConfig = McpStdioServerConfig | McpHttpServerConfig | McpSseServerConfig;
+
+export interface AgentMode {
+  id: string;
+  label: string;
+  description?: string;
+  icon?: string;
+  colorTier?: string;
+  isUnattended?: boolean;
+}
+
+export type ProviderStatus = "ready" | "loading" | "error" | "unavailable";
+
+export interface AgentModelDefinition {
+  provider: AgentProvider;
+  id: string;
+  aliases?: string[];
+  isSelectable?: boolean;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+  metadata?: AgentMetadata;
+  contextWindowMaxTokens?: number;
+  thinkingOptions?: AgentSelectOption[];
+  defaultThinkingOptionId?: string;
+}
+
+export interface AgentSelectOption {
+  id: string;
+  label: string;
+  description?: string;
+  isDefault?: boolean;
+  metadata?: AgentMetadata;
+}
+
+export function normalizeAgentModelDefinition(model: AgentModelDefinition): AgentModelDefinition {
+  const defaultThinkingOptionId =
+    model.defaultThinkingOptionId ?? model.thinkingOptions?.find((option) => option.isDefault)?.id;
+  if (!defaultThinkingOptionId || defaultThinkingOptionId === model.defaultThinkingOptionId) {
+    return model;
+  }
+  return { ...model, defaultThinkingOptionId };
+}
+
+export function filterSelectableAgentModels(
+  models: AgentModelDefinition[] | undefined,
+): AgentModelDefinition[] {
+  return models?.filter((model) => model.isSelectable !== false) ?? [];
+}
+
+export interface ProviderSnapshotEntry {
+  provider: AgentProvider;
+  status: ProviderStatus;
+  enabled: boolean;
+  source?: "builtin" | "custom";
+  error?: string;
+  models?: AgentModelDefinition[];
+  modes?: AgentMode[];
+  fetchedAt?: string;
+  label?: string;
+  description?: string;
+  iconSvg?: string;
+  /** The page that helps users set up and troubleshoot this provider. */
+  docsUrl?: string;
+  defaultModeId?: string | null;
+  launchWrap?: boolean;
+}
+
+export interface AgentCreateConfigParent {
+  provider: AgentProvider;
+  modeId: string | null;
+  isUnattended: boolean;
+}
+
+export interface ResolveAgentCreateConfigInput {
+  provider: AgentProvider;
+  requestedMode: string | undefined;
+  providerOptions: ProviderOptions | undefined;
+  parent: AgentCreateConfigParent | null;
+  unattended: boolean;
+  availableModes: AgentMode[] | undefined;
+}
+
+export interface ResolveAgentCreateConfigResult {
+  modeId: string | undefined;
+  providerOptions: ProviderOptions | undefined;
+}
+
+export interface AgentCreateConfigUnattendedInput {
+  modeId: string | null;
+  config: AgentSessionConfig;
+  controls?: AgentOptionControl[];
+  availableModes: AgentMode[];
+}
+
+export interface AgentCapabilityFlags {
+  [capability: string]: boolean | undefined;
+  supportsStreaming: boolean;
+  supportsSessionPersistence: boolean;
+  supportsSessionListing?: boolean;
+  /** History-purpose resume can read local records without a workspace or interactive availability. */
+  readonly supportsOfflineHistory?: boolean;
+
+  supportsDynamicModes: boolean;
+  supportsMcpServers: boolean;
+  supportsNativePaseoTools?: boolean;
+  /** False when the adapter cannot pass scoped Paseo CLI environment to its tools. */
+  supportsPaseoCli?: boolean;
+  supportsReasoningStream: boolean;
+  supportsToolInvocations: boolean;
+  supportsRewindConversation?: boolean;
+  supportsRewindFiles?: boolean;
+  supportsRewindBoth?: boolean;
+}
+
+export interface AgentPersistenceHandle {
+  provider: AgentProvider;
+  sessionId: string;
+  /** Provider specific handle (Codex thread id, Claude resume token, etc). */
+  nativeHandle?: string;
+  metadata?: AgentMetadata;
+}
+
+export type AgentPromptContentBlock =
+  | { type: "text"; text: string }
+  | { type: "image"; data: string; mimeType: string }
+  | AgentAttachment;
+
+export type AgentPromptInput = string | AgentPromptContentBlock[];
+
+export interface AgentRunOptions {
+  outputSchema?: unknown;
+  resumeFrom?: AgentPersistenceHandle;
+  maxThinkingTokens?: number;
+  clientMessageId?: string;
+  /** Revalidates the selected references at native dispatch. */
+  resolveCursorSkills?: () => Promise<ResolvedCursorSkill[]>;
+  /** Resolves trusted instruction text at native dispatch. */
+  resolveCursorWorkspaceInstructions?: () => Promise<string | undefined>;
+}
+
+export interface AgentSteerOptions extends AgentRunOptions {
+  /** Deny permissions that block this steer. An accepted steer must honor this contract. */
+  clearPendingPermissions?: boolean;
+}
+
+// providerMessageId names the steered message in the provider's own history, when the provider
+// mints one. Rewinding to the message needs it.
+export type SteerResult =
+  | { status: "accepted"; providerMessageId?: string }
+  | { status: "unavailable" };
+
+export interface SteerActiveTurnOptions extends AgentSteerOptions {
+  expectedTurnId: string;
+}
+
+export const TOOL_CALL_ICON_NAMES = [
+  "wrench",
+  "square_terminal",
+  "eye",
+  "pencil",
+  "search",
+  "bot",
+  "sparkles",
+  "brain",
+  "mic_vocal",
+] as const;
+
+export type ToolCallIconName = (typeof TOOL_CALL_ICON_NAMES)[number];
+
+export type ToolCallDetail =
+  | {
+      type: "shell";
+      command: string;
+      cwd?: string;
+      output?: string;
+      exitCode?: number | null;
+    }
+  | {
+      type: "read";
+      filePath: string;
+      content?: string;
+      offset?: number;
+      limit?: number;
+    }
+  | {
+      type: "edit";
+      filePath: string;
+      oldString?: string;
+      newString?: string;
+      unifiedDiff?: string;
+    }
+  | {
+      type: "write";
+      filePath: string;
+      content?: string;
+    }
+  | {
+      type: "search";
+      query: string;
+      toolName?: "search" | "grep" | "glob" | "web_search";
+      content?: string;
+      filePaths?: string[];
+      webResults?: Array<{
+        title: string;
+        url: string;
+      }>;
+      annotations?: string[];
+      numFiles?: number;
+      numMatches?: number;
+      durationMs?: number;
+      durationSeconds?: number;
+      truncated?: boolean;
+      mode?: "content" | "files_with_matches" | "count";
+    }
+  | {
+      type: "fetch";
+      url: string;
+      prompt?: string;
+      result?: string;
+      code?: number;
+      codeText?: string;
+      bytes?: number;
+      durationMs?: number;
+    }
+  | {
+      type: "worktree_setup";
+      worktreePath: string;
+      branchName: string;
+      log: string;
+      commands: Array<{
+        index: number;
+        command: string;
+        cwd: string;
+        log: string;
+        status: "running" | "completed" | "failed";
+        exitCode: number | null;
+        durationMs?: number;
+      }>;
+      truncated?: boolean;
+    }
+  | {
+      type: "sub_agent";
+      subAgentType?: string;
+      description?: string;
+      childSessionId?: string;
+      // COMPAT(subagent-log): added in v0.14.1, remove after 2027-04-30. Apps before v0.14.1
+      // require `log`; every producer sends it empty and carries the same tag. Optional here because
+      // protocol timeline items, where `log` is optional, flow into this type.
+      log?: string;
+      actions?: Array<{
+        index: number;
+        toolName: string;
+        summary?: string;
+      }>;
+    }
+  | {
+      type: "plain_text";
+      label?: string;
+      text?: string;
+      icon?: ToolCallIconName;
+      /** Render `text` as Markdown instead of preformatted text. */
+      markdown?: boolean;
+    }
+  | {
+      type: "plan";
+      text: string;
+    }
+  | {
+      type: "unknown";
+      input: unknown;
+      output: unknown;
+    };
+
+interface ToolCallBase {
+  [key: string]: unknown;
+  type: "tool_call";
+  callId: string;
+  name: string;
+  detail: ToolCallDetail;
+  metadata?: Record<string, unknown>;
+  /** Set when the row is a delivered agent message rather than a provider tool call. */
+  agentMessage?: AgentMessage;
+}
+
+type ToolCallRunningTimelineItem = ToolCallBase & {
+  status: "running";
+  error: null;
+};
+
+type ToolCallCompletedTimelineItem = ToolCallBase & {
+  status: "completed";
+  error: null;
+};
+
+type ToolCallFailedTimelineItem = ToolCallBase & {
+  status: "failed";
+  error: unknown;
+};
+
+type ToolCallCanceledTimelineItem = ToolCallBase & {
+  status: "canceled";
+  error: null;
+};
+
+export type ToolCallTimelineItem =
+  | ToolCallRunningTimelineItem
+  | ToolCallCompletedTimelineItem
+  | ToolCallFailedTimelineItem
+  | ToolCallCanceledTimelineItem;
+
+export interface CompactionTimelineItem {
+  [key: string]: unknown;
+  type: "compaction";
+  status: "loading" | "completed";
+  trigger?: "auto" | "manual";
+  preTokens?: number;
+}
+
+export interface PluginTimelineItem {
+  type: "plugin";
+  id: string;
+  pluginId: string;
+  kind: string;
+  version: number;
+  data: JsonValue;
+}
+
+export type AgentTimelineItem =
+  | {
+      type: "user_message";
+      text: string;
+      messageId?: string;
+      clientMessageId?: string;
+      cursorSkills?: CursorSkillReference[];
+    }
+  | { type: "assistant_message"; text: string; messageId?: string }
+  | { type: "reasoning"; text: string }
+  | ToolCallTimelineItem
+  | { type: "todo"; items: AgentTaskItem[] }
+  | { type: "error"; message: string }
+  | {
+      type: "notification";
+      level: "info" | "warning" | "error";
+      message: string;
+    }
+  | CompactionTimelineItem
+  | PluginTimelineItem;
+
+export type AgentStreamEvent =
+  | { type: "commands_changed"; provider: AgentProvider }
+  | { type: "thread_started"; sessionId: string; provider: AgentProvider }
+  | { type: "turn_started"; provider: AgentProvider; turnId?: string }
+  | {
+      type: "turn_completed";
+      provider: AgentProvider;
+      usage?: AgentUsage;
+      turnId?: string;
+      /** Shown on the completed turn's footer. */
+      metrics?: AgentMetric[];
+    }
+  | {
+      type: "usage_updated";
+      provider: AgentProvider;
+      usage: AgentUsage;
+      turnId?: string;
+      sessionOnly?: boolean;
+    }
+  /** Full replacement of the metrics shown for the session. An empty list clears them. */
+  | { type: "session_metrics_updated"; provider: AgentProvider; metrics: AgentMetric[] }
+  | {
+      type: "mode_changed";
+      provider: AgentProvider;
+      currentModeId: string | null;
+      availableModes: AgentMode[];
+    }
+  | { type: "model_changed"; provider: AgentProvider; runtimeInfo: AgentRuntimeInfo }
+  | {
+      type: "thinking_option_changed";
+      provider: AgentProvider;
+      thinkingOptionId: string | null;
+    }
+  /**
+   * The provider changed options on its own: after `createSession`/`resumeSession` or
+   * `applyOptions` it ended up different from what it was given, or later it changed a setting
+   * itself. The daemon stores the patch and forwards it; it does not undo it. `null` removes the
+   * agent's own value. Only for changes that happen on the provider's own initiative: the result
+   * of opening goes in `openOptionsPatch` and the result of `applyOptions` is its return value.
+   */
+  | { type: "options_changed"; provider: AgentProvider; patch: Record<string, unknown> }
+  | {
+      type: "turn_failed";
+      provider: AgentProvider;
+      error: string;
+      code?: string;
+      diagnostic?: string;
+      turnId?: string;
+    }
+  | { type: "turn_canceled"; provider: AgentProvider; reason: string; turnId?: string }
+  | {
+      type: "timeline";
+      item: AgentTimelineItem;
+      provider: AgentProvider;
+      turnId?: string;
+      timestamp?: string;
+    }
+  | {
+      type: "permission_requested";
+      provider: AgentProvider;
+      request: AgentPermissionRequest;
+      turnId?: string;
+    }
+  | {
+      type: "permission_resolved";
+      provider: AgentProvider;
+      requestId: string;
+      resolution: AgentPermissionResponse;
+      turnId?: string;
+    }
+  | {
+      type: "attention_required";
+      provider: AgentProvider;
+      reason: "finished" | "error" | "permission";
+      timestamp: string;
+    }
+  | {
+      type: "provider_subagent";
+      provider: AgentProvider;
+      event: import("./provider-subagents/store.js").ProviderSubagentInputEvent;
+    }
+  | {
+      /** Full replacement of the agent's live background work (shells, monitors…). */
+      type: "background_work";
+      provider: AgentProvider;
+      items: import("./background-work/index.js").AgentBackgroundWorkInput[] | null;
+    };
+
+export function getAgentStreamEventTurnId(event: AgentStreamEvent): string | undefined {
+  return "turnId" in event ? event.turnId : undefined;
+}
+
+export type AgentPermissionRequestKind = "tool" | "plan" | "question" | "mode" | "other";
+
+export type AgentPermissionUpdate = AgentMetadata;
+
+export interface AgentPermissionAction {
+  id: string;
+  label: string;
+  behavior: "allow" | "deny";
+  variant?: "primary" | "secondary" | "danger";
+  intent?: "implement" | "implement_resume" | "dismiss";
+}
+
+export interface AgentPermissionRequest {
+  id: string;
+  provider: AgentProvider;
+  name: string;
+  kind: AgentPermissionRequestKind;
+  title?: string;
+  description?: string;
+  input?: AgentMetadata;
+  detail?: ToolCallDetail;
+  suggestions?: AgentPermissionUpdate[];
+  actions?: AgentPermissionAction[];
+  metadata?: AgentMetadata;
+}
+
+export type AgentPermissionResponse =
+  | {
+      behavior: "allow";
+      selectedActionId?: string;
+      updatedInput?: AgentMetadata;
+      updatedPermissions?: AgentPermissionUpdate[];
+    }
+  | {
+      behavior: "deny";
+      selectedActionId?: string;
+      message?: string;
+      interrupt?: boolean;
+    };
+
+/** A requested turn was canceled before the provider accepted it. */
+export class AgentTurnStartCanceledError extends Error {
+  constructor() {
+    super("Turn was canceled before starting");
+    this.name = "AgentTurnStartCanceledError";
+  }
+}
+
+export interface AgentRunResult {
+  sessionId: string;
+  finalText: string;
+  usage?: AgentUsage;
+  timeline: AgentTimelineItem[];
+  canceled?: boolean;
+}
+
+export interface AgentRuntimeInfo {
+  provider: AgentProvider;
+  sessionId: string | null;
+  model?: string | null;
+  thinkingOptionId?: string | null;
+  modeId?: string | null;
+  extra?: AgentMetadata;
+}
+
+export type AgentSlashCommandKind = "command" | "skill";
+
+/**
+ * Represents a slash command available in an agent session.
+ * Commands are executed by sending them as prompts with / prefix.
+ */
+export interface AgentSlashCommand {
+  name: string;
+  description: string;
+  argumentHint: string;
+  kind?: AgentSlashCommandKind;
+  skill?: CursorSkillReference;
+}
+
+export interface ListImportableSessionsOptions {
+  /** Aborts provider work when the caller stops waiting for a listing. */
+  signal?: AbortSignal;
+  providerOptions?: ProviderOptions;
+  limit?: number;
+  /** Optional case-insensitive descriptor search text. */
+  query?: string;
+  /**
+   * Maximum number of cheap persisted-session candidates to inspect before
+   * applying the result limit. Providers must cap this at 500.
+   */
+  scanLimit?: number;
+  /**
+   * Optional cwd hint. Providers that can cheaply pre-filter importable
+   * sessions by working directory should do so before doing expensive work.
+   */
+  cwd?: string;
+}
+
+export interface ImportableProviderSession {
+  providerHandleId: string;
+  cwd: string;
+  title: string | null;
+  firstPromptPreview: string | null;
+  lastPromptPreview: string | null;
+  lastActivityAt: Date;
+}
+
+export interface ImportProviderSessionInput {
+  providerHandleId: string;
+  cwd: string;
+}
+
+export interface ImportProviderSessionContext {
+  config: AgentSessionConfig;
+  storedConfig: AgentSessionConfig;
+  launchContext?: AgentLaunchContext;
+}
+
+export interface ImportedTimelineEntry {
+  item: AgentTimelineItem;
+  timestamp?: string;
+  turnId?: string;
+  /** Set on the last entry of a turn the provider reported stats for. */
+  turnMetrics?: AgentMetric[];
+}
+
+export interface ImportedProviderSession {
+  session: AgentSession;
+  config: AgentSessionConfig;
+  persistence: AgentPersistenceHandle;
+  timeline: ImportedTimelineEntry[];
+  sessionMetrics?: AgentMetric[];
+  providerSubagentEvents?: Extract<AgentStreamEvent, { type: "provider_subagent" }>[];
+}
+
+export interface AgentSessionConfig {
+  provider: AgentProvider;
+  cwd: string;
+  /**
+   * Provider-agnostic system/developer instruction string.
+   * Mapped by each provider to its native instruction field.
+   */
+  systemPrompt?: string;
+  /**
+   * Daemon-level instructions appended at runtime. This is deliberately not
+   * persisted into agent config so daemon setting changes apply cleanly.
+   */
+  daemonAppendSystemPrompt?: string;
+  /** Plugin instructions for this launch; never persisted. */
+  pluginAppendSystemPrompt?: string[];
+  modeId?: string;
+  model?: string;
+  thinkingOptionId?: string;
+  title?: string | null;
+  providerOptions?: ProviderOptions;
+  /** Launch-only options supplied by the caller before provider defaults are applied. */
+  requestedProviderOptions?: ProviderOptions;
+  toolPolicy?: ToolPolicy;
+  mcpServers?: Record<string, McpServerConfig>;
+  /**
+   * Internal agents are hidden from listings and don't trigger notifications.
+   * They are used for ephemeral system tasks like commit/PR generation.
+   */
+  internal?: boolean;
+}
+
+export interface AgentLaunchContext {
+  /** Launch-only instructions contributed by plugins. */
+  appendSystemPrompt?: string[];
+  /** Launch-only plugin MCP servers and their owners; never persisted. */
+  mcpServers?: Record<string, McpServerConfig>;
+  mcpServerOwners?: Record<string, string>;
+  agentId?: string;
+  env?: Record<string, string>;
+  /** Spawn the harness as `[...wrap, command, ...args]`. Selected by a plugin hook; never persisted. */
+  wrap?: readonly [string, ...string[]];
+  /**
+   * Runtime-only internal Paseo tools. This must never be persisted into
+   * AgentSessionConfig; providers may adapt it to their native tool surface.
+   */
+  paseoTools?: PaseoToolCatalog;
+}
+
+export interface AgentCreateSessionOptions {
+  /**
+   * Whether the provider should leave a durable native session behind.
+   * Defaults to true. Providers that cannot honor false should no-op.
+   */
+  persistSession?: boolean;
+  /**
+   * Model ids added by provider configuration (`models` / `additionalModels`).
+   * Providers that validate against runtime-advertised models must accept these.
+   */
+  configuredModelIds?: readonly string[];
+}
+
+/** What a resumed session is for: driving the agent, or reading what it already did. */
+export type AgentResumePurpose = "interactive" | "history";
+
+/** Runtime-only intent for a persisted-session resume. Never persist this option. */
+export interface AgentResumeSessionOptions {
+  /** Defaults to interactive. History loading may be read-only for archived native sessions. */
+  purpose?: AgentResumePurpose;
+  /** See AgentCreateSessionOptions.configuredModelIds. */
+  configuredModelIds?: readonly string[];
+}
+
+/**
+ * Returned by respondToPermission when the permission resolution requires
+ * a follow-up turn (e.g. Codex plan approval → implementation).
+ */
+export interface AgentPermissionResult {
+  followUpPrompt?: AgentPromptInput;
+  /** Commit a durable answer only after its follow-up turn was accepted. */
+  complete?: () => void;
+}
+
+export interface AgentUsageSession {
+  launch?: import("@getpaseo/plugin/server/provider").ProviderLaunch;
+  provider: string;
+  model?: string;
+  env: Record<string, string>;
+  sessionKey: string;
+}
+
+export interface AgentSession {
+  /** Persist the session's current handle immediately after an interactive resume. */
+  readonly persistenceUpdatedOnResume?: boolean;
+  usageSession?(): AgentUsageSession | null;
+  readLastUsage?(): Promise<AgentUsage | undefined>;
+  readonly provider: AgentProvider;
+  readonly id: string | null;
+  readonly capabilities: AgentCapabilityFlags;
+  /** Composer controls over top-level option keys. Values come from the agent's effective options. */
+  readonly controls?: AgentOptionControl[];
+  /**
+   * How the session ended up different from the options it was opened with, as a patch (`null`
+   * removes a key). Set by the time `createSession`/`resumeSession` resolves; the daemon stores it
+   * before the agent is published.
+   */
+  readonly openOptionsPatch?: Record<string, unknown>;
+  /** New provider-owned rows to commit on registration. streamHistory must also
+   * replay them at their original timestamps; restored sessions omit old rows. */
+  readonly initialTimeline?: ImportedTimelineEntry[];
+  run(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<AgentRunResult>;
+  /** Returns an ID unique across the agent lifetime, including resumed sessions and daemon restarts. */
+  startTurn(prompt: AgentPromptInput, options?: AgentRunOptions): Promise<{ turnId: string }>;
+  steerActiveTurn?(prompt: AgentPromptInput, options: SteerActiveTurnOptions): Promise<SteerResult>;
+  subscribe(callback: (event: AgentStreamEvent) => void): () => void;
+  streamHistory(): AsyncGenerator<AgentStreamEvent>;
+  getRuntimeInfo(): Promise<AgentRuntimeInfo>;
+  getAvailableModes(): Promise<AgentMode[]>;
+  getCurrentMode(): Promise<string | null>;
+  setMode(modeId: string): Promise<void | AgentProviderNotice>;
+  getPendingPermissions(): AgentPermissionRequest[];
+  respondToPermission(
+    requestId: string,
+    response: AgentPermissionResponse,
+  ): Promise<AgentPermissionResult | void>;
+  /** Null until a new provider process could resume this session; see docs/providers.md. */
+  describePersistence(): AgentPersistenceHandle | null;
+  /**
+   * Resolve once every foreground turn that predates this call can no longer run or become active.
+   * Calling while already idle is a successful no-op. Reject only when foreground ownership is
+   * still uncertain.
+   */
+  interrupt(): Promise<void>;
+  /** Stop one currently owned background item and wait for provider confirmation. */
+  stopBackgroundWork?(id: string): Promise<void>;
+  /** True only when releasing this runtime loses no background work or pending replies.
+   * An optional additional veto: missing methods use daemon baseline eligibility;
+   * implemented checks that reject or return false keep the runtime resident. */
+  canStopRuntime?(): Promise<boolean>;
+  /**
+   * True while work this session started will start another turn by itself, such as a
+   * background task that reports back when it ends. Recurring triggers do not count.
+   */
+  hasPendingWakeup?(): boolean;
+  /** Release live runtime resources without archiving or deleting the durable native session. */
+  close(): Promise<void>;
+  listCommands?(): Promise<AgentSlashCommand[]>;
+  /** Re-read provider-owned skills without starting or interrupting a turn. */
+  refreshSkills?(): Promise<void>;
+  /** Sessions sharing a helper must release all its leases before a skill-cache refresh. */
+  readonly skillRefreshGroup?: string | object;
+  /** Provider-negotiated resume support can be narrower than static capabilities. */
+  canResumeRuntime?(): boolean;
+  /** A returned model is the effective selection committed by this mutation.
+   * Returning void means the requested selection was accepted. No status read is required. */
+  setModel?(modelId: string | null): Promise<void | {
+    model: string | null;
+    optionsPatch?: ProviderOptions;
+  }>;
+  setThinkingOption?(
+    thinkingOptionId: string | null,
+  ): Promise<
+    void | AgentProviderNotice | { optionsPatch: ProviderOptions; notice?: AgentProviderNotice }
+  >;
+  /**
+   * Apply an options patch. `options` holds only the keys the patch touches, resolved against
+   * the `config.json` defaults; `null` means nothing is set for the key, so return it to the
+   * session's own default if that can be done. Leave every other setting alone. Throw to reject a
+   * value, or a key the running session cannot apply (one the provider reads only when it
+   * opens): the daemon stores the patch only when this resolves, so a stored option always
+   * describes what runs, and the call is all-or-nothing.
+   * Emit nothing from here. Return the options the session ended up with when they differ from
+   * the request (a patch, `null` removes a key), for example a value it kept because it could not
+   * be reverted; the daemon stores it together with the patch. When a throw leaves the session's
+   * state moved anyway, report the moved values once as `options_changed` after the call has
+   * ended, so the stored options still match what runs.
+   */
+  applyOptions?(
+    options: ProviderOptions,
+    thinkingOptionId?: string | null,
+  ): Promise<Record<string, unknown> | void>;
+  revertConversation?(input: { messageId: string }): Promise<void>;
+  revertFiles?(input: { messageId: string }): Promise<void>;
+  revertBoth?(input: { messageId: string }): Promise<void>;
+  /**
+   * Out-of-band prompt handler. When non-null, the manager runs the returned
+   * handler instead of allocating a turn. The handler emits stream events
+   * directly via the provided `emit` callback, which routes through the
+   * manager's persistence + broadcast pipeline. The active foreground turn
+   * (if any) is left untouched, so this is how mid-turn side-effect commands
+   * (e.g. /goal pause) reach the provider without canceling the running turn.
+   */
+  tryHandleOutOfBand?(prompt: AgentPromptInput): {
+    run(ctx: { emit: (event: AgentStreamEvent) => void }): Promise<void>;
+  } | null;
+}
+
+export type FetchCatalogOptions = { providerOptions?: ProviderOptions } & (
+  | {
+      scope: "global";
+      force: boolean;
+    }
+  | {
+      scope: "workspace";
+      cwd: string;
+      force: boolean;
+    }
+);
+
+export interface ProviderRefreshContext {
+  readonly signal: AbortSignal;
+  /** Track an upstream operation so timeout errors identify the work still pending. */
+  runActivity<T>(name: string, operation: () => Promise<T>): Promise<T>;
+}
+
+export interface ProviderCatalog {
+  models: AgentModelDefinition[];
+  modes: AgentMode[];
+  defaultModeId?: string | null;
+  /** Part of discovery failed, so the catalogue omits models the provider could not confirm. */
+  incomplete?: boolean;
+}
+
+export interface ResolveAgentDefaultModeInput {
+  config: AgentSessionConfig;
+  env?: Record<string, string>;
+  signal?: AbortSignal;
+}
+
+export interface AgentDraftControls {
+  model?: string;
+  controls: AgentOptionControl[];
+  options: ProviderOptions;
+}
+
+export interface AgentClientInstallationContext {
+  /** Aborted when Paseo stops waiting for the result. */
+  signal: AbortSignal;
+}
+
+export interface AgentClientInstallation {
+  installUrl?: string;
+  updateUrl?: string;
+  inspect?(context: AgentClientInstallationContext): Promise<ProviderInspection>;
+  /** See `ProviderInstallation.checkForUpdates` in the plugin contract. */
+  checkForUpdates?(context: AgentClientUpdateCheckContext): Promise<ProviderUpdateCheck>;
+  /** Runs the provider's updater. See `ProviderInstallation.update` in the plugin contract. */
+  update?(context: AgentClientUpdateContext): Promise<ProviderUpdateResult>;
+}
+
+export interface AgentClientUpdateCheckContext extends AgentClientInstallationContext {
+  /** The version `inspect` reported, as written. Absent when it reported none or there is no `inspect`. */
+  installedVersion?: string;
+}
+
+export interface AgentClientUpdateContext extends AgentClientInstallationContext {
+  report(event: ProviderUpdateReport): void;
+}
+
+/** What the daemon gives a provider's diagnostic report. */
+export interface AgentClientDiagnosticContext {
+  /**
+   * The installation as the provider's Installation row shows it, under the same deadline and
+   * cache. Undefined when the provider does not report its installation.
+   */
+  inspectInstallation(): Promise<ProviderInstallationInspection | undefined>;
+}
+
+export type AgentClientAvailability =
+  | { status: "available" }
+  | { status: "unavailable" }
+  | { status: "error"; message: string };
+
+export interface AgentClient {
+  resolveUsageLaunch?(): Promise<
+    import("@getpaseo/plugin/server/provider").ProviderLaunch | undefined
+  >;
+  readonly provider: AgentProvider;
+  readonly capabilities: AgentCapabilityFlags;
+  /** How ProviderSnapshotManager schedules and caches catalog discovery for this client. */
+  readonly catalogRefresh?: ProviderCatalogRefreshMode;
+  /** Sessions honor `AgentLaunchContext.wrap`. The provider registry sets it from the provider contract. */
+  supportsLaunchWrap?: boolean;
+  /** Throw unless the live provider runtime can apply a wrap. Plugin providers connect to learn it. */
+  requireLaunchWrap?(): Promise<void>;
+  /**
+   * Create the agent with `config.providerOptions` (defaults already merged in). Emit nothing
+   * about options while creating. If the agent ended up different from the options, say so in the
+   * session's `openOptionsPatch`.
+   */
+  createSession(
+    config: AgentSessionConfig,
+    launchContext?: AgentLaunchContext,
+    options?: AgentCreateSessionOptions,
+  ): Promise<AgentSession>;
+  /** Same contract as `createSession`: open with the options, report any difference in `openOptionsPatch`. */
+  resumeSession(
+    handle: AgentPersistenceHandle,
+    overrides?: Partial<AgentSessionConfig>,
+    launchContext?: AgentLaunchContext,
+    options?: AgentResumeSessionOptions,
+  ): Promise<AgentSession>;
+  /** Equal keys share availability and catalogue discovery within this configured client.
+   * Include the execution environment and effective configuration; omit to use target identity.
+   * force must not affect identity. Resolve before every cache lookup. */
+  getCatalogCacheKey?(options: FetchCatalogOptions): Promise<string | undefined>;
+  /**
+   * Optional fingerprint (`mtimeMs:size`) of the resolved provider binary, used to invalidate
+   * on-disk cached catalogs for `"on_demand"` providers when the CLI changes on disk.
+   */
+  getCatalogBinaryFingerprint?(options: FetchCatalogOptions): Promise<string | undefined>;
+  /**
+   * Discover models and modes together. Implementations may use one upstream
+   * process, separate upstream calls, static modes, or private helpers; callers
+   * outside the provider do not get separate runtime model/mode probes.
+   * The registry is responsible for merging configured model overrides.
+   * ProviderSnapshotManager supplies a shared context. Providers must pass its
+   * signal downstream and finish resource cleanup before rejecting on abort.
+   */
+  fetchCatalog(
+    options: FetchCatalogOptions,
+    context?: ProviderRefreshContext,
+  ): Promise<ProviderCatalog>;
+  /** Apply provider-owned defaults to a model supplied through provider configuration. */
+  resolveConfiguredModel?(model: AgentModelDefinition): AgentModelDefinition;
+  resolveDefaultModeId?(input: ResolveAgentDefaultModeInput): Promise<string | undefined>;
+  resolveCreateConfig?(input: ResolveAgentCreateConfigInput): ResolveAgentCreateConfigResult;
+  isCreateConfigUnattended?(input: AgentCreateConfigUnattendedInput): boolean;
+  listCommands?(config: AgentSessionConfig): Promise<AgentSlashCommand[]>;
+  /**
+   * The controls of a draft, with the options a session opened from `config` would run with:
+   * `config.providerOptions` (defaults already merged in) plus what the provider resolves
+   * natively for the ones nobody set.
+   */
+  listControls?(config: AgentSessionConfig): Promise<AgentDraftControls>;
+  /** Effective options: provider defaults from `config.json` deep-merged with the agent's own. */
+  effectiveOptions?(own: ProviderOptions | undefined): ProviderOptions;
+  listImportableSessions?(
+    options?: ListImportableSessionsOptions,
+  ): Promise<ImportableProviderSession[]>;
+  importSession?(
+    input: ImportProviderSessionInput,
+    context: ImportProviderSessionContext,
+  ): Promise<ImportedProviderSession>;
+  /**
+   * Check availability in the catalogue target when supplied (CLI binary is installed).
+   * Returns true if available, false otherwise.
+   */
+  isAvailable(signal?: AbortSignal, options?: FetchCatalogOptions): Promise<boolean>;
+  /**
+   * Detailed availability check distinguishing a missing binary (`"unavailable"`) from an
+   * installed binary that fails readiness checks (`"error"` with an actionable message).
+   */
+  checkAvailability?(
+    signal?: AbortSignal,
+    options?: FetchCatalogOptions,
+  ): Promise<AgentClientAvailability>;
+  getDiagnostic?(context: AgentClientDiagnosticContext): Promise<{ diagnostic: string }>;
+  /**
+   * Installation links and the installed version. The same contract as plugin providers'
+   * `ProviderRegistration.installation`; built-ins resolve their own launch inside `inspect`.
+   * Never consulted by availability, discovery, or session creation.
+   */
+  readonly installation?: AgentClientInstallation;
+  /**
+   * Archive a durable native session (best-effort). Runtime release belongs to AgentSession.close().
+   * Called when Paseo archives an agent so the provider's own UI reflects the same state.
+   */
+  archiveNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
+   * Unarchive a durable native session in the provider.
+   * Called before Paseo clears its archived flag so provider resume can succeed.
+   */
+  unarchiveNativeSession?(handle: AgentPersistenceHandle): Promise<void>;
+  /**
+   * Release any provider-owned resources held by this client (background
+   * processes, sockets, cached subprocesses, etc.). Called when the daemon
+   * shuts down. Must be idempotent.
+   */
+  shutdown?(): Promise<void>;
+}
