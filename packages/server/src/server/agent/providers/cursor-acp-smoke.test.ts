@@ -1,4 +1,4 @@
-import { ClientSideConnection } from "@agentclientprotocol/sdk";
+import { AcpClientConnection } from "@getpaseo/plugin/internal/acp-client";
 import type { Logger } from "pino";
 import { afterEach, describe, expect, test, vi } from "vitest";
 
@@ -98,8 +98,8 @@ afterEach(() => {
 
 runCursorACPSmoke("real cursor-acp@0.1.0 smoke", () => {
   test("reconnect skips invalid persisted values again on a fresh session", async () => {
-    const setModeSpy = vi.spyOn(ClientSideConnection.prototype, "setSessionMode");
-    const setModelSpy = vi.spyOn(ClientSideConnection.prototype, "unstable_setSessionModel");
+    const setModeSpy = vi.spyOn(AcpClientConnection.prototype, "setSessionMode");
+    const setModelSpy = vi.spyOn(AcpClientConnection.prototype, "request");
     const requestPermissionSpy = vi.spyOn(ACPAgentSession.prototype, "requestPermission");
     const logger = createSmokeLogger();
     const reconnectLogger = createSmokeLogger();
@@ -157,6 +157,7 @@ runCursorACPSmoke("real cursor-acp@0.1.0 smoke", () => {
       expect(evidence.reconnectCurrentMode).toBe("default");
       expect(evidence.requestPermissionCalls).toBe(0);
       expect(setModelSpy).not.toHaveBeenCalledWith(
+        "session/set_model",
         expect.objectContaining({ modelId: cursorClaudeModel }),
       );
     } catch (error) {
@@ -188,8 +189,8 @@ runCursorACPSmoke("real cursor-acp@0.1.0 smoke", () => {
     };
     let session: ACPAgentSession | null = null;
 
-    const originalSetMode = ClientSideConnection.prototype.setSessionMode;
-    vi.spyOn(ClientSideConnection.prototype, "setSessionMode").mockImplementation(
+    const originalSetMode = AcpClientConnection.prototype.setSessionMode;
+    vi.spyOn(AcpClientConnection.prototype, "setSessionMode").mockImplementation(
       async function (params) {
         evidence.setModeRpc.push({ modeId: params.modeId, direction: "out", payload: params });
         try {
@@ -207,8 +208,8 @@ runCursorACPSmoke("real cursor-acp@0.1.0 smoke", () => {
       },
     );
 
-    const originalSetConfig = ClientSideConnection.prototype.setSessionConfigOption;
-    vi.spyOn(ClientSideConnection.prototype, "setSessionConfigOption").mockImplementation(
+    const originalSetConfig = AcpClientConnection.prototype.setSessionConfigOption;
+    vi.spyOn(AcpClientConnection.prototype, "setSessionConfigOption").mockImplementation(
       async function (params) {
         evidence.setConfigRpc.push({
           configId: params.configId,
@@ -234,12 +235,14 @@ runCursorACPSmoke("real cursor-acp@0.1.0 smoke", () => {
       },
     );
 
-    const originalSetModel = ClientSideConnection.prototype.unstable_setSessionModel;
-    vi.spyOn(ClientSideConnection.prototype, "unstable_setSessionModel").mockImplementation(
-      async function (params) {
+    const originalSetModel = AcpClientConnection.prototype.request;
+    vi.spyOn(AcpClientConnection.prototype, "request").mockImplementation(
+      async function (method, params) {
+        if (method !== "session/set_model" || typeof params?.modelId !== "string")
+          return originalSetModel.call(this, method, params);
         evidence.setModelRpc.push({ modelId: params.modelId, direction: "out" });
         try {
-          const response = await originalSetModel.call(this, params);
+          const response = await originalSetModel.call(this, method, params);
           evidence.setModelRpc.push({ modelId: params.modelId, direction: "in" });
           return response;
         } catch (error) {

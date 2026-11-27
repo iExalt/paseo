@@ -13,6 +13,7 @@ const entries = {
   "./server/provider": "server",
   "./server/usage": "server",
   "./server/acp": "server",
+  "./internal/acp-client": "server",
   "./internal/lifecycle": "server",
   "./internal/windows-command": "server",
   "./client": "client",

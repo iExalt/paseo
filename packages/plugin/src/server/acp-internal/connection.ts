@@ -1,13 +1,12 @@
+import { AcpClientConnection, type AcpClientHandlers } from "./client-connection.js";
 import type { ChildProcessWithoutNullStreams } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { spawnProcess, terminateProcess } from "../process.js";
 import { Readable, Writable } from "node:stream";
 import {
-  ClientSideConnection,
   CLIENT_METHODS,
   PROTOCOL_VERSION,
   ndJsonStream,
-  type Client,
   type AgentCapabilities,
   type ContentBlock,
   type NewSessionResponse,
@@ -20,7 +19,7 @@ import {
   type ToolCall,
   type ToolCallUpdate,
   type Stream,
-} from "@agentclientprotocol/sdk";
+} from "@agentclientprotocol/sdk/unstable";
 import { z } from "zod";
 import type { JsonValue } from "@getpaseo/protocol/agent-types";
 import type {
@@ -579,7 +578,7 @@ interface AcpToolCallState {
 }
 
 class AcpRuntime {
-  readonly connection: ClientSideConnection;
+  readonly connection: AcpClientConnection;
   agentCapabilities: AgentCapabilities = {};
   nativeSessionId = "";
   private readonly child: ChildProcessWithoutNullStreams | null;
@@ -720,15 +719,15 @@ class AcpRuntime {
     this.whenConnectorClosed = whenConnectorClosed;
     this.emit = options.emit;
     this.transformers = options.options.transformers ?? [];
-    const client: Client = {
+    const client: AcpClientHandlers = {
       requestPermission: (request) => this.requestPermission(request),
       sessionUpdate: (notification) => {
         const wireSeq = this.sessionUpdateWireSeqs.shift() ?? ++this.incomingWireSeq;
         return this.enqueueNotification(() => this.sessionUpdate(notification, wireSeq));
       },
     };
-    this.connection = new ClientSideConnection(
-      () => client,
+    this.connection = new AcpClientConnection(
+      client,
       routeIncomingMessages(
         stream,
         (method, params) => this.vendorNotification(method, params),
@@ -1388,9 +1387,7 @@ class AcpRuntime {
   }
 
   private readonly request: AcpRequest = async (method, params) =>
-    jsonValue(
-      await this.call(this.connection.extMethod(method, params as Record<string, unknown>)),
-    );
+    jsonValue(await this.call(this.connection.request(method, params as Record<string, unknown>)));
 
   private configAccess(): AcpConfigAccess {
     return {
@@ -1868,6 +1865,8 @@ class AcpRuntime {
 
   private call<Value>(operation: Promise<Value>): Promise<Value> {
     if (this.connection.signal.aborted) {
+      // The operation has already been sent and may also reject on transport closure.
+      void operation.catch(() => undefined);
       return Promise.reject(new Error("ACP transport is closed"));
     }
     return Promise.race([
