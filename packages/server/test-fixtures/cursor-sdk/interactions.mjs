@@ -3,7 +3,8 @@ import { createHash } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
-import { Value } from "@bufbuild/protobuf";
+import { fromJson, toBinary } from "@bufbuild/protobuf";
+import { ValueSchema } from "@bufbuild/protobuf/wkt";
 
 const untrustedId = "wks_cursor_parity_untrusted";
 const questionServer = "custom-user-tools";
@@ -141,7 +142,13 @@ export function selectP5Turn(raw, { bytes, frame, number, fields, concat }) {
             concat(
               bytes(1, tool),
               ...Object.entries(args).map(([key, value]) =>
-                bytes(2, concat(bytes(1, key), bytes(2, Value.fromJson(value).toBinary()))),
+                bytes(
+                  2,
+                  concat(
+                    bytes(1, key),
+                    bytes(2, toBinary(ValueSchema, fromJson(ValueSchema, value))),
+                  ),
+                ),
               ),
               bytes(3, execId),
               bytes(4, server),
