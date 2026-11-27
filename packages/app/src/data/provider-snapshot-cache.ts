@@ -17,14 +17,22 @@ const CACHE_VERSION = 2;
 const CACHE_KEY_PREFIX = "@paseo/provider-snapshot/v2";
 const CACHE_INDEX_KEY = "@paseo/provider-snapshot-index/v2";
 const DEFAULT_MAX_CACHE_BYTES = 4 * 1024 * 1024;
+// SQLite before 3.32 limits each statement to 999 bound variables.
+const MAX_STORAGE_BATCH_KEYS = 999;
 
 interface ProviderSnapshotStorage {
   getItem(key: string): Promise<string | null>;
   setItem(key: string, value: string): Promise<void>;
   removeItem(key: string): Promise<void>;
   getAllKeys(): Promise<readonly string[]>;
-  multiGet(keys: readonly string[]): Promise<ReadonlyArray<readonly [string, string | null]>>;
-  multiRemove(keys: readonly string[]): Promise<void>;
+  getMany(keys: string[]): Promise<Record<string, string | null>>;
+  removeMany(keys: string[]): Promise<void>;
+}
+
+function* storageKeyBatches(keys: string[]): Iterable<string[]> {
+  for (let start = 0; start < keys.length; start += MAX_STORAGE_BATCH_KEYS) {
+    yield keys.slice(start, start + MAX_STORAGE_BATCH_KEYS);
+  }
 }
 
 interface ProviderSnapshotCacheOptions {
@@ -138,6 +146,10 @@ export function createProviderSnapshotCache(
   let operationQueue = Promise.resolve();
   const bodies = new Map<string, CachedProviderSnapshot>();
 
+  async function removeSnapshotKeys(keys: string[]): Promise<void> {
+    for (const batch of storageKeyBatches(keys)) await storage.removeMany(batch);
+  }
+
   async function reconcileCache(): Promise<void> {
     const allKeys = await storage.getAllKeys();
     // COMPAT(providerSnapshotCache): added in v0.7.2, remove legacy cleanup after 2027-03-06.
@@ -147,13 +159,16 @@ export function createProviderSnapshotCache(
         key === "@paseo/provider-snapshot-index/v1" ||
         key === CACHE_INDEX_KEY,
     );
-    if (legacyKeys.length) await storage.multiRemove(legacyKeys);
+    await removeSnapshotKeys(legacyKeys);
     const keys = allKeys.filter((key) => key.startsWith(`${CACHE_KEY_PREFIX}:`));
-    const values = await storage.multiGet(keys);
+    const values: Record<string, string | null> = {};
+    for (const batch of storageKeyBatches(keys)) {
+      Object.assign(values, await storage.getMany(batch));
+    }
     const keysToRemove: string[] = [];
     const entries: ProviderSnapshotIndexEntry[] = [];
     const references: Array<{ key: string; body: string; writtenAt: string }> = [];
-    for (const [key, value] of values) {
+    for (const [key, value] of Object.entries(values)) {
       if (value === null) continue;
       try {
         const stored = parseStoredProviderSnapshot(key, value);
@@ -198,7 +213,7 @@ export function createProviderSnapshotCache(
     }
     if (keysToRemove.length > 0) {
       for (const removedKey of keysToRemove) bodies.delete(removedKey);
-      await storage.multiRemove(keysToRemove);
+      await removeSnapshotKeys(keysToRemove);
     }
     index = retainedEntries;
   }
@@ -273,7 +288,7 @@ export function createProviderSnapshotCache(
     const removedKeys = new Set(keysToRemove);
     if (keysToRemove.length > 0) {
       for (const removedKey of keysToRemove) bodies.delete(removedKey);
-      await storage.multiRemove(keysToRemove);
+      await removeSnapshotKeys(keysToRemove);
     }
     // Body, then reference, then in-memory index. A failed write can leave a reusable
     // orphan body; reconciliation never retains a reference without its body.

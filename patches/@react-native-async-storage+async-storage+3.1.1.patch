@@ -1,0 +1,27 @@
+diff --git a/node_modules/@react-native-async-storage/async-storage/android/src/main/kotlin/org/asyncstorage/legacy_storage/LegacyStorageSupplier.kt b/node_modules/@react-native-async-storage/async-storage/android/src/main/kotlin/org/asyncstorage/legacy_storage/LegacyStorageSupplier.kt
+--- a/node_modules/@react-native-async-storage/async-storage/android/src/main/kotlin/org/asyncstorage/legacy_storage/LegacyStorageSupplier.kt
++++ b/node_modules/@react-native-async-storage/async-storage/android/src/main/kotlin/org/asyncstorage/legacy_storage/LegacyStorageSupplier.kt
+@@ -3,2 +3,3 @@
+ import android.content.Context
++import android.database.sqlite.SQLiteDatabase
+ import android.util.Log
+@@ -126,3 +127,18 @@
+             if (oldDbFile.exists()) {
+-                // migrate data from old database, if it exists
++                // Room copies only the main file. Preserve committed writes from a killed v2 app.
++                val oldWal = context.getDatabasePath("RKStorage-wal")
++                if (!context.getDatabasePath(DATABASE_NAME).exists() && oldWal.length() > 0L) {
++                    val flags = SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.ENABLE_WRITE_AHEAD_LOGGING or
++                        SQLiteDatabase.NO_LOCALIZED_COLLATORS
++                    // Never let Android's default corruption handler delete the user's source database.
++                    SQLiteDatabase.openDatabase(oldDbFile.path, null, flags) { database ->
++                        Log.e("AsyncStorage_Next", "Could not read legacy database ${database.path}")
++                    }.use { sourceDb ->
++                        sourceDb.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { result ->
++                            check(result.moveToFirst() && result.getInt(0) == 0) {
++                                "Could not checkpoint the legacy AsyncStorage database"
++                            }
++                        }
++                    }
++                }
+                 db.createFromFile(oldDbFile).addMigrations(MIGRATION_TO_NEXT)

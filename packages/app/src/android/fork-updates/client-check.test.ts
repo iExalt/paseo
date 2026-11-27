@@ -19,7 +19,7 @@ vi.mock("@react-native-async-storage/async-storage", () => ({
   default: {
     getItem: async (key: string) => harness.storage.get(key) ?? null,
     setItem: async (key: string, value: string) => harness.storage.set(key, value),
-    multiRemove: async (keys: string[]) => keys.forEach((key) => harness.storage.delete(key)),
+    removeMany: async (keys: string[]) => keys.forEach((key) => harness.storage.delete(key)),
   },
 }));
 vi.mock("@getpaseo/protocol/release-manifest", async (importOriginal) => {

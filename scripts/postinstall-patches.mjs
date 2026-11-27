@@ -10,6 +10,12 @@ import { resolveOpenCodePatchTarget } from "./postinstall-patches-target.mjs";
 // the patch's node_modules/... paths relative to its working directory.
 const openCodePatchTarget = resolveOpenCodePatchTarget(existsSync);
 const patchedPackages = [
+  // Android legacy migration must checkpoint committed v2 writes before Room copies RKStorage.
+  // Remove once AsyncStorage handles the old WAL itself.
+  {
+    nodeModulesPath: "node_modules/@react-native-async-storage/async-storage",
+    patchPrefix: "@react-native-async-storage+async-storage+",
+  },
   // Gradle 9.8 needs newer Kotlin metadata support; Expo's Pika compiler caps
   // the version at 2.3.20. Keep these plugin compilers consistent until Expo and
   // React Native ship compatible pins.

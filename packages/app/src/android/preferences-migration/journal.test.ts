@@ -26,8 +26,8 @@ class MemoryStorage implements PreferenceStorage {
     this.values.delete(key);
   }
 
-  async multiSet(pairs: [string, string][]) {
-    for (const [key, value] of pairs) await this.setItem(key, value);
+  async setMany(entries: Record<string, string>) {
+    for (const [key, value] of Object.entries(entries)) await this.setItem(key, value);
   }
 }
 

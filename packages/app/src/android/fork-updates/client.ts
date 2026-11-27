@@ -409,5 +409,5 @@ export async function recordInstalledForkUpdate(version: string): Promise<void> 
 }
 
 export async function clearStagedForkUpdate(): Promise<void> {
-  await AsyncStorage.multiRemove([STAGED_UPDATE_KEY, PENDING_STAGED_UPDATE_KEY]);
+  await AsyncStorage.removeMany([STAGED_UPDATE_KEY, PENDING_STAGED_UPDATE_KEY]);
 }

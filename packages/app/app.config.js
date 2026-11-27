@@ -1,7 +1,6 @@
 const fs = require("node:fs");
 const path = require("node:path");
 const pkg = require("./package.json");
-const withAndroidAsyncStorageSize = require("./plugins/with-android-async-storage-size");
 const withAndroidOptionalCamera = require("./plugins/with-android-optional-camera");
 const withAndroidProfileable = require("./plugins/with-android-profileable");
 const withAndroidGradle = require("./plugins/with-android-gradle");
@@ -170,7 +169,6 @@ export default {
       withPasteInput,
       withAndroidScroll,
       withAndroidDisplayMetrics,
-      [withAndroidAsyncStorageSize, 64],
       ...buildProfile.cameraPlugins,
       withAndroidOptionalCamera,
       [

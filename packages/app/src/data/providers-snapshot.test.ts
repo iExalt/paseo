@@ -81,10 +81,10 @@ function createStorage(onWrite: () => void = () => {}) {
     async getAllKeys() {
       return [...values.keys()];
     },
-    async multiGet(keys: readonly string[]) {
-      return keys.map((key) => [key, values.get(key) ?? null] as const);
+    async getMany(keys: readonly string[]) {
+      return Object.fromEntries(keys.map((key) => [key, values.get(key) ?? null]));
     },
-    async multiRemove(keys: readonly string[]) {
+    async removeMany(keys: readonly string[]) {
       for (const key of keys) values.delete(key);
     },
   };
