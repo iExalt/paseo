@@ -439,6 +439,18 @@ test("fork Android resource watcher is paired and preserves child exit and signa
   }
 });
 
+test("the macOS smoke imports the artifact without building candidate store paths", () => {
+  const release = load(readFileSync(new URL(".github/workflows/release.yml", repoRoot), "utf8"));
+  const smoke = release.jobs["macos-smoke"];
+  assert.equal(
+    smoke.steps.find((step) => /release-mac-smoke\.mjs/.test(step.run ?? ""))?.run,
+    'node .github/scripts/release-mac-smoke.mjs "$RUNNER_TEMP/paseo-release-macos"',
+  );
+  for (const step of smoke.steps) {
+    assert.doesNotMatch(step.run ?? "", /\bnix\s+build\b/);
+  }
+});
+
 test("release Android swap is provisioned after SDK setup and always cleaned before identity checks", () => {
   const steps = load(readFileSync(new URL(".github/workflows/release.yml", repoRoot), "utf8")).jobs[
     "android-build"

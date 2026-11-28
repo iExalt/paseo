@@ -362,10 +362,15 @@ async function fetchAsset(url, file, { bytes, sha256 }, { fetchImpl = fetchHttps
 }
 
 /** zstd -d, optionally against a --patch-from base, writing at most maxBytes. */
-export async function zstdDecompress(input, output, maxBytes, { patchFrom } = {}) {
+export async function zstdDecompress(
+  input,
+  output,
+  maxBytes,
+  { patchFrom, zstdExecutable = "zstd" } = {},
+) {
   const args = ["-d", "-q", "-c", ZSTD_LONG];
   if (patchFrom) args.push(`--patch-from=${patchFrom}`);
-  const child = spawn("zstd", [...args, input], { stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(zstdExecutable, [...args, input], { stdio: ["ignore", "pipe", "pipe"] });
   let stderr = "";
   child.stderr.on("data", (chunk) => {
     if (stderr.length < 4096) stderr += chunk;
@@ -444,6 +449,7 @@ export async function prepareIndexedCache({
   freeSpace,
   fetchImpl = fetchHttps,
   store = localStore,
+  zstdExecutable = "zstd",
   signal,
 }) {
   const indexBytes = await fetchBytes(
@@ -451,7 +457,8 @@ export async function prepareIndexedCache({
     "the update index",
   );
   const index = JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(indexBytes));
-  const { members, narinfos, deltas } = validateIndex(index, artifact, closure);
+  const { members, narinfos, deltas: indexedDeltas } = validateIndex(index, artifact, closure);
+  const deltas = zstdExecutable ? indexedDeltas : [];
   const bases = [...new Set(deltas.map((delta) => delta.fromPath))];
   const invalid = store.invalidPaths([...closure.closure.map((entry) => entry.path), ...bases]);
   const local = store.pathInfo(bases.filter((path) => !invalid.has(path)));
@@ -503,6 +510,7 @@ export async function prepareIndexedCache({
     const name = `nar/${narHash.slice(7)}.nar`;
     const built = await zstdDecompress(patch, join(cache, name), step.entry.narSize, {
       patchFrom: base,
+      zstdExecutable,
     });
     assert.ok(
       built.bytes === step.entry.narSize &&

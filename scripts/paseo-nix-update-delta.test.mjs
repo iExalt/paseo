@@ -306,7 +306,7 @@ describe("Paseo Nix updater partial downloads", () => {
     const release = await deltaRelease(directory);
     const { server, requests, fetchImpl } = await serveRelease(release.files);
     const index = `${release.artifact.name.replace(/\.tar$/, "")}.index.json`;
-    const prepare = (name, baseNar) =>
+    const prepare = (name, baseNar, zstdExecutable) =>
       prepareIndexedCache({
         tag: "paseo-v1.2.3",
         artifact: release.artifact,
@@ -320,6 +320,7 @@ describe("Paseo Nix updater partial downloads", () => {
         },
         freeSpace: async () => {},
         fetchImpl,
+        zstdExecutable,
         store: {
           invalidPaths: (paths) =>
             new Set(
@@ -361,6 +362,14 @@ describe("Paseo Nix updater partial downloads", () => {
         `${release.artifact.name} bytes=${member.offset}-${member.offset + member.size - 1}`,
       ]);
       assert.equal((await readdir(join(viaRange.cache, "nar"))).length, 1);
+
+      // A valid incumbent base cannot trigger a delta without a verified decoder.
+      const withoutDecoder = await prepare("no-decoder", release.nars.base, null);
+      assert.deepEqual(requests.splice(0), [
+        index,
+        `${release.artifact.name} bytes=${member.offset}-${member.offset + member.size - 1}`,
+      ]);
+      assert.equal((await readdir(join(withoutDecoder.cache, "nar"))).length, 1);
 
       // A corrupt delta that its (unsigned) index entry vouches for: the real
       // zstd or the signed NarHash check rejects it, and the full download runs.
