@@ -543,6 +543,7 @@ async function connectToPackagedApp({
   deadline,
 }) {
   let lastError = null;
+  const endpoint = `http://127.0.0.1:${cdpPort}`;
 
   while (Date.now() < deadline) {
     if (!isRunning(child)) {
@@ -554,7 +555,19 @@ async function connectToPackagedApp({
     }
 
     try {
-      return await chromium.connectOverCDP(`http://127.0.0.1:${cdpPort}`);
+      // Electron can expose CDP before its first BrowserWindow. Playwright can
+      // miss that window when it attaches before Electron creates its context.
+      const response = await fetch(`${endpoint}/json/list`, {
+        signal: AbortSignal.timeout(remainingTime(deadline)),
+      });
+      if (!response.ok) throw new Error(`CDP target list returned HTTP ${response.status}`);
+      const targets = await response.json();
+      if (!targets.some(({ type, url }) => type === "page" && url.startsWith("paseo://app/"))) {
+        throw new Error(
+          `CDP has no packaged Paseo page yet: ${JSON.stringify(targets.map(({ url }) => url))}`,
+        );
+      }
+      return await chromium.connectOverCDP(endpoint, { timeout: remainingTime(deadline) });
     } catch (error) {
       lastError = error;
       await delay(250);
@@ -572,17 +585,19 @@ async function connectToPackagedApp({
 }
 
 async function waitForPackagedAppPage(browser, deadline) {
+  const urls = new Set();
   while (Date.now() < deadline) {
-    const page = browser
-      .contexts()
-      .flatMap((context) => context.pages())
-      .find((candidate) => candidate.url().startsWith("paseo://app/"));
-    if (page) {
-      return page;
+    const pages = browser.contexts().flatMap((context) => context.pages());
+    for (const page of pages) {
+      const url = page.url();
+      urls.add(url);
+      if (url.startsWith("paseo://app/")) return page;
     }
     await delay(250);
   }
-  throw new Error("Timed out waiting for the packaged paseo://app/ renderer");
+  throw new Error(
+    `Timed out waiting for the packaged paseo://app/ renderer. Observed URLs: ${JSON.stringify([...urls])}`,
+  );
 }
 
 async function assertPackagedRendererLoaded(page, deadline) {
