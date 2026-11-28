@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.39.0](https://github.com/iExalt/paseo/compare/paseo-v0.38.4...paseo-v0.39.0) (2026-11-28)
+
+
+### Features
+
+* **app:** migrate the mobile runtime to Expo SDK 58 ([#646](https://github.com/iExalt/paseo/issues/646)) ([ea48523](https://github.com/iExalt/paseo/commit/ea48523af7b9adb7216a5a67a93bc7f4b0bb83f8))
+* **app:** upgrade the Mermaid diagram runtime ([#647](https://github.com/iExalt/paseo/issues/647)) ([85da1b1](https://github.com/iExalt/paseo/commit/85da1b1c02579825b46603369bdf1ec774a8df50))
+* **providers:** migrate ACP connections and OpenCode background fixture ([#640](https://github.com/iExalt/paseo/issues/640)) ([023a2f3](https://github.com/iExalt/paseo/commit/023a2f361d3f3635b466d025bc9eae9c88c1d1dc))
+
+
+### Bug Fixes
+
+* **app:** reconcile workspace archive undo with the host directory ([24cb2c5](https://github.com/iExalt/paseo/commit/24cb2c5afccc628251ff37f3ac8960630abfcfee))
+* **app:** use the browser entry for xterm ligatures ([#642](https://github.com/iExalt/paseo/issues/642)) ([902871f](https://github.com/iExalt/paseo/commit/902871f81449590bac2bd5fc9bc4afc02283b876))
+* **markdown:** preserve typed specs for native Metro codegen ([#645](https://github.com/iExalt/paseo/issues/645)) ([98ac366](https://github.com/iExalt/paseo/commit/98ac366bea41a6aba55f6bb9f90d50d1dfa0fd19))
+* **rebase:** allow the pinned Markdown workspace migration ([#631](https://github.com/iExalt/paseo/issues/631)) ([740ffe0](https://github.com/iExalt/paseo/commit/740ffe00d436ce4d20ad50583791a6f3b8e25f73))
+
 ## [0.38.4](https://github.com/iExalt/paseo/compare/paseo-v0.38.3...paseo-v0.38.4) (2026-11-27)
 
 
