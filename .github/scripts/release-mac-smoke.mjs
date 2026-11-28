@@ -12,7 +12,7 @@
 // so the job installs only release-mac-smoke-deps.mjs and builds nothing.
 // Usage: node release-mac-smoke.mjs <directory with tar, closure json, index and deltas>
 // Env: VERSION, SOURCE_SHA, OUTPUT_PATH, PUBLISH, GITHUB_REPOSITORY, GH_TOKEN,
-// PASEO_DESKTOP_SMOKE_ARTIFACT_DIR, RUNNER_TEMP; zstd on PATH.
+// PASEO_DESKTOP_SMOKE_ARTIFACT_DIR, RUNNER_TEMP.
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
@@ -208,7 +208,7 @@ export async function stageThroughIndex({
   try {
     base = await seedPreviousRelease(scratch, version);
   } catch (error) {
-    if (!publish) throw error;
+    if (!publish || version === MAC_DELTA_TRANSITION_TARGET) throw error;
     warn(`Could not install the previous release: ${error.message}`);
   }
   const names = releaseAssets(version);
@@ -223,6 +223,15 @@ export async function stageThroughIndex({
   const local = localReleaseFetch(directory);
   const indexed = join(scratch, "indexed");
   await mkdir(indexed);
+  // An installed client decodes with its current release's zstd. With no
+  // verified baseline, stage only tar ranges without running any decoder.
+  let zstdExecutable = null;
+  if (base) {
+    assertReleaseSignatures([base.path]);
+    const wrapper = await readFile(join(base.path, "bin/paseo-nix-update"), "utf8");
+    zstdExecutable = join(wrapperZstdDir(wrapper), "zstd");
+    console.log(`Baseline decoder: ${run(zstdExecutable, ["--version"]).trim()}`);
+  }
   const { cache, plan, transferred } = await prepareIndexedCache({
     tag: "unpublished",
     artifact,
@@ -232,6 +241,7 @@ export async function stageThroughIndex({
     fetchBytes: (name) => readFile(join(directory, name)),
     freeSpace: (transferBytes, importBytes) => assertFreeSpace(transferBytes, importBytes, scratch),
     fetchImpl: local.fetchImpl,
+    zstdExecutable,
   });
   // The updater reads the index through fetchBytes, outside the shim.
   const indexBytes = await readFile(join(directory, names.macIndex));
@@ -340,11 +350,7 @@ export async function linkClosureBuilds(app, repoRoot, scratch) {
   return links;
 }
 
-/**
- * Checks that the imported outputs verify with only the release key, that an
- * unrelated key does not, and that their closure matches the manifest's.
- */
-export function assertReleaseKeyOnly(outputPaths, closure) {
+function assertReleaseSignatures(outputPaths) {
   // A daemon that ignores client trust options would fall back to its own keys,
   // so first prove the options bind: another key must not verify the closure.
   const verify = (trusted) =>
@@ -374,6 +380,11 @@ export function assertReleaseKeyOnly(outputPaths, closure) {
   assert.equal(real.status, 0, `Release key verification failed: ${real.stderr}`);
   for (const result of [control, real])
     assert.doesNotMatch(result.stderr, /ignoring the client-specified setting/);
+}
+
+/** Verify release-key trust and that the imported closure matches the manifest. */
+export function assertReleaseKeyOnly(outputPaths, closure) {
+  assertReleaseSignatures(outputPaths);
   const imported = Object.entries(
     JSON.parse(
       run("nix", ["path-info", "--json", "--recursive", ...trustOnlyRelease, ...outputPaths]),
