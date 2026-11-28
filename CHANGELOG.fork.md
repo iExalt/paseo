@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.39.1](https://github.com/iExalt/paseo/compare/paseo-v0.39.0...paseo-v0.39.1) (2026-11-28)
+
+
+### Bug Fixes
+
+* **release:** verify macOS with the installed baseline decoder ([#655](https://github.com/iExalt/paseo/issues/655)) ([8e6b5d7](https://github.com/iExalt/paseo/commit/8e6b5d7c3d3f5bc797598f2afa8ff6ff5c7bd74a))
+
 ## [0.39.0](https://github.com/iExalt/paseo/compare/paseo-v0.38.4...paseo-v0.39.0) (2026-11-28)
 
 
