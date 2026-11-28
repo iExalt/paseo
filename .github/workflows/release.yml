@@ -723,11 +723,7 @@ jobs:
           "$apksigner" sign --key "$key_der" --cert "$cert" --out "$apk" "$RUNNER_TEMP/release-android-unsigned/unsigned.apk"
           # The v4 .idsig sidecar only serves incremental adb installs; clients get the APK alone.
           rm -f "$key_pem" "$key_der" "$cert" "$apk.idsig"
-          "$apksigner" verify --verbose "$apk"
-          report="$("$apksigner" verify --print-certs "$apk")"
-          [[ "$(grep -c '^Signer #[0-9]* certificate SHA-256 digest: ' <<< "$report")" == 1 ]]
-          actual="$(sed -n 's/^Signer #1 certificate SHA-256 digest: //p' <<< "$report" | tr -d ':' | tr '[:upper:]' '[:lower:]')"
-          [[ "$actual" == "$expected" ]] || { echo "::error::Signed with $actual, expected $expected."; exit 1; }
+          actual="$(bash .github/scripts/release-apk-signer.sh "$apksigner" "$apk" "$expected")"
           bash .github/scripts/release-apk-identity.sh "$apk"
           # Unsigned download sidecar: the APK stores its dex, .so and JS uncompressed, so
           # deflate cuts the transfer by about 60%. Clients check the gunzipped bytes against

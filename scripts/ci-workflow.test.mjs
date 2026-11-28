@@ -1,3 +1,4 @@
+import { X509Certificate } from "node:crypto";
 import assert from "node:assert/strict";
 import { execFileSync, spawn, spawnSync } from "node:child_process";
 import {
@@ -449,6 +450,53 @@ test("release Android swap is provisioned after SDK setup and always cleaned bef
   const identity = index(/release-apk-identity\.sh/);
   assert.ok(enable >= 0 && enable < assemble && assemble < cleanup && cleanup < identity);
   assert.equal(steps[cleanup].if, "always()");
+});
+
+test("release APK signer checks the verified certificate rather than its report label", () => {
+  const directory = mkdtempSync(join(tmpdir(), "paseo-apk-signer-"));
+  try {
+    const cert = join(directory, "cert.pem");
+    const signer = join(directory, "apksigner");
+    const report = join(directory, "report");
+    execFileSync(
+      "openssl",
+      [
+        "req",
+        "-x509",
+        "-newkey",
+        "ed25519",
+        "-nodes",
+        "-subj",
+        "/CN=Paseo test",
+        "-keyout",
+        join(directory, "key.pem"),
+        "-out",
+        cert,
+      ],
+      { stdio: "ignore" },
+    );
+    const pem = readFileSync(cert, "utf8");
+    const expected = new X509Certificate(pem).fingerprint256.replaceAll(":", "").toLowerCase();
+    writeFileSync(
+      signer,
+      `#!/bin/sh\nset -eu\n[ "$#" = 4 ]\n[ "$1 $2 $3" = "verify --verbose --print-certs-pem" ]\ncat "$4"\n`,
+    );
+    chmodSync(signer, 0o755);
+    const script = new URL(".github/scripts/release-apk-signer.sh", repoRoot);
+    const verify = (pin = expected) =>
+      spawnSync("bash", [fileURLToPath(script), signer, report, pin], { encoding: "utf8" });
+
+    writeFileSync(
+      report,
+      `Verifies\nNumber of signers: 1\nV3.0 Signer: certificate DN: CN=Paseo test\n${pem}`,
+    );
+    assert.equal(verify().stdout.trim(), expected);
+    assert.match(verify("0".repeat(64)).stderr, /Signed with .* expected/);
+    writeFileSync(report, `Verifies\nNumber of signers: 2\n${pem}${pem}`);
+    assert.match(verify().stderr, /must report one signer and one certificate/);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
 });
 
 test("fork Android swap lifecycle is bounded and never unlinks active swap", () => {
