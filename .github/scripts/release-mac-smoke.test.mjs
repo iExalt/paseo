@@ -3,7 +3,13 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
-import { checkDeltaPlan, localReleaseFetch, wrapperZstdDir } from "./release-mac-smoke.mjs";
+import { macDeltaProfile } from "./release-mac-index.mjs";
+import {
+  checkDeltaPlan,
+  localReleaseFetch,
+  smokeBaselineTag,
+  wrapperZstdDir,
+} from "./release-mac-smoke.mjs";
 
 test("the local release shim answers a range with an exact 206 and counts served bytes", async () => {
   const directory = await mkdtemp(join(tmpdir(), "paseo-smoke-shim-"));
@@ -24,7 +30,22 @@ test("the local release shim answers a range with an exact 206 and counts served
   }
 });
 
-test("smoke requires the desktop delta on a dry run, only warns on publish, and allows dependency ranges", () => {
+test("the transition smoke seeds 0.38.4 and other releases select the latest stable baseline", async () => {
+  assert.equal(
+    await smokeBaselineTag("0.39.0", () => assert.fail("listed releases")),
+    "paseo-v0.38.4",
+  );
+  assert.equal(
+    await smokeBaselineTag("0.39.1", async () => [
+      { tag_name: "paseo-v0.38.4" },
+      { tag_name: "paseo-v0.39.0" },
+      { tag_name: "paseo-v0.39.1" },
+    ]),
+    "paseo-v0.39.0",
+  );
+});
+
+test("smoke checks the prior desktop delta and dependency ranges", () => {
   const outputPath = "/nix/store/new-paseo-desktop";
   const basePath = "/nix/store/old-paseo-desktop";
   const index = { deltas: [{ fromPath: basePath, toPath: outputPath }] };
@@ -36,7 +57,8 @@ test("smoke requires the desktop delta on a dry run, only warns on publish, and 
       index,
       plan: [deltaStep],
       outputPath,
-      basePath,
+      base: { path: basePath, version: "0.38.4" },
+      version: "0.39.1",
       desktopFileSize: 150_000_000,
       served: 300_000,
       tarBytes: 230_000_000,
@@ -51,7 +73,7 @@ test("smoke requires the desktop delta on a dry run, only warns on publish, and 
   // A changed dependency arrives as a tar range alongside the desktop delta.
   assert.equal(check({ plan: [deltaStep, rangeStep("/nix/store/dep")] }).result, true);
   assert.throws(() => check({ index: { deltas: [] } }), /no delta/);
-  assert.throws(() => check({ basePath: null }), /no delta/);
+  assert.throws(() => check({ base: null }), /no delta/);
   const published = check({ index: { deltas: [] }, publish: true });
   assert.deepEqual([published.result, published.warnings.length], [false, 1]);
   assert.throws(() => check({ plan: [rangeStep(outputPath)] }), /previous release's delta/);
@@ -62,6 +84,36 @@ test("smoke requires the desktop delta on a dry run, only warns on publish, and 
   assert.throws(() => check({ plan: [deltaStep, otherDelta] }), /tar range/);
   assert.throws(() => check({ desktopFileSize: 2_000_000 }), /desktop delta is/);
   assert.throws(() => check({ served: 230_000_000 }), /served/);
+
+  const planWithDelta = (bytes) => [{ ...deltaStep, delta: { ...deltaStep.delta, bytes } }];
+  assert.deepEqual(macDeltaProfile("0.38.4", "0.39.0"), { level: "-19", maxBytes: 65_000_000 });
+  assert.equal(check({ version: "0.39.0", plan: planWithDelta(65_000_000) }).result, true);
+  assert.throws(
+    () => check({ version: "0.39.0", plan: planWithDelta(65_000_001) }),
+    /limit: 65000000 bytes/,
+  );
+  assert.throws(
+    () => check({ version: "0.39.0", index: { deltas: [] }, publish: true }),
+    /no delta/,
+  );
+  assert.throws(
+    () =>
+      check({ version: "0.39.0", desktopFileSize: 65_000_000, plan: planWithDelta(65_000_000) }),
+    /compressed NAR/,
+  );
+  assert.throws(() => check({ version: "0.39.0", base: null, publish: true }), /no delta/);
+  for (const [from, to] of [
+    ["0.38.3", "0.39.0"],
+    ["0.38.4", "0.39.1"],
+  ]) {
+    assert.equal(macDeltaProfile(from, to), undefined);
+    const ordinary = { base: { path: basePath, version: from }, version: to };
+    assert.equal(check({ ...ordinary, plan: planWithDelta(14_999_999) }).result, true);
+    assert.throws(
+      () => check({ ...ordinary, plan: planWithDelta(15_000_000) }),
+      /limit: below 10%/,
+    );
+  }
 });
 
 test("the updater wrapper's zstd directory is read from its PATH prefix", () => {
