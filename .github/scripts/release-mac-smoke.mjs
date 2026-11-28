@@ -35,7 +35,13 @@ import {
   releaseDownloadUrl,
   validateNixArtifactClosure,
 } from "../../scripts/paseo-nix-update.mjs";
-import { deltaBaseTags, listReleases } from "./release-mac-index.mjs";
+import {
+  deltaBaseTags,
+  listReleases,
+  macDeltaProfile,
+  MAC_DELTA_TRANSITION_BASE,
+  MAC_DELTA_TRANSITION_TARGET,
+} from "./release-mac-index.mjs";
 import { releaseAssets } from "./release-assets.mjs";
 
 const trustOnlyRelease = [
@@ -85,14 +91,16 @@ export function localReleaseFetch(directory) {
  * Checks that an install of the previous release stages this one with the
  * desktop path from its delta; any other missing path must come from a tar
  * range, which exercises that path on real Nix too. Without the delta a dry
- * run fails; a publish warns and returns false, and the smoke still imports
- * the partial-path cache.
+ * run fails. A publish can use the partial-path cache without the delta
+ * unless this version pair has a dedicated compression profile or the
+ * transition target could not establish its baseline.
  */
 export function checkDeltaPlan({
   index,
   plan,
   outputPath,
-  basePath,
+  base,
+  version,
   desktopFileSize,
   served,
   tarBytes,
@@ -100,12 +108,16 @@ export function checkDeltaPlan({
   warn,
   log = console.log,
 }) {
+  const basePath = base?.path;
+  const profile = macDeltaProfile(base?.version, version);
   const listed = index.deltas.some(
     (delta) => delta.fromPath === basePath && delta.toPath === outputPath,
   );
   if (!basePath || !listed) {
     const message = `The update index has no delta from ${basePath ?? "an earlier release"}`;
-    if (!publish) throw new Error(message);
+    if (!publish || profile || (!basePath && version === MAC_DELTA_TRANSITION_TARGET)) {
+      throw new Error(message);
+    }
     warn(message);
     return false;
   }
@@ -116,8 +128,12 @@ export function checkDeltaPlan({
   );
   const { bytes } = desktop[0].delta;
   assert.ok(
-    bytes < desktopFileSize * 0.1,
-    `The desktop delta is ${bytes} bytes against a ${desktopFileSize}-byte compressed NAR`,
+    profile ? bytes <= profile.maxBytes && bytes < desktopFileSize : bytes < desktopFileSize * 0.1,
+    `The desktop delta is ${bytes} bytes against a ${desktopFileSize}-byte compressed NAR (${
+      profile
+        ? `limit: ${profile.maxBytes} bytes, and smaller than the compressed NAR`
+        : "limit: below 10%"
+    })`,
   );
   for (const step of plan) {
     if (step === desktop[0]) continue;
@@ -135,20 +151,29 @@ export function wrapperZstdDir(wrapper) {
   return match[0];
 }
 
-// Installs the newest earlier stable release through the updater's full path.
-async function seedPreviousRelease(scratch, version) {
-  const [previous] = deltaBaseTags(
-    await listReleases(process.env.GITHUB_REPOSITORY, process.env.GH_TOKEN),
-    version,
-  );
+// Keep the measured transition pair independent of later changes to the release list.
+export async function smokeBaselineTag(
+  version,
+  releases = () => listReleases(process.env.GITHUB_REPOSITORY, process.env.GH_TOKEN),
+) {
+  if (version === MAC_DELTA_TRANSITION_TARGET) {
+    return `paseo-v${MAC_DELTA_TRANSITION_BASE}`;
+  }
+  const [previous] = deltaBaseTags(await releases(), version);
   assert.ok(previous, "There is no earlier stable release");
-  const { manifest } = await verifiedReleaseForTag(previous.tag);
+  return previous.tag;
+}
+
+// Install the signed baseline through the updater's full path.
+async function seedPreviousRelease(scratch, version) {
+  const tag = await smokeBaselineTag(version);
+  const { manifest } = await verifiedReleaseForTag(tag);
   const artifact = macArtifact(manifest);
   const file = join(scratch, artifact.name);
   await downloadAsset(
     {
       name: artifact.name,
-      url: releaseDownloadUrl(previous.tag, artifact.name),
+      url: releaseDownloadUrl(tag, artifact.name),
       size: artifact.bytes,
     },
     file,
@@ -165,8 +190,8 @@ async function seedPreviousRelease(scratch, version) {
   run("nix", localCacheCopySignaturesArgs(cache, artifact.outputPath));
   await rm(file);
   await rm(cache, { recursive: true, force: true });
-  console.log(`Installed ${previous.tag} (${artifact.outputPath}) from its full tar`);
-  return artifact.outputPath;
+  console.log(`Installed ${tag} (${artifact.outputPath}) from its full tar`);
+  return { path: artifact.outputPath, version: manifest.version };
 }
 
 /** Steps 1-3 of the header; leaves this release imported into the store. */
@@ -179,9 +204,9 @@ export async function stageThroughIndex({
   publish,
 }) {
   const warn = (message) => console.log(`::warning::${message}`);
-  let basePath = null;
+  let base = null;
   try {
-    basePath = await seedPreviousRelease(scratch, version);
+    base = await seedPreviousRelease(scratch, version);
   } catch (error) {
     if (!publish) throw error;
     warn(`Could not install the previous release: ${error.message}`);
@@ -224,7 +249,8 @@ export async function stageThroughIndex({
     index,
     plan,
     outputPath,
-    basePath,
+    base,
+    version,
     desktopFileSize,
     served,
     tarBytes: artifact.bytes,

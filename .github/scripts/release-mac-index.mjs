@@ -44,6 +44,16 @@ import { releaseAssets } from "./release-assets.mjs";
 // 15 s (range fetch of the old NAR, then a 1-2 s delta) and a few MB of assets.
 export const DELTA_BASE_RELEASES = 4;
 
+// The Electron 44 to 45 transition needs a larger patch once.
+export const MAC_DELTA_TRANSITION_BASE = "0.38.4";
+export const MAC_DELTA_TRANSITION_TARGET = "0.39.0";
+
+export function macDeltaProfile(fromVersion, toVersion) {
+  if (fromVersion === MAC_DELTA_TRANSITION_BASE && toVersion === MAC_DELTA_TRANSITION_TARGET) {
+    return { level: "-19", maxBytes: 65_000_000 };
+  }
+}
+
 const sri = (digest) => `sha256-${digest.toString("base64")}`;
 
 /** The newest stable releases below version, newest first. */
@@ -161,7 +171,16 @@ async function makeDelta({ base, next, archiveName, directory, work }) {
   }
   // Default level 3: the 0.12.0 -> 0.12.1 spike gave 243 KB in 1.3 s; level 19
   // gave 520 KB in 95 s.
-  zstd(["-q", `--long=${ZSTD_WINDOW_LOG}`, `--patch-from=${base.file}`, next.file, "-o", file]);
+  const profile = macDeltaProfile(base.version, next.version);
+  zstd([
+    "-q",
+    ...(profile ? [profile.level] : []),
+    `--long=${ZSTD_WINDOW_LOG}`,
+    `--patch-from=${base.file}`,
+    next.file,
+    "-o",
+    file,
+  ]);
   const check = join(work, "check.nar");
   const rebuilt = await zstdDecompress(file, check, next.entry.narSize, { patchFrom: base.file });
   await rm(check);
@@ -242,6 +261,7 @@ async function main() {
   try {
     const entry = closure.closure.find(({ path }) => path === outputPath);
     const next = {
+      version,
       entry,
       file: join(work, "next.nar"),
       fileSize: checked.narinfos.get(outputPath).info.fileSize,
