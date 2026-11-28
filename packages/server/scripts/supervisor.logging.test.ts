@@ -468,8 +468,17 @@ describe("supervisor durable logging", { timeout: 30_000 }, () => {
           process.on("message", (message) => {
             if (message?.type === "paseo:graceful-shutdown") process.exit(0);
           });
-          const line = '{"level":30,"msg":"' + "x".repeat(1000) + '"}\\n';
-          for (let i = 0; i < 200; i += 1) process.stdout.write(line);
+          const { appendFile } = await import("node:fs/promises");
+          const { rejects } = await import("node:assert/strict");
+          process.stdout.write("before log limit\\n");
+          await waitForFixtureFile("daemon.log", "before log limit");
+          // Fill the already-open log under the worker's inherited RLIMIT_FSIZE.
+          // A separate supervisor write at the limit must fail regardless of pipe chunking.
+          await rejects(
+            appendFile(new URL("daemon.log", import.meta.url), Buffer.alloc(256 * 1024)),
+            { code: "EFBIG" },
+          );
+          process.stdout.write("after log limit\\n");
           await waitForFixtureFile("log-release", "continue");
           process.send?.({ type: "paseo:shutdown", reason: "log_write_failure_probe" });
           setInterval(() => {}, 1000);
