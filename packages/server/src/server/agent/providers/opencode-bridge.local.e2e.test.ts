@@ -1,5 +1,5 @@
 import { OpenCodeRuntimeClient } from "./opencode/runtime-client.js";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -435,6 +435,11 @@ test.concurrent.each([
         process.platform === "win32"
           ? `${windowsPackage}-${process.arch}@${cliPackage.slice(cliPackage.lastIndexOf("@") + 1)}`
           : cliPackage;
+      // npm 12 requires approval for OpenCode's postinstall to populate its CLI binary.
+      await writeFile(
+        path.join(root, "package.json"),
+        JSON.stringify({ private: true, allowScripts: { [installPackage]: true } }),
+      );
       // npm abandons a stalled registry download only after its 5 minute default, past this
       // test's budget, and the killed install keeps the fixture locked. Retry stalls sooner.
       await execCommand(
